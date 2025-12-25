@@ -5,12 +5,12 @@ Offline E2E example for vLLM-Omni (Qwen2.5-Omni).
 """
 
 import os
+import time
 from typing import NamedTuple
 
 import librosa
 import numpy as np
 import soundfile as sf
-import time
 from PIL import Image
 from vllm.assets.audio import AudioAsset
 from vllm.assets.image import ImageAsset
@@ -379,7 +379,9 @@ def main(args):
                     sampling_rate=args.sampling_rate,
                 )
             elif args.query_type == "use_audio_in_video":
-                qr = query_func(video_path=args.video_path, num_frames=args.num_frames, sampling_rate=args.sampling_rate)
+                qr = query_func(
+                    video_path=args.video_path, num_frames=args.num_frames, sampling_rate=args.sampling_rate
+                )
             elif args.query_type == "multi_audios":
                 qr = query_func(audio_path=args.audio_path, sampling_rate=args.sampling_rate)
             elif args.query_type == "use_image":
@@ -468,7 +470,9 @@ def main(args):
         else:  # thinker, or unknown
             sp = thinker
         auto_sampling_params.append(sp)
-        print(f"[Info] Stage-{stage_id} (model_stage={model_stage}) → sampling_params: max_tokens={sp.max_tokens}, temp={sp.temperature}")
+        print(
+            f"[Info] Stage-{stage_id} (model_stage={model_stage}) → sampling_params: max_tokens={sp.max_tokens}, temp={sp.temperature}"
+        )
 
     # --- STEP 4: Run generation -----------------------------------------------------
     _print_run_header(model_name, args, len(request_inputs))
@@ -479,6 +483,7 @@ def main(args):
     except Exception as e:
         print(f"[CRITICAL] Generation failed: {e}")
         import traceback
+
         traceback.print_exc()
         raise
     t1 = time.time()
@@ -493,7 +498,7 @@ def main(args):
     for stage_output in omni_outputs:
         final_type = getattr(stage_output, "final_output_type", None)
         if not final_type:
-            print(f"[Skip] Stage output has no final_output_type — skipping")
+            print("[Skip] Stage output has no final_output_type — skipping")
             continue
 
         outputs = list(stage_output.request_output)
@@ -531,6 +536,7 @@ def main(args):
             except Exception as e:
                 print(f"[Error] Failed to save {rid} ({final_type}): {e}")
                 import traceback
+
                 traceback.print_exc()
 
     print(f"[Summary] Saved {saved} artifacts into: {output_dir}")

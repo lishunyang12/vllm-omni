@@ -7,10 +7,10 @@ from typing import Any
 
 from vllm_omni.entrypoints.stage_utils import append_jsonl as _append_jsonl
 
-
 # =========================
 # File/log helpers
 # =========================
+
 
 def remove_old_logs(log_file: str | None, num_stages: int) -> None:
     try:
@@ -92,6 +92,7 @@ def _safe_append_jsonl(path: str | None, record: dict[str, Any]) -> None:
 # =========================
 # Transfer logging
 # =========================
+
 
 def log_transfer_tx(
     stats_file: str | None,
@@ -177,6 +178,7 @@ def log_transfer_total(
 # Orchestrator logging
 # =========================
 
+
 def log_orchestrator_e2e(
     stats_file: str | None,
     request_id: Any,
@@ -213,6 +215,7 @@ def log_overall_record(overall_stats_file: str | None, record: dict[str, Any]) -
 # =========================
 # Stage logging
 # =========================
+
 
 def log_stage_request_stats(
     stats_file: str | None,
@@ -316,6 +319,7 @@ def compute_and_log_stage_request_stats(
 # =========================
 # Aggregation helpers
 # =========================
+
 
 def record_stage_metrics(
     per_request: dict[str, dict[str, Any]],
@@ -497,6 +501,7 @@ def build_transfer_summary(
 # Orchestrator metrics class
 # =========================
 
+
 class OrchestratorMetrics:
     """
     Collects per-stage, per-request, transfer, and end-to-end metrics.
@@ -530,7 +535,7 @@ class OrchestratorMetrics:
         self.transfer_edge_req: dict[tuple[int, int, str], dict[str, float]] = {}
 
         # E2E
-        self.e2e_total_ms: float = 0.0          # sum of per-request e2e
+        self.e2e_total_ms: float = 0.0  # sum of per-request e2e
         self.e2e_total_tokens: int = 0
         self.e2e_count: int = 0
         self.e2e_done: set[str] = set()
@@ -762,14 +767,12 @@ class OrchestratorMetrics:
 
         # New: throughput definitions
         wall_toks_per_s = (self.e2e_total_tokens * 1000.0 / wall_time_ms) if wall_time_ms > 0 else 0.0
-        service_toks_per_s = (
-            (self.e2e_total_tokens * 1000.0 / self.sum_service_ms) if self.sum_service_ms > 0 else 0.0
-        )
+        service_toks_per_s = (self.e2e_total_tokens * 1000.0 / self.sum_service_ms) if self.sum_service_ms > 0 else 0.0
 
         summary: dict[str, Any] = {
             "e2e_requests": int(self.e2e_count),
-            "e2e_total_time_ms": float(wall_time_ms),    # total wall time (what you waited)
-            "e2e_sum_time_ms": float(self.e2e_total_ms), # sum of per-request e2e (includes queueing)
+            "e2e_total_time_ms": float(wall_time_ms),  # total wall time (what you waited)
+            "e2e_sum_time_ms": float(self.e2e_total_ms),  # sum of per-request e2e (includes queueing)
             "e2e_total_tokens": int(self.e2e_total_tokens),
             "e2e_avg_time_per_request_ms": float(e2e_avg_req),
             "e2e_avg_tokens_per_s": float(e2e_avg_tok),

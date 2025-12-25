@@ -1312,4 +1312,3 @@ async def _stage_worker_async(
     print("--------------------------------", flush=True)
     print(f"[Stage-{stage_id}] Stage worker exiting", flush=True)
     print("--------------------------------", flush=True)
-    

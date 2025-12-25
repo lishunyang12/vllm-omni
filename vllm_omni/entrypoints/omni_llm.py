@@ -5,10 +5,10 @@ import uuid
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
-from tqdm import tqdm
 
 import cloudpickle
 from pydantic import ValidationError
+from tqdm import tqdm
 
 # External library imports (vLLM)
 from vllm.config import CompilationConfig, StructuredOutputsConfig, is_init_field
@@ -492,7 +492,7 @@ class OmniLLM:
 
             if not made_progress:
                 time.sleep(0.005)
-        
+
         pbar.close()
         logger.debug("[Orchestrator] All requests completed")
 
