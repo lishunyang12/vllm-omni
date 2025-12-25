@@ -9,7 +9,7 @@ from typing import NamedTuple
 
 import librosa
 import numpy as np
-import soundfile as sfimport
+import soundfile as sf
 import time
 from PIL import Image
 from vllm.assets.audio import AudioAsset
