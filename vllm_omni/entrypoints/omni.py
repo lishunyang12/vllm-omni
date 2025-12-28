@@ -406,12 +406,6 @@ class Omni:
             _req_start_ts[req_id] = time.time()
             logger.debug("[Orchestrator] Enqueued request %s to stage-0", req_id)
 
-        # For each stage, forward results to next stage; collect finals at the end
-        # We pipeline by continually polling output queues in stage order
-        remaining_by_stage: list[int] = [len(request_prompts)] + [0] * (num_stages - 1)
-        completed_requests = 0
-        total_requests = len(request_prompts)
-
         logger.debug(
             "[Orchestrator] Entering scheduling loop: total_requests=%d, stages=%d",
             total_requests,
@@ -461,17 +455,12 @@ class Omni:
                     req_id,
                 )
 
-                elapsed = time.time() - _wall_start_ts
-                if elapsed > 0:
-                    rps = completed_requests / elapsed
-                    tps = metrics.e2e_total_tokens / elapsed if metrics.e2e_total_tokens > 0 else 0.0
-                    pbar.set_postfix(
-                        {"req/s": f"{rps:.2f}", "tok/s": f"{tps:.1f}", "done": f"{completed_requests}/{total_requests}"}
-                    )
-
                 stage.set_engine_outputs(engine_outputs)
 
-                if getattr(stage, "final_output", False):
+                # Check if this stage is the designated final stage for this request
+                is_final_for_request = (stage_id == final_stage_id_to_prompt[req_id])
+
+                if getattr(stage, "final_output", False) and is_final_for_request:
                     final_outputs.append(
                         OmniRequestOutput(
                             stage_id=stage_id,
@@ -488,6 +477,7 @@ class Omni:
                     completed_requests += 1
                     pbar.update(1)
 
+                    # Update progress bar postfix
                     elapsed = time.time() - _wall_start_ts
                     if elapsed > 0:
                         rps = completed_requests / elapsed
@@ -501,10 +491,9 @@ class Omni:
                         )
 
                     # End-to-end timing and time-per-token for final output
-                    # (only once per request at the designated final stage)
                     try:
                         rid_key = str(req_id)
-                        if stage_id == final_stage_id_to_prompt[req_id] and rid_key not in metrics.e2e_done:
+                        if rid_key not in metrics.e2e_done:
                             metrics.on_finalize_request(
                                 stage_id,
                                 req_id,
@@ -519,6 +508,7 @@ class Omni:
                             e,
                         )
 
+                # Forward to next stage if needed
                 next_stage_id = stage_id + 1
                 if next_stage_id <= final_stage_id_to_prompt[req_id]:
                     next_stage: OmniStage = self.stage_list[next_stage_id]
@@ -560,15 +550,6 @@ class Omni:
                         "[Orchestrator] Forwarded request %s to stage-%s",
                         req_id,
                         next_stage_id,
-                    )
-                    remaining_by_stage[next_stage_id] += 1
-                else:
-                    completed_requests += 1
-                    logger.debug(
-                        "[Orchestrator] Request %s fully completed (%d/%d)",
-                        req_id,
-                        completed_requests,
-                        total_requests,
                     )
 
             if not made_progress:
