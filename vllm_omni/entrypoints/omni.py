@@ -458,7 +458,7 @@ class Omni:
                 stage.set_engine_outputs(engine_outputs)
 
                 # Check if this stage is the designated final stage for this request
-                is_final_for_request = (stage_id == final_stage_id_to_prompt[req_id])
+                is_final_for_request = stage_id == final_stage_id_to_prompt[req_id]
 
                 if getattr(stage, "final_output", False) and is_final_for_request:
                     final_outputs.append(
