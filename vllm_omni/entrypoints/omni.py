@@ -317,9 +317,9 @@ class Omni:
                     per_stage_params.append(SamplingParams(**merged))
 
             sampling_params_list = per_stage_params
-            
+
         if len(sampling_params_list) > len(self.stage_list):
-                sampling_params_list = sampling_params_list[:len(self.stage_list)]
+            sampling_params_list = sampling_params_list[: len(self.stage_list)]
 
         return self._run_generation(prompts, sampling_params_list)
 
@@ -465,11 +465,9 @@ class Omni:
                 if elapsed > 0:
                     rps = completed_requests / elapsed
                     tps = metrics.e2e_total_tokens / elapsed if metrics.e2e_total_tokens > 0 else 0.0
-                    pbar.set_postfix({
-                        "req/s": f"{rps:.2f}",
-                        "tok/s": f"{tps:.1f}",
-                        "done": f"{completed_requests}/{total_requests}"
-                    })
+                    pbar.set_postfix(
+                        {"req/s": f"{rps:.2f}", "tok/s": f"{tps:.1f}", "done": f"{completed_requests}/{total_requests}"}
+                    )
 
                 stage.set_engine_outputs(engine_outputs)
 
@@ -494,11 +492,13 @@ class Omni:
                     if elapsed > 0:
                         rps = completed_requests / elapsed
                         tps = metrics.e2e_total_tokens / elapsed if metrics.e2e_total_tokens > 0 else 0.0
-                        pbar.set_postfix({
-                            "req/s": f"{rps:.2f}",
-                            "tok/s": f"{tps:.1f}",
-                            "done": f"{completed_requests}/{total_requests}"
-                        })
+                        pbar.set_postfix(
+                            {
+                                "req/s": f"{rps:.2f}",
+                                "tok/s": f"{tps:.1f}",
+                                "done": f"{completed_requests}/{total_requests}",
+                            }
+                        )
 
                     # End-to-end timing and time-per-token for final output
                     # (only once per request at the designated final stage)
