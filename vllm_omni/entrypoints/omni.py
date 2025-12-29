@@ -318,9 +318,6 @@ class Omni:
 
             sampling_params_list = per_stage_params
 
-        if len(sampling_params_list) > len(self.stage_list):
-            sampling_params_list = sampling_params_list[: len(self.stage_list)]
-
         return self._run_generation(prompts, sampling_params_list)
 
     def _run_generation(
@@ -457,10 +454,7 @@ class Omni:
 
                 stage.set_engine_outputs(engine_outputs)
 
-                # Check if this stage is the designated final stage for this request
-                is_final_for_request = stage_id == final_stage_id_to_prompt[req_id]
-
-                if getattr(stage, "final_output", False) and is_final_for_request:
+                if getattr(stage, "final_output", False):
                     final_outputs.append(
                         OmniRequestOutput(
                             stage_id=stage_id,
