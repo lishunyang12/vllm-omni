@@ -11,6 +11,7 @@ from pprint import pformat
 from typing import Any
 
 from omegaconf import OmegaConf
+from tqdm import tqdm
 from vllm.inputs import PromptType
 from vllm.logger import init_logger
 
@@ -390,6 +391,7 @@ class Omni(OmniBase):
                     per_stage_params.append(self.default_sampling_params_list[stage_id])
 
             sampling_params_list = per_stage_params
+
         return self._run_generation(prompts, sampling_params_list)
 
     def _run_generation(
@@ -433,10 +435,7 @@ class Omni(OmniBase):
         # Determine the final stage for E2E stats (highest stage_id with final_output=True; fallback to last stage)
         final_stage_id_to_prompt: dict[str, int] = {}
         for rid, prompt in request_id_to_prompt.items():
-            if isinstance(prompt, dict):
-                prompt_modalities = prompt.get("modalities", None)
-            else:
-                prompt_modalities = None
+            prompt_modalities = prompt.get("modalities", None) if isinstance(prompt, dict) else None
             final_stage_id_for_e2e = get_final_stage_id_for_e2e(
                 prompt_modalities, self.output_modalities, self.stage_list
             )
@@ -454,22 +453,33 @@ class Omni(OmniBase):
         # Mark first input time for stage-0
         metrics.stage_first_ts[0] = metrics.stage_first_ts[0] or time.time()
 
+        # For each stage, forward results to next stage; collect finals at the end
+        # We pipeline by continually polling output queues in stage order
+        remaining_by_stage: list[int] = [len(request_prompts)] + [0] * (num_stages - 1)
+        completed_requests = 0
+
+        total_requests = len(request_prompts)
+
+        pbar = tqdm(
+            total=total_requests,
+            desc="[Omni] Generating",
+            unit="req",
+            dynamic_ncols=True,
+            mininterval=0.5,
+            smoothing=0.1,
+        )
+
         for req_id, prompt in request_id_to_prompt.items():
             sp0 = sampling_params_list[0]  # type: ignore[index]
             task = {
                 "request_id": req_id,
                 "engine_inputs": prompt,
                 "sampling_params": sp0,
+                "orchestrator_ts": time.time(),
             }
             self.stage_list[0].submit(task)
             _req_start_ts[req_id] = time.time()
             logger.debug(f"[{self._name}] Enqueued request {req_id} to stage-0")
-
-        # For each stage, forward results to next stage; collect finals at the end
-        # We pipeline by continually polling output queues in stage order
-        remaining_by_stage: list[int] = [len(request_prompts)] + [0] * (num_stages - 1)
-        completed_requests = 0
-        total_requests = len(request_prompts)
 
         logger.debug(
             f"[{self._name}] Entering scheduling loop: total_requests={total_requests}, stages={num_stages}",
@@ -509,6 +519,7 @@ class Omni(OmniBase):
                 logger.debug(
                     f"[{self._name}] Stage-{stage_id} completed request {req_id}; forwarding or finalizing",
                 )
+
                 stage.set_engine_outputs(engine_outputs)
 
                 if getattr(stage, "final_output", False):
@@ -523,11 +534,22 @@ class Omni(OmniBase):
                         f"[{self._name}] Request {req_id} finalized at stage-{stage_id}",
                     )
 
+                    completed_requests += 1
+                    pbar.update(1)
+
+                    # Update progress bar postfix
+                    elapsed = time.time() - _wall_start_ts
+                    if elapsed > 0:
+                        pbar.set_postfix(
+                            {
+                                "done": f"{completed_requests}/{total_requests}",
+                            }
+                        )
+
                     # End-to-end timing and time-per-token for final output
-                    # (only once per request at the designated final stage)
                     try:
                         rid_key = str(req_id)
-                        if stage_id == final_stage_id_to_prompt[req_id] and rid_key not in metrics.e2e_done:
+                        if rid_key not in metrics.e2e_done:
                             metrics.on_finalize_request(
                                 stage_id,
                                 req_id,
@@ -539,6 +561,7 @@ class Omni(OmniBase):
                             f"[{self._name}] Finalize request handling error for req {req_id} at stage {stage_id}: {e}",
                         )
 
+                # Forward to next stage if needed
                 next_stage_id = stage_id + 1
                 if next_stage_id <= final_stage_id_to_prompt[req_id]:
                     next_stage: OmniStage = self.stage_list[next_stage_id]
@@ -586,6 +609,7 @@ class Omni(OmniBase):
 
             if not made_progress:
                 time.sleep(0.005)
+        pbar.close()
         logger.debug(f"[{self._name}] All requests completed")
 
         # Summarize and print stats
