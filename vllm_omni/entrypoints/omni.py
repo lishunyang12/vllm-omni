@@ -544,6 +544,7 @@ class Omni(OmniBase):
                         tps = metrics.e2e_total_tokens / elapsed if metrics.e2e_total_tokens > 0 else 0.0
                         pbar.set_postfix(
                             {
+                                "req/s": f"{rps:.2f}",
                                 "done": f"{completed_requests}/{total_requests}",
                             }
                         )
