@@ -540,8 +540,6 @@ class Omni(OmniBase):
                     # Update progress bar postfix
                     elapsed = time.time() - _wall_start_ts
                     if elapsed > 0:
-                        rps = completed_requests / elapsed
-                        tps = metrics.e2e_total_tokens / elapsed if metrics.e2e_total_tokens > 0 else 0.0
                         pbar.set_postfix(
                             {
                                 "done": f"{completed_requests}/{total_requests}",
