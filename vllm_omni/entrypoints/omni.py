@@ -6,7 +6,7 @@ import os
 import time
 import uuid
 import weakref
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pprint import pformat
