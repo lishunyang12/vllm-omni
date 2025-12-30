@@ -1,17 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+import json
 import multiprocessing as mp
 import os
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Sequence, Callable 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pprint import pformat
 from typing import Any
 
+from tqdm.auto import tqdm 
 from omegaconf import OmegaConf
-from tqdm import tqdm
 from vllm.inputs import PromptType
 from vllm.logger import init_logger
 
@@ -102,6 +103,36 @@ class OmniBase:
         logger.info(f"Initializing stages for model: {model}")
         self._initialize_stages(model, kwargs)
 
+    def _get_default_cache_config(self, cache_backend: str | None) -> dict[str, Any] | None:
+        if cache_backend == "cache_dit":
+            return {
+                "Fn_compute_blocks": 1,
+                "Bn_compute_blocks": 0,
+                "max_warmup_steps": 4,
+                "residual_diff_threshold": 0.24,
+                "max_continuous_cached_steps": 3,
+                "enable_taylorseer": False,
+                "taylorseer_order": 1,
+                "scm_steps_mask_policy": None,
+                "scm_steps_policy": "dynamic",
+            }
+        if cache_backend == "tea_cache":
+            return {
+                "rel_l1_thresh": 0.2,
+            }
+        return None
+
+    def _normalize_cache_config(self, cache_backend: str | None, cache_config: Any | None) -> Any | None:
+        if isinstance(cache_config, str):
+            try:
+                cache_config = json.loads(cache_config)
+            except json.JSONDecodeError:
+                logger.warning("Invalid cache_config JSON, using defaults.")
+                cache_config = None
+        if cache_config is None and cache_backend not in (None, "", "none"):
+            cache_config = self._get_default_cache_config(cache_backend)
+        return cache_config
+
     def _create_default_diffusion_stage_cfg(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """Create default diffusion stage configuration."""
         # We temporally create a default config for diffusion stage.
@@ -109,6 +140,8 @@ class OmniBase:
         # TODO: hack, convert dtype to string to avoid non-premitive omegaconf create error.
         if "dtype" in kwargs:
             kwargs["dtype"] = str(kwargs["dtype"])
+        cache_backend = kwargs.get("cache_backend", "none")
+        cache_config = self._normalize_cache_config(cache_backend, kwargs.get("cache_config", None))
         # TODO: hack, calculate devices based on parallel config.
         devices = "0"
         if "parallel_config" in kwargs:
@@ -124,7 +157,13 @@ class OmniBase:
                     "devices": devices,
                     "max_batch_size": 1,
                 },
-                "engine_args": OmegaConf.create(kwargs),
+                "engine_args": OmegaConf.create(
+                    {
+                        **kwargs,
+                        "cache_backend": cache_backend,
+                        "cache_config": cache_config,
+                    }
+                ),
                 "final_output": True,
                 "final_output_type": "image",
             }
@@ -341,7 +380,7 @@ class Omni(OmniBase):
     def __init__(self, *args: Any, **kwargs: dict[str, Any]) -> None:
         super().__init__(*args, **kwargs)
 
-    def generate(self, *args: Any, **kwargs: dict[str, Any]) -> list[OmniRequestOutput]:
+    def generate(self, *args: Any, use_tqdm: bool | Callable[..., tqdm] = True, **kwargs: dict[str, Any]) -> list[OmniRequestOutput]:
         """Generate outputs for the given prompts.
 
         Orchestrates the multi-stage pipeline based on YAML configuration.
@@ -392,12 +431,13 @@ class Omni(OmniBase):
 
             sampling_params_list = per_stage_params
 
-        return self._run_generation(prompts, sampling_params_list)
-
+        return self._run_generation(prompts, sampling_params_list, use_tqdm=use_tqdm)
+    
     def _run_generation(
         self,
         prompts: PromptType | Sequence[PromptType] | OmniDiffusionRequest | Sequence[OmniDiffusionRequest],
         sampling_params_list: Any | Sequence[Any] | None = None,
+        use_tqdm: bool | Callable[..., tqdm] = True,
     ) -> list[OmniRequestOutput]:
         """Run generation through all stages in the pipeline."""
         logger.debug(f"[{self._name}] generate() called")
@@ -435,7 +475,10 @@ class Omni(OmniBase):
         # Determine the final stage for E2E stats (highest stage_id with final_output=True; fallback to last stage)
         final_stage_id_to_prompt: dict[str, int] = {}
         for rid, prompt in request_id_to_prompt.items():
-            prompt_modalities = prompt.get("modalities", None) if isinstance(prompt, dict) else None
+            if isinstance(prompt, dict):
+                prompt_modalities = prompt.get("modalities", None)
+            else:
+                prompt_modalities = None
             final_stage_id_for_e2e = get_final_stage_id_for_e2e(
                 prompt_modalities, self.output_modalities, self.stage_list
             )
@@ -448,26 +491,15 @@ class Omni(OmniBase):
             _wall_start_ts,
         )
 
+        it = request_id_to_prompt.items()
+        if use_tqdm:
+            tqdm_func = use_tqdm if callable(use_tqdm) else tqdm
+            it = tqdm_func(it, desc="Adding requests")
+
         # Seed stage-0 queue with all requests
         logger.debug(f"[{self._name}] Seeding {len(request_prompts)} requests into stage-0")
         # Mark first input time for stage-0
         metrics.stage_first_ts[0] = metrics.stage_first_ts[0] or time.time()
-
-        # For each stage, forward results to next stage; collect finals at the end
-        # We pipeline by continually polling output queues in stage order
-        remaining_by_stage: list[int] = [len(request_prompts)] + [0] * (num_stages - 1)
-        completed_requests = 0
-
-        total_requests = len(request_prompts)
-
-        pbar = tqdm(
-            total=total_requests,
-            desc="[Omni] Generating",
-            unit="req",
-            dynamic_ncols=True,
-            mininterval=0.5,
-            smoothing=0.1,
-        )
 
         for req_id, prompt in request_id_to_prompt.items():
             sp0 = sampling_params_list[0]  # type: ignore[index]
@@ -475,11 +507,26 @@ class Omni(OmniBase):
                 "request_id": req_id,
                 "engine_inputs": prompt,
                 "sampling_params": sp0,
-                "orchestrator_ts": time.time(),
             }
             self.stage_list[0].submit(task)
             _req_start_ts[req_id] = time.time()
             logger.debug(f"[{self._name}] Enqueued request {req_id} to stage-0")
+
+        pbar = None
+        if use_tqdm:
+            tqdm_func = use_tqdm if callable(use_tqdm) else tqdm
+            pbar = tqdm_func(
+                total=len(request_prompts),
+                desc="Processed prompts",
+                dynamic_ncols=True,
+                postfix=(f"est. speed input: {0:.2f} unit/s, output: {0:.2f} unit/s"),
+            )
+       
+        # For each stage, forward results to next stage; collect finals at the end
+        # We pipeline by continually polling output queues in stage order
+        remaining_by_stage: list[int] = [len(request_prompts)] + [0] * (num_stages - 1)
+        completed_requests = 0
+        total_requests = len(request_prompts)
 
         logger.debug(
             f"[{self._name}] Entering scheduling loop: total_requests={total_requests}, stages={num_stages}",
@@ -512,6 +559,21 @@ class Omni(OmniBase):
                     _m = asdict(result.get("metrics"))
                     if _m is not None:
                         metrics.on_stage_metrics(stage_id, req_id, _m)
+                        if pbar:
+                            elapsed = pbar.format_dict["elapsed"] or 1e-6
+                            # Aggregate total tokens/images across all stages
+                            total_out = sum(metrics.stage_total_tokens)
+                            # Note: For Omni, input speed is requests seeded, output is items processed
+                            out_spd = total_out / elapsed
+                            
+                            modality = self.output_modalities[stage_id]
+                            unit = "img" if modality == "image" else "tok"
+                            
+                            # Align with vLLM's wording "est. speed"
+                            pbar.postfix = (
+                                f"est. speed stage-{stage_id} {unit}/s: {out_spd:.2f}, "
+                                f"avg e2e_lat: {((metrics.e2e_total_ms / metrics.e2e_count) if metrics.e2e_count > 0 else 0):.1f}ms"
+                            )
                 except Exception as e:
                     logger.exception(
                         f"[{self._name}] Failed to process metrics for stage {stage_id}, req {req_id}: {e}",
@@ -519,7 +581,6 @@ class Omni(OmniBase):
                 logger.debug(
                     f"[{self._name}] Stage-{stage_id} completed request {req_id}; forwarding or finalizing",
                 )
-
                 stage.set_engine_outputs(engine_outputs)
 
                 if getattr(stage, "final_output", False):
@@ -534,22 +595,11 @@ class Omni(OmniBase):
                         f"[{self._name}] Request {req_id} finalized at stage-{stage_id}",
                     )
 
-                    completed_requests += 1
-                    pbar.update(1)
-
-                    # Update progress bar postfix
-                    elapsed = time.time() - _wall_start_ts
-                    if elapsed > 0:
-                        pbar.set_postfix(
-                            {
-                                "done": f"{completed_requests}/{total_requests}",
-                            }
-                        )
-
                     # End-to-end timing and time-per-token for final output
+                    # (only once per request at the designated final stage)
                     try:
                         rid_key = str(req_id)
-                        if rid_key not in metrics.e2e_done:
+                        if stage_id == final_stage_id_to_prompt[req_id] and rid_key not in metrics.e2e_done:
                             metrics.on_finalize_request(
                                 stage_id,
                                 req_id,
@@ -561,7 +611,6 @@ class Omni(OmniBase):
                             f"[{self._name}] Finalize request handling error for req {req_id} at stage {stage_id}: {e}",
                         )
 
-                # Forward to next stage if needed
                 next_stage_id = stage_id + 1
                 if next_stage_id <= final_stage_id_to_prompt[req_id]:
                     next_stage: OmniStage = self.stage_list[next_stage_id]
@@ -603,14 +652,20 @@ class Omni(OmniBase):
                     remaining_by_stage[next_stage_id] += 1
                 else:
                     completed_requests += 1
+                    if pbar:
+                        final_mod = self.output_modalities[final_stage_id_to_prompt[req_id]]
+                        pbar.unit = "img" if final_mod == "image" else "req"
+                        pbar.update(1)
                     logger.debug(
                         f"[{self._name}] Request {req_id} fully completed ({completed_requests}/{total_requests})",
                     )
 
             if not made_progress:
                 time.sleep(0.005)
-        pbar.close()
         logger.debug(f"[{self._name}] All requests completed")
+
+        if pbar:
+            pbar.close()
 
         # Summarize and print stats
         try:
