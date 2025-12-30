@@ -5,7 +5,8 @@ import multiprocessing as mp
 import os
 import time
 import uuid
-from collections.abc import Callable, Sequence
+import weakref
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pprint import pformat
@@ -39,6 +40,22 @@ from vllm_omni.entrypoints.utils import (
 from vllm_omni.outputs import OmniRequestOutput
 
 logger = init_logger(__name__)
+
+
+def _weak_close_cleanup(stage_list, stage_in_queues, ray_pg):
+    """Weak reference cleanup function for OmniBase instances."""
+    if stage_list:
+        for q in stage_in_queues:
+            try:
+                q.put_nowait(None)
+            except Exception as e:
+                logger.warning(f"Failed to send shutdown signal to stage input queue: {e}")
+        for stage in stage_list:
+            try:
+                stage.stop_stage_worker()
+            except Exception as e:
+                logger.warning(f"Failed to stop stage worker: {e}")
+    try_close_ray(ray_pg)
 
 
 def _dummy_snapshot_download(model_id):
@@ -317,28 +334,8 @@ class OmniBase:
 
     def close(self) -> None:
         """Close all stage processes and clean up resources."""
-        # Close stages if they exist (for LLM models)
-        if self.stage_list:
-            for q in self._stage_in_queues:
-                try:
-                    q.put_nowait(None)
-                except Exception as e:
-                    logger.warning(
-                        f"[{self._name}] Failed to send shutdown signal to stage input queue: {e}",
-                    )
-            for stage in self.stage_list:
-                try:
-                    stage.stop_stage_worker()
-                except Exception as e:
-                    logger.warning(f"[{self._name}] Failed to stop stage worker: {e}")
-
-            try_close_ray(self._ray_pg)
-
-    def __del__(self):  # pragma: no cover - best effort cleanup
-        try:
-            self.close()
-        except Exception:
-            logger.debug(f"[{self._name}] __del__ close() raised", exc_info=True)
+        if hasattr(self, "_weak_finalizer"):
+            self._weak_finalizer()
 
     @property
     def _name(self) -> str:
@@ -381,9 +378,16 @@ class Omni(OmniBase):
     def __init__(self, *args: Any, **kwargs: dict[str, Any]) -> None:
         super().__init__(*args, **kwargs)
 
-    def generate(
-        self, *args: Any, use_tqdm: bool | Callable[..., tqdm] = True, **kwargs: dict[str, Any]
-    ) -> list[OmniRequestOutput]:
+        # Register weak reference cleanup (called on garbage collection)
+        self._weak_finalizer = weakref.finalize(
+            self,
+            _weak_close_cleanup,
+            self.stage_list,
+            self._stage_in_queues,
+            self._ray_pg,
+        )
+
+    def generate(self, *args: Any, **kwargs: dict[str, Any]) -> list[OmniRequestOutput]:
         """Generate outputs for the given prompts.
 
         Orchestrates the multi-stage pipeline based on YAML configuration.
@@ -433,7 +437,13 @@ class Omni(OmniBase):
                     per_stage_params.append(self.default_sampling_params_list[stage_id])
 
             sampling_params_list = per_stage_params
-        return self._run_generation(prompts, sampling_params_list, use_tqdm=use_tqdm)
+        try:
+            return self._run_generation(prompts, sampling_params_list)
+        except Exception as e:
+            logger.exception("[Orchestrator] Failed to run generation: %s", e)
+            raise e
+        finally:
+            self.close()
 
     def _run_generation(
         self,
