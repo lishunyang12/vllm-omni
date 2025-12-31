@@ -32,7 +32,7 @@ outputs = omni_llm.generate(prompts, sampling_params)
 omni_llm.stop_profile()
 ```
 
-**Selective Stage Profiling** 
+**Selective Stage Profiling**
 If you only want to profile a specific stage (e.g., Stage 1), pass the stages list:
 ```python
 # Only profile Stage 1
