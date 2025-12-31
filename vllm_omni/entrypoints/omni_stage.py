@@ -1149,16 +1149,18 @@ async def _stage_worker_async(
                 diffusion_kwargs = prepare_sampling_params(sampling_params, "diffusion")
                 # AsyncOmniDiffusion.generate returns a single result, not an async generator
                 gen_output = await stage_engine.generate(prompt=prompt, request_id=rid, **diffusion_kwargs)
+                _gen_t1 = _time.time()
+                _gen_ms = (_gen_t1 - _gen_t0) * 1000.0
+                await generation_out_q.put((rid, gen_output, _gen_ms))
             else:
                 # LLM stages: ensure using SamplingParams
                 llm_sampling_params = prepare_sampling_params(sampling_params, "llm")
                 gen_output = None
                 async for res in stage_engine.generate(ein, llm_sampling_params, rid):
                     gen_output = res
-
-            _gen_t1 = _time.time()
-            _gen_ms = (_gen_t1 - _gen_t0) * 1000.0
-            await generation_out_q.put((rid, gen_output, _gen_ms))
+                    _gen_t1 = _time.time()
+                    _gen_ms = (_gen_t1 - _gen_t0) * 1000.0
+                    await generation_out_q.put((rid, gen_output, _gen_ms))
         except Exception as e:
             logger.exception("Failed on request %s: %s", rid, e)
             out_q.put(
@@ -1267,6 +1269,19 @@ async def _stage_worker_async(
     logger.info("Stage worker exiting")
 
 
+def count_prompt_tokens_from_outputs(engine_outputs: list[Any]) -> int:
+    """Count prompt tokens from engine outputs."""
+    total = 0
+    for _ro in engine_outputs:
+        try:
+            prompt_token_ids = getattr(_ro, "prompt_token_ids", None)
+            if prompt_token_ids is not None:
+                total += len(prompt_token_ids)
+        except Exception:
+            pass
+    return total
+
+
 def make_request_stats(
     req_output: list[Any],
     stage_gen_time_ms: float,
@@ -1280,8 +1295,10 @@ def make_request_stats(
         StageRequestMetrics,
     )
 
+    num_tokens_in = count_prompt_tokens_from_outputs(req_output)
     num_tokens_out = count_tokens_from_outputs(req_output)
     return StageRequestMetrics(
+        num_tokens_in=num_tokens_in,
         num_tokens_out=num_tokens_out,
         stage_gen_time_ms=stage_gen_time_ms,
         batch_id=batch_id,

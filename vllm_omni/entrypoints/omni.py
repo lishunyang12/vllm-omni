@@ -6,7 +6,7 @@ import os
 import time
 import uuid
 import weakref
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pprint import pformat
@@ -388,7 +388,7 @@ class Omni(OmniBase):
             self._ray_pg,
         )
 
-    def generate(self, *args: Any, **kwargs: dict[str, Any]) -> list[OmniRequestOutput]:
+    def generate(self, *args: Any, **kwargs: dict[str, Any]) -> Generator[OmniRequestOutput, None, None]:
         """Generate outputs for the given prompts.
 
         Orchestrates the multi-stage pipeline based on YAML configuration.
@@ -439,7 +439,7 @@ class Omni(OmniBase):
 
             sampling_params_list = per_stage_params
         try:
-            return self._run_generation(prompts, sampling_params_list)
+            yield from self._run_generation(prompts, sampling_params_list)
         except Exception as e:
             logger.exception("[Orchestrator] Failed to run generation: %s", e)
             raise e
@@ -451,7 +451,7 @@ class Omni(OmniBase):
         prompts: PromptType | Sequence[PromptType] | OmniDiffusionRequest | Sequence[OmniDiffusionRequest],
         sampling_params_list: Any | Sequence[Any] | None = None,
         use_tqdm: bool | Callable[..., tqdm] = True,
-    ) -> list[OmniRequestOutput]:
+    ) -> Generator[OmniRequestOutput, None, None]:
         """Run generation through all stages in the pipeline."""
         logger.debug(f"[{self._name}] generate() called")
         if sampling_params_list is None:
@@ -471,8 +471,6 @@ class Omni(OmniBase):
             request_prompts: list[PromptType] = [prompts]
         else:
             request_prompts = list(prompts)
-
-        final_outputs: list[OmniRequestOutput] = []
 
         # Orchestrator keeps stage objects for input derivation
         num_stages = len(self.stage_list)
@@ -568,8 +566,10 @@ class Omni(OmniBase):
                 # Mark last output time for this stage whenever we receive outputs
                 metrics.stage_last_ts[stage_id] = max(metrics.stage_last_ts[stage_id] or 0.0, time.time())
                 try:
-                    _m = asdict(result.get("metrics"))
+                    _m = result.get("metrics")
                     if _m is not None:
+                        if not isinstance(_m, dict):
+                            _m = asdict(_m)
                         metrics.on_stage_metrics(stage_id, req_id, _m)
                         if pbar:
                             elapsed = pbar.format_dict["elapsed"] or 1e-6
@@ -600,13 +600,6 @@ class Omni(OmniBase):
                 stage.set_engine_outputs(engine_outputs)
 
                 if getattr(stage, "final_output", False):
-                    final_outputs.append(
-                        OmniRequestOutput(
-                            stage_id=stage_id,
-                            final_output_type=stage.final_output_type,  # type: ignore[attr-defined]
-                            request_output=engine_outputs,
-                        )
-                    )
                     logger.debug(
                         f"[{self._name}] Request {req_id} finalized at stage-{stage_id}",
                     )
@@ -619,13 +612,17 @@ class Omni(OmniBase):
                             metrics.on_finalize_request(
                                 stage_id,
                                 req_id,
-                                engine_outputs,
                                 _req_start_ts.get(req_id, _wall_start_ts),
                             )
                     except Exception as e:
                         logger.exception(
                             f"[{self._name}] Finalize request handling error for req {req_id} at stage {stage_id}: {e}",
                         )
+                    yield OmniRequestOutput(
+                        stage_id=stage_id,
+                        final_output_type=stage.final_output_type,  # type: ignore[attr-defined]
+                        request_output=engine_outputs,
+                    )
 
                 next_stage_id = stage_id + 1
                 if next_stage_id <= final_stage_id_to_prompt[req_id]:
@@ -689,8 +686,6 @@ class Omni(OmniBase):
             logger.info("[Summary] %s", pformat(summary, sort_dicts=False))
         except Exception as e:
             logger.exception(f"[{self._name}] Failed to build/log summary: {e}")
-
-        return final_outputs
 
     @property
     def _name(self) -> str:
