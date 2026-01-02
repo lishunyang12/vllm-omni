@@ -1,9 +1,13 @@
 # Qwen3-Omni
 
-## Run examples (Qwen3-Omni)
+Source <https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/qwen3_omni>.
+
+## Setup
+Please refer to the [stage configuration documentation](https://docs.vllm.ai/projects/vllm-omni/en/latest/configuration/stage_configs/) to configure memory allocation appropriately for your hardware setup.
+
+## Run examples
 
 ### Multiple Prompts
-Download dataset from [seed_tts](https://drive.google.com/file/d/1GlSjVfSHkW3-leKKBlfrjuuTGqQ_xaLP/edit). For processing dataset please refer to [Qwen2.5-Omni README.md](../qwen2_5_omni/README.md)
 Get into the example folder
 ```bash
 cd examples/offline_inference/qwen3_omni
@@ -69,3 +73,22 @@ If you encounter error about backend of librosa, try to install ffmpeg with comm
 sudo apt update
 sudo apt install ffmpeg
 ```
+
+## Example materials
+
+??? abstract "end2end.py"
+    ``````py
+    --8<-- "examples/offline_inference/qwen3_omni/end2end.py"
+    ``````
+??? abstract "run_multiple_prompts.sh"
+    ``````sh
+    --8<-- "examples/offline_inference/qwen3_omni/run_multiple_prompts.sh"
+    ``````
+??? abstract "run_single_prompt.sh"
+    ``````sh
+    --8<-- "examples/offline_inference/qwen3_omni/run_single_prompt.sh"
+    ``````
+??? abstract "run_single_prompt_tp.sh"
+    ``````sh
+    --8<-- "examples/offline_inference/qwen3_omni/run_single_prompt_tp.sh"
+    ``````
