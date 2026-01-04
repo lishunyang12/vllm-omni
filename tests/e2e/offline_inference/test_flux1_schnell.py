@@ -116,7 +116,7 @@ def flux_pipeline(mock_dependencies, monkeypatch):
     mock_transformer_instance = MagicMock()
     mock_transformer_instance.dtype = torch.float32
     mock_transformer_instance.in_channels = 16
-    
+
     # Forward return: noise prediction
     def mock_forward(hidden_states, *args, **kwargs):
         # hidden_states shape: (B, SeqLen, Channels)
@@ -128,9 +128,7 @@ def flux_pipeline(mock_dependencies, monkeypatch):
 
     mock_transformer_cls.return_value = mock_transformer_instance
 
-    monkeypatch.setattr(
-        "vllm_omni.diffusion.models.flux.pipeline_flux.FLUXTransformer2DModel", mock_transformer_cls
-    )
+    monkeypatch.setattr("vllm_omni.diffusion.models.flux.pipeline_flux.FLUXTransformer2DModel", mock_transformer_cls)
 
     # Initialize pipeline
     # We use a dummy model path check override
@@ -148,7 +146,7 @@ def test_interface_compliance(flux_pipeline):
     assert hasattr(flux_pipeline, "text_encoder")
     assert hasattr(flux_pipeline, "vae")
     assert hasattr(flux_pipeline, "tokenizer")
-    
+
     # Check FLUX specific attributes
     assert hasattr(flux_pipeline, "vae_scale_factor")
     assert hasattr(flux_pipeline, "tokenizer_max_length")
@@ -286,15 +284,15 @@ def test_dtype_consistency(flux_pipeline):
     # Mock the transformer to check dtype
     dtype_checks = []
     original_forward = flux_pipeline.transformer.forward
-    
+
     def dtype_check_forward(hidden_states, *args, **kwargs):
         dtype_checks.append(hidden_states.dtype)
         return original_forward(hidden_states, *args, **kwargs)
-    
+
     flux_pipeline.transformer.forward.side_effect = dtype_check_forward
-    
+
     output = flux_pipeline(req)
-    
+
     # All dtypes should be consistent
     assert all(dtype == torch.float32 for dtype in dtype_checks)
 
@@ -308,14 +306,14 @@ def test_memory_efficient_decoding(flux_pipeline):
     flux_pipeline.vae.tile_sample_min_width = 256
     flux_pipeline.vae.tile_sample_stride_height = 192
     flux_pipeline.vae.tile_sample_stride_width = 192
-    
+
     req = OmniDiffusionRequest(
         prompt="High resolution image",
         height=1024,  # Large enough to trigger tiling
         width=1024,
         num_inference_steps=1,
     )
-    
+
     output = flux_pipeline(req)
     assert output is not None
 
@@ -323,9 +321,9 @@ def test_memory_efficient_decoding(flux_pipeline):
 def test_real_transformer_init_and_forward():
     """Test the real FLUXTransformer2DModel initialization and forward pass for coverage."""
     from vllm_omni.diffusion.models.flux.flux_transformer import FLUXTransformer2DModel
-    
+
     device = get_local_device()
-    
+
     # Create minimal config for testing
     tf_config = TransformerConfig(
         params={
@@ -338,19 +336,19 @@ def test_real_transformer_init_and_forward():
             "joint_attention_dim": 128,  # Smaller for testing
         }
     )
-    
+
     od_config = OmniDiffusionConfig(
         model="black-forest-labs/FLUX.1-schnell",
         tf_model_config=tf_config,
         dtype=torch.float32,
         num_gpus=1,
     )
-    
+
     # Mock distributed state for QKVParallelLinear initialization
     mock_group = MagicMock()
     mock_group.rank_in_group = 0
     mock_group.world_size = 1
-    
+
     with patch("vllm.distributed.parallel_state.get_tp_group", return_value=mock_group):
         # Initialize real model with minimal parameters
         model = FLUXTransformer2DModel(
@@ -363,19 +361,19 @@ def test_real_transformer_init_and_forward():
             num_attention_heads=4,
             joint_attention_dim=128,
         ).to(device)
-        
+
         # Create dummy inputs
         B, H, W = 1, 32, 32
         C = model.in_channels
         latent_height = H // 2  # patch_size=2
         latent_width = W // 2
         seq_len = latent_height * latent_width
-        
+
         hidden_states = torch.randn(B, seq_len, C, device=device)
         encoder_hidden_states = torch.randn(B, 10, 128, device=device)  # joint_attention_dim=128
         encoder_hidden_states_mask = torch.ones(B, 10, dtype=torch.long, device=device)
         timestep = torch.tensor([0.5], device=device)
-        
+
         # Run forward
         output = model(
             hidden_states=hidden_states,
@@ -384,7 +382,7 @@ def test_real_transformer_init_and_forward():
             timestep=timestep,
             return_dict=False,
         )
-        
+
         assert output is not None
         assert isinstance(output, tuple)
         # Output should match input shape
@@ -400,11 +398,11 @@ def test_error_handling(flux_pipeline):
         width=512,
         num_inference_steps=1,
     )
-    
+
     # Should raise ValueError when both prompt and prompt_embeds are None
     with pytest.raises(ValueError):
         flux_pipeline(req)
-    
+
     # Test with excessive sequence length
     req = OmniDiffusionRequest(
         prompt="A" * 1000,  # Very long prompt
@@ -413,7 +411,7 @@ def test_error_handling(flux_pipeline):
         num_inference_steps=1,
         max_sequence_length=600,  # Exceeds tokenizer max length
     )
-    
+
     # Should raise ValueError for max_sequence_length > tokenizer_max_length
     with pytest.raises(ValueError):
         flux_pipeline(req)
@@ -427,7 +425,7 @@ def test_weight_loading(flux_pipeline):
         ("transformer.img_in.bias", torch.randn(256)),
         ("transformer.txt_in.weight", torch.randn(256, 2048)),
     ]
-    
+
     # Test load_weights method
     loaded_params = flux_pipeline.load_weights(dummy_weights)
     assert isinstance(loaded_params, set)
@@ -437,14 +435,14 @@ def test_weight_loading(flux_pipeline):
 def test_post_process_function():
     """Test the post-processing function."""
     from vllm_omni.diffusion.models.flux.pipeline_flux import get_flux_post_process_func
-    
+
     # Create mock config
     od_config = OmniDiffusionConfig(
         model="black-forest-labs/FLUX.1-schnell",
         dtype=torch.float32,
         num_gpus=1,
     )
-    
+
     # Mock the download and file operations
     with patch("os.path.exists", return_value=True):
         with patch("os.path.join", return_value="/tmp/dummy/config.json"):
@@ -452,11 +450,11 @@ def test_post_process_function():
                 mock_open.return_value.__enter__.return_value.read.return_value = (
                     '{"down_block_types": ["DownBlock2D", "DownBlock2D", "DownBlock2D"]}'
                 )
-                
+
                 # Get post-processing function
                 post_process_func = get_flux_post_process_func(od_config)
                 assert callable(post_process_func)
-                
+
                 # Test post-processing
                 dummy_image = torch.randn(1, 3, 128, 128)
                 processed = post_process_func(dummy_image)

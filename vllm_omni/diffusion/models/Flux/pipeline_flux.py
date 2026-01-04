@@ -37,7 +37,7 @@ def get_flux_post_process_func(
         model_path = model_name
     else:
         model_path = download_weights_from_hf_specific(model_name, None, ["*"])
-    
+
     vae_config_path = os.path.join(model_path, "vae/config.json")
     with open(vae_config_path) as f:
         vae_config = json.load(f)
@@ -141,24 +141,24 @@ class FLUXPipeline(
         self.scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
             model, subfolder="scheduler", local_files_only=local_files_only
         )
-        
+
         # FLUX uses T5 text encoder
         from transformers import T5EncoderModel, T5Tokenizer
+
         self.text_encoder = T5EncoderModel.from_pretrained(
             model, subfolder="text_encoder", local_files_only=local_files_only
         )
-        
+
         # FLUX uses standard VAE
         from diffusers import AutoencoderKL
-        self.vae = AutoencoderKL.from_pretrained(
-            model, subfolder="vae", local_files_only=local_files_only
-        ).to(self.device)
-        
+
+        self.vae = AutoencoderKL.from_pretrained(model, subfolder="vae", local_files_only=local_files_only).to(
+            self.device
+        )
+
         self.transformer = FLUXTransformer2DModel(od_config=od_config)
 
-        self.tokenizer = T5Tokenizer.from_pretrained(
-            model, subfolder="tokenizer", local_files_only=local_files_only
-        )
+        self.tokenizer = T5Tokenizer.from_pretrained(model, subfolder="tokenizer", local_files_only=local_files_only)
 
         self.stage = None
 
@@ -252,7 +252,7 @@ class FLUXPipeline(
             )
             text_input_ids = text_inputs.input_ids.to(self.device)
             attention_mask = text_inputs.attention_mask.to(self.device)
-            
+
             # Get text embeddings
             encoder_outputs = self.text_encoder(
                 text_input_ids,
@@ -344,7 +344,7 @@ class FLUXPipeline(
         guidance_scale,
     ):
         self.scheduler.set_begin_index(0)
-        
+
         for i, t in enumerate(timesteps):
             if self.interrupt:
                 continue
@@ -360,7 +360,7 @@ class FLUXPipeline(
                 timestep_input = torch.cat([timestep] * 2)
                 encoder_hidden_states = torch.cat([negative_prompt_embeds, prompt_embeds])
                 encoder_hidden_states_mask = torch.cat([negative_prompt_embeds_mask, prompt_embeds_mask])
-                
+
                 # Predict noise
                 noise_pred = self.transformer(
                     hidden_states=latent_model_input,
@@ -369,7 +369,7 @@ class FLUXPipeline(
                     encoder_hidden_states_mask=encoder_hidden_states_mask,
                     return_dict=False,
                 )[0]
-                
+
                 # Perform classifier-free guidance
                 noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                 noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
@@ -385,7 +385,7 @@ class FLUXPipeline(
 
             # Compute the previous noisy sample x_t -> x_t-1
             latents = self.scheduler.step(noise_pred, t, latents, return_dict=False)[0]
-            
+
         return latents
 
     def forward(
@@ -453,7 +453,7 @@ class FLUXPipeline(
             num_images_per_prompt=num_images_per_prompt,
             max_sequence_length=max_sequence_length,
         )
-        
+
         if negative_prompt is not None:
             negative_prompt_embeds, negative_prompt_embeds_mask = self.encode_prompt(
                 prompt=negative_prompt,
@@ -494,7 +494,7 @@ class FLUXPipeline(
         )
 
         self._current_timestep = None
-        
+
         # 5. Decode latents
         if output_type == "latent":
             image = latents
