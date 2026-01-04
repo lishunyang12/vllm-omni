@@ -1,7 +1,5 @@
 # Qwen2.5-Omni
 
-Source <https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/qwen2_5_omni>.
-
 ## Setup
 Please refer to the [stage configuration documentation](https://docs.vllm.ai/projects/vllm-omni/en/latest/configuration/stage_configs/) to configure memory allocation appropriately for your hardware setup.
 
@@ -70,22 +68,3 @@ If you encounter error about backend of librosa, try to install ffmpeg with comm
 sudo apt update
 sudo apt install ffmpeg
 ```
-
-## Example materials
-
-??? abstract "end2end.py"
-    ``````py
-    --8<-- "examples/offline_inference/qwen2_5_omni/end2end.py"
-    ``````
-??? abstract "extract_prompts.py"
-    ``````py
-    --8<-- "examples/offline_inference/qwen2_5_omni/extract_prompts.py"
-    ``````
-??? abstract "run_multiple_prompts.sh"
-    ``````sh
-    --8<-- "examples/offline_inference/qwen2_5_omni/run_multiple_prompts.sh"
-    ``````
-??? abstract "run_single_prompt.sh"
-    ``````sh
-    --8<-- "examples/offline_inference/qwen2_5_omni/run_single_prompt.sh"
-    ``````
