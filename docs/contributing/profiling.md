@@ -7,7 +7,7 @@ vLLM-Omni supports cross-stage profiling using the PyTorch Profiler. Since Omni 
 **1. Enabling the Profiler**
 
 Before running your script, you must set the ```VLLM_TORCH_PROFILER_DIR``` environment
-variable. This is where the ```.json``` trace files will be saved.
+variable.
 
 ```Bash
 export VLLM_TORCH_PROFILER_DIR=/path/to/save/traces
@@ -39,6 +39,11 @@ If you only want to profile a specific stage (e.g., Stage 1), pass the stages li
 omni_llm.start_profile(stages=[1])
 ```
 
+```python
+# Stage 0 (Thinker) and Stage 2 (Audio Decoder) for qwen omni
+omni_llm.start_profile(stages=[0, 2])
+```
+
 **3. Online Inference(Async)**
 
 For online serving using AsyncOmni, the methods are asynchronous. This allows you to toggle profiling dynamically without restarting the server.
@@ -60,12 +65,23 @@ await async_omni.stop_profile()
 
 **4. Analyzing Omni Traces**
 
-After calling ``stop_profile()``, the directory specified in ```VLLM_TORCH_PROFILER_DIR``` will contain subdirectories for each stage:
+After ``stop_profile()`` completes (and the file write wait time has passed), the directory specified in ```VLLM_TORCH_PROFILER_DIR``` will contain the trace files.
 
-   - ```stage_0_<model_name>/```: Contains traces for the first stage.
+File Structure: Files are saved directly in the specified directory. You will see one file per GPU worker.
 
-   - ```stage_1_<model_name>/```: Contains traces for the second stage.
+Naming pattern: ```<timestamp>-rank-<gpu_rank>.<host_id>.pt.trace.json.gz```
+   - Tensor Parallelism (TP): If a stage uses TP > 1, you will get multiple files for that stage
+        - Example (Stage 0 with TP=2):
+          - ```...rank-0...json.gz``` (GPU 0 trace)
+          - ```...rank-1...json.gz``` (GPU 1 trace)
+        - You can load both files into Perfetto simultaneously to visualize the synchronization (all-reduce) between GPUs.
+   - Stage Identification: You can identify the stage by inspecting the file size or the timestamps.
+        - Text/LLM Stages: Typically produce smaller files (e.g., ~50MB).
+        - Audio/Talker Stages: Produce massive files (e.g., ~100MB+ compressed) due to the high volume of kernels executed during audio decoding.
+   - Summary Logs: You also see profiler_out_<stage_id>.txt containing text-based summary tables (CPU/CUDA time percentages).
 
-Each directory contains standard Chrome trace ```.json``` files. You can upload these to [Perfetto](https://ui.perfetto.dev/) or ```chrome://tracing``` to analyze the execution timeline of each stage.
+Viewing Tools:
+1. [Perfetto](https://ui.perfetto.dev/): (Recommended): Best for handling large audio trace files.
+2. ```chrome://tracing```: Good for smaller text-only traces.
 
-[!TIP] Each stage runs as a separate process. When you call start_profile() on the OmniLLM object, it sends a control signal to all underlying workers to begin recording simultaneously.
+[!TIP] If the trace file ends in ```gz```, you must unzip it (```gzip -d filename.json.gz```) before loading it into Chrome Tracing. Perfetto often handles GZIP files directly.
