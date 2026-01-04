@@ -34,24 +34,20 @@ The following table shows which models are currently supported by each accelerat
 
 ### ImageGen
 
-<<<<<<< HEAD
 | Model | Model Identifier | TeaCache | Cache-DiT | Ulysses-SP | Ring-Attention |
-|-------|-----------------|----------|-----------|-----------|----------------|
+|-------|------------------|----------|-----------|-----------|----------------|
+| **LongCat-Image** | `meituan-longcat/LongCat-Image` | ❌ | ✅ | ❌ | ❌ |
+| **LongCat-Image-Edit** | `meituan-longcat/LongCat-Image-Edit` | ❌ | ✅ | ❌ | ❌ |
+| **Ovis-Image** | `OvisAI/Ovis-Image` | ❌ | ✅ | ❌ | ❌ |
 | **Qwen-Image** | `Qwen/Qwen-Image` | ✅ | ✅ | ✅ | ✅ |
+| **Qwen-Image-Edit** | `Qwen/Qwen-Image-Edit` | ✅ | ✅ | ✅ | ✅ |
+| **Qwen-Image-Edit-2509** | `Qwen/Qwen-Image-Edit-2509` | ❌ | ✅ | ✅ | ✅ |
+| **Qwen-Image-Layered** | `Qwen/Qwen-Image-Layered` | ❌ | ✅ | ✅ | ✅ |
 | **Z-Image** | `Tongyi-MAI/Z-Image-Turbo` | ❌ | ✅ |❌ | ❌ |
-| **Qwen-Image-Edit** | `Qwen/Qwen-Image-Edit` | ✅ | ✅ |✅ | - |
-| **Qwen-Image-Edit-2509** | `Qwen/Qwen-Image-Edit-2509` | ❌ | ✅ |✅ | - |
-=======
-| Model | Model Identifier | TeaCache | Cache-DiT | Ulysses-SP |
-|-------|------------------|----------|-----------|-----------|
-| **LongCat-Image** | `meituan-longcat/LongCat-Image` | ❌ | ✅ | ❌ |
-| **LongCat-Image-Edit** | `meituan-longcat/LongCat-Image-Edit` | ❌ | ✅ | ❌ |
-| **Ovis-Image** | `OvisAI/Ovis-Image` | ❌ | ✅ | ❌ |
-| **Qwen-Image** | `Qwen/Qwen-Image` | ✅ | ✅ | ✅ |
-| **Qwen-Image-Edit** | `Qwen/Qwen-Image-Edit` | ✅ | ✅ | ✅ |
-| **Qwen-Image-Edit-2509** | `Qwen/Qwen-Image-Edit-2509` | ✅ | ✅ | ✅ |
-| **Qwen-Image-Layered** | `Qwen/Qwen-Image-Layered` | ❌ | ✅ | ✅ |
-| **Z-Image** | `Tongyi-MAI/Z-Image-Turbo` | ❌ | ✅ | ❌ |
+| **LongCat-Image** | `meituan-longcat/LongCat-Image` | ❌ | ✅ | ❌ | ❌ |
+| **LongCat-Image-Edit** | `meituan-longcat/LongCat-Image-Edit` | ❌ | ✅ | ❌ | ❌ |
+| **Ovis-Image** | `OvisAI/Ovis-Image` | ❌ | ✅ | ❌ | ❌ |
+| **Stable-Diffusion3.5** | `stabilityai/stable-diffusion-3.5` | ❌ | ✅ | ❌ | ❌ |
 
 ### VideoGen
 
