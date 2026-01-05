@@ -1,8 +1,8 @@
 # Profiling vLLM-Omni
 
-Profiling is only intended for vLLM-Omni developers and maintainers to understand the proportion of time spent in different parts of the codebase. **vLLM-Omni end-users should never turn on profiling** as it will significantly slow down the inference.
+Performance Profiling Guidelines Profiling capabilities in vLLM-Omni are reserved for development and maintenance tasks aimed at temporal analysis of the codebase. Production use is **strongly discouraged**; enabling the profiler incurs a substantial overhead that negatively impacts inference latency.
 
-vLLM-Omni supports cross-stage profiling using the PyTorch Profiler. Since Omni runs multiple engine instances (stages) in separate processes, you can capture traces for all stages simultaneously or target specific ones.
+**Mechanism**: vLLM-Omni implements cross-stage profiling via the PyTorch Profiler. To accommodate the architecture—where stages operate as distinct engine instances in separate processes—the profiling interface supports both holistic capturing (all stages) and targeted capturing (specific stages).
 
 **1. Enabling the Profiler**
 
@@ -11,6 +11,14 @@ variable.
 
 ```Bash
 export VLLM_TORCH_PROFILER_DIR=/path/to/save/traces
+```
+
+**Highly Recommended: Limit Profiling to a Single Iteration**  
+For most use cases (especially when profiling audio stages), you should limit the profiler to just **one iteration** to keep trace files small and readable.
+
+
+```bash
+export VLLM_PROFILER_MAX_ITERS=1
 ```
 
 **2. Offline Inference**
@@ -33,7 +41,7 @@ omni_llm.stop_profile()
 ```
 
 **Selective Stage Profiling**
-If you only want to profile a specific stage (e.g., Stage 1), pass the stages list:
+The profiler is default to function across all stages. But It is highly recommended to profile specific stages by passing the stages list, preventing from producing too large trace files:
 ```python
 # Only profile Stage 1
 omni_llm.start_profile(stages=[1])
@@ -43,6 +51,12 @@ omni_llm.start_profile(stages=[1])
 # Stage 0 (Thinker) and Stage 2 (Audio Decoder) for qwen omni
 omni_llm.start_profile(stages=[0, 2])
 ```
+
+**Examples**:
+- Qwen-omni 2.5:
+    [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen2_5_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen2_5_omni/end2end.py) 
+- Qwen-omni 3.0:
+    [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py)
 
 **3. Online Inference(Async)**
 
@@ -67,21 +81,18 @@ await async_omni.stop_profile()
 
 After ``stop_profile()`` completes (and the file write wait time has passed), the directory specified in ```VLLM_TORCH_PROFILER_DIR``` will contain the trace files.
 
-File Structure: Files are saved directly in the specified directory. You will see one file per GPU worker.
+```
+Output/
+│── ...rank-0.pt.trace.json.gz   # GPU 0 trace (TP=2 Example)
+│── ...rank-1.pt.trace.json.gz   # GPU 1 trace (TP=2 Example)
+│       # Load these into Perfetto to visualize synchronization
+│
+│── profiler_out_.txt            # Summary tables (CPU/CUDA time %)
+```
 
-Naming pattern: ```<timestamp>-rank-<gpu_rank>.<host_id>.pt.trace.json.gz```
-   - Tensor Parallelism (TP): If a stage uses TP > 1, you will get multiple files for that stage
-        - Example (Stage 0 with TP=2):
-          - ```...rank-0...json.gz``` (GPU 0 trace)
-          - ```...rank-1...json.gz``` (GPU 1 trace)
-        - You can load both files into Perfetto simultaneously to visualize the synchronization (all-reduce) between GPUs.
-   - Stage Identification: You can identify the stage by inspecting the file size or the timestamps.
-        - Text/LLM Stages: Typically produce smaller files (e.g., ~50MB).
-        - Audio/Talker Stages: Produce massive files (e.g., ~100MB+ compressed) due to the high volume of kernels executed during audio decoding.
-   - Summary Logs: You also see profiler_out_<stage_id>.txt containing text-based summary tables (CPU/CUDA time percentages).
-
-Viewing Tools:
+**Viewing Tools:**
 1. [Perfetto](https://ui.perfetto.dev/): (Recommended): Best for handling large audio trace files.
 2. ```chrome://tracing```: Good for smaller text-only traces.
 
-[!TIP] If the trace file ends in ```gz```, you must unzip it (```gzip -d filename.json.gz```) before loading it into Chrome Tracing. Perfetto often handles GZIP files directly.
+**Note**: vLLM-Omni reuses the PyTorch Profiler infrastructure from vLLM.  
+For more advanced configuration options (memory profiling, custom activities, etc.), see the official vLLM profiler documentation:  [vLLM Profiling Guide](https://docs.vllm.ai/en/latest/dev/profiling.html)
