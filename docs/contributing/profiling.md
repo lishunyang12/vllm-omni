@@ -53,10 +53,10 @@ omni_llm.start_profile(stages=[0, 2])
 ```
 
 **Examples**:
-- Qwen-omni 2.5:
+     - Qwen-omni 2.5:
     [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen2_5_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen2_5_omni/end2end.py)
-- Qwen-omni 3.0:
-    [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py)
+     - Qwen-omni 3.0:
+     [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py)
 
 **3. Online Inference(Async)**
 
@@ -91,8 +91,9 @@ Output/
 ```
 
 **Viewing Tools:**
-1. [Perfetto](https://ui.perfetto.dev/): (Recommended): Best for handling large audio trace files.
-2. ```chrome://tracing```: Good for smaller text-only traces.
+     - [Perfetto](https://ui.perfetto.dev/): (Recommended): Best for handling large audio trace files.
+     - ```chrome://tracing```: Good for smaller text-only traces.
+
 
 **Note**: vLLM-Omni reuses the PyTorch Profiler infrastructure from vLLM.  
 For more advanced configuration options (memory profiling, custom activities, etc.), see the official vLLM profiler documentation:  [vLLM Profiling Guide](https://docs.vllm.ai/en/latest/dev/profiling.html)
