@@ -144,7 +144,7 @@ class OmniDiffusion:
 
     def start_profile(self, trace_filename: Optional[str] = None) -> None:
         """Start profiling for the diffusion model.
-        
+
         Args:
             trace_filename: Optional base filename for trace files.
                            If None, a timestamp-based name will be generated.
@@ -153,15 +153,15 @@ class OmniDiffusion:
             self.engine.start_profile(trace_filename)
         else:
             raise RuntimeError("Diffusion engine not initialized")
-    
-    def stop_profile(self) -> dict:  
+
+    def stop_profile(self) -> dict:
         """Stop profiling and return profiling results.
-        
+
         Returns:
             Dictionary containing paths to trace and table files.
         """
         if hasattr(self, 'engine') and self.engine:
-            return self.engine.stop_profile() 
+            return self.engine.stop_profile()
         else:
             raise RuntimeError("Diffusion engine not initialized")name__)
 
@@ -278,7 +278,7 @@ class OmniDiffusion:
 
     def start_profile(self, trace_filename: Optional[str] = None) -> None:
         """Start profiling for the diffusion model.
-        
+
         Args:
             trace_filename: Optional base filename for trace files.
                            If None, a timestamp-based name will be generated.
@@ -287,14 +287,14 @@ class OmniDiffusion:
             self.engine.start_profile(trace_filename)
         else:
             raise RuntimeError("Diffusion engine not initialized")
-    
-    def stop_profile(self) -> dict:  
+
+    def stop_profile(self) -> dict:
         """Stop profiling and return profiling results.
-        
+
         Returns:
             Dictionary containing paths to trace and table files.
         """
         if hasattr(self, 'engine') and self.engine:
-            return self.engine.stop_profile() 
+            return self.engine.stop_profile()
         else:
             raise RuntimeError("Diffusion engine not initialized")

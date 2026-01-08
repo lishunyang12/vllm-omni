@@ -29,7 +29,7 @@ class ProfilerBase(ABC):
         pass
 
     @abstractmethod
-    def stop(self) -> Optional[str]:
+    def stop(self) -> str | None:
         """
         Stop profiling and finalize/output the trace.
 
@@ -54,4 +54,5 @@ class ProfilerBase(ABC):
     @classmethod
     def _get_rank(cls) -> int:
         import os
+
         return int(os.getenv("RANK", "0"))

@@ -1,7 +1,6 @@
 # vllm_omni/diffusion/profiler/base.py
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
 
 from vllm.logger import init_logger
 
@@ -29,7 +28,7 @@ class ProfilerBase(ABC):
         pass
 
     @abstractmethod
-    def stop(self) -> Optional[str]:
+    def stop(self) -> str | None:
         """
         Stop profiling and finalize/output the trace.
 
@@ -54,4 +53,5 @@ class ProfilerBase(ABC):
     @classmethod
     def _get_rank(cls) -> int:
         import os
+
         return int(os.getenv("RANK", "0"))

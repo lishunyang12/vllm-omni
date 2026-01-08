@@ -2,9 +2,9 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import argparse
+import os
 import time
 from pathlib import Path
-import os
 
 import torch
 
@@ -214,19 +214,19 @@ def main():
     if profiler_enabled:
         print("[Profiler] Stopping profiler and exporting results...")
         result_paths = omni.stop_profile()
-        
+
         # Handle dictionary return
         if result_paths is None:
             print("[Profiler] Warning: No profiling results were returned.")
         elif not isinstance(result_paths, dict):
             print(f"[Profiler] Warning: Unexpected return type: {type(result_paths)}")
         else:
-            print("\n" + "="*60)
+            print("\n" + "=" * 60)
             print("PROFILING RESULTS EXPORTED:")
-            
+
             traces = result_paths.get("traces", [])
             tables = result_paths.get("tables", [])
-            
+
             # Print results for each rank
             for i in range(max(len(traces), len(tables))):
                 print(f"\nRank {i}:")
@@ -234,10 +234,10 @@ def main():
                     print(f"  • JSON Trace: {traces[i]}")
                 if i < len(tables) and tables[i]:
                     print(f"  • Text Table: {tables[i]}")
-                    
+
                     # Try to read and display the table content
                     try:
-                        with open(tables[i], 'r') as f:
+                        with open(tables[i]) as f:
                             content = f.read(1000)  # First 1000 chars
                             print("\n    Table Preview:")
                             print("-" * 40)
@@ -245,9 +245,10 @@ def main():
                             print("-" * 40)
                     except Exception as e:
                         print(f"    (Could not read table file: {e})")
-            print("="*60 + "\n")
-            
+            print("=" * 60 + "\n")
+
     omni.close()
+
 
 if __name__ == "__main__":
     main()

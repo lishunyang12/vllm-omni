@@ -376,48 +376,45 @@ class OmniBase:
 
     def stop_profile(self, stages: list[int] | None = None) -> dict:
         """
-        Synchronously stop profiling for specified stages and collect 
+        Synchronously stop profiling for specified stages and collect
         the file paths for traces and tables.
         """
         if stages is None:
             stages = list(range(len(self.stage_list)))
-    
-        all_results = {
-            "traces": [],
-            "tables": []
-        }
-    
+
+        all_results = {"traces": [], "tables": []}
+
         for stage_id in stages:
             if stage_id < len(self.stage_list):
                 stage = self.stage_list[stage_id]
-                
+
                 # Check if the stage object has our new bridge method
                 if hasattr(stage, "stop_profile"):
                     logger.info("[%s] Requesting profile data collection from stage-%s", self._name, stage_id)
-                    
+
                     # This is the blocking call that triggers the RPC chain
                     stage_data = stage.stop_profile()
-                    
+
                     if isinstance(stage_data, dict):
                         # FIX: Handle both single key and list key formats
                         traces = stage_data.get("trace") or stage_data.get("traces")
                         tables = stage_data.get("table") or stage_data.get("tables")
-                        
+
                         # Debug logging
                         logger.debug(f"[{self._name}] Stage-{stage_id} returned: {stage_data.keys()}")
                         if traces:
                             logger.debug(f"[{self._name}] Stage-{stage_id} traces type: {type(traces)}")
                         if tables:
                             logger.debug(f"[{self._name}] Stage-{stage_id} tables type: {type(tables)}")
-                        
+
                         # Handle single strings
                         if traces:
                             if isinstance(traces, str):
                                 all_results["traces"].append(traces)
                             elif isinstance(traces, list):
                                 all_results["traces"].extend(traces)
-                        
-                        # Handle single strings  
+
+                        # Handle single strings
                         if tables:
                             if isinstance(tables, str):
                                 all_results["tables"].append(tables)
@@ -429,12 +426,18 @@ class OmniBase:
                         logger.warning(f"[{self._name}] Stage-{stage_id} returned non-dict data: {type(stage_data)}")
                 else:
                     # Fallback for non-diffusion stages
-                    logger.warning("[%s] Stage-%s does not support synchronous stop_profile. Falling back to async.", self._name, stage_id)
+                    logger.warning(
+                        "[%s] Stage-%s does not support synchronous stop_profile. Falling back to async.",
+                        self._name,
+                        stage_id,
+                    )
                     stage.submit({"type": OmniStageTaskType.PROFILER_STOP})
-        
+
         # Final debug output
-        logger.info(f"[{self._name}] Collected {len(all_results['traces'])} trace(s) and {len(all_results['tables'])} table(s)")
-        
+        logger.info(
+            f"[{self._name}] Collected {len(all_results['traces'])} trace(s) and {len(all_results['tables'])} table(s)"
+        )
+
         return all_results
 
     def close(self) -> None:
@@ -818,4 +821,3 @@ class Omni(OmniBase):
     @property
     def _name(self) -> str:
         return "Orchestrator"
-

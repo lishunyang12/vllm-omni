@@ -224,19 +224,21 @@ class OmniStage:
         try:
             # Profiling stop might take time to flush files, give it 60s
             response = self._out_q.get(timeout=60)
-            
+
             if isinstance(response, dict):
                 if response.get("type") == "profiler_result":
                     return response.get("data", {})
                 elif "error" in response:
                     logger.error(f"[Stage-{self.stage_id}] Profiler error: {response['error']}")
                     return {}
-            
+
             # If we got something else (e.g. late generation result), we might lose it here,
             # but usually profiling stop is called when generation is done.
-            logger.warning(f"[Stage-{self.stage_id}] Received unexpected message while waiting for profiler: {response}")
+            logger.warning(
+                f"[Stage-{self.stage_id}] Received unexpected message while waiting for profiler: {response}"
+            )
             return {}
-            
+
         except queue.Empty:
             logger.error(f"[Stage-{self.stage_id}] Timeout waiting for profiler results.")
             return {}
@@ -616,7 +618,7 @@ def _stage_worker(
                 lock_files = acquired_lock_fds
         except Exception as e:
             logger.debug("[Stage-%s] Failed to set up sequential initialization lock: %s", stage_id, e)
-    
+
     # Init engine based on stage_type
     logger.debug("[Stage-%s] Initializing %s engine with args keys=%s", stage_id, stage_type, list(engine_args.keys()))
     try:
@@ -681,7 +683,7 @@ def _stage_worker(
             if stage_type == "diffusion":
                 try:
                     # CRITICAL: Capture return value
-                    result_data = stage_engine.stop_profile() 
+                    result_data = stage_engine.stop_profile()
                     logger.info("[Stage-%s] Diffusion Torch profiler stopped", stage_id)
                     return result_data
                 except Exception as e:
