@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import argparse
+import os
 import time
 from pathlib import Path
 
@@ -81,13 +82,6 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Number of GPUs used for ring sequence parallelism.",
     )
-    parser.add_argument(
-        "--cfg_parallel_size",
-        type=int,
-        default=1,
-        choices=[1, 2],
-        help="Number of GPUs used for classifier free guidance parallel size.",
-    )
     return parser.parse_args()
 
 
@@ -130,10 +124,7 @@ def main():
         }
 
     # assert args.ring_degree == 1, "Ring attention is not supported yet"
-    parallel_config = DiffusionParallelConfig(
-        ulysses_degree=args.ulysses_degree, ring_degree=args.ring_degree, cfg_parallel_size=args.cfg_parallel_size
-    )
-
+    parallel_config = DiffusionParallelConfig(ulysses_degree=args.ulysses_degree, ring_degree=args.ring_degree)
     omni = Omni(
         model=args.model,
         vae_use_slicing=vae_use_slicing,
@@ -143,15 +134,18 @@ def main():
         parallel_config=parallel_config,
     )
 
+    profiler_enabled = os.getenv("VLLM_OMNI_DIFFUSION_PROFILE_DIR")
+    if profiler_enabled:
+        print("[Profiler] Starting profiling...")
+        omni.start_profile()
+
     # Time profiling for generation
     print(f"\n{'=' * 60}")
     print("Generation Configuration:")
     print(f"  Model: {args.model}")
     print(f"  Inference steps: {args.num_inference_steps}")
     print(f"  Cache backend: {args.cache_backend if args.cache_backend else 'None (no acceleration)'}")
-    print(
-        f"  Parallel configuration: ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, cfg_parallel_size={args.cfg_parallel_size}"
-    )
+    print(f"  Parallel configuration: ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}")
     print(f"  Image size: {args.width}x{args.height}")
     print(f"{'=' * 60}\n")
 
@@ -204,6 +198,43 @@ def main():
             save_path = output_path.parent / f"{stem}_{idx}{suffix}"
             img.save(save_path)
             print(f"Saved generated image to {save_path}")
+
+    # Update the printing code in your text_to_image.py or wherever you have it:
+    if profiler_enabled:
+        print("[Profiler] Stopping profiler and exporting results...")
+        result_paths = omni.stop_profile()
+        
+        # Handle dictionary return
+        if result_paths is None:
+            print("[Profiler] Warning: No profiling results were returned.")
+        elif not isinstance(result_paths, dict):
+            print(f"[Profiler] Warning: Unexpected return type: {type(result_paths)}")
+        else:
+            print("\n" + "="*60)
+            print("PROFILING RESULTS EXPORTED:")
+            
+            traces = result_paths.get("traces", [])
+            tables = result_paths.get("tables", [])
+            
+            # Print results for each rank
+            for i in range(max(len(traces), len(tables))):
+                print(f"\nRank {i}:")
+                if i < len(traces) and traces[i]:
+                    print(f"  • JSON Trace: {traces[i]}")
+                if i < len(tables) and tables[i]:
+                    print(f"  • Text Table: {tables[i]}")
+                    
+                    # Try to read and display the table content
+                    try:
+                        with open(tables[i], 'r') as f:
+                            content = f.read(1000)  # First 1000 chars
+                            print("\n    Table Preview:")
+                            print("-" * 40)
+                            print(content[:500] + "..." if len(content) > 500 else content)
+                            print("-" * 40)
+                    except Exception as e:
+                        print(f"    (Could not read table file: {e})")
+            print("="*60 + "\n")
 
 
 if __name__ == "__main__":

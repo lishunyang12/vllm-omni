@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import os
 import multiprocessing as mp
 import time
 import weakref
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, List, Optional
 
 import PIL.Image
 from vllm.logger import init_logger
@@ -289,6 +290,55 @@ class DiffusionEngine:
 
     def add_req_and_wait_for_response(self, requests: list[OmniDiffusionRequest]):
         return scheduler.add_req(requests)
+    
+    def start_profile(self, trace_filename: Optional[str] = None) -> None:
+        """Start profiling for the diffusion engine.
+        
+        Args:
+            trace_filename: Optional base filename for trace files.
+                           If None, a timestamp-based name will be generated.
+        """        
+        if trace_filename is None:
+            trace_filename = f"diffusion_profile_{int(time.time())}"
+
+        # Use environment variable or default directory
+        trace_dir = os.environ.get("VLLM_TORCH_PROFILER_DIR", "./profiles")
+        os.makedirs(trace_dir, exist_ok=True)
+        full_template = os.path.join(trace_dir, trace_filename)
+
+        logger.info(f"Starting diffusion profiling → {full_template}_rank*.json")
+
+        # Call GPUWorker.start_profile on all workers via RPC
+        self.collective_rpc(method="start_profile", args=(full_template,))
+
+    def stop_profile(self) -> dict:
+        """Stop profiling and return paths to both traces and tables."""
+        logger.info("Stopping diffusion profiling and generating tables...")
+        
+        # collective_rpc returns a list of dictionaries from all ranks
+        try:
+            results = self.collective_rpc(method="stop_profile")
+            
+            output_files = {
+                "traces": [],
+                "tables": []
+            }
+    
+            # Collect results from all ranks
+            for res in results:
+                if res and isinstance(res, dict):
+                    if "trace" in res:
+                        output_files["traces"].append(res.get("trace"))
+                    if "table" in res:
+                        output_files["tables"].append(res.get("table"))
+            
+            if output_files["traces"]:
+                logger.info(f"Profiling complete. Captured results for {len(results)} ranks.")
+            
+            return output_files
+        except Exception as e:
+            logger.error(f"Failed to stop profiling: {e}")
+            return {"traces": [], "tables": []}
 
     def _dummy_run(self):
         """A dummy run to warm up the model."""

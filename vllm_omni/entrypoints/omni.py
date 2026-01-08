@@ -391,19 +391,50 @@ class OmniBase:
         """
         if stages is None:
             stages = list(range(len(self.stage_list)))
-
+    
+        all_results = {
+            "traces": [],
+            "tables": []
+        }
+    
         for stage_id in stages:
             if stage_id < len(self.stage_list):
-                try:
-                    self.stage_list[stage_id].submit({"type": OmniStageTaskType.PROFILER_STOP})
-                    logger.info("[%s] Sent stop_profile to stage-%s", self._name, stage_id)
-                except Exception as e:
-                    logger.warning(
-                        "[%s] Failed to send stop_profile to stage-%s: %s",
-                        self._name,
-                        stage_id,
-                        e,
-                    )
+                stage = self.stage_list[stage_id]
+                
+                if hasattr(stage, "stop_profile"):
+                    logger.info("[%s] Requesting profile data collection from stage-%s", self._name, stage_id)
+                    
+                    # This is the blocking call that triggers the RPC chain
+                    stage_data = stage.stop_profile()
+                    
+                    if isinstance(stage_data, dict):
+                        traces = stage_data.get("trace") or stage_data.get("traces")
+                        tables = stage_data.get("table") or stage_data.get("tables")
+                        
+                        # Handle single strings
+                        if traces:
+                            if isinstance(traces, str):
+                                all_results["traces"].append(traces)
+                            elif isinstance(traces, list):
+                                all_results["traces"].extend(traces)
+                        
+                        if tables:
+                            if isinstance(tables, str):
+                                all_results["tables"].append(tables)
+                            elif isinstance(tables, list):
+                                all_results["tables"].extend(tables)
+                        else:
+                            logger.warning(f"[{self._name}] Stage-{stage_id} returned no table data")
+                    else:
+                        logger.warning(f"[{self._name}] Stage-{stage_id} returned non-dict data: {type(stage_data)}")
+                else:
+                    # Fallback for non-diffusion stages
+                    stage.submit({"type": OmniStageTaskType.PROFILER_STOP})
+        
+        # Final debug output
+        logger.info(f"[{self._name}] Collected {len(all_results['traces'])} trace(s) and {len(all_results['tables'])} table(s)")
+        
+        return all_results
 
     def close(self) -> None:
         """Close all stage processes and clean up resources."""
