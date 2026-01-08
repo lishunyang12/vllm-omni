@@ -5,19 +5,15 @@ import os
 import time
 from collections.abc import Iterable
 from contextlib import AbstractContextManager, nullcontext
-from typing import Optional
-
 
 import torch
 import zmq
+from torch.profiler import record_function
 from vllm.config import LoadConfig, VllmConfig
 from vllm.distributed.device_communicators.shm_broadcast import MessageQueue
 from vllm.logger import init_logger
 from vllm.utils.mem_utils import DeviceMemoryProfiler, GiB_bytes
-from torch.profiler import record_function
 
-
-from vllm_omni.diffusion.profiler import CurrentProfiler
 from vllm_omni.diffusion.cache.selector import get_cache_backend
 from vllm_omni.diffusion.data import (
     DiffusionOutput,
@@ -30,6 +26,7 @@ from vllm_omni.diffusion.distributed.parallel_state import (
 )
 from vllm_omni.diffusion.forward_context import set_forward_context
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
+from vllm_omni.diffusion.profiler import CurrentProfiler
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 
 logger = init_logger(__name__)
@@ -122,14 +119,14 @@ class GPUWorker:
             DiffusionOutput with generated results
         """
         return self.execute_model(requests, self.od_config)
-        
+
     @classmethod
     def start_profile(cls, trace_path_template: str) -> str:
         """Start profiling for this GPU worker."""
         return CurrentProfiler.start(trace_path_template)
 
-    @classmethod  
-    def stop_profile(cls) -> Optional[str]:
+    @classmethod
+    def stop_profile(cls) -> str | None:
         """Stop profiling for this GPU worker."""
         return CurrentProfiler.stop()
 
@@ -150,7 +147,7 @@ class GPUWorker:
         # Refresh cache context if needed
         if self.cache_backend is not None and self.cache_backend.is_enabled():
             self.cache_backend.refresh(self.pipeline, req.num_inference_steps)
-        
+
         def profiler_step_bridge(pipe, step_index, timestep, callback_kwargs):
             if CurrentProfiler.is_active():
                 # Tick the profiler to move through Wait -> Warmup -> Active
@@ -160,10 +157,8 @@ class GPUWorker:
             with record_function("inference_total"):
                 # 2. Pass the bridge into the forward call
                 output = self.pipeline.forward(
-                    req, 
-                    callback_on_step_end=profiler_step_bridge,
-                    callback_on_step_end_tensor_inputs=["latents"]
-                )        
+                    req, callback_on_step_end=profiler_step_bridge, callback_on_step_end_tensor_inputs=["latents"]
+                )
         return output
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:

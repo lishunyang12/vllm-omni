@@ -6,7 +6,6 @@ from dataclasses import fields
 
 from vllm.logger import init_logger
 from vllm.transformers_utils.config import get_hf_file_to_dict
-from typing import List, Optional
 
 from vllm_omni.diffusion.data import OmniDiffusionConfig, TransformerConfig
 from vllm_omni.diffusion.diffusion_engine import DiffusionEngine
@@ -125,25 +124,25 @@ class OmniDiffusion:
         except Exception:
             pass
 
-    def start_profile(self, trace_filename: Optional[str] = None) -> None:
+    def start_profile(self, trace_filename: str | None = None) -> None:
         """Start profiling for the diffusion model.
-        
+
         Args:
             trace_filename: Optional base filename for trace files.
                            If None, a timestamp-based name will be generated.
         """
-        if hasattr(self, 'engine') and self.engine:
+        if hasattr(self, "engine") and self.engine:
             self.engine.start_profile(trace_filename)
         else:
             raise RuntimeError("Diffusion engine not initialized")
-    
-    def stop_profile(self) -> List[str]:
+
+    def stop_profile(self) -> list[str]:
         """Stop profiling and return list of trace files.
-        
+
         Returns:
             List of paths to saved trace files.
         """
-        if hasattr(self, 'engine') and self.engine:
+        if hasattr(self, "engine") and self.engine:
             return self.engine.stop_profile()
         else:
             raise RuntimeError("Diffusion engine not initialized")

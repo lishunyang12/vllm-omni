@@ -41,7 +41,7 @@ elif is_rocm():
 def test_z_image_profiler(model_name: str, tmp_path: Path) -> None:
     """
     E2E test: Run Z-Image generation with profiling enabled and verify trace output.
-    
+
     Args:
         model_name: Name of the Z-Image model to test
         tmp_path: Pytest temporary directory for trace files
@@ -65,7 +65,7 @@ def test_z_image_profiler(model_name: str, tmp_path: Path) -> None:
             prompt="a cute robot waving hello",
             height=height,
             width=width,
-            num_inference_steps=4,           
+            num_inference_steps=4,
             guidance_scale=0.0,
             generator=torch.Generator("cuda").manual_seed(42),
             num_outputs_per_prompt=1,

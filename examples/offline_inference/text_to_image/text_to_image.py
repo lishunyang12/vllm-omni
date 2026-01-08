@@ -202,17 +202,18 @@ def main():
     if profiler_enabled:
         print("[Profiler] Stopping profiler and exporting results...")
         result_paths = omni.stop_profile()
-        
-        print("\n" + "="*60)
+
+        print("\n" + "=" * 60)
         print("PROFILING RESULTS EXPORTED:")
         for i in range(len(result_paths["traces"])):
             print(f"Rank {i}:")
             print(f"  • JSON Trace: {result_paths['traces'][i]}")
             print(f"  • Text Table: {result_paths['tables'][i]}")
-        print("="*60 + "\n")
-        
+        print("=" * 60 + "\n")
+
         print("[Profiler] Waiting for I/O to flush...")
         time.sleep(5)
+
 
 if __name__ == "__main__":
     main()

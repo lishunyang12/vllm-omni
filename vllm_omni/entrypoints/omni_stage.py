@@ -13,6 +13,7 @@ import multiprocessing as mp
 import os
 import queue
 import sys
+import time
 import traceback
 from dataclasses import fields
 from typing import Any
@@ -586,7 +587,7 @@ def _stage_worker(
                 lock_files = acquired_lock_fds
         except Exception as e:
             logger.debug("[Stage-%s] Failed to set up sequential initialization lock: %s", stage_id, e)
-    
+
     def handle_profiler_task_local(task_type: OmniStageTaskType) -> None:
         """Handle profiler task locally in the worker process."""
         if task_type == OmniStageTaskType.PROFILER_START:
@@ -595,7 +596,7 @@ def _stage_worker(
                     # Set environment variable for profiler directory
                     profile_dir = _os.environ.get("VLLM_TORCH_PROFILER_DIR", "./profiles")
                     _os.makedirs(profile_dir, exist_ok=True)
-                    
+
                     # Generate unique trace filename
                     trace_filename = f"stage_{stage_id}_diffusion_{int(_time.time())}"
                     stage_engine.start_profile(trace_filename=trace_filename)
