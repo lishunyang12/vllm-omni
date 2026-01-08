@@ -1,57 +1,8 @@
-# vllm_omni/diffusion/profiler/base.py
+# vllm_omni/diffusion/profiler/__init__.py
 
-from abc import ABC, abstractmethod
+from .torch_profiler import TorchProfiler
 
-from vllm.logger import init_logger
+# Default profiler – can be changed later via config
+CurrentProfiler = TorchProfiler
 
-logger = init_logger(__name__)
-
-
-class ProfilerBase(ABC):
-    """
-    Abstract base class for all diffusion profilers.
-    Defines the common interface used by GPUWorker and DiffusionEngine.
-    """
-
-    @abstractmethod
-    def start(self, trace_path_template: str) -> str:
-        """
-        Start profiling.
-
-        Args:
-            trace_path_template: Base path (without rank or extension).
-                                 e.g. "/tmp/profiles/sdxl_run"
-
-        Returns:
-            Full path of the trace file this rank will write.
-        """
-        pass
-
-    @abstractmethod
-    def stop(self) -> str | None:
-        """
-        Stop profiling and finalize/output the trace.
-
-        Returns:
-            Path to the saved trace file, or None if not active.
-        """
-        pass
-
-    @abstractmethod
-    def get_step_context(self):
-        """
-        Returns a context manager that advances one profiling step.
-        Should be a no-op (nullcontext) when profiler is not active.
-        """
-        pass
-
-    @abstractmethod
-    def is_active(self) -> bool:
-        """Return True if profiling is currently running."""
-        pass
-
-    @classmethod
-    def _get_rank(cls) -> int:
-        import os
-
-        return int(os.getenv("RANK", "0"))
+__all__ = ["CurrentProfiler", "TorchProfiler"]

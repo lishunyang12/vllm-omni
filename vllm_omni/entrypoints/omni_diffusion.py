@@ -6,7 +6,6 @@ from dataclasses import fields
 
 from vllm.logger import init_logger
 from vllm.transformers_utils.config import get_hf_file_to_dict
-from typing import Optional
 
 from vllm_omni.diffusion.data import OmniDiffusionConfig, TransformerConfig
 from vllm_omni.diffusion.diffusion_engine import DiffusionEngine
@@ -128,7 +127,7 @@ class OmniDiffusion:
         except Exception:
             pass
 
-    def start_profile(self, trace_filename: Optional[str] = None) -> None:
+    def start_profile(self, trace_filename: str | None = None) -> None:
         """Start profiling for the diffusion model.
 
         Args:
