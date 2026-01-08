@@ -246,6 +246,8 @@ def main():
                     except Exception as e:
                         print(f"    (Could not read table file: {e})")
             print("="*60 + "\n")
+            
+    omni.close()
 
 if __name__ == "__main__":
     main()
