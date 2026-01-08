@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import argparse
+import os
 import time
 from pathlib import Path
 
@@ -133,6 +134,11 @@ def main():
         parallel_config=parallel_config,
     )
 
+    profiler_enabled = os.getenv("VLLM_OMNI_DIFFUSION_PROFILE_DIR")
+    if profiler_enabled:
+        print("[Profiler] Starting profiling...")
+        omni.start_profile()
+
     # Time profiling for generation
     print(f"\n{'=' * 60}")
     print("Generation Configuration:")
@@ -193,6 +199,20 @@ def main():
             img.save(save_path)
             print(f"Saved generated image to {save_path}")
 
+    if profiler_enabled:
+        print("[Profiler] Stopping profiler and exporting results...")
+        result_paths = omni.stop_profile()
+        
+        print("\n" + "="*60)
+        print("PROFILING RESULTS EXPORTED:")
+        for i in range(len(result_paths["traces"])):
+            print(f"Rank {i}:")
+            print(f"  • JSON Trace: {result_paths['traces'][i]}")
+            print(f"  • Text Table: {result_paths['tables'][i]}")
+        print("="*60 + "\n")
+        
+        print("[Profiler] Waiting for I/O to flush...")
+        time.sleep(5)
 
 if __name__ == "__main__":
     main()

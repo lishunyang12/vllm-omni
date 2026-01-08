@@ -5,6 +5,8 @@ import os
 import time
 from collections.abc import Iterable
 from contextlib import AbstractContextManager, nullcontext
+from typing import Optional
+
 
 import torch
 import zmq
@@ -12,7 +14,10 @@ from vllm.config import LoadConfig, VllmConfig
 from vllm.distributed.device_communicators.shm_broadcast import MessageQueue
 from vllm.logger import init_logger
 from vllm.utils.mem_utils import DeviceMemoryProfiler, GiB_bytes
+from torch.profiler import record_function
 
+
+from vllm_omni.diffusion.profiler import CurrentProfiler
 from vllm_omni.diffusion.cache.selector import get_cache_backend
 from vllm_omni.diffusion.data import (
     DiffusionOutput,
@@ -117,6 +122,16 @@ class GPUWorker:
             DiffusionOutput with generated results
         """
         return self.execute_model(requests, self.od_config)
+        
+    @classmethod
+    def start_profile(cls, trace_path_template: str) -> str:
+        """Start profiling for this GPU worker."""
+        return CurrentProfiler.start(trace_path_template)
+
+    @classmethod  
+    def stop_profile(cls) -> Optional[str]:
+        """Stop profiling for this GPU worker."""
+        return CurrentProfiler.stop()
 
     @torch.inference_mode()
     def execute_model(self, reqs: list[OmniDiffusionRequest], od_config: OmniDiffusionConfig) -> DiffusionOutput:
@@ -135,8 +150,20 @@ class GPUWorker:
         # Refresh cache context if needed
         if self.cache_backend is not None and self.cache_backend.is_enabled():
             self.cache_backend.refresh(self.pipeline, req.num_inference_steps)
+        
+        def profiler_step_bridge(pipe, step_index, timestep, callback_kwargs):
+            if CurrentProfiler.is_active():
+                # Tick the profiler to move through Wait -> Warmup -> Active
+                CurrentProfiler.step()
+
         with set_forward_context(vllm_config=self.vllm_config, omni_diffusion_config=self.od_config):
-            output = self.pipeline.forward(req)
+            with record_function("inference_total"):
+                # 2. Pass the bridge into the forward call
+                output = self.pipeline.forward(
+                    req, 
+                    callback_on_step_end=profiler_step_bridge,
+                    callback_on_step_end_tensor_inputs=["latents"]
+                )        
         return output
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:

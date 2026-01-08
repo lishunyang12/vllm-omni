@@ -595,10 +595,10 @@ class ZImagePipeline(nn.Module):
                     callback_kwargs[k] = locals()[k]
                 callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
 
-                latents = callback_outputs.pop("latents", latents)
-                prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
-                negative_prompt_embeds = callback_outputs.pop("negative_prompt_embeds", negative_prompt_embeds)
-
+                if isinstance(callback_outputs, dict):
+                    latents = callback_outputs.pop("latents", latents)
+                    prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
+                    negative_prompt_embeds = callback_outputs.pop("negative_prompt_embeds", negative_prompt_embeds)
         if output_type == "latent":
             image = latents
         else:
