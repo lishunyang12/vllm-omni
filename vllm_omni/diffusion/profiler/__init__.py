@@ -1,7 +1,6 @@
 # vllm_omni/diffusion/profiler/base.py
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
 
 from vllm.logger import init_logger
 

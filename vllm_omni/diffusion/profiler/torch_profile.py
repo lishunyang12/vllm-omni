@@ -27,10 +27,7 @@ class TorchProfiler(ProfilerBase):
         # 1. Cleanup existing
         if cls._profiler is not None:
             logger.warning("[Rank %s] Stopping existing Torch profiler", cls._get_rank())
-            try:
-                cls._profiler.stop()
-            except:
-                pass
+            cls._profiler.stop()
             cls._profiler = None
 
         rank = cls._get_rank()
