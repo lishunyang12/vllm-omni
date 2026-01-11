@@ -1,5 +1,3 @@
-from typing import Optional
-
 from torch import nn
 
 # TODO: Import DiTQuantLinear once dit_linear.py is finished.
