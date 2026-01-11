@@ -135,120 +135,123 @@ def main():
         ulysses_degree=args.ulysses_degree, ring_degree=args.ring_degree, cfg_parallel_size=args.cfg_parallel_size
     )
 
-    omni = Omni(
-        model=args.model,
-        vae_use_slicing=vae_use_slicing,
-        vae_use_tiling=vae_use_tiling,
-        cache_backend=args.cache_backend,
-        cache_config=cache_config,
-        parallel_config=parallel_config,
-    )
+    # Check if profiling is requested via environment variable
+    profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
 
-    profiler_enabled = os.getenv("VLLM_OMNI_DIFFUSION_PROFILE_DIR")
-    if profiler_enabled:
-        print("[Profiler] Starting profiling...")
-        omni.start_profile()
-
-    # Time profiling for generation
-    print(f"\n{'=' * 60}")
-    print("Generation Configuration:")
-    print(f"  Model: {args.model}")
-    print(f"  Inference steps: {args.num_inference_steps}")
-    print(f"  Cache backend: {args.cache_backend if args.cache_backend else 'None (no acceleration)'}")
-    print(
-        f"  Parallel configuration: ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, cfg_parallel_size={args.cfg_parallel_size}"
-    )
-    print(f"  Image size: {args.width}x{args.height}")
-    print(f"{'=' * 60}\n")
-
-    generation_start = time.perf_counter()
-    outputs = omni.generate(
-        args.prompt,
-        negative_prompt=args.negative_prompt,
-        height=args.height,
-        width=args.width,
-        generator=generator,
-        true_cfg_scale=args.cfg_scale,
-        guidance_scale=args.guidance_scale,
-        num_inference_steps=args.num_inference_steps,
-        num_outputs_per_prompt=args.num_images_per_prompt,
-    )
-    generation_end = time.perf_counter()
-    generation_time = generation_end - generation_start
-
-    # Print profiling results
-    print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
-
-    # Extract images from OmniRequestOutput
-    # omni.generate() returns list[OmniRequestOutput], extract images from the first output
-    if not outputs or len(outputs) == 0:
-        raise ValueError("No output generated from omni.generate()")
-    logger.info(f"Outputs: {outputs}")
-
-    # Extract images from request_output[0]['images']
-    first_output = outputs[0]
-    if not hasattr(first_output, "request_output") or not first_output.request_output:
-        raise ValueError("No request_output found in OmniRequestOutput")
-
-    req_out = first_output.request_output[0]
-    if not isinstance(req_out, OmniRequestOutput) or not hasattr(req_out, "images"):
-        raise ValueError("Invalid request_output structure or missing 'images' key")
-
-    images = req_out.images
-    if not images:
-        raise ValueError("No images found in request_output")
-
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    suffix = output_path.suffix or ".png"
-    stem = output_path.stem or "qwen_image_output"
-    if len(images) <= 1:
-        images[0].save(output_path)
-        print(f"Saved generated image to {output_path}")
-    else:
-        for idx, img in enumerate(images):
-            save_path = output_path.parent / f"{stem}_{idx}{suffix}"
-            img.save(save_path)
-            print(f"Saved generated image to {save_path}")
-
-    if profiler_enabled:
-        print("[Profiler] Stopping profiler and exporting results...")
-        result_paths = omni.stop_profile()
-
-        # Handle dictionary return
-        if result_paths is None:
-            print("[Profiler] Warning: No profiling results were returned.")
-        elif not isinstance(result_paths, dict):
-            print(f"[Profiler] Warning: Unexpected return type: {type(result_paths)}")
+    omni = None
+    try:
+         # Time profiling for generation
+        print(f"\n{'=' * 60}")
+        print("Generation Configuration:")
+        print(f"  Model: {args.model}")
+        print(f"  Inference steps: {args.num_inference_steps}")
+        print(f"  Cache backend: {args.cache_backend if args.cache_backend else 'None (no acceleration)'}")
+        print(
+            f"  Parallel configuration: ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, cfg_parallel_size={args.cfg_parallel_size}"
+        )
+        print(f"  Image size: {args.width}x{args.height}")
+        print(f"{'=' * 60}\n")
+        
+        omni = Omni(
+            model=args.model,
+            vae_use_slicing=vae_use_slicing,
+            vae_use_tiling=vae_use_tiling,
+            cache_backend=args.cache_backend,
+            cache_config=cache_config,
+            parallel_config=parallel_config,
+        )
+    
+        if profiler_enabled:
+            print("[Profiler] Starting profiling...")
+            omni.start_profile()
+    
+        generation_start = time.perf_counter()
+        outputs = omni.generate(
+            args.prompt,
+            negative_prompt=args.negative_prompt,
+            height=args.height,
+            width=args.width,
+            generator=generator,
+            true_cfg_scale=args.cfg_scale,
+            guidance_scale=args.guidance_scale,
+            num_inference_steps=args.num_inference_steps,
+            num_outputs_per_prompt=args.num_images_per_prompt,
+        )
+        generation_end = time.perf_counter()
+        generation_time = generation_end - generation_start
+    
+        # Print profiling results
+        print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
+    
+        # Extract images from OmniRequestOutput
+        # omni.generate() returns list[OmniRequestOutput], extract images from the first output
+        if not outputs or len(outputs) == 0:
+            raise ValueError("No output generated from omni.generate()")
+        logger.info(f"Outputs: {outputs}")
+    
+        # Extract images from request_output[0]['images']
+        first_output = outputs[0]
+        if not hasattr(first_output, "request_output") or not first_output.request_output:
+            raise ValueError("No request_output found in OmniRequestOutput")
+    
+        req_out = first_output.request_output[0]
+        if not isinstance(req_out, OmniRequestOutput) or not hasattr(req_out, "images"):
+            raise ValueError("Invalid request_output structure or missing 'images' key")
+    
+        images = req_out.images
+        if not images:
+            raise ValueError("No images found in request_output")
+    
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        suffix = output_path.suffix or ".png"
+        stem = output_path.stem or "qwen_image_output"
+        if len(images) <= 1:
+            images[0].save(output_path)
+            print(f"Saved generated image to {output_path}")
         else:
-            print("\n" + "=" * 60)
-            print("PROFILING RESULTS EXPORTED:")
+            for idx, img in enumerate(images):
+                save_path = output_path.parent / f"{stem}_{idx}{suffix}"
+                img.save(save_path)
+                print(f"Saved generated image to {save_path}")
+    
+        if profiler_enabled:
+            print("\n[Profiler] Stopping profiler and collecting results...")
+            profile_results = omni.stop_profile()
 
-            traces = result_paths.get("traces", [])
-            tables = result_paths.get("tables", [])
+            if profile_results and isinstance(profile_results, dict):
+                traces = profile_results.get("traces", [])
+                tables = profile_results.get("tables", [])
 
-            # Print results for each rank
-            for i in range(max(len(traces), len(tables))):
-                print(f"\nRank {i}:")
-                if i < len(traces) and traces[i]:
-                    print(f"  • JSON Trace: {traces[i]}")
-                if i < len(tables) and tables[i]:
-                    print(f"  • Text Table: {tables[i]}")
+                print("\n" + "="*60)
+                print("PROFILING RESULTS:")
+                for rank in range(max(len(traces), len(tables))):
+                    print(f"\nRank {rank}:")
+                    if rank < len(traces) and traces[rank]:
+                        print(f"  • Trace: {traces[rank]}")
+                    if rank < len(tables) and tables[rank]:
+                        print(f"  • Table: {tables[rank]}")
+                print("="*60)
+            else:
+                print("[Profiler] No valid profiling data returned.")
+                    
+    except Exception as e:
+        print("\n" + "!"*70)
+        print("ERROR during execution:")
+        print(str(e))
+        import traceback
+        traceback.print_exc()
+        print("!"*70 + "\n")
+        raise
 
-                    # Try to read and display the table content
-                    try:
-                        with open(tables[i]) as f:
-                            content = f.read(1000)  # First 1000 chars
-                            print("\n    Table Preview:")
-                            print("-" * 40)
-                            print(content[:500] + "..." if len(content) > 500 else content)
-                            print("-" * 40)
-                    except Exception as e:
-                        print(f"    (Could not read table file: {e})")
-            print("=" * 60 + "\n")
-
-    omni.close()
-
+    finally:
+        if omni is not None:
+            print("\nCleaning up Omni instance...")
+            try:
+                omni.close()
+                print("Cleanup completed.")
+            except Exception as cleanup_err:
+                print(f"Warning: Cleanup failed → {cleanup_err}")
 
 if __name__ == "__main__":
     main()
