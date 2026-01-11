@@ -140,7 +140,7 @@ def main():
 
     omni = None
     try:
-         # Time profiling for generation
+        # Time profiling for generation
         print(f"\n{'=' * 60}")
         print("Generation Configuration:")
         print(f"  Model: {args.model}")
@@ -151,7 +151,7 @@ def main():
         )
         print(f"  Image size: {args.width}x{args.height}")
         print(f"{'=' * 60}\n")
-        
+
         omni = Omni(
             model=args.model,
             vae_use_slicing=vae_use_slicing,
@@ -160,11 +160,11 @@ def main():
             cache_config=cache_config,
             parallel_config=parallel_config,
         )
-    
+
         if profiler_enabled:
             print("[Profiler] Starting profiling...")
             omni.start_profile()
-    
+
         generation_start = time.perf_counter()
         outputs = omni.generate(
             args.prompt,
@@ -179,29 +179,29 @@ def main():
         )
         generation_end = time.perf_counter()
         generation_time = generation_end - generation_start
-    
+
         # Print profiling results
         print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
-    
+
         # Extract images from OmniRequestOutput
         # omni.generate() returns list[OmniRequestOutput], extract images from the first output
         if not outputs or len(outputs) == 0:
             raise ValueError("No output generated from omni.generate()")
         logger.info(f"Outputs: {outputs}")
-    
+
         # Extract images from request_output[0]['images']
         first_output = outputs[0]
         if not hasattr(first_output, "request_output") or not first_output.request_output:
             raise ValueError("No request_output found in OmniRequestOutput")
-    
+
         req_out = first_output.request_output[0]
         if not isinstance(req_out, OmniRequestOutput) or not hasattr(req_out, "images"):
             raise ValueError("Invalid request_output structure or missing 'images' key")
-    
+
         images = req_out.images
         if not images:
             raise ValueError("No images found in request_output")
-    
+
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         suffix = output_path.suffix or ".png"
@@ -214,7 +214,7 @@ def main():
                 save_path = output_path.parent / f"{stem}_{idx}{suffix}"
                 img.save(save_path)
                 print(f"Saved generated image to {save_path}")
-    
+
         if profiler_enabled:
             print("\n[Profiler] Stopping profiler and collecting results...")
             profile_results = omni.stop_profile()
@@ -223,7 +223,7 @@ def main():
                 traces = profile_results.get("traces", [])
                 tables = profile_results.get("tables", [])
 
-                print("\n" + "="*60)
+                print("\n" + "=" * 60)
                 print("PROFILING RESULTS:")
                 for rank in range(max(len(traces), len(tables))):
                     print(f"\nRank {rank}:")
@@ -231,17 +231,18 @@ def main():
                         print(f"  • Trace: {traces[rank]}")
                     if rank < len(tables) and tables[rank]:
                         print(f"  • Table: {tables[rank]}")
-                print("="*60)
+                print("=" * 60)
             else:
                 print("[Profiler] No valid profiling data returned.")
-                    
+
     except Exception as e:
-        print("\n" + "!"*70)
+        print("\n" + "!" * 70)
         print("ERROR during execution:")
         print(str(e))
         import traceback
+
         traceback.print_exc()
-        print("!"*70 + "\n")
+        print("!" * 70 + "\n")
         raise
 
     finally:
@@ -252,6 +253,7 @@ def main():
                 print("Cleanup completed.")
             except Exception as cleanup_err:
                 print(f"Warning: Cleanup failed → {cleanup_err}")
+
 
 if __name__ == "__main__":
     main()
