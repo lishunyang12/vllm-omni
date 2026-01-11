@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import gzip 
+import gzip
 import multiprocessing as mp
 import os
 import shutil
@@ -333,10 +333,10 @@ class DiffusionEngine:
                             gz_trace_path = f"{trace_path}.gz"
                             try:
                                 logger.debug(f"Compressing trace: {trace_path} -> {gz_trace_path}")
-                                with open(trace_path, 'rb') as f_in:
-                                    with gzip.open(gz_trace_path, 'wb') as f_out:
+                                with open(trace_path, "rb") as f_in:
+                                    with gzip.open(gz_trace_path, "wb") as f_out:
                                         shutil.copyfileobj(f_in, f_out)
-                                
+
                                 # Remove the original massive JSON file to save space
                                 os.remove(trace_path)
                                 output_files["traces"].append(gz_trace_path)
@@ -359,7 +359,7 @@ class DiffusionEngine:
         except Exception as e:
             logger.error(f"Failed to stop profiling: {e}", exc_info=True)
             return {"traces": [], "tables": []}
-            
+
     def _dummy_run(self):
         """A dummy run to warm up the model."""
         prompt = "dummy run"
