@@ -1,4 +1,5 @@
-# vllm_omni/diffusion/profiler/__init__.py
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from .torch_profiler import TorchProfiler
 
