@@ -4,6 +4,10 @@ Performance Profiling Guidelines Profiling capabilities in vLLM-Omni are reserve
 
 **Mechanism**: vLLM-Omni implements cross-stage profiling via the PyTorch Profiler. To accommodate the architecture—where stages operate as distinct engine instances in separate processes—the profiling interface supports both holistic capturing (all stages) and targeted capturing (specific stages).
 
+**Mechanism**: vLLM-Omni implements cross-stage profiling via the PyTorch Profiler. The system is architected to support both **standard multi-stage models** (where each stage is a distinct engine instance) and **iterative diffusion models**. The profiling interface supports both holistic capturing (all stages) and targeted capturing (specific stages).
+
+**Highly Recommended**: **Single-GPU Testing** To obtain the most accurate kernel-level timing, it is recommended to conduct profiling on a single GPU whenever possible. This prevents "noise" in the trace caused by distributed synchronization (NCCL/Gloo) and cross-node communication overhead, which can obscure individual kernel performance.
+
 **1. Enabling the Profiler**
 
 Before running your script, you must set the ```VLLM_TORCH_PROFILER_DIR``` environment
@@ -13,7 +17,7 @@ variable.
 export VLLM_TORCH_PROFILER_DIR=/path/to/save/traces
 ```
 
-**Highly Recommended: Limit Profiling to a Single Iteration**  
+**Recommended: Limit Profiling to a Single Iteration**  
 For most use cases (especially when profiling audio stages), you should limit the profiler to just **one iteration** to keep trace files small and readable.
 
 
@@ -58,6 +62,8 @@ omni_llm.start_profile(stages=[0, 2])
 
 2. **Qwen-omni 3.0**:   [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py)
 
+3. **Diffusion Offline**:   [https://github.com/lishunyang12/vllm-omni/blob/main/examples/offline_inference/text_to_image/text_to_image.py](https://github.com/lishunyang12/vllm-omni/blob/main/examples/offline_inference/text_to_image/text_to_image.py)
+
 **3. Online Inference(Async)**
 
 For online serving using AsyncOmni, the methods are asynchronous. This allows you to toggle profiling dynamically without restarting the server.
@@ -83,9 +89,7 @@ After ``stop_profile()`` completes (and the file write wait time has passed), th
 
 ```
 Output/
-│── ...rank-0.pt.trace.json.gz   # GPU 0 trace (TP=2 Example)
-│── ...rank-1.pt.trace.json.gz   # GPU 1 trace (TP=2 Example)
-│       # Load these into Perfetto to visualize synchronization
+│── ...rank-0.pt.trace.json.gz   # GPU 0 trace
 │
 │── profiler_out_.txt            # Summary tables (CPU/CUDA time %)
 ```
