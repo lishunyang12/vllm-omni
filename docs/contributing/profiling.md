@@ -2,8 +2,6 @@
 
 Performance Profiling Guidelines Profiling capabilities in vLLM-Omni are reserved for development and maintenance tasks aimed at temporal analysis of the codebase. Production use is **strongly discouraged**; enabling the profiler incurs a substantial overhead that negatively impacts inference latency.
 
-**Mechanism**: vLLM-Omni implements cross-stage profiling via the PyTorch Profiler. To accommodate the architecture—where stages operate as distinct engine instances in separate processes—the profiling interface supports both holistic capturing (all stages) and targeted capturing (specific stages).
-
 **Mechanism**: vLLM-Omni implements cross-stage profiling via the PyTorch Profiler. The system is architected to support both **standard multi-stage models** (where each stage is a distinct engine instance) and **iterative diffusion models**. The profiling interface supports both holistic capturing (all stages) and targeted capturing (specific stages).
 
 **Highly Recommended**: **Single-GPU Testing** To obtain the most accurate kernel-level timing, it is recommended to conduct profiling on a single GPU whenever possible. This prevents "noise" in the trace caused by distributed synchronization (NCCL/Gloo) and cross-node communication overhead, which can obscure individual kernel performance.
