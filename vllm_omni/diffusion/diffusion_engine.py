@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import gzip 
 import multiprocessing as mp
 import os
+import shutil
 import time
 import weakref
 from collections.abc import Callable, Iterable
@@ -324,8 +326,28 @@ class DiffusionEngine:
             # Collect results from all ranks
             for res in results:
                 if res and isinstance(res, dict):
+                    # 1. Handle Traces (Compress them)
                     if "trace" in res:
-                        output_files["traces"].append(res.get("trace"))
+                        trace_path = res.get("trace")
+                        if trace_path and os.path.exists(trace_path):
+                            gz_trace_path = f"{trace_path}.gz"
+                            try:
+                                logger.debug(f"Compressing trace: {trace_path} -> {gz_trace_path}")
+                                with open(trace_path, 'rb') as f_in:
+                                    with gzip.open(gz_trace_path, 'wb') as f_out:
+                                        shutil.copyfileobj(f_in, f_out)
+                                
+                                # Remove the original massive JSON file to save space
+                                os.remove(trace_path)
+                                output_files["traces"].append(gz_trace_path)
+                            except Exception as e:
+                                logger.warning(f"Failed to compress trace {trace_path}: {e}")
+                                # Fallback to original path if compression fails
+                                output_files["traces"].append(trace_path)
+                        else:
+                            output_files["traces"].append(trace_path)
+
+                    # 2. Handle Tables (Keep text for easy printing)
                     if "table" in res:
                         output_files["tables"].append(res.get("table"))
 
@@ -333,10 +355,11 @@ class DiffusionEngine:
                 logger.info(f"Profiling complete. Captured results for {len(results)} ranks.")
 
             return output_files
-        except Exception as e:
-            logger.error(f"Failed to stop profiling: {e}")
-            return {"traces": [], "tables": []}
 
+        except Exception as e:
+            logger.error(f"Failed to stop profiling: {e}", exc_info=True)
+            return {"traces": [], "tables": []}
+            
     def _dummy_run(self):
         """A dummy run to warm up the model."""
         prompt = "dummy run"
