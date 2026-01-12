@@ -4,6 +4,7 @@
 import argparse
 import os
 import time
+import traceback
 from pathlib import Path
 
 import torch
@@ -89,6 +90,17 @@ def parse_args() -> argparse.Namespace:
         choices=[1, 2],
         help="Number of GPUs used for classifier free guidance parallel size.",
     )
+    parser.add_argument(
+        "--enforce_eager",
+        action="store_true",
+        help="Disable torch.compile and force eager execution.",
+    )
+    parser.add_argument(
+        "--tensor_parallel_size",
+        type=int,
+        default=1,
+        help="Number of GPUs used for tensor parallelism (TP) inside the DiT.",
+    )
     return parser.parse_args()
 
 
@@ -127,12 +139,15 @@ def main():
             # TeaCache parameters [tea_cache only]
             "rel_l1_thresh": 0.2,  # Threshold for accumulated relative L1 distance
             # Note: coefficients will use model-specific defaults based on model_type
-            #       (e.g., QwenImagePipeline or FluxPipeline)
+            #        (e.g., QwenImagePipeline or FluxPipeline)
         }
 
     # assert args.ring_degree == 1, "Ring attention is not supported yet"
     parallel_config = DiffusionParallelConfig(
-        ulysses_degree=args.ulysses_degree, ring_degree=args.ring_degree, cfg_parallel_size=args.cfg_parallel_size
+        ulysses_degree=args.ulysses_degree,
+        ring_degree=args.ring_degree,
+        cfg_parallel_size=args.cfg_parallel_size,
+        tensor_parallel_size=args.tensor_parallel_size,
     )
 
     # Check if profiling is requested via environment variable
@@ -147,7 +162,8 @@ def main():
         print(f"  Inference steps: {args.num_inference_steps}")
         print(f"  Cache backend: {args.cache_backend if args.cache_backend else 'None (no acceleration)'}")
         print(
-            f"  Parallel configuration: ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, cfg_parallel_size={args.cfg_parallel_size}"
+            f"  Parallel configuration: tensor_parallel_size={args.tensor_parallel_size}, "
+            f"ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, cfg_parallel_size={args.cfg_parallel_size}"
         )
         print(f"  Image size: {args.width}x{args.height}")
         print(f"{'=' * 60}\n")
@@ -159,6 +175,7 @@ def main():
             cache_backend=args.cache_backend,
             cache_config=cache_config,
             parallel_config=parallel_config,
+            enforce_eager=args.enforce_eager,
         )
 
         if profiler_enabled:
@@ -239,8 +256,6 @@ def main():
         print("\n" + "!" * 70)
         print("ERROR during execution:")
         print(str(e))
-        import traceback
-
         traceback.print_exc()
         print("!" * 70 + "\n")
         raise
@@ -252,7 +267,7 @@ def main():
                 omni.close()
                 print("Cleanup completed.")
             except Exception as cleanup_err:
-                print(f"Warning: Cleanup failed → {cleanup_err}")
+                print(f"Warning: Cleanup failed -> {cleanup_err}")
 
 
 if __name__ == "__main__":
