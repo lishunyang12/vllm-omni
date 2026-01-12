@@ -64,49 +64,6 @@ Key arguments:
 
 > ℹ️ Qwen-Image currently publishes best-effort presets at `1328x1328`, `1664x928`, `928x1664`, `1472x1140`, `1140x1472`, `1584x1056`, and `1056x1584`. Adjust `--height/--width` accordingly for the most reliable outcomes.
 
-## Profiling Generation (Advanced)
-You can collect detailed torch profiler traces to analyze performance bottlenecks.
-
-- Two recommended ways:
-
-1. Quick one-liner (recommended)
-```bash
-VLLM_TORCH_PROFILER_DIR=./profile_results \
-python text_to_image.py --model Qwen/Qwen-Image --prompt "a cute cat" --num_inference_steps 20
-```
-After generation finishes, you'll see profiling summary printed in console, and trace files will be saved in ./profile_results/.
-
-2. Manual control inside your own code
-omni = Omni(model="Qwen/Qwen-Image")
-
-```python
-# ── Start profiling ────────────────────────────────
-omni.start_profile()
-
-outputs = omni.generate(
-    "cyberpunk astronaut, neon city, rain, cinematic",
-    num_inference_steps=35
-)
-
-# ── IMPORTANT: stop BEFORE close() ─────────────────
-profile_results = omni.stop_profile()
-
-# Now you can inspect / save results
-print(profile_results)
-
-# Finally clean up model
-omni.close()
-```
-
-- Correct order reminder:
-```python
-omni.start_profile()
-... generation ...
-omni.stop_profile()     ← collect & process results
-omni.close()            ← release GPU memory (very important!)
-```
-Never call stop_profile() after close() — this will usually result in empty or invalid profiling data.
-
 ## Web UI Demo
 
 Launch the gradio demo:
