@@ -51,7 +51,7 @@ def main():
 
     profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
     omni = None
-    try: 
+    try:
         omni = Omni(
             model=args.model,
             vae_use_slicing=vae_use_slicing,
@@ -63,7 +63,7 @@ def main():
         if profiler_enabled:
             print("[Profiler] Starting profiling...")
             omni.start_profile()
-        
+
         generation_start = time.perf_counter()
         frames = omni.generate(
             args.prompt,
@@ -100,18 +100,18 @@ def main():
                 print("=" * 60)
             else:
                 print("[Profiler] No valid profiling data returned.")
-    
+
         # Extract video frames from OmniRequestOutput
         if isinstance(frames, list) and len(frames) > 0:
             first_item = frames[0]
-    
+
             # Check if it's an OmniRequestOutput
             if hasattr(first_item, "final_output_type"):
                 if first_item.final_output_type != "image":
                     raise ValueError(
                         f"Unexpected output type '{first_item.final_output_type}', expected 'image' for video generation."
                     )
-    
+
                 # Pipeline mode: extract from nested request_output
                 if hasattr(first_item, "is_pipeline_output") and first_item.is_pipeline_output:
                     if isinstance(first_item.request_output, list) and len(first_item.request_output) > 0:
@@ -125,14 +125,14 @@ def main():
                     frames = first_item.images
                 else:
                     raise ValueError("No video frames found in OmniRequestOutput.")
-    
+
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             from diffusers.utils import export_to_video
         except ImportError:
             raise ImportError("diffusers is required for export_to_video.")
-    
+
         # frames may be np.ndarray (preferred) or torch.Tensor
         # export_to_video expects a list of frames with values in [0, 1]
         if isinstance(frames, torch.Tensor):
@@ -153,21 +153,21 @@ def main():
             video_array = frames
             if hasattr(video_array, "shape") and video_array.ndim == 5:
                 video_array = video_array[0]
-    
+
         # Convert 4D array (frames, H, W, C) to list of frames for export_to_video
         if isinstance(video_array, np.ndarray) and video_array.ndim == 4:
             video_array = list(video_array)
-    
+
         export_to_video(video_array, str(output_path), fps=args.fps)
         print(f"Saved generated video to {output_path}")
 
     except Exception as e:
-            print("\n" + "!" * 70)
-            print("ERROR during execution:")
-            print(str(e))
-            traceback.print_exc()
-            print("!" * 70 + "\n")
-            raise
+        print("\n" + "!" * 70)
+        print("ERROR during execution:")
+        print(str(e))
+        traceback.print_exc()
+        print("!" * 70 + "\n")
+        raise
 
     finally:
         # 3. Clean up
@@ -178,6 +178,7 @@ def main():
                 print("Cleanup completed.")
             except Exception as cleanup_err:
                 print(f"Warning: Cleanup failed -> {cleanup_err}")
+
 
 if __name__ == "__main__":
     main()
