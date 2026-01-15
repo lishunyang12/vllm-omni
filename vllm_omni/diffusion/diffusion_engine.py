@@ -343,8 +343,8 @@ class DiffusionEngine:
 
         Returns:
             dict with keys:
-              - "traces": list of final trace file paths (usually .json.gz)
-              - "tables": list of table strings (one per rank)
+            - "traces": list of final trace file paths (usually .json.gz)
+            - "tables": list of table strings (one per rank)
         """
         logger.info("Stopping diffusion profiling and collecting results...")
 
