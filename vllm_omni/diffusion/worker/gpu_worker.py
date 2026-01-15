@@ -175,18 +175,22 @@ class GPUWorker:
         if self.cache_backend is not None and self.cache_backend.is_enabled():
             self.cache_backend.refresh(self.pipeline, req.num_inference_steps)
 
-        def profiler_step_bridge(pipe, step_index, timestep, callback_kwargs):
-            if CurrentProfiler.is_active():
-                # Tick the profiler to move through Wait -> Warmup -> Active
-                CurrentProfiler.step()
-            return callback_kwargs
+        profiler_kwargs = {}
+        if CurrentProfiler.is_active():
+
+            def profiler_step_bridge(pipe, step_index, timestep, callback_kwargs):
+                if CurrentProfiler.is_active():
+                    CurrentProfiler.step()
+                return callback_kwargs
+
+            profiler_kwargs = {
+                "callback_on_step_end": profiler_step_bridge,
+                "callback_on_step_end_tensor_inputs": ["latents"],
+            }
 
         with set_forward_context(vllm_config=self.vllm_config, omni_diffusion_config=self.od_config):
             with record_function("inference_total"):
-                # 2. Pass the bridge into the forward call
-                output = self.pipeline.forward(
-                    req, callback_on_step_end=profiler_step_bridge, callback_on_step_end_tensor_inputs=["latents"]
-                )
+                output = self.pipeline.forward(req, **profiler_kwargs)
         return output
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
