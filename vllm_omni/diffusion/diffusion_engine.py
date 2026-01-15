@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import gzip
 import multiprocessing as mp
 import os
-import shutil
 import time
 import weakref
 from collections.abc import Callable, Iterable
@@ -294,71 +292,123 @@ class DiffusionEngine:
         return scheduler.add_req(requests)
 
     def start_profile(self, trace_filename: str | None = None) -> None:
-        """Start profiling for the diffusion engine.
+        """
+        Start torch profiling on all diffusion workers.
+
+        Creates a directory (if needed) and sets up a base filename template
+        for per-rank profiler traces (typically saved as <template>_rank<N>.json).
 
         Args:
-            trace_filename: Optional base filename for trace files.
-                           If None, a timestamp-based name will be generated.
+            trace_filename: Optional base filename (without extension or rank suffix).
+                            If None, generates one using current timestamp.
         """
         if trace_filename is None:
-            trace_filename = f"diffusion_profile_{int(time.time())}"
+            trace_filename = f"stage_0_diffusion_{int(time.time())}_rank"
 
-        # Use environment variable or default directory
         trace_dir = os.environ.get("VLLM_TORCH_PROFILER_DIR", "./profiles")
-        os.makedirs(trace_dir, exist_ok=True)
+
+        # Expand ~ and ~user, then make absolute (robust against cwd changes)
+        trace_dir = os.path.expanduser(trace_dir)
+        trace_dir = os.path.abspath(trace_dir)
+
+        try:
+            os.makedirs(trace_dir, exist_ok=True)
+        except OSError as exc:
+            logger.error(f"Failed to create profiler directory {trace_dir}: {exc}")
+            raise
+
+        # Build final template path (without rank or extension — torch.profiler appends those)
         full_template = os.path.join(trace_dir, trace_filename)
 
-        logger.info(f"Starting diffusion profiling → {full_template}_rank*.json")
+        expected_pattern = f"{full_template}*.json"
+        logger.info(f"Starting diffusion profiling → {expected_pattern}")
 
-        # Call GPUWorker.start_profile on all workers via RPC
-        self.collective_rpc(method="start_profile", args=(full_template,))
+        # Also log the absolute directory once (useful in multi-node or containers)
+        logger.debug(f"Profiler output directory: {trace_dir}")
+
+        # Propagate to all workers
+        try:
+            self.collective_rpc(method="start_profile", args=(full_template,))
+        except Exception as e:
+            logger.error("Failed to start profiling on workers", exc_info=True)
+            raise RuntimeError(f"Could not start profiler: {e}") from e
 
     def stop_profile(self) -> dict:
-        """Stop profiling and return paths to both traces and tables."""
-        logger.info("Stopping diffusion profiling and generating tables...")
+        """
+        Stop profiling on all workers and collect the final trace/table paths.
 
-        # collective_rpc returns a list of dictionaries from all ranks
+        The worker (torch_profiler.py) now handles trace export, compression to .gz,
+        and deletion of the original .json file. This method only collects and
+        reports the paths returned by the workers.
+
+        Returns:
+            dict with keys:
+              - "traces": list of final trace file paths (usually .json.gz)
+              - "tables": list of table strings (one per rank)
+        """
+        logger.info("Stopping diffusion profiling and collecting results...")
+
         try:
-            results = self.collective_rpc(method="stop_profile")
+            # Give worker enough time — export + compression + table can be slow
+            results = self.collective_rpc(method="stop_profile", timeout=180)
+        except Exception:
+            logger.error("Failed to stop profiling on workers", exc_info=True)
+            return {"traces": [], "tables": []}
 
-            output_files = {"traces": [], "tables": []}
+        output_files = {"traces": [], "tables": []}
+        successful_traces = 0
 
-            # Collect results from all ranks
-            for res in results:
-                if res and isinstance(res, dict):
-                    # 1. Handle Traces (Compress them)
-                    if "trace" in res:
-                        trace_path = res.get("trace")
-                        if trace_path and os.path.exists(trace_path):
-                            gz_trace_path = f"{trace_path}.gz"
-                            try:
-                                logger.debug(f"Compressing trace: {trace_path} -> {gz_trace_path}")
-                                with open(trace_path, "rb") as f_in:
-                                    with gzip.open(gz_trace_path, "wb") as f_out:
-                                        shutil.copyfileobj(f_in, f_out)
-
-                                # Remove the original massive JSON file to save space
-                                os.remove(trace_path)
-                                output_files["traces"].append(gz_trace_path)
-                            except Exception as e:
-                                logger.warning(f"Failed to compress trace {trace_path}: {e}")
-                                # Fallback to original path if compression fails
-                                output_files["traces"].append(trace_path)
-                        else:
-                            output_files["traces"].append(trace_path)
-
-                    # 2. Handle Tables (Keep text for easy printing)
-                    if "table" in res:
-                        output_files["tables"].append(res.get("table"))
-
-            if output_files["traces"]:
-                logger.info(f"Profiling complete. Captured results for {len(results)} ranks.")
-
+        if not results:
+            logger.warning("No profiling results returned from any rank")
             return output_files
 
-        except Exception as e:
-            logger.error(f"Failed to stop profiling: {e}", exc_info=True)
-            return {"traces": [], "tables": []}
+        for rank, res in enumerate(results):
+            if not isinstance(res, dict):
+                logger.warning(f"Rank {rank}: invalid result format (got {type(res)})")
+                continue
+
+            # 1. Trace file — should be .json.gz if compression succeeded
+            trace_path = res.get("trace")
+            if trace_path:
+                # We trust the worker — it created/compressed the file
+                logger.info(f"[Rank {rank}] Final trace: {trace_path}")
+                output_files["traces"].append(trace_path)
+                successful_traces += 1
+
+                # Optional: warn if path looks suspicious (e.g. still .json)
+                if not trace_path.endswith((".json.gz", ".json")):
+                    logger.warning(f"Rank {rank}: unusual trace path extension: {trace_path}")
+
+            # 2. Table file — plain text
+            table = res.get("table")
+            if table:
+                output_files["tables"].append(table)
+
+        # Final summary logging
+        num_ranks = len(results)
+        if successful_traces > 0:
+            final_paths_str = ", ".join(output_files["traces"][:3])
+            if len(output_files["traces"]) > 3:
+                final_paths_str += f" ... (+{len(output_files['traces']) - 3} more)"
+
+            logger.info(
+                f"Profiling stopped. Collected {successful_traces} trace file(s) "
+                f"from {num_ranks} rank(s). "
+                f"Final trace paths: {final_paths_str}"
+            )
+        elif output_files["traces"]:
+            logger.info(
+                f"Profiling stopped but no traces were successfully collected. "
+                f"Reported paths: {', '.join(output_files['traces'][:3])}"
+                f"{' ...' if len(output_files['traces']) > 3 else ''}"
+            )
+        else:
+            logger.info("Profiling stopped — no trace files were collected from any rank.")
+
+        if output_files["tables"]:
+            logger.debug(f"Collected {len(output_files['tables'])} profiling table(s)")
+
+        return output_files
 
     def _dummy_run(self):
         """A dummy run to warm up the model."""

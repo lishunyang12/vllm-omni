@@ -223,8 +223,8 @@ class OmniStage:
 
         # Wait for result from worker
         try:
-            # Profiling stop might take time to flush files, give it 60s
-            response = self._out_q.get(timeout=60)
+            # Profiling stop might take time to flush files, give it 180s
+            response = self._out_q.get(timeout=180)
 
             if isinstance(response, dict):
                 if response.get("type") == "profiler_result":
@@ -1001,8 +1001,6 @@ async def _stage_worker_async(
     except Exception as e:
         logger.warning("Device setup failed: %s", e)
 
-    max_batch_size = int(runtime_cfg.get("max_batch_size", 1) or 1)
-    engine_args["max_num_seqs"] = max_batch_size
     # Initialize OmniConnectors if configured to match sync worker behavior
     connectors: dict[Any, Any] = {}
     if connectors_config:
