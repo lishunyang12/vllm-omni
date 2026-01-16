@@ -1,61 +1,70 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+
 """
 Example script for image editing with Qwen-Image-Edit.
+
 Usage (single image):
-    python image_edit.py
-        --image input.png
-        --prompt "Let this mascot dance under the moon, surrounded by floating stars and poetic bubbles such as 'Be Kind'"
-        --output output_image_edit.png
-        --num_inference_steps 50
-        --cfg_scale 4.0
+    python image_edit.py \
+        --image input.png \
+        --prompt "Let this mascot dance under the moon, surrounded by floating stars and poetic bubbles such as 'Be Kind'" \
+        --output output_image_edit.png \
+        --num_inference_steps 50 \
+        --cfg_scale 4.0 \
         --guidance_scale 1.0
+
 Usage (multiple images):
-    python image_edit.py
-        --image input1.png input2.png input3.png
-        --prompt "Combine these images into a single scene"
-        --output output_image_edit.png
-        --num_inference_steps 50
-        --cfg_scale 4.0
+    python image_edit.py \
+        --image input1.png input2.png input3.png \
+        --prompt "Combine these images into a single scene" \
+        --output output_image_edit.png \
+        --num_inference_steps 50 \
+        --cfg_scale 4.0 \
         --guidance_scale 1.0
+
 Usage (with cache-dit acceleration):
-    python image_edit.py
-        --image input.png
-        --prompt "Edit description"
-        --cache_backend cache_dit
-        --cache_dit_max_continuous_cached_steps 3
-        --cache_dit_residual_diff_threshold 0.24
+    python image_edit.py \
+        --image input.png \
+        --prompt "Edit description" \
+        --cache_backend cache_dit \
+        --cache_dit_max_continuous_cached_steps 3 \
+        --cache_dit_residual_diff_threshold 0.24 \
         --cache_dit_enable_taylorseer
+
 Usage (with tea_cache acceleration):
-    python image_edit.py
-        --image input.png
-        --prompt "Edit description"
-        --cache_backend tea_cache
+    python image_edit.py \
+        --image input.png \
+        --prompt "Edit description" \
+        --cache_backend tea_cache \
         --tea_cache_rel_l1_thresh 0.25
+
 Usage (layered):
-    python image_edit.py
-        --model "Qwen/Qwen-Image-Layered"
-        --image input.png
-        --prompt ""
-        --output "layered"
-        --num_inference_steps 50
-        --cfg_scale 4.0
-        --layers 4
+    python image_edit.py \
+        --model "Qwen/Qwen-Image-Layered" \
+        --image input.png \
+        --prompt "" \
+        --output "layered" \
+        --num_inference_steps 50 \
+        --cfg_scale 4.0 \
+        --layers 4 \
         --color-format "RGBA"
+
 Usage (with CFG Parallel):
-    python image_edit.py
-        --image input.png
-        --prompt "Edit description"
-        --cfg_parallel_size 2
-        --num_inference_steps 50
+    python image_edit.py \
+        --image input.png \
+        --prompt "Edit description" \
+        --cfg_parallel_size 2 \
+        --num_inference_steps 50 \
         --cfg_scale 4.0
+
 Usage (disable torch.compile):
-    python image_edit.py
-        --image input.png
-        --prompt "Edit description"
-        --enforce_eager
-        --num_inference_steps 50
+    python image_edit.py \
+        --image input.png \
+        --prompt "Edit description" \
+        --enforce_eager \
+        --num_inference_steps 50 \
         --cfg_scale 4.0
+
 For more options, run:
     python image_edit.py --help
 """
@@ -63,7 +72,6 @@ For more options, run:
 import argparse
 import os
 import time
-import traceback
 from pathlib import Path
 
 import torch
@@ -180,12 +188,14 @@ def parse_args() -> argparse.Namespace:
         default=640,
         help="Bucket in (640, 1024) to determine the condition and output resolution",
     )
+
     parser.add_argument(
         "--color-format",
         type=str,
         default="RGB",
         help="For Qwen-Image-Layered, set to RGBA.",
     )
+
     # Cache-DiT specific parameters
     parser.add_argument(
         "--cache_dit_fn_compute_blocks",
@@ -243,6 +253,7 @@ def parse_args() -> argparse.Namespace:
         choices=["dynamic", "static"],
         help="[cache-dit] SCM steps policy: dynamic or static.",
     )
+
     # TeaCache specific parameters
     parser.add_argument(
         "--tea_cache_rel_l1_thresh",
@@ -267,26 +278,32 @@ def parse_args() -> argparse.Namespace:
 
 def main():
     args = parse_args()
+
     # Validate input images exist and load them
     input_images = []
     for image_path in args.image:
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Input image not found: {image_path}")
+
         img = Image.open(image_path).convert(args.color_format)
         input_images.append(img)
+
     # Use single image or list based on number of inputs
     if len(input_images) == 1:
         input_image = input_images[0]
     else:
         input_image = input_images
+
     device = detect_device_type()
     generator = torch.Generator(device=device).manual_seed(args.seed)
+
     # Enable VAE memory optimizations on NPU
     vae_use_slicing = is_npu()
     vae_use_tiling = is_npu()
     parallel_config = DiffusionParallelConfig(
         ulysses_degree=args.ulysses_degree, ring_degree=args.ring_degree, cfg_parallel_size=args.cfg_parallel_size
     )
+
     # Configure cache based on backend type
     cache_config = None
     if args.cache_backend == "cache_dit":
