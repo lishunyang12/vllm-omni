@@ -159,19 +159,14 @@ class GPUWorker:
 
     @torch.inference_mode()
     def execute_model(self, reqs: list[OmniDiffusionRequest], od_config: OmniDiffusionConfig) -> DiffusionOutput:
-        """
-        Execute a forward pass.
-        """
         assert self.pipeline is not None
         if not reqs or len(reqs) == 0:
             raise ValueError("Cannot execute model with empty request list")
-        # TODO: dealing with first req for now
-        req = reqs[0]
 
+        req = reqs[0]
         if req.generator is None and req.seed is not None:
             req.generator = torch.Generator(device=self.device).manual_seed(req.seed)
 
-        # Refresh cache context if needed
         if self.cache_backend is not None and self.cache_backend.is_enabled():
             self.cache_backend.refresh(self.pipeline, req.num_inference_steps)
 
@@ -190,7 +185,10 @@ class GPUWorker:
 
         with set_forward_context(vllm_config=self.vllm_config, omni_diffusion_config=self.od_config):
             with record_function("inference_total"):
-                output = self.pipeline.forward(req, **profiler_kwargs)
+                if CurrentProfiler.is_active():
+                    output = self.pipeline.forward(req, **profiler_kwargs)
+                else:
+                    output = self.pipeline.forward(req)
         return output
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:

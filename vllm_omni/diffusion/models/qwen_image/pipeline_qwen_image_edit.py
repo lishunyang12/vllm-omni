@@ -304,6 +304,11 @@ class QwenImageEditPipeline(
         if max_sequence_length is not None and max_sequence_length > 1024:
             raise ValueError(f"`max_sequence_length` cannot be greater than 1024 but is {max_sequence_length}")
 
+        if callback_on_step_end_tensor_inputs is not None:
+            for name in callback_on_step_end_tensor_inputs:
+                if name not in ["latents"]:  # currently only latents is supported
+                    raise ValueError(f"Unsupported tensor input for callback: {name}")
+
     def _extract_masked_hidden(self, hidden_states: torch.Tensor, mask: torch.Tensor):
         bool_mask = mask.bool()
         valid_lengths = bool_mask.sum(dim=1)
@@ -595,6 +600,8 @@ class QwenImageEditPipeline(
         do_true_cfg,
         guidance,
         true_cfg_scale,
+        callback_on_step_end,
+        callback_on_step_end_tensor_inputs,
     ):
         """Diffusion loop with optional image conditioning."""
         self.scheduler.set_begin_index(0)
@@ -690,6 +697,20 @@ class QwenImageEditPipeline(
                     noise_pred = comb_pred * (cond_norm / noise_norm)
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents, return_dict=False)[0]
+
+            if callback_on_step_end is not None:
+                # Prepare the dict of tensors the callback might want
+                callback_kwargs = {}
+                if callback_on_step_end_tensor_inputs is not None:
+                    if "latents" in callback_on_step_end_tensor_inputs:
+                        callback_kwargs["latents"] = latents
+
+                callback_on_step_end(
+                    self,  # pipe / pipeline instance
+                    i,  # step_index
+                    t,  # current timestep
+                    callback_kwargs,  # dict with requested tensors
+                )
         return latents
 
     def forward(
@@ -713,7 +734,8 @@ class QwenImageEditPipeline(
         negative_prompt_embeds_mask: torch.Tensor | None = None,
         output_type: str | None = "pil",
         attention_kwargs: dict[str, Any] | None = None,
-        callback_on_step_end_tensor_inputs: list[str] = ["latents"],
+        callback_on_step_end=None,
+        callback_on_step_end_tensor_inputs: list[str] | None = ["latents"],
         max_sequence_length: int = 512,
     ) -> DiffusionOutput:
         """Forward pass for image editing."""
@@ -860,6 +882,8 @@ class QwenImageEditPipeline(
             do_true_cfg,
             guidance,
             true_cfg_scale,
+            callback_on_step_end=callback_on_step_end,
+            callback_on_step_end_tensor_inputs=callback_on_step_end_tensor_inputs,
         )
 
         self._current_timestep = None

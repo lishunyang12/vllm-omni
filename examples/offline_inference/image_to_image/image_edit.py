@@ -1,70 +1,61 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-
 """
 Example script for image editing with Qwen-Image-Edit.
-
 Usage (single image):
-    python image_edit.py \
-        --image input.png \
-        --prompt "Let this mascot dance under the moon, surrounded by floating stars and poetic bubbles such as 'Be Kind'" \
-        --output output_image_edit.png \
-        --num_inference_steps 50 \
-        --cfg_scale 4.0 \
+    python image_edit.py
+        --image input.png
+        --prompt "Let this mascot dance under the moon, surrounded by floating stars and poetic bubbles such as 'Be Kind'"
+        --output output_image_edit.png
+        --num_inference_steps 50
+        --cfg_scale 4.0
         --guidance_scale 1.0
-
 Usage (multiple images):
-    python image_edit.py \
-        --image input1.png input2.png input3.png \
-        --prompt "Combine these images into a single scene" \
-        --output output_image_edit.png \
-        --num_inference_steps 50 \
-        --cfg_scale 4.0 \
+    python image_edit.py
+        --image input1.png input2.png input3.png
+        --prompt "Combine these images into a single scene"
+        --output output_image_edit.png
+        --num_inference_steps 50
+        --cfg_scale 4.0
         --guidance_scale 1.0
-
 Usage (with cache-dit acceleration):
-    python image_edit.py \
-        --image input.png \
-        --prompt "Edit description" \
-        --cache_backend cache_dit \
-        --cache_dit_max_continuous_cached_steps 3 \
-        --cache_dit_residual_diff_threshold 0.24 \
+    python image_edit.py
+        --image input.png
+        --prompt "Edit description"
+        --cache_backend cache_dit
+        --cache_dit_max_continuous_cached_steps 3
+        --cache_dit_residual_diff_threshold 0.24
         --cache_dit_enable_taylorseer
-
 Usage (with tea_cache acceleration):
-    python image_edit.py \
-        --image input.png \
-        --prompt "Edit description" \
-        --cache_backend tea_cache \
+    python image_edit.py
+        --image input.png
+        --prompt "Edit description"
+        --cache_backend tea_cache
         --tea_cache_rel_l1_thresh 0.25
-
 Usage (layered):
-    python image_edit.py \
-        --model "Qwen/Qwen-Image-Layered" \
-        --image input.png \
-        --prompt "" \
-        --output "layered" \
-        --num_inference_steps 50 \
-        --cfg_scale 4.0 \
-        --layers 4 \
+    python image_edit.py
+        --model "Qwen/Qwen-Image-Layered"
+        --image input.png
+        --prompt ""
+        --output "layered"
+        --num_inference_steps 50
+        --cfg_scale 4.0
+        --layers 4
         --color-format "RGBA"
-
 Usage (with CFG Parallel):
-    python image_edit.py \
-        --image input.png \
-        --prompt "Edit description" \
-        --cfg_parallel_size 2 \
-        --num_inference_steps 50 \
+    python image_edit.py
+        --image input.png
+        --prompt "Edit description"
+        --cfg_parallel_size 2
+        --num_inference_steps 50
         --cfg_scale 4.0
-
 Usage (disable torch.compile):
-    python image_edit.py \
-        --image input.png \
-        --prompt "Edit description" \
-        --enforce_eager \
-        --num_inference_steps 50 \
+    python image_edit.py
+        --image input.png
+        --prompt "Edit description"
+        --enforce_eager
+        --num_inference_steps 50
         --cfg_scale 4.0
-
 For more options, run:
     python image_edit.py --help
 """
@@ -72,6 +63,7 @@ For more options, run:
 import argparse
 import os
 import time
+import traceback
 from pathlib import Path
 
 import torch
@@ -188,14 +180,12 @@ def parse_args() -> argparse.Namespace:
         default=640,
         help="Bucket in (640, 1024) to determine the condition and output resolution",
     )
-
     parser.add_argument(
         "--color-format",
         type=str,
         default="RGB",
         help="For Qwen-Image-Layered, set to RGBA.",
     )
-
     # Cache-DiT specific parameters
     parser.add_argument(
         "--cache_dit_fn_compute_blocks",
@@ -253,7 +243,6 @@ def parse_args() -> argparse.Namespace:
         choices=["dynamic", "static"],
         help="[cache-dit] SCM steps policy: dynamic or static.",
     )
-
     # TeaCache specific parameters
     parser.add_argument(
         "--tea_cache_rel_l1_thresh",
@@ -278,32 +267,26 @@ def parse_args() -> argparse.Namespace:
 
 def main():
     args = parse_args()
-
     # Validate input images exist and load them
     input_images = []
     for image_path in args.image:
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Input image not found: {image_path}")
-
         img = Image.open(image_path).convert(args.color_format)
         input_images.append(img)
-
     # Use single image or list based on number of inputs
     if len(input_images) == 1:
         input_image = input_images[0]
     else:
         input_image = input_images
-
     device = detect_device_type()
     generator = torch.Generator(device=device).manual_seed(args.seed)
-
     # Enable VAE memory optimizations on NPU
     vae_use_slicing = is_npu()
     vae_use_tiling = is_npu()
     parallel_config = DiffusionParallelConfig(
         ulysses_degree=args.ulysses_degree, ring_degree=args.ring_degree, cfg_parallel_size=args.cfg_parallel_size
     )
-
     # Configure cache based on backend type
     cache_config = None
     if args.cache_backend == "cache_dit":
@@ -326,105 +309,139 @@ def main():
             # Note: coefficients will use model-specific defaults based on model_type
         }
 
-    # Initialize Omni with appropriate pipeline
-    omni = Omni(
-        model=args.model,
-        vae_use_slicing=vae_use_slicing,
-        vae_use_tiling=vae_use_tiling,
-        cache_backend=args.cache_backend,
-        cache_config=cache_config,
-        parallel_config=parallel_config,
-        enforce_eager=args.enforce_eager,
-    )
-    print("Pipeline loaded")
-
-    # Time profiling for generation
-    print(f"\n{'=' * 60}")
-    print("Generation Configuration:")
-    print(f"  Model: {args.model}")
-    print(f"  Inference steps: {args.num_inference_steps}")
-    print(f"  Cache backend: {args.cache_backend if args.cache_backend else 'None (no acceleration)'}")
-    if isinstance(input_image, list):
-        print(f"  Number of input images: {len(input_image)}")
-        for idx, img in enumerate(input_image):
-            print(f"    Image {idx + 1} size: {img.size}")
-    else:
-        print(f"  Input image size: {input_image.size}")
-    print(
-        f"  Parallel configuration: ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, cfg_parallel_size={args.cfg_parallel_size}"
-    )
-    print(f"{'=' * 60}\n")
-
-    generation_start = time.perf_counter()
-    # Generate edited image
-    generate_kwargs = {
-        "prompt": args.prompt,
-        "pil_image": input_image,
-        "negative_prompt": args.negative_prompt,
-        "generator": generator,
-        "true_cfg_scale": args.cfg_scale,
-        "guidance_scale": args.guidance_scale,
-        "num_inference_steps": args.num_inference_steps,
-        "num_outputs_per_prompt": args.num_outputs_per_prompt,
-        "layers": args.layers,
-        "resolution": args.resolution,
-    }
-
-    outputs = omni.generate(**generate_kwargs)
-    generation_end = time.perf_counter()
-    generation_time = generation_end - generation_start
-
-    # Print profiling results
-    print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
-
-    if not outputs:
-        raise ValueError("No output generated from omni.generate()")
-    logger.info("Outputs: %s", outputs)
-
-    # Extract images from OmniRequestOutput
-    # omni.generate() returns list[OmniRequestOutput], extract images from request_output[0].images
-    first_output = outputs[0]
-    if not hasattr(first_output, "request_output") or not first_output.request_output:
-        raise ValueError("No request_output found in OmniRequestOutput")
-
-    req_out = first_output.request_output[0]
-    if not isinstance(req_out, OmniRequestOutput) or not hasattr(req_out, "images"):
-        raise ValueError("Invalid request_output structure or missing 'images' key")
-
-    images = req_out.images
-    if not images:
-        raise ValueError("No images found in request_output")
-
-    # Save output image(s)
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    suffix = output_path.suffix or ".png"
-    stem = output_path.stem or "output_image_edit"
-
-    # Handle layered output (each image may be a list of layers)
-    if args.num_outputs_per_prompt <= 1:
-        img = images[0]
-        # Check if this is a layered output (list of images)
-        if isinstance(img, list):
-            for sub_idx, sub_img in enumerate(img):
-                save_path = output_path.parent / f"{stem}_{sub_idx}{suffix}"
-                sub_img.save(save_path)
-                print(f"Saved edited image to {os.path.abspath(save_path)}")
+    profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
+    omni = None
+    try:
+        # Time profiling for generation
+        print(f"\n{'=' * 60}")
+        print("Generation Configuration:")
+        print(f" Model: {args.model}")
+        print(f" Inference steps: {args.num_inference_steps}")
+        print(f" Cache backend: {args.cache_backend if args.cache_backend else 'None (no acceleration)'}")
+        if isinstance(input_image, list):
+            print(f" Number of input images: {len(input_image)}")
+            for idx, img in enumerate(input_image):
+                print(f" Image {idx + 1} size: {img.size}")
         else:
-            img.save(output_path)
-            print(f"Saved edited image to {os.path.abspath(output_path)}")
-    else:
-        for idx, img in enumerate(images):
+            print(f" Input image size: {input_image.size}")
+        print(
+            f" Parallel configuration: ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, cfg_parallel_size={args.cfg_parallel_size}"
+        )
+        print(f"{'=' * 60}\n")
+        # Initialize Omni with appropriate pipeline
+        omni = Omni(
+            model=args.model,
+            vae_use_slicing=vae_use_slicing,
+            vae_use_tiling=vae_use_tiling,
+            cache_backend=args.cache_backend,
+            cache_config=cache_config,
+            parallel_config=parallel_config,
+            enforce_eager=args.enforce_eager,
+        )
+        print("Pipeline loaded")
+        if profiler_enabled:
+            print("[Profiler] Starting profiling...")
+            omni.start_profile()
+        generation_start = time.perf_counter()
+        # Generate edited image
+        generate_kwargs = {
+            "prompt": args.prompt,
+            "pil_image": input_image,
+            "negative_prompt": args.negative_prompt,
+            "generator": generator,
+            "true_cfg_scale": args.cfg_scale,
+            "guidance_scale": args.guidance_scale,
+            "num_inference_steps": args.num_inference_steps,
+            "num_outputs_per_prompt": args.num_outputs_per_prompt,
+            "layers": args.layers,
+            "resolution": args.resolution,
+        }
+        outputs = omni.generate(**generate_kwargs)
+        generation_end = time.perf_counter()
+        generation_time = generation_end - generation_start
+        # Print profiling results
+        print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
+        if profiler_enabled:
+            print("\n[Profiler] Stopping profiler and collecting results...")
+            profile_results = omni.stop_profile()
+            if profile_results and isinstance(profile_results, dict):
+                traces = profile_results.get("traces", [])
+                tables = profile_results.get("tables", [])
+                print("\n" + "=" * 60)
+                print("PROFILING RESULTS:")
+                for rank in range(max(len(traces), len(tables))):
+                    print(f"\nRank {rank}:")
+                    if rank < len(traces) and traces[rank]:
+                        print(f" • Trace: {traces[rank]}")
+                    if rank < len(tables) and tables[rank]:
+                        print(f" • Table: {tables[rank]}")
+                print("=" * 60)
+            else:
+                print("[Profiler] No valid profiling data returned.")
+        if not outputs:
+            raise ValueError("No output generated from omni.generate()")
+        logger.info("Outputs: %s", outputs)
+
+        # Extract images from OmniRequestOutput
+        # omni.generate() returns list[OmniRequestOutput], extract images from request_output[0].images
+        first_output = outputs[0]
+        if not hasattr(first_output, "request_output") or not first_output.request_output:
+            raise ValueError("No request_output found in OmniRequestOutput")
+
+        req_out = first_output.request_output[0]
+        if not isinstance(req_out, OmniRequestOutput) or not hasattr(req_out, "images"):
+            raise ValueError("Invalid request_output structure or missing 'images' key")
+
+        images = req_out.images
+        if not images:
+            raise ValueError("No images found in request_output")
+
+        # Save output image(s)
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        suffix = output_path.suffix or ".png"
+        stem = output_path.stem or "output_image_edit"
+
+        # Handle layered output (each image may be a list of layers)
+        if args.num_outputs_per_prompt <= 1:
+            img = images[0]
             # Check if this is a layered output (list of images)
             if isinstance(img, list):
                 for sub_idx, sub_img in enumerate(img):
-                    save_path = output_path.parent / f"{stem}_{idx}_{sub_idx}{suffix}"
+                    save_path = output_path.parent / f"{stem}*{sub_idx}{suffix}"
                     sub_img.save(save_path)
                     print(f"Saved edited image to {os.path.abspath(save_path)}")
             else:
-                save_path = output_path.parent / f"{stem}_{idx}{suffix}"
-                img.save(save_path)
-                print(f"Saved edited image to {os.path.abspath(save_path)}")
+                img.save(output_path)
+                print(f"Saved edited image to {os.path.abspath(output_path)}")
+        else:
+            for idx, img in enumerate(images):
+                # Check if this is a layered output (list of images)
+                if isinstance(img, list):
+                    for sub_idx, sub_img in enumerate(img):
+                        save_path = output_path.parent / f"{stem}*{idx}*{sub_idx}{suffix}"
+                        sub_img.save(save_path)
+                        print(f"Saved edited image to {os.path.abspath(save_path)}")
+                else:
+                    save_path = output_path.parent / f"{stem}*{idx}{suffix}"
+                    img.save(save_path)
+                    print(f"Saved edited image to {os.path.abspath(save_path)}")
+
+    except Exception as e:
+        print("\n" + "!" * 70)
+        print("ERROR during execution:")
+        print(str(e))
+        traceback.print_exc()
+        print("!" * 70 + "\n")
+        raise
+    finally:
+        if omni is not None:
+            print("\nCleaning up Omni instance...")
+            try:
+                omni.close()
+                print("Cleanup completed.")
+            except Exception as cleanup_err:
+                print(f"Warning: Cleanup failed → {cleanup_err}")
 
 
 if __name__ == "__main__":
