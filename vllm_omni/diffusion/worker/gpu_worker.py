@@ -184,7 +184,7 @@ class GPUWorker:
             }
 
         with set_forward_context(vllm_config=self.vllm_config, omni_diffusion_config=self.od_config):
-            with record_function("inference_total"):
+            with record_function("pipeline_forward"):
                 if CurrentProfiler.is_active():
                     output = self.pipeline.forward(req, **profiler_kwargs)
                 else:
