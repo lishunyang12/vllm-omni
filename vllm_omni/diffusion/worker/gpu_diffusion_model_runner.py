@@ -15,6 +15,7 @@ from collections.abc import Iterable
 from contextlib import nullcontext
 
 import torch
+from torch.profiler import record_function
 from vllm.config import LoadConfig
 from vllm.logger import init_logger
 from vllm.utils.mem_utils import DeviceMemoryProfiler, GiB_bytes
@@ -25,6 +26,7 @@ from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
 from vllm_omni.diffusion.forward_context import set_forward_context
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 from vllm_omni.diffusion.offload import apply_offload_hooks
+from vllm_omni.diffusion.profiler import CurrentProfiler
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 
 logger = init_logger(__name__)
@@ -159,7 +161,24 @@ class GPUDiffusionModelRunner:
         if self.cache_backend is not None and self.cache_backend.is_enabled():
             self.cache_backend.refresh(self.pipeline, req.num_inference_steps)
 
+        profiler_kwargs = {}
+        if CurrentProfiler.is_active():
+
+            def profiler_step_bridge(pipe, step_index, timestep, callback_kwargs):
+                if CurrentProfiler.is_active():
+                    CurrentProfiler.step()
+                return callback_kwargs
+
+            profiler_kwargs = {
+                "callback_on_step_end": profiler_step_bridge,
+                "callback_on_step_end_tensor_inputs": ["latents"],
+            }
+
         with set_forward_context(vllm_config=self.vllm_config, omni_diffusion_config=self.od_config):
-            output = self.pipeline.forward(req)
+            with record_function("pipeline_forward"):
+                if CurrentProfiler.is_active():
+                    output = self.pipeline.forward(req, **profiler_kwargs)
+                else:
+                    output = self.pipeline.forward(req)
 
         return output
