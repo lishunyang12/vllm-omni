@@ -277,7 +277,7 @@ class Wan22I2VPipeline(nn.Module, SupportImageInput):
     ) -> DiffusionOutput:
         callback_on_step_end = kwargs.get("callback_on_step_end", None)
         callback_on_step_end_tensor_inputs = kwargs.get("callback_on_step_end_tensor_inputs", ["latents"])
-        
+
         # Get parameters from request or arguments
         prompt = req.prompt if req.prompt is not None else prompt
         negative_prompt = req.negative_prompt if req.negative_prompt is not None else negative_prompt
@@ -472,7 +472,7 @@ class Wan22I2VPipeline(nn.Module, SupportImageInput):
                 if callback_on_step_end_tensor_inputs is not None:
                     if "latents" in callback_on_step_end_tensor_inputs:
                         callback_kwargs["latents"] = latents
-                
+
                 callback_on_step_end(self, i, t, callback_kwargs)
 
         self._current_timestep = None
