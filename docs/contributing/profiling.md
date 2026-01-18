@@ -58,14 +58,14 @@ omni_llm.stop_profile()
 Output files are saved to your configured ```VLLM_TORCH_PROFILER_DIR```.
 
 **File Structure:**
-  - Chrome Trace (.json.gz): Visual timeline of kernels and stages. Open in Perfetto UI.
-    - LLM files look like: ```...rank-0.pt.trace.json.gz```
-    - Diffusion files look like: ```stage_0_diffusion_..._rank0.json.gz```
-  - **Summary Table** (```.txt```): Text report of top CPU/CUDA time consumers.
+    - Chrome Trace (.json.gz): Visual timeline of kernels and stages. Open in Perfetto UI.
+        - LLM files look like: ```...rank-0.pt.trace.json.gz```
+        - Diffusion files look like: ```stage_0_diffusion_..._rank0.json.gz```
+    - **Summary Table** (```.txt```): Text report of top CPU/CUDA time consumers.
 
 **Viewing Tools:**
-  - [Perfetto](https://ui.perfetto.dev/): (Recommended): Best for handling large audio trace files.
-  - ```chrome://tracing```: Good for smaller text-only traces.
+    - [Perfetto](https://ui.perfetto.dev/): (Recommended): Best for handling large audio trace files.
+    - ```chrome://tracing```: Good for smaller text-only traces.
 
 ### Supported Models
 
