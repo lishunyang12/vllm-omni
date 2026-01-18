@@ -1,101 +1,82 @@
 # Profiling vLLM-Omni
 
-Performance Profiling Guidelines Profiling capabilities in vLLM-Omni are reserved for development and maintenance tasks aimed at temporal analysis of the codebase. Production use is **strongly discouraged**; enabling the profiler incurs a substantial overhead that negatively impacts inference latency.
+> **Warning:** Profiling incurs significant overhead. Use only for development and debugging, never in production.
 
-**Mechanism**: vLLM-Omni implements cross-stage profiling via the PyTorch Profiler. The system is architected to support both **standard multi-stage models** (where each stage is a distinct engine instance) and **iterative diffusion models**. The profiling interface supports both holistic capturing (all stages) and targeted capturing (specific stages).
+vLLM-Omni uses the PyTorch Profiler to analyze performance across both **Multi-Stage LLMs** and **Diffusion Models**. For best results, profile on a single GPU to avoid synchronization noise.
 
-**Highly Recommended**: **Single-GPU Testing** To obtain the most accurate kernel-level timing, it is recommended to conduct profiling on a single GPU whenever possible. This prevents "noise" in the trace caused by distributed synchronization (NCCL/Gloo) and cross-node communication overhead, which can obscure individual kernel performance.
+## 1. Quick Start
 
-**1. Enabling the Profiler**
+**Step 1: Set the Output Directory**
+Before running any script, set this environment variable. The system detects this and automatically saves traces here.
 
-Before running your script, you must set the ```VLLM_TORCH_PROFILER_DIR``` environment
-variable.
-
-```Bash
-export VLLM_TORCH_PROFILER_DIR=/path/to/save/traces
+```bash
+export VLLM_TORCH_PROFILER_DIR=./profiles
 ```
 
-**Recommended: Limit Profiling to a Single Iteration**  
-For most use cases (especially when profiling audio stages), you should limit the profiler to just **one iteration** to keep trace files small and readable.
+**Step 2: Run Profiling**
 
+**A. For Diffusion Models (e.g., Wan 2.2, Z-Image)**
+
+Diffusion profiling is End-to-End, capturing VAE encoding, denoising loops, and decoding. Most example scripts automatically enable profiling if ```VLLM_TORCH_PROFILER_DIR``` is set.
+
+**CLI Usage:**
+```python
+# Example: Running Text-to-Video with profiling enabled
+export VLLM_TORCH_PROFILER_DIR=./profiles
+
+python examples/offline_inference/text_to_video/text_to_video.py \
+    --model "Wan-AI/Wan2.2-I2V-A14B-Diffusers" \
+    --num_inference_steps 15
+```
+
+**B. For Non-diffusion models (e.g., Qwen-Omni)**
+\
+It is best to limit profiling to one iteration to keep trace files manageable.
 
 ```bash
 export VLLM_PROFILER_MAX_ITERS=1
 ```
 
-**2. Offline Inference**
+**Python Usage**: Wrap your generation logic with start_profile() and stop_profile().
 
-For offlinie processing using ```OmniLLM```, you can wrap your ```generate``` calls with ```start_profile``` and ```stop_profile()```.
-
-Basic Usage(All Stages)
-```Python
+```python
 from vllm_omni import OmniLLM
 
 omni_llm = OmniLLM.from_engine_args(engine_args)
 
-# Start profiling all active stages
+# Start profiling (pass stages=[0, 2] to filter specific stages)
 omni_llm.start_profile()
 
 outputs = omni_llm.generate(prompts, sampling_params)
 
-# Stop profiling and save traces
+# Stop and save traces
 omni_llm.stop_profile()
 ```
 
-**Selective Stage Profiling**
-The profiler is default to function across all stages. But It is highly recommended to profile specific stages by passing the stages list, preventing from producing too large trace files:
-```python
-# Only profile Stage 1
-omni_llm.start_profile(stages=[1])
-```
+**Analyzing Omni Traces**
 
-```python
-# Stage 0 (Thinker) and Stage 2 (Audio Decoder) for qwen omni
-omni_llm.start_profile(stages=[0, 2])
-```
+Output files are saved to your configured ```VLLM_TORCH_PROFILER_DIR```.
 
-**Examples**:
-
-1. **Qwen-omni 2.5**:  [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen2_5_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen2_5_omni/end2end.py)
-
-2. **Qwen-omni 3.0**:   [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py)
-
-3. **Diffusion Offline**:   [https://github.com/lishunyang12/vllm-omni/blob/main/examples/offline_inference/text_to_image/text_to_image.py](https://github.com/lishunyang12/vllm-omni/blob/main/examples/offline_inference/text_to_image/text_to_image.py)
-
-**3. Online Inference(Async)**
-
-For online serving using AsyncOmni, the methods are asynchronous. This allows you to toggle profiling dynamically without restarting the server.
-
-```python
-from vllm_omni import AsyncOmni
-
-# Inside an async function:
-async_omni = AsyncOmni.from_engine_args(engine_args)
-
-await async_omni.start_profile()
-
-async for output in async_omni.generate(prompt, sampling_params, request_id):
-    # Process outputs...
-    pass
-
-await async_omni.stop_profile()
-```
-
-**4. Analyzing Omni Traces**
-
-After ``stop_profile()`` completes (and the file write wait time has passed), the directory specified in ```VLLM_TORCH_PROFILER_DIR``` will contain the trace files.
-
-```
-Output/
-│── ...rank-0.pt.trace.json.gz   # GPU 0 trace
-│
-│── profiler_out_.txt            # Summary tables (CPU/CUDA time %)
-```
+**File Structure:**
+  - Chrome Trace (.json.gz): Visual timeline of kernels and stages. Open in Perfetto UI.
+    - LLM files look like: ```...rank-0.pt.trace.json.gz```
+    - Diffusion files look like: ```stage_0_diffusion_..._rank0.json.gz```
+  - **Summary Table** (```.txt```): Text report of top CPU/CUDA time consumers.
 
 **Viewing Tools:**
-     - [Perfetto](https://ui.perfetto.dev/): (Recommended): Best for handling large audio trace files.
-     - ```chrome://tracing```: Good for smaller text-only traces.
+  - [Perfetto](https://ui.perfetto.dev/): (Recommended): Best for handling large audio trace files.
+  - ```chrome://tracing```: Good for smaller text-only traces.
+
+### Supported Models
+
+| Model Family | Example |
+| :--- | :--- | 
+| **Qwen2.5-Omni** | [qwen2_5_omni](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/qwen2_5_omni)  |
+| **Qwen3-Omni** | [qwen3_omni](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/qwen3_omni) |
+| **Z-Image-Turbo** | [text_to_image](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/text_to_image) |
+| **Wan 2.2** |  [image_to_video](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/image_to_video) |
+| **Qwen-Image-Edit** | [image_to_image](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/image_to_image/image_to_image.md) |
 
 
-**Note**: vLLM-Omni reuses the PyTorch Profiler infrastructure from vLLM.  
-For more advanced configuration options (memory profiling, custom activities, etc.), see the official vLLM profiler documentation:  [vLLM Profiling Guide](https://docs.vllm.ai/en/latest/dev/profiling.html)
+
+**Note**: vLLM-Omni reuses the PyTorch Profiler infrastructure from vLLM. See the official vLLM profiler documentation:  [vLLM Profiling Guide](https://docs.vllm.ai/en/latest/dev/profiling.html)
