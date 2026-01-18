@@ -70,8 +70,8 @@ Output files are saved to your configured ```VLLM_TORCH_PROFILER_DIR```.
 ### Supported Models
 
 | Model Family | Example |
-| :--- | :--- | 
-| **Qwen2.5-Omni** | [qwen2_5_omni](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/qwen2_5_omni)  |
+| :--- | :--- |
+| **Qwen2.5-Omni** | [qwen2_5_omni](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/qwen2_5_omni) |
 | **Qwen3-Omni** | [qwen3_omni](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/qwen3_omni) |
 | **Z-Image-Turbo** | [text_to_image](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/text_to_image) |
 | **Wan 2.2** |  [image_to_video](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/image_to_video) |
