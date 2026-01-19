@@ -182,6 +182,12 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Number of GPUs used for ring sequence parallelism.",
     )
+    parser.add_argument(
+        "--tensor_parallel_size",
+        type=int,
+        default=1,
+        help="Number of GPUs used for tensor parallelism (TP) inside the DiT.",
+    )
     parser.add_argument("--layers", type=int, default=4, help="Number of layers to decompose the input image into.")
     parser.add_argument(
         "--resolution",
@@ -302,7 +308,10 @@ def main():
     vae_use_slicing = is_npu()
     vae_use_tiling = is_npu()
     parallel_config = DiffusionParallelConfig(
-        ulysses_degree=args.ulysses_degree, ring_degree=args.ring_degree, cfg_parallel_size=args.cfg_parallel_size
+        ulysses_degree=args.ulysses_degree,
+        ring_degree=args.ring_degree,
+        cfg_parallel_size=args.cfg_parallel_size,
+        tensor_parallel_size=args.tensor_parallel_size,
     )
 
     # Configure cache based on backend type
@@ -340,6 +349,90 @@ def main():
             print(f" Number of input images: {len(input_image)}")
             for idx, img in enumerate(input_image):
                 print(f" Image {idx + 1} size: {img.size}")
+    # Initialize Omni with appropriate pipeline
+    omni = Omni(
+        model=args.model,
+        vae_use_slicing=vae_use_slicing,
+        vae_use_tiling=vae_use_tiling,
+        cache_backend=args.cache_backend,
+        cache_config=cache_config,
+        parallel_config=parallel_config,
+        enforce_eager=args.enforce_eager,
+    )
+    print("Pipeline loaded")
+
+    # Time profiling for generation
+    print(f"\n{'=' * 60}")
+    print("Generation Configuration:")
+    print(f"  Model: {args.model}")
+    print(f"  Inference steps: {args.num_inference_steps}")
+    print(f"  Cache backend: {args.cache_backend if args.cache_backend else 'None (no acceleration)'}")
+    if isinstance(input_image, list):
+        print(f"  Number of input images: {len(input_image)}")
+        for idx, img in enumerate(input_image):
+            print(f"    Image {idx + 1} size: {img.size}")
+    else:
+        print(f"  Input image size: {input_image.size}")
+    print(
+        f"  Parallel configuration: ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, cfg_parallel_size={args.cfg_parallel_size}, tensor_parallel_size={args.tensor_parallel_size}"
+    )
+    print(f"{'=' * 60}\n")
+
+    generation_start = time.perf_counter()
+    # Generate edited image
+    generate_kwargs = {
+        "prompt": args.prompt,
+        "pil_image": input_image,
+        "negative_prompt": args.negative_prompt,
+        "generator": generator,
+        "true_cfg_scale": args.cfg_scale,
+        "guidance_scale": args.guidance_scale,
+        "num_inference_steps": args.num_inference_steps,
+        "num_outputs_per_prompt": args.num_outputs_per_prompt,
+        "layers": args.layers,
+        "resolution": args.resolution,
+    }
+
+    outputs = omni.generate(**generate_kwargs)
+    generation_end = time.perf_counter()
+    generation_time = generation_end - generation_start
+
+    # Print profiling results
+    print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
+
+    if not outputs:
+        raise ValueError("No output generated from omni.generate()")
+    logger.info("Outputs: %s", outputs)
+
+    # Extract images from OmniRequestOutput
+    # omni.generate() returns list[OmniRequestOutput], extract images from request_output[0].images
+    first_output = outputs[0]
+    if not hasattr(first_output, "request_output") or not first_output.request_output:
+        raise ValueError("No request_output found in OmniRequestOutput")
+
+    req_out = first_output.request_output[0]
+    if not isinstance(req_out, OmniRequestOutput) or not hasattr(req_out, "images"):
+        raise ValueError("Invalid request_output structure or missing 'images' key")
+
+    images = req_out.images
+    if not images:
+        raise ValueError("No images found in request_output")
+
+    # Save output image(s)
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    suffix = output_path.suffix or ".png"
+    stem = output_path.stem or "output_image_edit"
+
+    # Handle layered output (each image may be a list of layers)
+    if args.num_outputs_per_prompt <= 1:
+        img = images[0]
+        # Check if this is a layered output (list of images)
+        if isinstance(img, list):
+            for sub_idx, sub_img in enumerate(img):
+                save_path = output_path.parent / f"{stem}_{sub_idx}{suffix}"
+                sub_img.save(save_path)
+                print(f"Saved edited image to {os.path.abspath(save_path)}")
         else:
             print(f" Input image size: {input_image.size}")
         print(
