@@ -57,10 +57,8 @@ omni_llm.stop_profile()
 
 Output files are saved to your configured ```VLLM_TORCH_PROFILER_DIR```.
 
-**File Structure:**
-
-1. **Chrome Trace** (```.json.gz```): Visual timeline of kernels and stages. Open in Perfetto UI.
-2. **Summary Table** (```.txt```): Text report of top CPU/CUDA time consumers.
+**Output**
+**Chrome Trace** (```.json.gz```): Visual timeline of kernels and stages. Open in Perfetto UI.
 
 **Viewing Tools:**
 
