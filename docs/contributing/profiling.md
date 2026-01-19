@@ -67,18 +67,4 @@ Output files are saved to your configured ```VLLM_TORCH_PROFILER_DIR```.
 - [Perfetto](https://ui.perfetto.dev/)(recommended)
 - ```chrome://tracing```(Chrome only)
 
-### Supported Models
-
-| Model Family | Example |
-| :--- | :--- |
-| **Qwen2.5-Omni** | [qwen2_5_omni](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/qwen2_5_omni) |
-| **Qwen3-Omni** | [qwen3_omni](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/qwen3_omni) |
-| **Z-Image-Turbo** | [text_to_image](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/text_to_image) |
-| **Wan 2.2** |  [image_to_video](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/image_to_video) |
-| **Qwen-Image** | [image_to_image](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/image_to_image/image_to_image.md) |
-| **Qwen-Image-Edit** | [image_to_image](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/image_to_image/image_to_image.md) |
-| **ovis-image** | [image_to_image](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/image_to_image/image_to_image.md) |
-| **longcat_image** | [image_to_image](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/image_to_image/image_to_image.md) |
-| **longcat_image-edit** | [image_to_image](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/image_to_image/image_to_image.md) |
-
 **Note**: vLLM-Omni reuses the PyTorch Profiler infrastructure from vLLM. See the official vLLM profiler documentation:  [vLLM Profiling Guide](https://docs.vllm.ai/en/latest/dev/profiling.html)
