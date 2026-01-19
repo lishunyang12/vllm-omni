@@ -43,7 +43,7 @@ class TorchProfiler(ProfilerBase):
 
         # Expected paths
         json_file = f"{trace_path_template}_rank{rank}.json"
-
+        
         # NOTE: Table file generation removed to prevent worker blocking
         # table_file = f"{trace_path_template}_rank{rank}_table.txt"
 
@@ -55,10 +55,12 @@ class TorchProfiler(ProfilerBase):
         def trace_handler(p):
             nonlocal json_file
 
+            # A. Export JSON Trace
             try:
                 p.export_chrome_trace(json_file)
                 logger.info(f"[Rank {rank}] Trace exported to {json_file}")
 
+                # [FIX] Start compression in background (Non-blocking)
                 try:
                     subprocess.Popen(["gzip", "-f", json_file])
                     logger.info(f"[Rank {rank}] Triggered background compression for {json_file}")
@@ -69,6 +71,10 @@ class TorchProfiler(ProfilerBase):
 
             except Exception as e:
                 logger.warning(f"[Rank {rank}] Failed to export trace: {e}")
+
+            # [OPTIMIZATION]
+            # Removed p.key_averages().table(...) call. 
+            # It causes massive blocking delays on large traces and triggers timeouts.
 
         # 4. Initialize profiler with long active period
         cls._profiler = profile(
@@ -97,16 +103,15 @@ class TorchProfiler(ProfilerBase):
             return None
 
         rank = cls._get_rank()
-
+        
         # Determine expected paths
         base_path = f"{cls._trace_template}_rank{rank}"
-        json_path = f"{base_path}.json"
         gz_path = f"{base_path}.json.gz"
-
+        
         try:
             # This triggers trace_handler synchronously
             # Since we removed table generation and backgrounded compression, this returns fast.
-            cls._profiler.stop()
+            cls._profiler.stop() 
         except Exception as e:
             logger.warning(f"[Rank {rank}] Profiler stop failed: {e}")
 
