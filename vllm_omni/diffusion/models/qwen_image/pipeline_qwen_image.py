@@ -550,7 +550,11 @@ class QwenImagePipeline(
         do_true_cfg,
         guidance,
         true_cfg_scale,
+        callback_on_step_end=None,
+        callback_on_step_end_tensor_inputs=None,
     ):
+        if callback_on_step_end_tensor_inputs is None:
+            callback_on_step_end_tensor_inputs = ["latents"]
         self.scheduler.set_begin_index(0)
         for i, t in enumerate(timesteps):
             if self.interrupt:
@@ -637,6 +641,19 @@ class QwenImagePipeline(
                     noise_pred = comb_pred * (cond_norm / noise_norm)
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents, return_dict=False)[0]
+
+            if callback_on_step_end is not None:
+                callback_kwargs = {}
+                for k in callback_on_step_end_tensor_inputs:
+                    if k == "latents":
+                        callback_kwargs["latents"] = latents
+
+                callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
+
+                if callback_outputs is not None:
+                    callback_kwargs = callback_outputs
+                if "latents" in callback_kwargs:
+                    latents = callback_kwargs["latents"]
         return latents
 
     def forward(
@@ -659,6 +676,7 @@ class QwenImagePipeline(
         negative_prompt_embeds_mask: torch.Tensor | None = None,
         output_type: str | None = "pil",
         attention_kwargs: dict[str, Any] | None = None,
+        callback_on_step_end: Any | None = None,
         callback_on_step_end_tensor_inputs: list[str] = ["latents"],
         max_sequence_length: int = 512,
     ) -> DiffusionOutput:
@@ -781,6 +799,8 @@ class QwenImagePipeline(
             do_true_cfg,
             guidance,
             true_cfg_scale,
+            callback_on_step_end=callback_on_step_end,
+            callback_on_step_end_tensor_inputs=callback_on_step_end_tensor_inputs,
         )
 
         self._current_timestep = None
