@@ -20,7 +20,6 @@ Usage:
 
 import argparse
 import os
-import time
 from pathlib import Path
 
 import numpy as np
@@ -100,32 +99,17 @@ def main():
     # Check if profiling is requested via environment variable
     profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
 
-    omni = None
-
-    # Time profiling for generation
-    if profiler_enabled:
-        print(f"\n{'=' * 60}")
-        print("Generation Configuration:")
-        print(f"  Model: {args.model}")
-        print(f"  Inference steps: {args.num_inference_steps}")
-        print(f"  Image size: {width}x{height}")
-        print(f"  Frames: {args.num_frames}")
-        print(f"{'=' * 60}\n")
-
     omni = Omni(
         model=args.model,
         vae_use_slicing=vae_use_slicing,
         vae_use_tiling=vae_use_tiling,
         boundary_ratio=args.boundary_ratio,
         flow_shift=args.flow_shift,
-        enforce_eager=args.enforce_eager,
     )
 
     if profiler_enabled:
         print("[Profiler] Starting profiling...")
         omni.start_profile()
-
-    generation_start = time.perf_counter()
 
     # omni.generate() returns Generator[OmniRequestOutput, None, None]
     frames = omni.generate(
@@ -141,10 +125,6 @@ def main():
         num_frames=args.num_frames,
     )
 
-    generation_end = time.perf_counter()
-    generation_time = generation_end - generation_start
-    print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
-
     # Extract video frames from OmniRequestOutput
     if isinstance(frames, list) and len(frames) > 0:
         first_item = frames[0]
@@ -156,19 +136,19 @@ def main():
                     f"Unexpected output type '{first_item.final_output_type}', expected 'image' for video generation."
                 )
 
-        # Pipeline mode: extract from nested request_output
-        if hasattr(first_item, "is_pipeline_output") and first_item.is_pipeline_output:
-            if isinstance(first_item.request_output, list) and len(first_item.request_output) > 0:
-                inner_output = first_item.request_output[0]
-                if isinstance(inner_output, OmniRequestOutput) and hasattr(inner_output, "images"):
-                    frames = inner_output.images[0] if inner_output.images else None
-                    if frames is None:
-                        raise ValueError("No video frames found in output.")
-        # Diffusion mode: use direct images field
-        elif hasattr(first_item, "images") and first_item.images:
-            frames = first_item.images
-        else:
-            raise ValueError("No video frames found in OmniRequestOutput.")
+            # Pipeline mode: extract from nested request_output
+            if hasattr(first_item, "is_pipeline_output") and first_item.is_pipeline_output:
+                if isinstance(first_item.request_output, list) and len(first_item.request_output) > 0:
+                    inner_output = first_item.request_output[0]
+                    if isinstance(inner_output, OmniRequestOutput) and hasattr(inner_output, "images"):
+                        frames = inner_output.images[0] if inner_output.images else None
+                        if frames is None:
+                            raise ValueError("No video frames found in output.")
+            # Diffusion mode: use direct images field
+            elif hasattr(first_item, "images") and first_item.images:
+                frames = first_item.images
+            else:
+                raise ValueError("No video frames found in OmniRequestOutput.")
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -209,30 +189,19 @@ def main():
     if profiler_enabled:
         print("\n[Profiler] Stopping profiler and collecting results...")
         profile_results = omni.stop_profile()
-
         if profile_results and isinstance(profile_results, dict):
             traces = profile_results.get("traces", [])
-            tables = profile_results.get("tables", [])
-
             print("\n" + "=" * 60)
             print("PROFILING RESULTS:")
-            for rank in range(max(len(traces), len(tables))):
+            for rank, trace in enumerate(traces):
                 print(f"\nRank {rank}:")
-                if rank < len(traces) and traces[rank]:
-                    print(f"  • Trace: {traces[rank]}")
-                if rank < len(tables) and tables[rank]:
-                    print(f"  • Table: {tables[rank]}")
+                if trace:
+                    print(f"  • Trace: {trace}")
+            if not traces:
+                print("  No traces collected.")
             print("=" * 60)
         else:
             print("[Profiler] No valid profiling data returned.")
-
-    if omni is not None:
-        print("\nCleaning up Omni instance...")
-        try:
-            omni.close()
-            print("Cleanup completed.")
-        except Exception as cleanup_err:
-            print(f"Warning: Cleanup failed -> {cleanup_err}")
 
 
 if __name__ == "__main__":
