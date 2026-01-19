@@ -335,9 +335,21 @@ def main():
             # Note: coefficients will use model-specific defaults based on model_type
         }
 
-    profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
-    omni = None
+    # Initialize Omni with appropriate pipeline
+    omni = Omni(
+        model=args.model,
+        vae_use_slicing=vae_use_slicing,
+        vae_use_tiling=vae_use_tiling,
+        cache_backend=args.cache_backend,
+        cache_config=cache_config,
+        parallel_config=parallel_config,
+        enforce_eager=args.enforce_eager,
+    )
+    print("Pipeline loaded")
 
+    # Check if profiling is requested via environment variable
+    profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))  
+    
     # Time profiling for generation
     print(f"\n{'=' * 60}")
     print("Generation Configuration:")
@@ -355,22 +367,6 @@ def main():
     )
     print(f"{'=' * 60}\n")
 
-    # Initialize Omni with appropriate pipeline
-    omni = Omni(
-        model=args.model,
-        vae_use_slicing=vae_use_slicing,
-        vae_use_tiling=vae_use_tiling,
-        cache_backend=args.cache_backend,
-        cache_config=cache_config,
-        parallel_config=parallel_config,
-        enforce_eager=args.enforce_eager,
-    )
-    print("Pipeline loaded")
-
-    if profiler_enabled:
-        print("[Profiler] Starting profiling...")
-        omni.start_profile()
-
     generation_start = time.perf_counter()
     # Generate edited image
     generate_kwargs = {
@@ -385,6 +381,11 @@ def main():
         "layers": args.layers,
         "resolution": args.resolution,
     }
+
+    if profiler_enabled:
+        print("[Profiler] Starting profiling...")
+        omni.start_profile()
+
     outputs = omni.generate(**generate_kwargs)
     generation_end = time.perf_counter()
     generation_time = generation_end - generation_start
@@ -397,15 +398,14 @@ def main():
         profile_results = omni.stop_profile()
         if profile_results and isinstance(profile_results, dict):
             traces = profile_results.get("traces", [])
-            tables = profile_results.get("tables", [])
             print("\n" + "=" * 60)
             print("PROFILING RESULTS:")
-            for rank in range(max(len(traces), len(tables))):
+            for rank, trace in enumerate(traces):
                 print(f"\nRank {rank}:")
-                if rank < len(traces) and traces[rank]:
-                    print(f" • Trace: {traces[rank]}")
-                if rank < len(tables) and tables[rank]:
-                    print(f" • Table: {tables[rank]}")
+                if trace:
+                    print(f"  • Trace: {trace}")
+            if not traces:
+                print("  No traces collected.")
             print("=" * 60)
         else:
             print("[Profiler] No valid profiling data returned.")
@@ -415,6 +415,7 @@ def main():
     logger.info("Outputs: %s", outputs)
 
     # Extract images from OmniRequestOutput
+    # omni.generate() returns list[OmniRequestOutput], extract images from request_output[0].images
     first_output = outputs[0]
     if not hasattr(first_output, "request_output") or not first_output.request_output:
         raise ValueError("No request_output found in OmniRequestOutput")
@@ -457,13 +458,11 @@ def main():
                 save_path = output_path.parent / f"{stem}_{idx}{suffix}"
                 img.save(save_path)
                 print(f"Saved edited image to {os.path.abspath(save_path)}")
-
-    # Explicitly close omni
+    
     if omni is not None:
         print("\nCleaning up Omni instance...")
         omni.close()
         print("Cleanup completed.")
-
 
 if __name__ == "__main__":
     main()
