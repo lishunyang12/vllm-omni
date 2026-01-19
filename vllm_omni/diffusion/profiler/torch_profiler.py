@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import gzip
 import os
-import shutil
+import subprocess
 from contextlib import nullcontext
 
 import torch
@@ -18,8 +17,8 @@ logger = init_logger(__name__)
 class TorchProfiler(ProfilerBase):
     """
     Torch-based profiler configured for End-to-End continuous recording.
-    Uses 'on_trace_ready' to handle both Trace and Table export reliably.
-    Compression (.gz) now happens inside the worker for race-free behavior.
+    Uses 'on_trace_ready' to handle Trace export.
+    Compression is offloaded to a background subprocess to avoid blocking the worker loop.
     """
 
     _profiler: profile | None = None
@@ -29,7 +28,6 @@ class TorchProfiler(ProfilerBase):
     def start(cls, trace_path_template: str) -> str:
         """
         Start the profiler with the given trace path template.
-        Returns the expected final trace path for this rank (may be .gz).
         """
         # 1. Cleanup any existing profiler
         if cls._profiler is not None:
@@ -39,13 +37,15 @@ class TorchProfiler(ProfilerBase):
 
         rank = cls._get_rank()
 
-        # 2. Make path absolute (helps in containers / different cwd)
+        # 2. Make path absolute
         trace_path_template = os.path.abspath(trace_path_template)
         cls._trace_template = trace_path_template
 
-        # Expected paths (compression happens later)
+        # Expected paths
         json_file = f"{trace_path_template}_rank{rank}.json"
-        table_file = f"{trace_path_template}_rank{rank}_table.txt"
+
+        # NOTE: Table file generation removed to prevent worker blocking
+        # table_file = f"{trace_path_template}_rank{rank}_table.txt"
 
         os.makedirs(os.path.dirname(json_file), exist_ok=True)
 
@@ -53,49 +53,24 @@ class TorchProfiler(ProfilerBase):
 
         # 3. Define the on_trace_ready handler
         def trace_handler(p):
-            nonlocal json_file, table_file
+            nonlocal json_file
 
-            # A. Export JSON Trace
             try:
                 p.export_chrome_trace(json_file)
                 logger.info(f"[Rank {rank}] Trace exported to {json_file}")
 
-                # ───────────── Compress to .gz immediately ─────────────
-                gz_file = f"{json_file}.gz"
                 try:
-                    with open(json_file, "rb") as f_in:
-                        with gzip.open(gz_file, "wb") as f_out:
-                            shutil.copyfileobj(f_in, f_out)
-                    logger.info(f"[Rank {rank}] Compressed trace to {gz_file}")
-
-                    # Clean up original large JSON file
-                    try:
-                        os.remove(json_file)
-                        logger.info(f"[Rank {rank}] Removed original trace {json_file}")
-                    except OSError as remove_err:
-                        logger.warning(f"[Rank {rank}] Failed to delete original {json_file}: {remove_err}")
-
-                    # Use gzipped path as final result
-                    json_file = gz_file
-
+                    subprocess.Popen(["gzip", "-f", json_file])
+                    logger.info(f"[Rank {rank}] Triggered background compression for {json_file}")
+                    # Update variable to point to the eventual file
+                    json_file = f"{json_file}.gz"
                 except Exception as compress_err:
-                    logger.warning(f"[Rank {rank}] Compression failed, keeping raw .json: {compress_err}")
-                    # json_file remains the raw path
+                    logger.warning(f"[Rank {rank}] Background gzip failed to start: {compress_err}")
 
             except Exception as e:
                 logger.warning(f"[Rank {rank}] Failed to export trace: {e}")
 
-            # B. Export Text Table
-            try:
-                # Averages calculated here when data is ready
-                table_str = p.key_averages().table(sort_by="cuda_time_total", row_limit=50)
-                with open(table_file, "w") as f:
-                    f.write(table_str)
-                logger.info(f"[Rank {rank}] Table exported to {table_file}")
-            except Exception as e:
-                logger.warning(f"[Rank {rank}] Failed to generate table: {e}")
-
-        # 4. Initialize profiler with long active period + callback
+        # 4. Initialize profiler with long active period
         cls._profiler = profile(
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
             schedule=torch.profiler.schedule(
@@ -113,9 +88,8 @@ class TorchProfiler(ProfilerBase):
         # 5. Start profiling
         cls._profiler.start()
 
-        # Return the path we expect to exist at the end (optimistically .gz)
-        expected_final = f"{trace_path_template}_rank{rank}.json.gz"
-        return expected_final
+        # Return the expected final path
+        return f"{trace_path_template}_rank{rank}.json.gz"
 
     @classmethod
     def stop(cls) -> dict | None:
@@ -123,26 +97,26 @@ class TorchProfiler(ProfilerBase):
             return None
 
         rank = cls._get_rank()
-        json_path = f"{cls._trace_template}_rank{rank}.json"
-        gz_path = f"{json_path}.gz"
+
+        # Determine expected paths
+        base_path = f"{cls._trace_template}_rank{rank}"
+        json_path = f"{base_path}.json"
+        gz_path = f"{base_path}.json.gz"
 
         try:
-            cls._profiler.stop()  # Triggers trace_handler synchronously
+            # This triggers trace_handler synchronously
+            # Since we removed table generation and backgrounded compression, this returns fast.
+            cls._profiler.stop()
         except Exception as e:
             logger.warning(f"[Rank {rank}] Profiler stop failed: {e}")
 
         cls._profiler = None
 
-        # After stop(), handler has run → prefer gz if it exists
-        final_trace = gz_path if os.path.exists(gz_path) else json_path
-
-        table_path = f"{cls._trace_template}_rank{rank}_table.txt"
-
-        return {"trace": final_trace, "table": table_path}
+        # We return the .gz path assuming background compression will succeed.
+        return {"trace": gz_path, "table": None}
 
     @classmethod
     def step(cls):
-        """Mark a profiler step (useful if using per-step scheduling)."""
         if cls._profiler is not None:
             cls._profiler.step()
 
@@ -152,5 +126,4 @@ class TorchProfiler(ProfilerBase):
 
     @classmethod
     def get_step_context(cls):
-        """Context manager for profiling a single step (if needed)."""
         return nullcontext()

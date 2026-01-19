@@ -513,8 +513,6 @@ class LongCatImageEditPipeline(nn.Module, SupportImageInput):
         output_type: str | None = "pil",
         return_dict: bool = True,
         joint_attention_kwargs: dict[str, Any] | None = None,
-        callback_on_step_end: Any | None = None,
-        callback_on_step_end_tensor_inputs: list[str] = ["latents"],
     ):
         prompt = req.prompt if req.prompt is not None else prompt
         negative_prompt = req.negative_prompt if req.negative_prompt is not None else negative_prompt
@@ -527,9 +525,6 @@ class LongCatImageEditPipeline(nn.Module, SupportImageInput):
         negative_prompt_embeds = getattr(req, "negative_prompt_embeds", None) or negative_prompt_embeds
         height = req.height or self.default_sample_size * self.vae_scale_factor
         width = req.width or self.default_sample_size * self.vae_scale_factor
-
-        if callback_on_step_end_tensor_inputs is None:
-            callback_on_step_end_tensor_inputs = ["latents"]
 
         if prompt is not None:
             batch_size = 1 if isinstance(prompt, str) else len(prompt)
@@ -654,20 +649,6 @@ class LongCatImageEditPipeline(nn.Module, SupportImageInput):
                 if torch.backends.mps.is_available():
                     # some platforms (eg. apple mps) misbehave due to a pytorch bug: https://github.com/pytorch/pytorch/pull/99272
                     latents = latents.to(latents_dtype)
-
-            # Callback support for profiler
-            if callback_on_step_end is not None:
-                callback_kwargs = {}
-                for k in callback_on_step_end_tensor_inputs:
-                    if k == "latents":
-                        callback_kwargs["latents"] = latents
-
-                callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
-
-                if callback_outputs is not None:
-                    callback_kwargs = callback_outputs
-                if "latents" in callback_kwargs:
-                    latents = callback_kwargs["latents"]
 
         self._current_timestep = None
 

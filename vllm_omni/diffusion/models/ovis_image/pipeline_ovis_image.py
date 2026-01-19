@@ -445,9 +445,6 @@ class OvisImagePipeline(
         negative_text_ids,
         latent_image_ids,
     ):
-        if callback_on_step_end_tensor_inputs is None:
-            callback_on_step_end_tensor_inputs = ["latents"]
-
         self.scheduler.set_begin_index(0)
         for i, t in enumerate(timesteps):
             if self._interrupt:
@@ -487,18 +484,15 @@ class OvisImagePipeline(
                     # some platforms (eg. apple mps) misbehave due to a pytorch bug: https://github.com/pytorch/pytorch/pull/99272
                     latents = latents.to(latents_dtype)
 
-            if callback_on_step_end is not None:
-                callback_kwargs = {}
-                for k in callback_on_step_end_tensor_inputs:
-                    if k == "latents":
-                        callback_kwargs["latents"] = latents
+            # Not used in this pipeline
+            # if callback_on_step_end is not None:
+            #     callback_kwargs = {}
+            #     for k in callback_on_step_end_tensor_inputs:
+            #         callback_kwargs[k] = locals()[k]
+            #     callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
 
-                callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
-
-                if callback_outputs is not None:
-                    callback_kwargs = callback_outputs
-                if "latents" in callback_kwargs:
-                    latents = callback_kwargs["latents"]
+            #     latents = callback_outputs.pop("latents", latents)
+            #     prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
 
         return latents
 

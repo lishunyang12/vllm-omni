@@ -224,7 +224,7 @@ class OmniStage:
         # Wait for result from worker
         try:
             # Profiling stop might take time to flush files, give it 180s
-            response = self._out_q.get(timeout=180)
+            response = self._out_q.get(timeout=60000)
 
             if isinstance(response, dict):
                 if response.get("type") == "profiler_result":

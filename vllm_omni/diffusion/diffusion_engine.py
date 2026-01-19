@@ -350,7 +350,7 @@ class DiffusionEngine:
 
         try:
             # Give worker enough time — export + compression + table can be slow
-            results = self.collective_rpc(method="stop_profile", timeout=600)
+            results = self.collective_rpc(method="stop_profile", timeout=60000)
         except Exception:
             logger.error("Failed to stop profiling on workers", exc_info=True)
             return {"traces": [], "tables": []}
