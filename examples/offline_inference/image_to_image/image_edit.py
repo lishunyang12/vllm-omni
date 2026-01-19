@@ -348,8 +348,8 @@ def main():
     print("Pipeline loaded")
 
     # Check if profiling is requested via environment variable
-    profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))  
-    
+    profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
+
     # Time profiling for generation
     print(f"\n{'=' * 60}")
     print("Generation Configuration:")
@@ -458,11 +458,7 @@ def main():
                 save_path = output_path.parent / f"{stem}_{idx}{suffix}"
                 img.save(save_path)
                 print(f"Saved edited image to {os.path.abspath(save_path)}")
-    
-    if omni is not None:
-        print("\nCleaning up Omni instance...")
-        omni.close()
-        print("Cleanup completed.")
+
 
 if __name__ == "__main__":
     main()

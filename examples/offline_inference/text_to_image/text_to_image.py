@@ -246,11 +246,6 @@ def main():
             img.save(save_path)
             print(f"Saved generated image to {save_path}")
 
-    if omni is not None:
-        print("\nCleaning up Omni instance...")
-        omni.close()
-        print("Cleanup completed.")
-
 
 if __name__ == "__main__":
     main()
