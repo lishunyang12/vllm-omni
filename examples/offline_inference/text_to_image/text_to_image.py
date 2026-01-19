@@ -204,10 +204,12 @@ def main():
             traces = profile_results.get("traces", [])
             print("\n" + "=" * 60)
             print("PROFILING RESULTS:")
-            for rank in range(max(len(traces), len(tables))):
+            for rank, trace in enumerate(traces):
                 print(f"\nRank {rank}:")
-                if rank < len(traces) and traces[rank]:
-                    print(f"  • Trace: {traces[rank]}")
+                if trace:
+                    print(f"  • Trace: {trace}")
+            if not traces:
+                print("  No traces collected.")
             print("=" * 60)
         else:
             print("[Profiler] No valid profiling data returned.")
