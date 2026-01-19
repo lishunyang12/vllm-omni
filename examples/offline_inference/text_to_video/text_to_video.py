@@ -4,7 +4,6 @@
 import argparse
 import os
 import time
-import traceback
 from pathlib import Path
 
 import numpy as np
@@ -51,133 +50,121 @@ def main():
 
     profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
     omni = None
-    try:
-        omni = Omni(
-            model=args.model,
-            vae_use_slicing=vae_use_slicing,
-            vae_use_tiling=vae_use_tiling,
-            boundary_ratio=args.boundary_ratio,
-            flow_shift=args.flow_shift,
-        )
 
-        if profiler_enabled:
-            print("[Profiler] Starting profiling...")
-            omni.start_profile()
+    omni = Omni(
+        model=args.model,
+        vae_use_slicing=vae_use_slicing,
+        vae_use_tiling=vae_use_tiling,
+        boundary_ratio=args.boundary_ratio,
+        flow_shift=args.flow_shift,
+    )
 
-        generation_start = time.perf_counter()
-        frames = omni.generate(
-            args.prompt,
-            negative_prompt=args.negative_prompt,
-            height=args.height,
-            width=args.width,
-            generator=generator,
-            guidance_scale=args.guidance_scale,
-            guidance_scale_2=args.guidance_scale_high,
-            num_inference_steps=args.num_inference_steps,
-            num_frames=args.num_frames,
-        )
+    if profiler_enabled:
+        print("[Profiler] Starting profiling...")
+        omni.start_profile()
 
-        generation_end = time.perf_counter()
-        generation_time = generation_end - generation_start
-        print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
+    generation_start = time.perf_counter()
+    frames = omni.generate(
+        args.prompt,
+        negative_prompt=args.negative_prompt,
+        height=args.height,
+        width=args.width,
+        generator=generator,
+        guidance_scale=args.guidance_scale,
+        guidance_scale_2=args.guidance_scale_high,
+        num_inference_steps=args.num_inference_steps,
+        num_frames=args.num_frames,
+    )
 
-        if profiler_enabled:
-            print("\n[Profiler] Stopping profiler and collecting results...")
-            profile_results = omni.stop_profile()
+    generation_end = time.perf_counter()
+    generation_time = generation_end - generation_start
+    print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
 
-            if profile_results and isinstance(profile_results, dict):
-                traces = profile_results.get("traces", [])
-                tables = profile_results.get("tables", [])
+    if profiler_enabled:
+        print("\n[Profiler] Stopping profiler and collecting results...")
+        profile_results = omni.stop_profile()
 
-                print("\n" + "=" * 60)
-                print("PROFILING RESULTS:")
-                for rank in range(max(len(traces), len(tables))):
-                    print(f"\nRank {rank}:")
-                    if rank < len(traces) and traces[rank]:
-                        print(f"  • Trace: {traces[rank]}")
-                    if rank < len(tables) and tables[rank]:
-                        print(f"  • Table: {tables[rank]}")
-                print("=" * 60)
-            else:
-                print("[Profiler] No valid profiling data returned.")
+        if profile_results and isinstance(profile_results, dict):
+            traces = profile_results.get("traces", [])
+            tables = profile_results.get("tables", [])
 
-        # Extract video frames from OmniRequestOutput
-        if isinstance(frames, list) and len(frames) > 0:
-            first_item = frames[0]
-
-            # Check if it's an OmniRequestOutput
-            if hasattr(first_item, "final_output_type"):
-                if first_item.final_output_type != "image":
-                    raise ValueError(
-                        f"Unexpected output type '{first_item.final_output_type}', expected 'image' for video generation."
-                    )
-
-                # Pipeline mode: extract from nested request_output
-                if hasattr(first_item, "is_pipeline_output") and first_item.is_pipeline_output:
-                    if isinstance(first_item.request_output, list) and len(first_item.request_output) > 0:
-                        inner_output = first_item.request_output[0]
-                        if isinstance(inner_output, OmniRequestOutput) and hasattr(inner_output, "images"):
-                            frames = inner_output.images[0] if inner_output.images else None
-                            if frames is None:
-                                raise ValueError("No video frames found in output.")
-                # Diffusion mode: use direct images field
-                elif hasattr(first_item, "images") and first_item.images:
-                    frames = first_item.images
-                else:
-                    raise ValueError("No video frames found in OmniRequestOutput.")
-
-        output_path = Path(args.output)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            from diffusers.utils import export_to_video
-        except ImportError:
-            raise ImportError("diffusers is required for export_to_video.")
-
-        # frames may be np.ndarray (preferred) or torch.Tensor
-        # export_to_video expects a list of frames with values in [0, 1]
-        if isinstance(frames, torch.Tensor):
-            video_tensor = frames.detach().cpu()
-            if video_tensor.dim() == 5:
-                # [B, C, F, H, W] or [B, F, H, W, C]
-                if video_tensor.shape[1] in (3, 4):
-                    video_tensor = video_tensor[0].permute(1, 2, 3, 0)
-                else:
-                    video_tensor = video_tensor[0]
-            elif video_tensor.dim() == 4 and video_tensor.shape[0] in (3, 4):
-                video_tensor = video_tensor.permute(1, 2, 3, 0)
-            # If float, assume [-1,1] and normalize to [0,1]
-            if video_tensor.is_floating_point():
-                video_tensor = video_tensor.clamp(-1, 1) * 0.5 + 0.5
-            video_array = video_tensor.float().numpy()
+            print("\n" + "=" * 60)
+            print("PROFILING RESULTS:")
+            for rank in range(max(len(traces), len(tables))):
+                print(f"\nRank {rank}:")
+                if rank < len(traces) and traces[rank]:
+                    print(f"  • Trace: {traces[rank]}")
+                if rank < len(tables) and tables[rank]:
+                    print(f"  • Table: {tables[rank]}")
+            print("=" * 60)
         else:
-            video_array = frames
-            if hasattr(video_array, "shape") and video_array.ndim == 5:
-                video_array = video_array[0]
+            print("[Profiler] No valid profiling data returned.")
 
-        # Convert 4D array (frames, H, W, C) to list of frames for export_to_video
-        if isinstance(video_array, np.ndarray) and video_array.ndim == 4:
-            video_array = list(video_array)
+    # Extract video frames from OmniRequestOutput
+    if isinstance(frames, list) and len(frames) > 0:
+        first_item = frames[0]
 
-        export_to_video(video_array, str(output_path), fps=args.fps)
-        print(f"Saved generated video to {output_path}")
+        # Check if it's an OmniRequestOutput
+        if hasattr(first_item, "final_output_type"):
+            if first_item.final_output_type != "image":
+                raise ValueError(
+                    f"Unexpected output type '{first_item.final_output_type}', expected 'image' for video generation."
+                )
 
-    except Exception as e:
-        print("\n" + "!" * 70)
-        print("ERROR during execution:")
-        print(str(e))
-        traceback.print_exc()
-        print("!" * 70 + "\n")
-        raise
+        # Pipeline mode: extract from nested request_output
+        if hasattr(first_item, "is_pipeline_output") and first_item.is_pipeline_output:
+            if isinstance(first_item.request_output, list) and len(first_item.request_output) > 0:
+                inner_output = first_item.request_output[0]
+                if isinstance(inner_output, OmniRequestOutput) and hasattr(inner_output, "images"):
+                    frames = inner_output.images[0] if inner_output.images else None
+                    if frames is None:
+                        raise ValueError("No video frames found in output.")
+        # Diffusion mode: use direct images field
+        elif hasattr(first_item, "images") and first_item.images:
+            frames = first_item.images
+        else:
+            raise ValueError("No video frames found in OmniRequestOutput.")
 
-    finally:
-        # 3. Clean up
-        if omni is not None:
-            print("\nCleaning up Omni instance...")
-            try:
-                omni.close()
-                print("Cleanup completed.")
-            except Exception as cleanup_err:
-                print(f"Warning: Cleanup failed -> {cleanup_err}")
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        from diffusers.utils import export_to_video
+    except ImportError:
+        raise ImportError("diffusers is required for export_to_video.")
+
+    # frames may be np.ndarray (preferred) or torch.Tensor
+    # export_to_video expects a list of frames with values in [0, 1]
+    if isinstance(frames, torch.Tensor):
+        video_tensor = frames.detach().cpu()
+        if video_tensor.dim() == 5:
+            # [B, C, F, H, W] or [B, F, H, W, C]
+            if video_tensor.shape[1] in (3, 4):
+                video_tensor = video_tensor[0].permute(1, 2, 3, 0)
+            else:
+                video_tensor = video_tensor[0]
+        elif video_tensor.dim() == 4 and video_tensor.shape[0] in (3, 4):
+            video_tensor = video_tensor.permute(1, 2, 3, 0)
+        # If float, assume [-1,1] and normalize to [0,1]
+        if video_tensor.is_floating_point():
+            video_tensor = video_tensor.clamp(-1, 1) * 0.5 + 0.5
+        video_array = video_tensor.float().numpy()
+    else:
+        video_array = frames
+        if hasattr(video_array, "shape") and video_array.ndim == 5:
+            video_array = video_array[0]
+
+    # Convert 4D array (frames, H, W, C) to list of frames for export_to_video
+    if isinstance(video_array, np.ndarray) and video_array.ndim == 4:
+        video_array = list(video_array)
+
+    export_to_video(video_array, str(output_path), fps=args.fps)
+    print(f"Saved generated video to {output_path}")
+
+    if omni is not None:
+        print("\nCleaning up Omni instance...")
+        omni.close()
+        print("Cleanup completed.")
 
 
 if __name__ == "__main__":
