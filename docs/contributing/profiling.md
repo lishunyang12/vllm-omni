@@ -66,6 +66,31 @@ omni_llm.start_profile(stages=[1])
 omni_llm.start_profile(stages=[0, 2])
 ```
 
+**Examples**:
+
+1. **Qwen-omni 2.5**:  [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen2_5_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen2_5_omni/end2end.py)
+
+2. **Qwen-omni 3.0**:   [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py)
+
+**3. Online Inference(Async)**
+
+For online serving using AsyncOmni, the methods are asynchronous. This allows you to toggle profiling dynamically without restarting the server.
+
+```python
+from vllm_omni import AsyncOmni
+
+# Inside an async function:
+async_omni = AsyncOmni.from_engine_args(engine_args)
+
+await async_omni.start_profile()
+
+async for output in async_omni.generate(prompt, sampling_params, request_id):
+    # Process outputs...
+    pass
+
+await async_omni.stop_profile()
+```
+
 **Analyzing Omni Traces**
 
 Output files are saved to your configured ```VLLM_TORCH_PROFILER_DIR```.
