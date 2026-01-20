@@ -11,7 +11,7 @@ Before running any script, set this environment variable. The system detects thi
 export VLLM_TORCH_PROFILER_DIR=./profiles
 ```
 
-### 2. Start Profiling 
+### 2. Start Profiling
 
 It is best to limit profiling to one iteration to keep trace files manageable.
 
@@ -19,7 +19,7 @@ It is best to limit profiling to one iteration to keep trace files manageable.
 export VLLM_PROFILER_MAX_ITERS=1
 ```
 
-**Python Usage**: Wrap your generation logic with start_profile() and stop_profile().
+**Python Usage**: Wrap your generation logic with `start_profile()` and `stop_profile()`.
 
 ```python
 from vllm_omni import OmniLLM
