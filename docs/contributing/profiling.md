@@ -45,9 +45,7 @@ from vllm_omni import OmniLLM
 
 omni_llm = OmniLLM.from_engine_args(engine_args)
 
-# Start profiling (pass stages=[0, 2] to filter specific stages)
-omni_llm.start_profile()
-
+# Start profiling all active stages
 outputs = omni_llm.generate(prompts, sampling_params)
 
 # Stop and save traces
