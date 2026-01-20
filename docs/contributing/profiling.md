@@ -2,22 +2,20 @@
 
 > **Warning:** Profiling incurs significant overhead. Use only for development and debugging, never in production.
 
-vLLM-Omni uses the PyTorch Profiler to analyze performance across both **Multi-Stage LLMs** and **Diffusion Models**. 
+vLLM-Omni uses the PyTorch Profiler to analyze performance across both **Multi-Stage LLMs** and **Diffusion Models**.
 
-## 1. Quick Start
-
-**Step 1: Set the Output Directory**
+### 1. Set the Output Directory
 Before running any script, set this environment variable. The system detects this and automatically saves traces here.
 
 ```bash
 export VLLM_TORCH_PROFILER_DIR=./profiles
 ```
 
-**Step 2: Run Profiling**
+### 2. For Diffusion Models**
 
-**A. For Diffusion Models (e.g., Wan 2.2, Z-Image)**
+**Examples**: Wan 2.2, Z-Image
 
-Diffusion profiling is End-to-End, capturing encoding, denoising loops, and decoding. Most example scripts automatically enable profiling if ```VLLM_TORCH_PROFILER_DIR``` is set.
+Diffusion profiling is End-to-End, capturing encoding, denoising loops, and decoding.
 
 **CLI Usage:**
 ```python
@@ -26,11 +24,18 @@ export VLLM_TORCH_PROFILER_DIR=./profiles
 
 python examples/offline_inference/text_to_video/text_to_video.py \
     --model "Wan-AI/Wan2.2-I2V-A14B-Diffusers" \
-    # Reduce steps to avoid large trace
-    --num_inference_steps 2 
+    # Run generation with reduced steps
+    --num_inference_steps 2
 ```
 
-**B. For Non-diffusion models (e.g., Qwen-Omni)**
+**Examples**:
+
+1. **Qwen-omni 2.5**:  [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen2_5_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen2_5_omni/end2end.py)
+
+2. **Qwen-omni 3.0**:   [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py)
+
+
+### 3. For Non-diffusion models
 
 It is best to limit profiling to one iteration to keep trace files manageable.
 
@@ -70,7 +75,7 @@ omni_llm.start_profile(stages=[0, 2])
 
 2. **Qwen-omni 3.0**:   [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py)
 
-**3. Online Inference(Async)**
+**Online Inference(Async)**
 
 For online serving using AsyncOmni, the methods are asynchronous. This allows you to toggle profiling dynamically without restarting the server.
 
@@ -89,7 +94,7 @@ async for output in async_omni.generate(prompt, sampling_params, request_id):
 await async_omni.stop_profile()
 ```
 
-**Analyzing Omni Traces**
+### 4. Analyzing Omni Traces
 
 Output files are saved to your configured ```VLLM_TORCH_PROFILER_DIR```.
 
