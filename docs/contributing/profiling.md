@@ -11,9 +11,7 @@ Before running any script, set this environment variable. The system detects thi
 export VLLM_TORCH_PROFILER_DIR=./profiles
 ```
 
-### 2. For Diffusion Models**
-
-**Examples**: Wan 2.2, Z-Image
+### 2. For Diffusion Models
 
 Diffusion profiling is End-to-End, capturing encoding, denoising loops, and decoding.
 
