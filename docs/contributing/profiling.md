@@ -39,7 +39,7 @@ python examples/offline_inference/text_to_video/text_to_video.py \
 
 It is best to limit profiling to one iteration to keep trace files manageable.
 
-```basht
+```bash
 export VLLM_PROFILER_MAX_ITERS=1
 ```
 
