@@ -2,7 +2,7 @@
 
 > **Warning:** Profiling incurs significant overhead. Use only for development and debugging, never in production.
 
-vLLM-Omni uses the PyTorch Profiler to analyze performance across both **Multi-Stage LLMs** and **Diffusion Models**. For best results, profile on a single GPU to avoid synchronization noise.
+vLLM-Omni uses the PyTorch Profiler to analyze performance across both **Multi-Stage LLMs** and **Diffusion Models**. 
 
 ## 1. Quick Start
 
@@ -17,7 +17,7 @@ export VLLM_TORCH_PROFILER_DIR=./profiles
 
 **A. For Diffusion Models (e.g., Wan 2.2, Z-Image)**
 
-Diffusion profiling is End-to-End, capturing VAE encoding, denoising loops, and decoding. Most example scripts automatically enable profiling if ```VLLM_TORCH_PROFILER_DIR``` is set.
+Diffusion profiling is End-to-End, capturing encoding, denoising loops, and decoding. Most example scripts automatically enable profiling if ```VLLM_TORCH_PROFILER_DIR``` is set.
 
 **CLI Usage:**
 ```python
@@ -30,7 +30,7 @@ python examples/offline_inference/text_to_video/text_to_video.py \
 ```
 
 **B. For Non-diffusion models (e.g., Qwen-Omni)**
-\
+
 It is best to limit profiling to one iteration to keep trace files manageable.
 
 ```bash
@@ -51,6 +51,18 @@ outputs = omni_llm.generate(prompts, sampling_params)
 
 # Stop and save traces
 omni_llm.stop_profile()
+```
+
+**Selective Stage Profiling**
+The profiler is default to function across all stages. But It is highly recommended to profile specific stages by passing the stages list, preventing from producing too large trace files:
+```python
+# Only profile Stage 1
+omni_llm.start_profile(stages=[1])
+```
+
+```python
+# Stage 0 (Thinker) and Stage 2 (Audio Decoder) for qwen omni
+omni_llm.start_profile(stages=[0, 2])
 ```
 
 **Analyzing Omni Traces**
