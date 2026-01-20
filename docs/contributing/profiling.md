@@ -48,7 +48,7 @@ omni_llm = OmniLLM.from_engine_args(engine_args)
 # Start profiling all active stages
 outputs = omni_llm.generate(prompts, sampling_params)
 
-# Stop and save traces
+# Stop profiling and save traces
 omni_llm.stop_profile()
 ```
 
