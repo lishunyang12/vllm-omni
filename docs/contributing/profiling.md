@@ -26,7 +26,8 @@ export VLLM_TORCH_PROFILER_DIR=./profiles
 
 python examples/offline_inference/text_to_video/text_to_video.py \
     --model "Wan-AI/Wan2.2-I2V-A14B-Diffusers" \
-    --num_inference_steps 15
+    # Reduce steps to avoid large trace
+    --num_inference_steps 2 
 ```
 
 **B. For Non-diffusion models (e.g., Qwen-Omni)**
