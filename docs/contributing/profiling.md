@@ -88,13 +88,41 @@ Diffusion profiling is End-to-End, capturing encoding, denoising loops, and deco
 
 **CLI Usage:**
 ```python
-# Example: Running Text-to-Video with profiling enabled
-export VLLM_TORCH_PROFILER_DIR=./profiles
 
-python examples/offline_inference/text_to_video/text_to_video.py \
-    --model "Wan-AI/Wan2.2-I2V-A14B-Diffusers" \
-    # Run generation with reduced steps
-    --num_inference_steps 2
+python image_to_video.py \
+    --model Wan-AI/Wan2.2-I2V-A14B-Diffusers \
+    --image qwen-bear.png \
+    --prompt "A cat playing with yarn, smooth motion" \
+    \
+    # Minimize Spatial Dimensions (Optional but helpful):
+    #    Drastically reduces memory usage so the profiler doesn't 
+    #    crash due to overhead, though for accurate performance 
+    #    tuning you often want target resolutions.
+    --height 48 \
+    --width 64 \
+    \
+    # Minimize Temporal Dimension (Frames):
+    #    Video models process 3D tensors (Time, Height, Width).
+    #    Reducing frames to the absolute minimum (2) keeps the 
+    #    tensor size small, ensuring the trace file doesn't become 
+    #    multi-gigabytes in size.
+    --num_frames 2 \
+    \
+    # Minimize Iteration Loop (Steps):
+    #    This is the most critical setting for profiling.
+    #    Diffusion models run the same loop X times. 
+    #    Profiling 2 steps gives you the exact same performance 
+    #    data as 50 steps, but saves minutes of runtime and 
+    #    prevents the trace viewer from freezing.
+    --num_inference_steps 2 \
+    \
+    --guidance_scale 5.0 \
+    --guidance_scale_high 6.0 \
+    --boundary_ratio 0.875 \
+    --flow_shift 12.0 \
+    --fps 16 \
+    --output i2v_output.mp4
+
 ```
 
 **Examples**:
