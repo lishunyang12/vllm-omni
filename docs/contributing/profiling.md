@@ -95,24 +95,24 @@ python image_to_video.py \
     --prompt "A cat playing with yarn, smooth motion" \
     \
     # Minimize Spatial Dimensions (Optional but helpful):
-    #    Drastically reduces memory usage so the profiler doesn't 
-    #    crash due to overhead, though for accurate performance 
+    #    Drastically reduces memory usage so the profiler doesn't
+    #    crash due to overhead, though for accurate performance
     #    tuning you often want target resolutions.
     --height 48 \
     --width 64 \
     \
     # Minimize Temporal Dimension (Frames):
     #    Video models process 3D tensors (Time, Height, Width).
-    #    Reducing frames to the absolute minimum (2) keeps the 
-    #    tensor size small, ensuring the trace file doesn't become 
+    #    Reducing frames to the absolute minimum (2) keeps the
+    #    tensor size small, ensuring the trace file doesn't become
     #    multi-gigabytes in size.
     --num_frames 2 \
     \
     # Minimize Iteration Loop (Steps):
     #    This is the most critical setting for profiling.
-    #    Diffusion models run the same loop X times. 
-    #    Profiling 2 steps gives you the exact same performance 
-    #    data as 50 steps, but saves minutes of runtime and 
+    #    Diffusion models run the same loop X times.
+    #    Profiling 2 steps gives you the exact same performance
+    #    data as 50 steps, but saves minutes of runtime and
     #    prevents the trace viewer from freezing.
     --num_inference_steps 2 \
     \
