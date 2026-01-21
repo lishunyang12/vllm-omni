@@ -19,23 +19,12 @@ It is best to limit profiling to one iteration to keep trace files manageable.
 export VLLM_PROFILER_MAX_ITERS=1
 ```
 
-**Python Usage**: Wrap your generation logic with `start_profile()` and `stop_profile()`.
-
-```python
-from vllm_omni import OmniLLM
-
-omni_llm = OmniLLM.from_engine_args(engine_args)
-
-# Start profiling all active stages
-outputs = omni_llm.generate(prompts, sampling_params)
-
-# Stop profiling and save traces
-omni_llm.stop_profile()
-```
-
 **Selective Stage Profiling**
 The profiler is default to function across all stages. But It is highly recommended to profile specific stages by passing the stages list, preventing from producing too large trace files:
 ```python
+# Profile all stages
+omni_llm.start_profile()
+
 # Only profile Stage 1
 omni_llm.start_profile(stages=[1])
 ```
@@ -44,6 +33,47 @@ omni_llm.start_profile(stages=[1])
 # Stage 0 (Thinker) and Stage 2 (Audio Decoder) for qwen omni
 omni_llm.start_profile(stages=[0, 2])
 ```
+
+**Python Usage**: Wrap your generation logic with `start_profile()` and `stop_profile()`.
+
+```python
+from vllm_omni import omni_llm
+
+profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
+
+# 1. Start profiling if enabled
+if profiler_enabled:
+    omni_llm.start_profile(stages=[0])
+
+# Initialize generator
+omni_generator = omni_llm.generate(prompts, sampling_params_list, py_generator=args.py_generator)
+
+total_requests = len(prompts)
+processed_count = 0
+
+# Main Processing Loop
+for stage_outputs in omni_generator:
+
+    # ... [Output processing logic for text/audio would go here] ...
+
+    # Update count to track when to stop profiling
+    processed_count += len(stage_outputs.request_output)
+
+    # 2. Check if all requests are done to stop the profiler safely
+    if profiler_enabled and processed_count >= total_requests:
+        print(f"[Info] Processed {processed_count}/{total_requests}. Stopping profiler inside active loop...")
+
+        # Stop the profiler while workers are still active
+        omni_llm.stop_profile()
+
+        # Wait for traces to flush to disk
+        print("[Info] Waiting 30s for workers to write trace files to disk...")
+        time.sleep(30)
+        print("[Info] Trace export wait time finished.")
+
+omni_llm.close()
+```
+
 
 **Examples**:
 
