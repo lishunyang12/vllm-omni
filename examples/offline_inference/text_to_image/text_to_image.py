@@ -114,6 +114,15 @@ def parse_args() -> argparse.Namespace:
         help="Number of GPUs used for tensor parallelism (TP) inside the DiT.",
     )
     parser.add_argument(
+        "--quantization",
+        type=str,
+        default=None,
+        choices=["fp8"],
+        help="Quantization method for the transformer. "
+        "Options: 'fp8' (FP8 W8A8 on Ada/Hopper, weight-only on older GPUs). "
+        "Default: None (no quantization, uses BF16).",
+    )
+    parser.add_argument(
         "--vae_use_slicing",
         action="store_true",
         help="Enable VAE slicing for memory optimization.",
@@ -180,6 +189,7 @@ def main():
         parallel_config=parallel_config,
         enforce_eager=args.enforce_eager,
         enable_cpu_offload=args.enable_cpu_offload,
+        quantization=args.quantization,
     )
 
     if profiler_enabled:
@@ -192,6 +202,7 @@ def main():
     print(f"  Model: {args.model}")
     print(f"  Inference steps: {args.num_inference_steps}")
     print(f"  Cache backend: {args.cache_backend if args.cache_backend else 'None (no acceleration)'}")
+    print(f"  Quantization: {args.quantization if args.quantization else 'None (BF16)'}")
     print(
         f"  Parallel configuration: tensor_parallel_size={args.tensor_parallel_size}, "
         f"ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, cfg_parallel_size={args.cfg_parallel_size}"
