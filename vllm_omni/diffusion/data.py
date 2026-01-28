@@ -16,6 +16,9 @@ from vllm.logger import init_logger
 
 from vllm_omni.diffusion.utils.network_utils import is_port_available
 
+# Import after TYPE_CHECKING to avoid circular imports at runtime
+# The actual import is deferred to __post_init__ to avoid import order issues
+
 logger = init_logger(__name__)
 
 
@@ -357,6 +360,11 @@ class OmniDiffusionConfig:
     # Omni configuration (injected from stage config)
     omni_kv_config: dict[str, Any] = field(default_factory=dict)
 
+    # Quantization settings
+    # Supported methods: "fp8" (FP8 W8A8 on Ada/Hopper, weight-only on older GPUs)
+    quantization: str | None = None
+    quantization_config: Any | None = None  # DiffusionQuantizationConfig or dict
+
     def settle_port(self, port: int, port_inc: int = 42, max_attempts: int = 100) -> int:
         """
         Find an available port with retry logic.
@@ -442,6 +450,18 @@ class OmniDiffusionConfig:
         elif not isinstance(self.cache_config, DiffusionCacheConfig):
             # If it's neither dict nor DiffusionCacheConfig, convert to empty config
             self.cache_config = DiffusionCacheConfig()
+
+        # Convert quantization config (deferred import to avoid circular imports)
+        if self.quantization is not None or self.quantization_config is not None:
+            from vllm_omni.diffusion.quantization import get_diffusion_quant_config
+
+            if isinstance(self.quantization_config, dict):
+                quant_method = self.quantization_config.pop("method", self.quantization)
+                self.quantization_config = get_diffusion_quant_config(
+                    quant_method, **self.quantization_config
+                )
+            elif self.quantization_config is None and self.quantization is not None:
+                self.quantization_config = get_diffusion_quant_config(self.quantization)
 
         if self.max_cpu_loras is None:
             self.max_cpu_loras = 1
