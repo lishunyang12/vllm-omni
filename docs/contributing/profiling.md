@@ -2,7 +2,7 @@
 
 > **Warning:** Profiling incurs significant overhead. Use only for development and debugging, never in production.
 
-vLLM-Omni uses the PyTorch Profiler to analyze performance across both **Multi-Stage Omni-Modality Models** and **Diffusion Models**.
+vLLM-Omni uses the PyTorch Profiler to analyze performance across both **multi-stage omni-modality models** and **diffusion models**.
 
 ### 1. Set the Output Directory
 Before running any script, set this environment variable. The system detects this and automatically saves traces here.
