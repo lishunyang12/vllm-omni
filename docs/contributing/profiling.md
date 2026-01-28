@@ -11,7 +11,7 @@ Before running any script, set this environment variable. The system detects thi
 export VLLM_TORCH_PROFILER_DIR=./profiles
 ```
 
-### 2. Profiling omni-modality models
+### 2. Profiling Omni-Modality Models
 
 It is best to limit profiling to one iteration to keep trace files manageable.
 
