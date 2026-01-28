@@ -5,8 +5,8 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from vllm import SamplingParams
 
+from vllm import SamplingParams
 from vllm_omni.entrypoints.stage_utils import SHUTDOWN_TASK
 
 # Suppress noisy DeprecationWarnings from optional Swig bindings imported by vLLM dependencies.

@@ -80,7 +80,7 @@ class UnifiedPrepare(nn.Module):
         cap_item_seqlens: list[int],
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Combine x and cap tensors into unified sequences.
-        
+
         Returns:
             unified: Combined hidden states [batch, seq_len, dim]
             unified_cos: Combined RoPE cos [batch, seq_len, rope_dim]

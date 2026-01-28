@@ -457,9 +457,7 @@ class OmniDiffusionConfig:
 
             if isinstance(self.quantization_config, dict):
                 quant_method = self.quantization_config.pop("method", self.quantization)
-                self.quantization_config = get_diffusion_quant_config(
-                    quant_method, **self.quantization_config
-                )
+                self.quantization_config = get_diffusion_quant_config(quant_method, **self.quantization_config)
             elif self.quantization_config is None and self.quantization is not None:
                 self.quantization_config = get_diffusion_quant_config(self.quantization)
 

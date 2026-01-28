@@ -78,8 +78,7 @@ def get_diffusion_quant_config(
     quantization = quantization.lower()
     if quantization not in _QUANT_CONFIG_REGISTRY:
         raise ValueError(
-            f"Unknown quantization method: {quantization!r}. "
-            f"Supported methods: {SUPPORTED_QUANTIZATION_METHODS}"
+            f"Unknown quantization method: {quantization!r}. Supported methods: {SUPPORTED_QUANTIZATION_METHODS}"
         )
 
     config_cls = _QUANT_CONFIG_REGISTRY[quantization]

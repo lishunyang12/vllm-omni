@@ -17,7 +17,6 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.datastructures import State
 from starlette.routing import Route
-from vllm import SamplingParams
 from vllm.engine.protocol import EngineClient
 from vllm.entrypoints.anthropic.serving_messages import AnthropicServingMessages
 from vllm.entrypoints.launcher import serve_http
@@ -68,6 +67,7 @@ from vllm.tasks import POOLING_TASKS
 from vllm.tool_parsers import ToolParserManager
 from vllm.utils.system_utils import decorate_logs
 
+from vllm import SamplingParams
 from vllm_omni.entrypoints.async_omni import AsyncOmni
 from vllm_omni.entrypoints.openai.image_api_utils import (
     encode_image_base64,

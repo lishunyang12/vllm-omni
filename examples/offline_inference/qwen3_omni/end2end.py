@@ -12,15 +12,15 @@ from typing import NamedTuple
 import librosa
 import numpy as np
 import soundfile as sf
-import vllm
 from PIL import Image
-from vllm import SamplingParams
 from vllm.assets.audio import AudioAsset
 from vllm.assets.image import ImageAsset
 from vllm.assets.video import VideoAsset, video_to_ndarrays
 from vllm.multimodal.image import convert_image_mode
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
+import vllm
+from vllm import SamplingParams
 from vllm_omni.entrypoints.omni import Omni
 
 SEED = 42

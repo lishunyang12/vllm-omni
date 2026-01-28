@@ -7,10 +7,10 @@ Pytest configuration and fixtures for vllm-omni tests.
 from typing import Any
 
 import pytest
-from vllm import TextPrompt
 from vllm.distributed.parallel_state import cleanup_dist_env_and_memory
 
 from tests.conftest import _run_post_test_cleanup
+from vllm import TextPrompt
 from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniSamplingParams
 from vllm_omni.outputs import OmniRequestOutput
