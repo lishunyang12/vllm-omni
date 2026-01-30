@@ -137,7 +137,7 @@ class OmniServeCommand(CLISubcommand):
             help="The address of the Ray cluster to connect to.",
         )
 
-        # Independent stage launch support 
+        # Independent stage launch support
         omni_config_group.add_argument(
             "--stage-id",
             type=int,
