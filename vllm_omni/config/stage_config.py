@@ -189,9 +189,7 @@ class StageTopology:
         for stage in self.stages:
             for source_id in stage.input_sources:
                 if source_id not in stage_id_set:
-                    errors.append(
-                        f"Stage {stage.stage_id} references non-existent " f"input source {source_id}"
-                    )
+                    errors.append(f"Stage {stage.stage_id} references non-existent input source {source_id}")
                 if source_id == stage.stage_id:
                     errors.append(f"Stage {stage.stage_id} references itself as input source")
 

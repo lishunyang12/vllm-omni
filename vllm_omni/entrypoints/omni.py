@@ -17,6 +17,7 @@ from tqdm.auto import tqdm
 from vllm import SamplingParams
 from vllm.logger import init_logger
 
+from vllm_omni.config.stage_config import StageConfigFactory
 from vllm_omni.distributed.omni_connectors import (
     get_stage_connector_config,
     initialize_orchestrator_connectors,
@@ -42,7 +43,6 @@ from vllm_omni.entrypoints.utils import (
     resolve_model_config_path,
 )
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniPromptType, OmniSamplingParams
-from vllm_omni.config.stage_config import StageConfigFactory
 from vllm_omni.outputs import OmniRequestOutput
 
 logger = init_logger(__name__)
@@ -204,17 +204,17 @@ class OmniBase:
 
         # Filter stages if --stage-id is specified (for independent launch)
         if stage_id_filter is not None:
-            filtered_configs = [
-                cfg for cfg in self.stage_configs if getattr(cfg, "stage_id", None) == stage_id_filter
-            ]
+            filtered_configs = [cfg for cfg in self.stage_configs if getattr(cfg, "stage_id", None) == stage_id_filter]
             if not filtered_configs:
-                logger.warning(f"Stage ID {stage_id_filter} not found in configs. Available IDs: "
-                             f"{[getattr(cfg, 'stage_id', None) for cfg in self.stage_configs]}")
+                logger.warning(
+                    f"Stage ID {stage_id_filter} not found in configs. Available IDs: "
+                    f"{[getattr(cfg, 'stage_id', None) for cfg in self.stage_configs]}"
+                )
             else:
                 logger.info(f"Independent launch mode: loading only stage {stage_id_filter}")
-                self.stage_configs = OmegaConf.create(filtered_configs) if isinstance(
-                    filtered_configs[0], dict
-                ) else filtered_configs
+                self.stage_configs = (
+                    OmegaConf.create(filtered_configs) if isinstance(filtered_configs[0], dict) else filtered_configs
+                )
 
         # Inject diffusion LoRA-related knobs from kwargs if not present in the stage config.
         for cfg in self.stage_configs:
