@@ -1,0 +1,44 @@
+# Tier-1 Stage Topology for Qwen3-Omni-MoE
+# This file is set by model developers at integration time.
+# Users NEVER edit this - they use CLI for Tier-2 params.
+#
+# Stage 0: Thinker (multimodal understanding + text generation)
+# Stage 1: Talker (text embeddings -> 8-layer RVQ codec codes)
+# Stage 2: Code2Wav (8-layer RVQ codes -> audio waveform)
+#
+# NOTE: Engine params like gpu_memory_utilization, tensor_parallel_size,
+# devices, max_batch_size come from CLI (Tier-2), NOT from this file.
+
+model_type: qwen3_omni_moe
+
+stages:
+  - stage_id: 0
+    model_stage: thinker
+    stage_type: llm
+    input_sources: []  # Entry point - no upstream stages
+    worker_type: ar
+    scheduler_cls: vllm_omni.core.sched.omni_ar_scheduler.OmniARScheduler
+    hf_config_name: thinker_config
+    final_output: true
+    final_output_type: text
+    is_comprehension: true
+
+  - stage_id: 1
+    model_stage: talker
+    stage_type: llm
+    input_sources: [0]  # Receives from thinker
+    worker_type: ar
+    scheduler_cls: vllm_omni.core.sched.omni_ar_scheduler.OmniARScheduler
+    hf_config_name: talker_config
+    custom_process_input_func: vllm_omni.model_executor.stage_input_processors.qwen3_omni.thinker2talker
+
+  - stage_id: 2
+    model_stage: code2wav
+    stage_type: llm
+    input_sources: [1]  # Receives from talker
+    worker_type: generation
+    scheduler_cls: vllm_omni.core.sched.omni_generation_scheduler.OmniGenerationScheduler
+    hf_config_name: thinker_config
+    custom_process_input_func: vllm_omni.model_executor.stage_input_processors.qwen3_omni.talker2code2wav
+    final_output: true
+    final_output_type: audio

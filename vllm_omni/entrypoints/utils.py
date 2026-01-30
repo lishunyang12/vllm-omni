@@ -236,6 +236,47 @@ def load_stage_configs_from_yaml(config_path: str, base_engine_args: dict | None
     return stage_args
 
 
+def extract_runtime_overrides(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Extract Tier-2 runtime parameters from kwargs.
+
+    These parameters can be overridden via CLI and apply to stage engines.
+    Used by StageConfigFactory to merge CLI args with Tier-1 topology.
+
+    Args:
+        kwargs: Dictionary of keyword arguments from CLI/API.
+
+    Returns:
+        Dictionary containing only the Tier-2 runtime parameters that were
+        explicitly set (non-None values).
+    """
+    # Tier-2 runtime parameters that can be overridden via CLI
+    runtime_params = {
+        "devices",
+        "gpu_memory_utilization",
+        "tensor_parallel_size",
+        "enforce_eager",
+        "max_num_batched_tokens",
+        "trust_remote_code",
+        "max_batch_size",
+        "distributed_executor_backend",
+        "enable_prefix_caching",
+    }
+
+    result: dict[str, Any] = {}
+
+    # Extract global runtime params
+    for param in runtime_params:
+        if param in kwargs and kwargs[param] is not None:
+            result[param] = kwargs[param]
+
+    # Extract per-stage overrides (--stage-N-* format)
+    for key, value in kwargs.items():
+        if key.startswith("stage_") and value is not None:
+            result[key] = value
+
+    return result
+
+
 def get_final_stage_id_for_e2e(
     output_modalities: list[str] | None, default_modalities: list[str], stage_list: list
 ) -> int:
