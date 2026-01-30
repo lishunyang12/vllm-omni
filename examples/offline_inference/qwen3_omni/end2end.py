@@ -21,7 +21,7 @@ from vllm.assets.video import VideoAsset, video_to_ndarrays
 from vllm.multimodal.image import convert_image_mode
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
-# RFC #937: Import StageConfigFactory for Tier-2 CLI override testing
+# Import StageConfigFactory for Tier-2 CLI override testing
 from vllm_omni.entrypoints.omni import Omni
 
 SEED = 42
@@ -326,14 +326,14 @@ def main(args):
     else:
         query_result = query_func()
 
-    # RFC #937: Build kwargs with Tier-2 CLI overrides
+    # Build kwargs with Tier-2 CLI overrides
     omni_kwargs = {
         "stage_configs_path": args.stage_configs_path,
         "log_stats": args.enable_stats,
         "stage_init_timeout": args.stage_init_timeout,
     }
 
-    # Add Tier-2 CLI overrides if specified (RFC #937)
+    # Add Tier-2 CLI overrides if specified 
     if args.gpu_memory_utilization is not None:
         omni_kwargs["gpu_memory_utilization"] = args.gpu_memory_utilization
     if args.tensor_parallel_size is not None:
@@ -533,7 +533,7 @@ def parse_args():
         default=None,
         help="Path to a stage configs file. If not specified, uses auto-detected Tier-1 topology.",
     )
-    # RFC #937: Tier-2 CLI override arguments
+    # Tier-2 CLI override arguments
     parser.add_argument(
         "--gpu-memory-utilization",
         type=float,
@@ -568,7 +568,7 @@ def parse_args():
         "--stage-id",
         type=int,
         default=None,
-        help="Launch only the specified stage ID for independent stage testing (RFC #937).",
+        help="Launch only the specified stage ID for independent stage testing.",
     )
     parser.add_argument(
         "--video-path",
