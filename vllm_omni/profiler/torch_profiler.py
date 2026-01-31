@@ -141,8 +141,16 @@ class TorchProfiler(ProfilerBase):
                 if cls._profiler:
                     cls._profiler.stop()
                     cls._profiler.export_memory_timeline(timeline_path, device="cuda:0")
-                    results["timeline_html"] = timeline_path
-                    logger.info("[Rank %s] Memory timeline saved to %s", rank, timeline_path)
+                    # Only add to results if file was actually created
+                    # (export_memory_timeline silently fails if matplotlib is missing)
+                    if os.path.exists(timeline_path):
+                        results["timeline_html"] = timeline_path
+                        logger.info("[Rank %s] Memory timeline saved to %s", rank, timeline_path)
+                    else:
+                        logger.warning(
+                            "[Rank %s] Memory timeline not created (matplotlib may be missing)",
+                            rank,
+                        )
                     cls._profiler = None
             except Exception as e:
                 logger.warning("[Rank %s] Failed to export timeline: %s", rank, e)

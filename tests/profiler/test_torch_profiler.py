@@ -123,7 +123,9 @@ class TestTorchProfilerMemory:
             assert snapshot_path.endswith(".pickle")
 
     def test_timeline_file_created(self):
-        """Test that .html timeline file is created."""
+        """Test that .html timeline file is created (requires matplotlib)."""
+        pytest.importorskip("matplotlib", reason="matplotlib required for timeline export")
+
         with tempfile.TemporaryDirectory() as tmpdir:
             config = ProfilerConfig(output_dir=tmpdir, performance=False, memory=True)
             profiler = TorchProfiler()
@@ -224,9 +226,11 @@ class TestTorchProfilerBoth:
             if snapshot:
                 assert os.path.exists(snapshot)
 
+            # Timeline requires matplotlib - only check if it was created
             timeline = results.get("timeline_html")
             if timeline:
                 assert os.path.exists(timeline)
+            # Note: timeline_html may be None if matplotlib is not installed
 
 
 class TestTorchProfilerCPU:
