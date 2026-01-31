@@ -1,3 +1,4 @@
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -26,6 +27,7 @@ from vllm_omni.entrypoints.utils import (
     load_stage_configs_from_yaml,
     resolve_model_config_path,
 )
+from vllm_omni.profiler import ProfilerConfig, TorchProfiler
 
 logger = init_logger(__name__)
 
@@ -74,9 +76,14 @@ class OmniLLM(LLM):
         shm_threshold_bytes: int = 65536,
         batch_timeout: int = 10,
         init_timeout: int = 300,
+        profiler_config: ProfilerConfig | None = None,
         **kwargs: Any,
     ):
         """LLM constructor with omni-specific configuration loading."""
+        # Store profiler config (overrides vLLM's built-in profiler)
+        self._profiler_config = profiler_config
+        self._profiler: TorchProfiler | None = None
+
         # Store stage management parameters (used by Omni class)
         self.worker_backend = kwargs.get("worker_backend", "multi_process")
         self.ray_address = kwargs.get("ray_address", None)
@@ -241,3 +248,67 @@ class OmniLLM(LLM):
         # This is necessary because some requests may be finished earlier than
         # its previous requests.
         return sorted(outputs, key=lambda x: int(x.request_id.split("-")[0]))
+
+    def start_profile(self) -> None:
+        """Start profiling using vllm-omni's shared profiler.
+
+        Overrides vLLM's built-in profiler to use our ProfilerConfig-based
+        profiler module, which supports both performance and memory profiling.
+
+        Raises:
+            ValueError: If profiler_config was not set at initialization.
+        """
+        if self._profiler_config is None:
+            raise ValueError(
+                "profiler_config not set at initialization. Pass profiler_config to OmniLLM() constructor."
+            )
+
+        if self._profiler is not None and self._profiler.is_active():
+            logger.warning("Profiler already active, stopping first")
+            self._profiler.stop()
+
+        self._profiler = TorchProfiler()
+        timestamp = int(time.time())
+        output_prefix = f"{self._profiler_config.output_dir}/llm_{timestamp}"
+
+        self._profiler.start(output_prefix, self._profiler_config)
+        logger.info("Started profiling for OmniLLM")
+
+    def stop_profile(self) -> dict:
+        """Stop profiling and collect results.
+
+        Overrides vLLM's built-in profiler to use our ProfilerConfig-based
+        profiler module.
+
+        Returns:
+            dict: Profiling results containing:
+                - traces: List of performance trace file paths (.json.gz)
+                - snapshots: List of memory snapshot file paths (.pickle)
+                - timelines: List of memory timeline file paths (.html)
+                - memory_stats: Memory statistics dictionary
+        """
+        results: dict[str, Any] = {
+            "traces": [],
+            "snapshots": [],
+            "timelines": [],
+            "memory_stats": {},
+        }
+
+        if self._profiler is None:
+            logger.warning("No active profiler to stop")
+            return results
+
+        profiler_result = self._profiler.stop()
+        if profiler_result:
+            if profiler_result.get("trace"):
+                results["traces"].append(profiler_result["trace"])
+            if profiler_result.get("snapshot"):
+                results["snapshots"].append(profiler_result["snapshot"])
+            if profiler_result.get("timeline_html"):
+                results["timelines"].append(profiler_result["timeline_html"])
+            if profiler_result.get("stats"):
+                results["memory_stats"] = profiler_result["stats"]
+
+        self._profiler = None
+        logger.info("Stopped profiling for OmniLLM")
+        return results

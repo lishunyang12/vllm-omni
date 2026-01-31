@@ -173,14 +173,10 @@ class TorchProfiler(ProfilerBase):
         try:
             stats = torch.cuda.memory_stats()
             return {
-                "peak_allocated_mb": stats.get("allocated_bytes.all.peak", 0)
-                / (1024**2),
-                "current_allocated_mb": stats.get("allocated_bytes.all.current", 0)
-                / (1024**2),
-                "peak_reserved_mb": stats.get("reserved_bytes.all.peak", 0)
-                / (1024**2),
-                "current_reserved_mb": stats.get("reserved_bytes.all.current", 0)
-                / (1024**2),
+                "peak_allocated_mb": stats.get("allocated_bytes.all.peak", 0) / (1024**2),
+                "current_allocated_mb": stats.get("allocated_bytes.all.current", 0) / (1024**2),
+                "peak_reserved_mb": stats.get("reserved_bytes.all.peak", 0) / (1024**2),
+                "current_reserved_mb": stats.get("reserved_bytes.all.current", 0) / (1024**2),
                 "num_alloc_retries": stats.get("num_alloc_retries", 0),
                 "num_ooms": stats.get("num_ooms", 0),
             }
