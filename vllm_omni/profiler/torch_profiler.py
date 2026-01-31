@@ -22,12 +22,58 @@ class TorchProfiler(ProfilerBase):
     Supports two profiling modes (can be used together):
     - Performance: Chrome trace for timing analysis (.json.gz)
     - Memory: Snapshot (.pickle) + categorized timeline (.html)
+
+    For full memory granularity (including model loading), call
+    start_early_memory_recording() before model initialization, then
+    call start() when ready to begin performance profiling.
     """
 
     _profiler: profile | None = None
     _output_prefix: str = ""
     _config: ProfilerConfig | None = None
     _is_memory_recording: bool = False
+    _early_memory_config: ProfilerConfig | None = None
+
+    @classmethod
+    def start_early_memory_recording(cls, config: ProfilerConfig) -> None:
+        """Start memory history recording early (before model loading).
+
+        Call this before model initialization to capture all GPU allocations
+        including model weights. The recording will continue until stop() is
+        called, and the snapshot will include all allocations from this point.
+
+        Args:
+            config: Profiler configuration (must have memory=True).
+        """
+        if not config.memory:
+            logger.warning("start_early_memory_recording called but config.memory=False")
+            return
+
+        if cls._is_memory_recording:
+            logger.warning("Memory recording already active, skipping early start")
+            return
+
+        if not torch.cuda.is_available():
+            logger.warning("CUDA not available, cannot start memory recording")
+            return
+
+        rank = cls._get_rank()
+        try:
+            torch.cuda.memory._record_memory_history(
+                enabled="all",
+                context="all",
+                stacks="python",
+                max_entries=config.max_entries,
+            )
+            cls._is_memory_recording = True
+            cls._early_memory_config = config
+            logger.info(
+                "[Rank %s] Early memory recording started (max_entries=%d)",
+                rank,
+                config.max_entries,
+            )
+        except Exception as e:
+            logger.warning("[Rank %s] Failed to start early memory recording: %s", rank, e)
 
     @classmethod
     def start(cls, output_prefix: str, config: ProfilerConfig) -> str:
@@ -60,7 +106,8 @@ class TorchProfiler(ProfilerBase):
         )
 
         # Start memory history recording if memory profiling enabled
-        if config.memory and torch.cuda.is_available():
+        # (skip if already started via start_early_memory_recording)
+        if config.memory and torch.cuda.is_available() and not cls._is_memory_recording:
             try:
                 torch.cuda.memory._record_memory_history(
                     enabled="all",
@@ -72,6 +119,8 @@ class TorchProfiler(ProfilerBase):
                 logger.info("[Rank %s] Memory history recording started", rank)
             except Exception as e:
                 logger.warning("[Rank %s] Failed to start memory history: %s", rank, e)
+        elif cls._is_memory_recording:
+            logger.info("[Rank %s] Memory recording already active (early start)", rank)
 
         # Start profiler if either performance or memory is enabled
         if config.performance or config.memory:
@@ -162,6 +211,7 @@ class TorchProfiler(ProfilerBase):
 
             results["stats"] = cls._collect_memory_stats()
             cls._is_memory_recording = False
+            cls._early_memory_config = None
 
         # Stop profiler for performance trace (if not already stopped for memory)
         if cls._profiler is not None:

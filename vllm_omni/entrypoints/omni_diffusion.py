@@ -13,6 +13,7 @@ from vllm_omni.diffusion.diffusion_engine import DiffusionEngine
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniPromptType
 from vllm_omni.outputs import OmniRequestOutput
+from vllm_omni.profiler import ProfilerConfig, TorchProfiler
 
 # TODO configure logging properly
 logging.basicConfig(level=logging.INFO)
@@ -29,9 +30,34 @@ class OmniDiffusion:
     You can pass either an `OmniDiffusionConfig` via `od_config`, or
     pass kwargs such as `model="Qwen/Qwen-Image"`,
     which will be forwarded to `OmniDiffusionConfig.from_kwargs`.
+
+    Args:
+        od_config: Optional OmniDiffusionConfig. If not provided, will be
+            created from kwargs.
+        profiler_config: Optional ProfilerConfig for profiling. If provided
+            with record_from_start=True and memory=True, memory recording
+            starts immediately to capture model loading allocations.
+        **kwargs: Additional arguments passed to OmniDiffusionConfig.from_kwargs.
     """
 
-    def __init__(self, od_config: OmniDiffusionConfig | None = None, **kwargs):
+    def __init__(
+        self,
+        od_config: OmniDiffusionConfig | None = None,
+        profiler_config: ProfilerConfig | None = None,
+        **kwargs,
+    ):
+        self._profiler_config = profiler_config
+
+        # Start early memory recording if configured
+        # (must happen BEFORE model loading to capture all allocations)
+        if (
+            profiler_config is not None
+            and profiler_config.memory
+            and profiler_config.record_from_start
+        ):
+            logger.info("Starting early memory recording (record_from_start=True)")
+            TorchProfiler.start_early_memory_recording(profiler_config)
+
         # Capture stage info from kwargs before they might be filtered out
         stage_id = kwargs.get("stage_id")
         engine_input_source = kwargs.get("engine_input_source")
@@ -115,18 +141,49 @@ class OmniDiffusion:
         except Exception:
             pass
 
-    def start_profile(self, trace_filename: str | None = None, output_dir: str = "./profiles") -> None:
+    def start_profile(
+        self,
+        trace_filename: str | None = None,
+        output_dir: str | None = None,
+        config: ProfilerConfig | None = None,
+    ) -> None:
         """Start profiling for the diffusion model.
 
         Args:
             trace_filename: Optional base filename for trace files.
                            If None, a timestamp-based name will be generated.
-            output_dir: Directory to save profiler output files.
+            output_dir: Directory to save profiler output files. If None, uses
+                       config.output_dir or "./profiles".
+            config: Optional ProfilerConfig. If None, uses the config passed
+                   at initialization, or creates a default performance-only config.
         """
-        if hasattr(self, "engine") and self.engine:
-            self.engine.start_profile(trace_filename, output_dir)
-        else:
+        if not hasattr(self, "engine") or not self.engine:
             raise RuntimeError("Diffusion engine not initialized")
+
+        # Use provided config, or fall back to init config, or create default
+        effective_config = config or self._profiler_config
+        if effective_config is None:
+            effective_config = ProfilerConfig(
+                output_dir=output_dir or "./profiles",
+                performance=True,
+                memory=False,
+            )
+        elif output_dir is not None:
+            # Override output_dir if explicitly provided
+            effective_config = ProfilerConfig(
+                output_dir=output_dir,
+                performance=effective_config.performance,
+                memory=effective_config.memory,
+                backend=effective_config.backend,
+                max_entries=effective_config.max_entries,
+                record_from_start=effective_config.record_from_start,
+            )
+
+        self.engine.start_profile(
+            trace_filename=trace_filename,
+            output_dir=effective_config.output_dir,
+            config=effective_config,
+        )
 
     def stop_profile(self) -> dict:
         """Stop profiling and return profiling results.
@@ -134,7 +191,6 @@ class OmniDiffusion:
         Returns:
             Dictionary containing paths to trace and table files.
         """
-        if hasattr(self, "engine") and self.engine:
-            return self.engine.stop_profile()
-        else:
+        if not hasattr(self, "engine") or not self.engine:
             raise RuntimeError("Diffusion engine not initialized")
+        return self.engine.stop_profile()

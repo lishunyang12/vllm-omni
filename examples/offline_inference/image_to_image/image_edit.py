@@ -332,6 +332,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable memory profiling (snapshot + timeline).",
     )
+    parser.add_argument(
+        "--record-from-start",
+        action="store_true",
+        help="Start memory recording before model loading to capture all allocations.",
+    )
     return parser.parse_args()
 
 
@@ -391,11 +396,13 @@ def main():
             output_dir=args.profile_dir,
             performance=args.profile_performance,
             memory=args.profile_memory,
+            record_from_start=args.record_from_start,
         )
         print("[Profiler] Config:")
         print(f"  Output dir: {args.profile_dir}")
         print(f"  Performance: {args.profile_performance}")
         print(f"  Memory: {args.profile_memory}")
+        print(f"  Record from start: {args.record_from_start}")
 
     # Initialize Omni with appropriate pipeline
     omni = Omni(

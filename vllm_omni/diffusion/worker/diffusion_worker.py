@@ -130,15 +130,33 @@ class DiffusionWorker:
         return self.execute_model(request, self.od_config)
 
     @classmethod
-    def start_profile(cls, trace_path_template: str) -> str:
-        """Start profiling for this GPU worker."""
+    def start_profile(
+        cls,
+        trace_path_template: str,
+        config: ProfilerConfig | dict | None = None,
+    ) -> str:
+        """Start profiling for this GPU worker.
+
+        Args:
+            trace_path_template: Base path for output files (without rank/extension).
+            config: ProfilerConfig or dict with profiler settings. If None,
+                   defaults to performance-only profiling.
+
+        Returns:
+            Expected path to primary output file.
+        """
         import os
 
-        config = ProfilerConfig(
-            output_dir=os.path.dirname(trace_path_template) or ".",
-            performance=True,
-            memory=False,
-        )
+        # Handle config passed as dict (from RPC serialization)
+        if isinstance(config, dict):
+            config = ProfilerConfig(**config)
+        elif config is None:
+            config = ProfilerConfig(
+                output_dir=os.path.dirname(trace_path_template) or ".",
+                performance=True,
+                memory=False,
+            )
+
         return TorchProfiler.start(trace_path_template, config)
 
     @classmethod

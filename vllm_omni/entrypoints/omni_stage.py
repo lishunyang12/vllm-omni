@@ -251,6 +251,7 @@ class OmniStage:
         batch_timeout: int = 10,
         connectors_config: dict | None = None,
         worker_backend: str = "multi_process",
+        profiler_config: "ProfilerConfig | None" = None,
         **kwargs: Any,
     ) -> None:
         """Initialize and start the stage worker process.
@@ -266,6 +267,8 @@ class OmniStage:
             batch_timeout: Timeout in seconds for batching requests
             connectors_config: Configuration for stage connectors
             worker_backend: Backend type ("multi_process" or "ray")
+            profiler_config: Optional profiler configuration. If provided with
+                record_from_start=True, memory recording starts before model loading.
             **kwargs: Additional arguments (e.g. ray_placement_group)
 
         Raises:
@@ -284,6 +287,19 @@ class OmniStage:
         # Prepare lightweight dict config for worker
         engine_args = _to_dict(self.engine_args)
         runtime_cfg = _to_dict(getattr(self.stage_config, "runtime", {}))
+
+        # Convert profiler_config to dict for serialization
+        profiler_config_dict = None
+        if profiler_config is not None:
+            profiler_config_dict = {
+                "output_dir": profiler_config.output_dir,
+                "performance": profiler_config.performance,
+                "memory": profiler_config.memory,
+                "backend": profiler_config.backend,
+                "max_entries": profiler_config.max_entries,
+                "record_from_start": profiler_config.record_from_start,
+            }
+
         stage_payload: dict[str, Any] = {
             "stage_id": self.stage_id,
             "engine_args": engine_args,
@@ -292,6 +308,7 @@ class OmniStage:
             "connectors_config": connectors_config or {},
             "stage_type": self.stage_type,
             "engine_input_source": self.engine_input_source,
+            "profiler_config": profiler_config_dict,
         }
         try:
             old_env = os.environ.get("VLLM_LOGGING_PREFIX")
@@ -675,6 +692,17 @@ def _stage_worker(
             stage_id,
             e,
         )
+    # Start early memory recording if configured (captures model loading)
+    profiler_config = stage_payload.get("profiler_config")
+    if profiler_config is not None:
+        from vllm_omni.profiler import ProfilerConfig, TorchProfiler
+
+        if isinstance(profiler_config, dict):
+            profiler_config = ProfilerConfig(**profiler_config)
+        if profiler_config.memory and profiler_config.record_from_start:
+            logger.info("[Stage-%s] Starting early memory recording (record_from_start=True)", stage_id)
+            TorchProfiler.start_early_memory_recording(profiler_config)
+
     # Init engine based on stage_type
     logger.debug("[Stage-%s] Initializing %s engine with args keys=%s", stage_id, stage_type, list(engine_args.keys()))
     if engine_args.get("async_chunk", False):
@@ -1210,6 +1238,17 @@ async def _stage_worker_async(
         lock_files = acquired_lock_fds
     except Exception as e:
         logger.debug("Failed to set up sequential initialization lock: %s", e)
+
+    # Start early memory recording if configured (captures model loading)
+    profiler_config = stage_payload.get("profiler_config")
+    if profiler_config is not None:
+        from vllm_omni.profiler import ProfilerConfig, TorchProfiler
+
+        if isinstance(profiler_config, dict):
+            profiler_config = ProfilerConfig(**profiler_config)
+        if profiler_config.memory and profiler_config.record_from_start:
+            logger.info("[Stage-%s] Starting early memory recording (record_from_start=True)", stage_id)
+            TorchProfiler.start_early_memory_recording(profiler_config)
 
     # Init engine based on stage_type
     logger.debug(

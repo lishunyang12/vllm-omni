@@ -333,6 +333,7 @@ class OmniBase:
                 connectors_config=stage_connectors_config,
                 worker_backend=self.worker_backend,
                 ray_placement_group=self._ray_pg,
+                profiler_config=self._profiler_config,
             )
 
             logger.debug(f"[{self._name}] Stage-{stage_id} process started")

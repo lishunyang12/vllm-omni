@@ -14,6 +14,9 @@ class ProfilerConfig:
         memory: Enable memory profiling (snapshot + timeline).
         backend: Profiler backend ("torch" or "nsight" for future).
         max_entries: Max memory allocation records (memory profiler only).
+        record_from_start: If True and memory=True, start recording memory
+            history immediately when the engine initializes (captures model
+            loading). If False, only captures allocations after start_profile().
     """
 
     output_dir: str = "./profiles"
@@ -21,6 +24,7 @@ class ProfilerConfig:
     memory: bool = False
     backend: str = "torch"  # "torch" or "nsight" (future)
     max_entries: int = 100000
+    record_from_start: bool = False
 
     def __post_init__(self):
         if self.backend not in ("torch", "nsight"):

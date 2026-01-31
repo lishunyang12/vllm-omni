@@ -194,7 +194,12 @@ class DiffusionEngine:
     def add_req_and_wait_for_response(self, request: OmniDiffusionRequest):
         return self.executor.add_req(request)
 
-    def start_profile(self, trace_filename: str | None = None, output_dir: str = "./profiles") -> None:
+    def start_profile(
+        self,
+        trace_filename: str | None = None,
+        output_dir: str = "./profiles",
+        config: "ProfilerConfig | None" = None,
+    ) -> None:
         """
         Start torch profiling on all diffusion workers.
 
@@ -205,9 +210,13 @@ class DiffusionEngine:
             trace_filename: Optional base filename (without extension or rank suffix).
                             If None, generates one using current timestamp.
             output_dir: Directory to save profiler output files.
+            config: Optional ProfilerConfig. If None, creates a default config
+                   with performance=True and memory=False.
         """
+        from vllm_omni.profiler import ProfilerConfig
+
         if trace_filename is None:
-            trace_filename = f"stage_0_diffusion_{int(time.time())}_rank"
+            trace_filename = f"stage_0_diffusion_{int(time.time())}"
 
         # Expand ~ and ~user, then make absolute (robust against cwd changes)
         trace_dir = os.path.expanduser(output_dir)
@@ -222,42 +231,71 @@ class DiffusionEngine:
         # Build final template path (without rank or extension — torch.profiler appends those)
         full_template = os.path.join(trace_dir, trace_filename)
 
+        # Create default config if not provided
+        if config is None:
+            config = ProfilerConfig(
+                output_dir=trace_dir,
+                performance=True,
+                memory=False,
+            )
+
         expected_pattern = f"{full_template}*.json"
-        logger.info(f"Starting diffusion profiling → {expected_pattern}")
+        logger.info(
+            f"Starting diffusion profiling → {expected_pattern} "
+            f"(performance={config.performance}, memory={config.memory})"
+        )
 
         # Also log the absolute directory once (useful in multi-node or containers)
         logger.debug(f"Profiler output directory: {trace_dir}")
 
+        # Convert config to dict for RPC serialization
+        config_dict = {
+            "output_dir": config.output_dir,
+            "performance": config.performance,
+            "memory": config.memory,
+            "backend": config.backend,
+            "max_entries": config.max_entries,
+            "record_from_start": config.record_from_start,
+        }
+
         # Propagate to all workers
         try:
-            self.collective_rpc(method="start_profile", args=(full_template,))
+            self.collective_rpc(method="start_profile", args=(full_template, config_dict))
         except Exception as e:
             logger.error("Failed to start profiling on workers", exc_info=True)
             raise RuntimeError(f"Could not start profiler: {e}") from e
 
     def stop_profile(self) -> dict:
         """
-        Stop profiling on all workers and collect the final trace/table paths.
+        Stop profiling on all workers and collect all profiling results.
 
-        The worker (torch_profiler.py) now handles trace export, compression to .gz,
-        and deletion of the original .json file. This method only collects and
-        reports the paths returned by the workers.
+        The worker (torch_profiler.py) handles trace export, compression to .gz,
+        memory snapshot export, and timeline generation.
 
         Returns:
             dict with keys:
-            - "traces": list of final trace file paths (usually .json.gz)
-            - "tables": list of table strings (one per rank)
+            - "traces": list of performance trace file paths (.json.gz)
+            - "snapshots": list of memory snapshot file paths (.pickle)
+            - "timelines": list of memory timeline file paths (.html)
+            - "stats": dict mapping rank to memory statistics
+            - "tables": list of table strings (one per rank, legacy)
         """
         logger.info("Stopping diffusion profiling and collecting results...")
 
         try:
             # Give worker enough time — export + compression + table can be slow
-            results = self.collective_rpc(method="stop_profile", timeout=60000)
+            results = self.collective_rpc(method="stop_profile", timeout=120000)
         except Exception:
             logger.error("Failed to stop profiling on workers", exc_info=True)
-            return {"traces": [], "tables": []}
+            return {"traces": [], "snapshots": [], "timelines": [], "stats": {}, "tables": []}
 
-        output_files = {"traces": [], "tables": []}
+        output_files = {
+            "traces": [],
+            "snapshots": [],
+            "timelines": [],
+            "stats": {},
+            "tables": [],
+        }
         successful_traces = 0
 
         if not results:
@@ -269,43 +307,58 @@ class DiffusionEngine:
                 logger.warning(f"Rank {rank}: invalid result format (got {type(res)})")
                 continue
 
-            # 1. Trace file — should be .json.gz if compression succeeded
+            # 1. Performance trace file — should be .json.gz if compression succeeded
             trace_path = res.get("trace")
             if trace_path:
-                # We trust the worker — it created/compressed the file
-                logger.info(f"[Rank {rank}] Final trace: {trace_path}")
+                logger.info(f"[Rank {rank}] Performance trace: {trace_path}")
                 output_files["traces"].append(trace_path)
                 successful_traces += 1
 
-                # Optional: warn if path looks suspicious (e.g. still .json)
                 if not trace_path.endswith((".json.gz", ".json")):
                     logger.warning(f"Rank {rank}: unusual trace path extension: {trace_path}")
 
-            # 2. Table file — plain text
+            # 2. Memory snapshot file (.pickle)
+            snapshot_path = res.get("snapshot")
+            if snapshot_path:
+                logger.info(f"[Rank {rank}] Memory snapshot: {snapshot_path}")
+                output_files["snapshots"].append(snapshot_path)
+
+            # 3. Memory timeline file (.html)
+            timeline_path = res.get("timeline_html")
+            if timeline_path:
+                logger.info(f"[Rank {rank}] Memory timeline: {timeline_path}")
+                output_files["timelines"].append(timeline_path)
+
+            # 4. Memory statistics
+            stats = res.get("stats")
+            if stats:
+                output_files["stats"][rank] = stats
+
+            # 5. Table file — plain text (legacy)
             table = res.get("table")
             if table:
                 output_files["tables"].append(table)
 
         # Final summary logging
         num_ranks = len(results)
-        if successful_traces > 0:
-            final_paths_str = ", ".join(output_files["traces"][:3])
-            if len(output_files["traces"]) > 3:
-                final_paths_str += f" ... (+{len(output_files['traces']) - 3} more)"
+        num_snapshots = len(output_files["snapshots"])
+        num_timelines = len(output_files["timelines"])
 
+        summary_parts = []
+        if successful_traces > 0:
+            summary_parts.append(f"{successful_traces} trace(s)")
+        if num_snapshots > 0:
+            summary_parts.append(f"{num_snapshots} snapshot(s)")
+        if num_timelines > 0:
+            summary_parts.append(f"{num_timelines} timeline(s)")
+
+        if summary_parts:
             logger.info(
-                f"Profiling stopped. Collected {successful_traces} trace file(s) "
-                f"from {num_ranks} rank(s). "
-                f"Final trace paths: {final_paths_str}"
-            )
-        elif output_files["traces"]:
-            logger.info(
-                f"Profiling stopped but no traces were successfully collected. "
-                f"Reported paths: {', '.join(output_files['traces'][:3])}"
-                f"{' ...' if len(output_files['traces']) > 3 else ''}"
+                f"Profiling stopped. Collected {', '.join(summary_parts)} "
+                f"from {num_ranks} rank(s)."
             )
         else:
-            logger.info("Profiling stopped — no trace files were collected from any rank.")
+            logger.info("Profiling stopped — no output files were collected from any rank.")
 
         if output_files["tables"]:
             logger.debug(f"Collected {len(output_files['tables'])} profiling table(s)")
