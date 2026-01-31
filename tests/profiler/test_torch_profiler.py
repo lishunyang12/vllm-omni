@@ -170,7 +170,7 @@ class TestTorchProfilerBoth:
             )
             profiler = TorchProfiler()
 
-            profiler.start(f"{tmpdir}/both")
+            profiler.start(f"{tmpdir}/both", config)
             x = torch.randn(100, 100, device="cuda")
             _ = x @ x.T
             results = profiler.stop()
@@ -192,7 +192,7 @@ class TestTorchProfilerBoth:
             )
             profiler = TorchProfiler()
 
-            profiler.start(f"{tmpdir}/none")
+            profiler.start(f"{tmpdir}/none", config)
             results = profiler.stop()
 
             # Should return None or empty when nothing is enabled
@@ -208,7 +208,7 @@ class TestTorchProfilerBoth:
             )
             profiler = TorchProfiler()
 
-            profiler.start(f"{tmpdir}/files_test")
+            profiler.start(f"{tmpdir}/files_test", config)
             x = torch.randn(100, 100, device="cuda")
             _ = x @ x.T
             results = profiler.stop()

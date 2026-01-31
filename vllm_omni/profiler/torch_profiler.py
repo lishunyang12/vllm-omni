@@ -119,6 +119,12 @@ class TorchProfiler(ProfilerBase):
         config = cls._config
         results: dict[str, Any] = {}
 
+        # Add trace path if performance profiling was enabled
+        # (must be done before stopping profiler in memory branch)
+        if config and config.performance:
+            gz_path = f"{cls._output_prefix}_rank{rank}.json.gz"
+            results["trace"] = gz_path
+
         # Export memory snapshot and timeline
         if cls._is_memory_recording and config and config.memory:
             snapshot_path = f"{cls._output_prefix}_rank{rank}_snapshot.pickle"
@@ -151,15 +157,11 @@ class TorchProfiler(ProfilerBase):
 
         # Stop profiler for performance trace (if not already stopped for memory)
         if cls._profiler is not None:
-            gz_path = f"{cls._output_prefix}_rank{rank}.json.gz"
             try:
                 cls._profiler.stop()
             except Exception as e:
                 logger.warning("[Rank %s] Profiler stop failed: %s", rank, e)
             cls._profiler = None
-
-            if config and config.performance:
-                results["trace"] = gz_path
 
         cls._config = None
         return results if results else None

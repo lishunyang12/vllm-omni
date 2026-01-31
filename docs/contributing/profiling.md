@@ -2,148 +2,316 @@
 
 > **Warning:** Profiling incurs significant overhead. Use only for development and debugging, never in production.
 
-vLLM-Omni uses the PyTorch Profiler to analyze performance across both **multi-stage omni-modality models** and **diffusion models**.
+vLLM-Omni provides a unified profiling module (`vllm_omni/profiler/`) that supports both **performance profiling** (Chrome traces) and **GPU memory profiling** (snapshots + timelines). This module works across both omni-modality models and diffusion models.
 
-### 1. Set the Output Directory
-Before running any script, set this environment variable. The system detects this and automatically saves traces here.
+## Quick Start
 
-```bash
-export VLLM_TORCH_PROFILER_DIR=./profiles
+```python
+from vllm_omni import Omni
+from vllm_omni.profiler import ProfilerConfig
+
+# Configure profiler at initialization
+omni = Omni(
+    model="Tongyi-MAI/Z-Image-Turbo",
+    profiler_config=ProfilerConfig(
+        output_dir="./profiles",
+        performance=True,  # Chrome trace (default)
+        memory=True,       # Memory snapshot + timeline
+    )
+)
+
+# Profile your workload
+omni.start_profile()
+outputs = omni.generate({"prompt": "a cat"}, sampling_params)
+results = omni.stop_profile()
+
+# View results
+print(f"Performance trace: {results['traces'][0]}")
+print(f"Memory snapshot: {results['snapshots'][0]}")
+print(f"Memory timeline: {results['timelines'][0]}")
 ```
 
-### 2. Profiling Omni-Modality Models
+## Command Line Usage
 
-It is best to limit profiling to one iteration to keep trace files manageable.
+All offline inference examples support profiling via CLI arguments:
 
 ```bash
-export VLLM_PROFILER_MAX_ITERS=1
+# Performance profiling only (default)
+python text_to_image.py --model MODEL --profile-dir ./profiles
+
+# Memory profiling only
+python text_to_image.py --model MODEL --profile-dir ./profiles \
+    --no-profile-performance --profile-memory
+
+# Both together (recommended for debugging)
+python text_to_image.py --model MODEL --profile-dir ./profiles --profile-memory
 ```
 
-**Selective Stage Profiling**
-The profiler is default to function across all stages. But It is highly recommended to profile specific stages by passing the stages list, preventing from producing too large trace files:
+## ProfilerConfig Options
+
+```python
+from vllm_omni.profiler import ProfilerConfig
+
+ProfilerConfig(
+    output_dir="./profiles",    # Where to save files
+    performance=True,           # Enable Chrome trace (default: True)
+    memory=False,               # Enable memory profiling (default: False)
+    backend="torch",            # "torch" (current) or "nsight" (future)
+    max_entries=100000,         # Max memory records (higher = more overhead)
+)
+```
+
+## Output Files
+
+| File | Format | How to View |
+|------|--------|-------------|
+| `*_rank0.json.gz` | Chrome trace | chrome://tracing or ui.perfetto.dev |
+| `*_snapshot.pickle` | PyTorch snapshot | https://pytorch.org/memory_viz (drag & drop) |
+| `*_timeline.html` | HTML | Any browser |
+
+### File Naming Convention
+
+```
+{output_dir}/
+├── stage_{id}_{timestamp}_rank{rank}.json.gz           # Performance trace
+├── stage_{id}_{timestamp}_rank{rank}_snapshot.pickle   # Memory snapshot
+└── stage_{id}_{timestamp}_rank{rank}_timeline.html     # Memory timeline
+```
+
+---
+
+## Profiling Omni-Modality Models
+
+### Selective Stage Profiling
+
+It is highly recommended to profile specific stages to keep trace files manageable:
+
 ```python
 # Profile all stages
-omni_llm.start_profile()
+omni.start_profile()
 
 # Only profile Stage 1
-omni_llm.start_profile(stages=[1])
+omni.start_profile(stages=[1])
+
+# Stage 0 (Thinker) and Stage 2 (Audio Decoder) for Qwen Omni
+omni.start_profile(stages=[0, 2])
 ```
 
-```python
-# Stage 0 (Thinker) and Stage 2 (Audio Decoder) for qwen omni
-omni_llm.start_profile(stages=[0, 2])
-```
-
-**Python Usage**: Wrap your generation logic with `start_profile()` and `stop_profile()`.
+### Example: Streaming Generation with Profiling
 
 ```python
-from vllm_omni import omni_llm
+from vllm_omni import Omni
+from vllm_omni.profiler import ProfilerConfig
 
-profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
+# Configure profiler
+profiler_config = ProfilerConfig(
+    output_dir="./profiles",
+    performance=True,
+    memory=False,
+)
 
-# 1. Start profiling if enabled
-if profiler_enabled:
-    omni_llm.start_profile(stages=[0])
+omni = Omni(model="Qwen/Qwen2.5-Omni-7B", profiler_config=profiler_config)
+
+# Start profiling specific stages
+omni.start_profile(stages=[0])
 
 # Initialize generator
-omni_generator = omni_llm.generate(prompts, sampling_params_list, py_generator=args.py_generator)
+omni_generator = omni.generate(prompts, sampling_params_list)
 
 total_requests = len(prompts)
 processed_count = 0
 
 # Main Processing Loop
 for stage_outputs in omni_generator:
-
-    # ... [Output processing logic for text/audio would go here] ...
-
-    # Update count to track when to stop profiling
     processed_count += len(stage_outputs.request_output)
 
-    # 2. Check if all requests are done to stop the profiler safely
-    if profiler_enabled and processed_count >= total_requests:
-        print(f"[Info] Processed {processed_count}/{total_requests}. Stopping profiler inside active loop...")
+    # Stop profiler when all requests are done
+    if processed_count >= total_requests:
+        print(f"Processed {processed_count}/{total_requests}. Stopping profiler...")
+        results = omni.stop_profile()
+        print(f"Trace saved to: {results['traces'][0]}")
 
-        # Stop the profiler while workers are still active
-        omni_llm.stop_profile()
-
-        # Wait for traces to flush to disk
-        print("[Info] Waiting 30s for workers to write trace files to disk...")
-        time.sleep(30)
-        print("[Info] Trace export wait time finished.")
-
-omni_llm.close()
+omni.close()
 ```
 
+### Examples
 
-**Examples**:
+- **Qwen2.5-Omni**: [examples/offline_inference/qwen2_5_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen2_5_omni/end2end.py)
+- **Qwen3-Omni**: [examples/offline_inference/qwen3_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py)
 
-1. **Qwen2.5-Omni**:  [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen2_5_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen2_5_omni/end2end.py)
+---
 
-2. **Qwen3-Omni**:   [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/qwen3_omni/end2end.py)
+## Profiling Diffusion Models
 
+Diffusion profiling is end-to-end, capturing encoding, denoising loops, and decoding.
 
-### 3. Profiling diffusion models
+### Minimizing Trace Size
 
-Diffusion profiling is End-to-End, capturing encoding, denoising loops, and decoding.
+For profiling, minimize dimensions to keep trace files manageable:
 
-**CLI Usage:**
-```python
-
+```bash
 python image_to_video.py \
     --model Wan-AI/Wan2.2-I2V-A14B-Diffusers \
-    --image qwen-bear.png \
-    --prompt "A cat playing with yarn, smooth motion" \
+    --image input.png \
+    --prompt "A cat playing with yarn" \
+    --profile-dir ./profiles \
+    --profile-memory \
     \
-    # Minimize Spatial Dimensions (Optional but helpful):
-    #    Drastically reduces memory usage so the profiler doesn't
-    #    crash due to overhead, though for accurate performance
-    #    tuning you often want target resolutions.
+    # Minimize dimensions for profiling:
     --height 48 \
     --width 64 \
-    \
-    # Minimize Temporal Dimension (Frames):
-    #    Video models process 3D tensors (Time, Height, Width).
-    #    Reducing frames to the absolute minimum (2) keeps the
-    #    tensor size small, ensuring the trace file doesn't become
-    #    multi-gigabytes in size.
     --num_frames 2 \
-    \
-    # Minimize Iteration Loop (Steps):
-    #    This is the most critical setting for profiling.
-    #    Diffusion models run the same loop X times.
-    #    Profiling 2 steps gives you the exact same performance
-    #    data as 50 steps, but saves minutes of runtime and
-    #    prevents the trace viewer from freezing.
-    --num_inference_steps 2 \
-    \
-    --guidance_scale 5.0 \
-    --guidance_scale_high 6.0 \
-    --boundary_ratio 0.875 \
-    --flow_shift 12.0 \
-    --fps 16 \
-    --output i2v_output.mp4
-
+    --num_inference_steps 2
 ```
 
-**Examples**:
+**Why minimize dimensions?**
+- **Spatial (height/width)**: Reduces memory usage so profiler doesn't crash
+- **Temporal (frames)**: Video models process 3D tensors; fewer frames = smaller traces
+- **Steps**: Profiling 2 steps gives same performance data as 50 steps
 
-1. **Qwen image edit**:  [https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/image_to_image/image_edit.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/image_to_image/image_edit.py)
+### Examples
 
-2. **Wan-AI/Wan2.2-I2V-A14B-Diffusers**:   [https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/image_to_video](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/image_to_video)
+- **Image Edit**: [examples/offline_inference/image_to_image/image_edit.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/image_to_image/image_edit.py)
+- **Image to Video**: [examples/offline_inference/image_to_video/](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/image_to_video)
+- **Text to Image**: [examples/offline_inference/text_to_image/text_to_image.py](https://github.com/vllm-project/vllm-omni/blob/main/examples/offline_inference/text_to_image/text_to_image.py)
 
-> **Note:**
-As of now, asynchronous (online) profiling is not fully supported in vLLM-Omni. While start_profile() and stop_profile() methods exist, they are only reliable in offline inference scripts (e.g., the provided end2end.py examples). Do not use them in server-mode or streaming scenarios—traces may be incomplete or fail to flush.
+---
 
-### 4. Analyzing Omni Traces
+## GPU Memory Profiling
 
-Output files are saved to your configured ```VLLM_TORCH_PROFILER_DIR```.
+Memory profiling helps debug OOM errors, detect memory leaks, and understand allocation patterns.
 
-**Output**
-**Chrome Trace** (```.json.gz```): Visual timeline of kernels and stages. Open in Perfetto UI.
+### Understanding Memory Timeline
 
-**Viewing Tools:**
+The categorized timeline shows memory usage by type:
 
-- [Perfetto](https://ui.perfetto.dev/)(recommended)
-- ```chrome://tracing```(Chrome only)
+**Inference Categories:**
+- **Model Weights**: Loaded model parameters
+- **KV Cache**: Key-Value cache for attention (LLM/transformers)
+- **Activations**: Intermediate computation buffers
+- **Input/Output**: Input tensors and generated outputs
 
-**Note**: vLLM-Omni reuses the PyTorch Profiler infrastructure from vLLM. See the official vLLM profiler documentation:  [vLLM Profiling Guide](https://docs.vllm.ai/en/stable/contributing/profiling/)
+**Diffusion-Specific Categories:**
+- **Latents**: Latent space tensors
+- **Noise**: Random noise tensors for denoising
+- **VAE Buffers**: Encoder/decoder intermediate states
+- **Attention Buffers**: Self/cross-attention computation
+
+### Debugging OOM Errors
+
+```python
+# 1. Configure profiler with memory enabled
+profiler_config = ProfilerConfig(
+    output_dir="./oom_debug",
+    performance=False,  # Focus on memory
+    memory=True,
+    max_entries=50000,  # Lower to reduce overhead
+)
+
+# 2. Initialize with config
+omni = Omni(model="...", profiler_config=profiler_config)
+
+# 3. Start profiling
+omni.start_profile()
+
+# 4. Run the workload that causes OOM
+try:
+    outputs = omni.generate(...)
+except RuntimeError as e:
+    if "out of memory" in str(e):
+        print("OOM occurred, collecting profiler data...")
+
+# 5. Stop and collect results (even after OOM)
+results = omni.stop_profile()
+print(f"Snapshot: {results['snapshots'][0]}")
+```
+
+### Memory Snapshot Visualization
+
+The `.pickle` file can be visualized at https://pytorch.org/memory_viz:
+
+1. Navigate to https://pytorch.org/memory_viz
+2. Drag and drop the `.pickle` file
+3. Explore:
+   - **Timeline**: See allocations over time
+   - **Stack traces**: Hover over allocations to see call stacks
+   - **Allocation sizes**: Filter by size to find large allocations
+
+---
+
+## Viewing Traces
+
+### Performance Traces (`.json.gz`)
+
+- [Perfetto UI](https://ui.perfetto.dev/) (recommended)
+- `chrome://tracing` (Chrome only)
+
+### Memory Snapshots (`.pickle`)
+
+- [PyTorch Memory Viz](https://pytorch.org/memory_viz) - drag and drop
+
+### Memory Timelines (`.html`)
+
+- Open in any browser
+
+---
+
+## API Reference
+
+### ProfilerConfig
+
+```python
+@dataclass
+class ProfilerConfig:
+    output_dir: str = "./profiles"    # Output directory
+    performance: bool = True          # Enable performance trace
+    memory: bool = False              # Enable memory profiling
+    backend: str = "torch"            # Profiler backend
+    max_entries: int = 100000         # Max memory records
+```
+
+### Omni/OmniLLM Methods
+
+```python
+# Start profiling for specified stages (None = all)
+omni.start_profile(stages: list[int] | None = None) -> None
+
+# Stop profiling and collect results
+omni.stop_profile(stages: list[int] | None = None) -> dict
+# Returns:
+# {
+#     "traces": [...],        # Performance traces (.json.gz)
+#     "snapshots": [...],     # Memory snapshots (.pickle)
+#     "timelines": [...],     # Categorized timelines (.html)
+#     "memory_stats": {...},  # Per-stage statistics
+# }
+```
+
+---
+
+## Best Practices
+
+1. **Set `max_entries` appropriately**: Lower values (e.g., 10000) for short runs reduce memory overhead
+
+2. **Profile specific stages**: Use `omni.start_profile(stages=[0])` to reduce overhead
+
+3. **Use memory profiling during development**: Disable in production for performance
+
+4. **Minimize dimensions for diffusion**: Use small height/width/frames/steps when profiling
+
+5. **Compare before/after**: Profile before and after optimizations to measure impact
+
+---
+
+## Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| No snapshot file | PyTorch < 2.0 | Upgrade PyTorch |
+| Empty timeline | No CUDA allocations | Increase `max_entries` |
+| Import error | Missing module | Check `vllm_omni/profiler/__init__.py` |
+| OOM during profiling | Profiler overhead | Reduce `max_entries` |
+| Huge trace files | Too many steps/frames | Reduce `num_inference_steps`, `num_frames` |
+| Timeline missing categories | Custom tensors | May appear as "Other" |
+
+> **Note:** Asynchronous (online) profiling is not fully supported. Use `start_profile()` and `stop_profile()` only in offline inference scripts. Do not use in server-mode or streaming scenarios—traces may be incomplete.
