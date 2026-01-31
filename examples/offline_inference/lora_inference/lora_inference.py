@@ -2,12 +2,14 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import argparse
+import time
 from pathlib import Path
 
 from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 from vllm_omni.lora.request import LoRARequest
 from vllm_omni.lora.utils import stable_lora_int_id
+from vllm_omni.profiler import ProfilerConfig
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,6 +58,31 @@ def parse_args() -> argparse.Namespace:
         default=1.0,
         help="Scale factor for LoRA weights (default: 1.0).",
     )
+
+    # Profiler arguments
+    parser.add_argument(
+        "--profile-dir",
+        type=str,
+        default=None,
+        help="Directory to save profiling outputs. Enables profiling when set.",
+    )
+    parser.add_argument(
+        "--profile-performance",
+        action="store_true",
+        default=True,
+        help="Enable performance profiling (Chrome trace). Default: True.",
+    )
+    parser.add_argument(
+        "--no-profile-performance",
+        action="store_false",
+        dest="profile_performance",
+        help="Disable performance profiling.",
+    )
+    parser.add_argument(
+        "--profile-memory",
+        action="store_true",
+        help="Enable memory profiling (snapshot + timeline).",
+    )
     return parser.parse_args()
 
 
@@ -64,13 +91,26 @@ def main():
 
     model = args.model
 
+    # Build profiler config from arguments
+    profiler_config = None
+    if args.profile_dir:
+        profiler_config = ProfilerConfig(
+            output_dir=args.profile_dir,
+            performance=args.profile_performance,
+            memory=args.profile_memory,
+        )
+        print("[Profiler] Config:")
+        print(f"  Output dir: {args.profile_dir}")
+        print(f"  Performance: {args.profile_performance}")
+        print(f"  Memory: {args.profile_memory}")
+
     omni_kwargs = {}
 
     if args.lora_path:
         omni_kwargs["lora_path"] = args.lora_path
         print(f"Using static LoRA from: {args.lora_path}")
 
-    omni = Omni(model=model, **omni_kwargs)
+    omni = Omni(model=model, profiler_config=profiler_config, **omni_kwargs)
 
     lora_request = None
     if args.lora_request_path:
@@ -106,7 +146,15 @@ def main():
         sampling_params.lora_request = lora_request
         sampling_params.lora_scale = args.lora_scale
 
+    if profiler_config:
+        print("[Profiler] Starting profiling...")
+        omni.start_profile()
+
+    generation_start = time.perf_counter()
     outputs = omni.generate(args.prompt, sampling_params)
+    generation_end = time.perf_counter()
+    generation_time = generation_end - generation_start
+    print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
 
     if not outputs or len(outputs) == 0:
         raise ValueError("No output generated from omni.generate()")
@@ -141,6 +189,55 @@ def main():
             save_path = output_path.parent / f"{stem}_{idx}{suffix}"
             img.save(save_path)
             print(f"Saved generated image to {save_path}")
+
+    if profiler_config:
+        print("\n[Profiler] Stopping profiler and collecting results...")
+        profile_results = omni.stop_profile()
+
+        if profile_results and isinstance(profile_results, dict):
+            print("\n" + "=" * 60)
+            print("PROFILING RESULTS:")
+
+            # Performance traces
+            traces = profile_results.get("traces", [])
+            for trace in traces:
+                if trace:
+                    print("\nPerformance Trace:")
+                    print(f"  {trace}")
+                    print("    View: chrome://tracing or ui.perfetto.dev")
+
+            # Memory snapshots
+            snapshots = profile_results.get("snapshots", [])
+            for snapshot in snapshots:
+                if snapshot:
+                    print("\nMemory Snapshot:")
+                    print(f"  {snapshot}")
+                    print("    View: https://pytorch.org/memory_viz (drag & drop)")
+
+            # Categorized memory timelines
+            timelines = profile_results.get("timelines", [])
+            for timeline in timelines:
+                if timeline:
+                    print("\nMemory Timeline (Categorized):")
+                    print(f"  {timeline}")
+                    print("    Shows: Model Params, Gradients, Activations, Optimizer State")
+
+            # Memory statistics
+            memory_stats = profile_results.get("memory_stats", {})
+            if memory_stats:
+                print("\nMemory Statistics:")
+                for key, value in memory_stats.items():
+                    if isinstance(value, float):
+                        print(f"  {key}: {value:.2f} MB")
+                    else:
+                        print(f"  {key}: {value}")
+
+            if not traces and not snapshots and not timelines:
+                print("  No profiling data collected.")
+
+            print("=" * 60)
+        else:
+            print("[Profiler] No valid profiling data returned.")
 
 
 if __name__ == "__main__":

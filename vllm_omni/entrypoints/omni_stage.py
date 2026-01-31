@@ -13,7 +13,6 @@ import multiprocessing as mp
 import os
 import queue
 import sys
-import time
 import traceback
 from collections.abc import Sequence
 from dataclasses import fields
@@ -730,43 +729,45 @@ def _stage_worker(
     max_batch_size = int(runtime_cfg.get("max_batch_size", 1) or 1)
     logger.info(f"Max batch size: {max_batch_size}")
 
-    def handle_profiler_task_local(task_type: OmniStageTaskType) -> dict:
+    def handle_profiler_task_local(task: dict) -> dict:
         """Handle profiler task locally in the worker process."""
+        from vllm_omni.profiler import ProfilerConfig, TorchProfiler
+
+        task_type = task.get("type")
+        config = task.get("config")
+        output_prefix = task.get("output_prefix")
+
         if task_type == OmniStageTaskType.PROFILER_START:
-            if stage_type == "diffusion":
-                try:
-                    profile_dir = _os.environ.get("VLLM_TORCH_PROFILER_DIR", "./profiles")
-                    _os.makedirs(profile_dir, exist_ok=True)
-                    trace_filename = f"stage_{stage_id}_diffusion_{int(_time.time())}"
-                    stage_engine.start_profile(trace_filename=trace_filename)
-                    logger.info("[Stage-%s] Diffusion Torch profiler started", stage_id)
-                except Exception as e:
-                    logger.warning("[Stage-%s] Failed to start diffusion profiler: %s", stage_id, e)
-            else:
-                try:
-                    stage_engine.start_profile()
-                    logger.info("[Stage-%s] vLLM profiler started", stage_id)
-                except Exception as e:
-                    logger.warning("[Stage-%s] Failed to start vLLM profiler: %s", stage_id, e)
-            return {}
+            if config is None:
+                logger.error("[Stage-%s] ProfilerConfig is required", stage_id)
+                return {"error": "ProfilerConfig is required"}
+
+            if not isinstance(config, ProfilerConfig):
+                logger.error("[Stage-%s] Invalid profiler config type", stage_id)
+                return {"error": "Invalid config type"}
+
+            try:
+                TorchProfiler.start(output_prefix, config)
+                logger.info(
+                    "[Stage-%s] TorchProfiler started (perf=%s, mem=%s)",
+                    stage_id,
+                    config.performance,
+                    config.memory,
+                )
+                return {"status": "started"}
+            except Exception as e:
+                logger.error("[Stage-%s] Failed to start TorchProfiler: %s", stage_id, e)
+                return {"error": str(e)}
 
         elif task_type == OmniStageTaskType.PROFILER_STOP:
-            if stage_type == "diffusion":
-                try:
-                    # CRITICAL: Capture return value
-                    result_data = stage_engine.stop_profile()
-                    logger.info("[Stage-%s] Diffusion Torch profiler stopped", stage_id)
-                    return result_data
-                except Exception as e:
-                    logger.warning("[Stage-%s] Failed to stop diffusion profiler: %s", stage_id, e)
-                    return {}
-            else:
-                try:
-                    stage_engine.stop_profile()
-                    logger.info("[Stage-%s] vLLM profiler stopped", stage_id)
-                except Exception as e:
-                    logger.warning("[Stage-%s] Failed to stop vLLM profiler: %s", stage_id, e)
-                return {}
+            try:
+                results = TorchProfiler.stop()
+                logger.info("[Stage-%s] TorchProfiler stopped", stage_id)
+                return results if results else {}
+            except Exception as e:
+                logger.error("[Stage-%s] Failed to stop TorchProfiler: %s", stage_id, e)
+                return {"error": str(e)}
+
         return {}
 
     # Batch processing loop
@@ -781,7 +782,7 @@ def _stage_worker(
 
         # Handle profiler control commands
         if is_profiler_task(task_type):
-            profiler_data = handle_profiler_task_local(task_type)
+            profiler_data = handle_profiler_task_local(task)
             # If it was a STOP command, we must reply to the Orchestrator
             if task_type == OmniStageTaskType.PROFILER_STOP:
                 out_q.put({"type": "profiler_result", "data": profiler_data})
@@ -800,7 +801,7 @@ def _stage_worker(
                     # Handle profiler commands that arrive during batching
                     extra_type = extra.get("type") if isinstance(extra, dict) else None
                     if is_profiler_task(extra_type):
-                        p_data = handle_profiler_task_local(extra_type)
+                        p_data = handle_profiler_task_local(extra)
                         if extra_type == OmniStageTaskType.PROFILER_STOP:
                             out_q.put({"type": "profiler_result", "data": p_data})
                         continue
@@ -1283,41 +1284,42 @@ async def _stage_worker_async(
         await stage_engine.reset_mm_cache()
     logger.debug("[Stage-%s] Engine initialized", stage_id)
 
-    async def handle_profiler_task_async(task_type: OmniStageTaskType) -> None:
+    async def handle_profiler_task_async(task: dict) -> None:
         """Handle profiler task asynchronously for both LLM and diffusion stages."""
+        from vllm_omni.profiler import ProfilerConfig, TorchProfiler
+
+        task_type = task.get("type")
+        config = task.get("config")
+        output_prefix = task.get("output_prefix")
+
         if task_type == OmniStageTaskType.PROFILER_START:
-            if stage_type == "diffusion":
-                try:
-                    # Sync call is safe here — diffusion profiling is lightweight
-                    profile_dir = os.environ.get("VLLM_TORCH_PROFILER_DIR", "./profiles")
-                    os.makedirs(profile_dir, exist_ok=True)
-                    trace_filename = f"stage_{stage_id}_diffusion_{int(time.time())}"
-                    stage_engine.start_profile(trace_filename=trace_filename)
-                    logger.info("[Stage-%s] Diffusion Torch profiler started", stage_id)
-                except Exception as e:
-                    logger.warning("[Stage-%s] Failed to start diffusion profiler: %s", stage_id, e)
-            else:
-                try:
-                    await stage_engine.start_profile()
-                    logger.info("[Stage-%s] vLLM profiler started", stage_id)
-                except Exception as e:
-                    logger.warning("[Stage-%s] Failed to start vLLM profiler: %s", stage_id, e)
+            if config is None:
+                logger.error("[Stage-%s] ProfilerConfig is required", stage_id)
+                return
+
+            if not isinstance(config, ProfilerConfig):
+                logger.error("[Stage-%s] Invalid profiler config type", stage_id)
+                return
+
+            try:
+                TorchProfiler.start(output_prefix, config)
+                logger.info(
+                    "[Stage-%s] TorchProfiler started (perf=%s, mem=%s)",
+                    stage_id,
+                    config.performance,
+                    config.memory,
+                )
+            except Exception as e:
+                logger.error("[Stage-%s] Failed to start TorchProfiler: %s", stage_id, e)
 
         elif task_type == OmniStageTaskType.PROFILER_STOP:
-            if stage_type == "diffusion":
-                try:
-                    trace_files = stage_engine.stop_profile()
-                    logger.info("[Stage-%s] Diffusion Torch profiler stopped", stage_id)
-                    if trace_files:
-                        logger.info("Diffusion trace files: %s", trace_files)
-                except Exception as e:
-                    logger.warning("[Stage-%s] Failed to stop diffusion profiler: %s", stage_id, e)
-            else:
-                try:
-                    await stage_engine.stop_profile()
-                    logger.info("[Stage-%s] vLLM profiler stopped", stage_id)
-                except Exception as e:
-                    logger.warning("[Stage-%s] Failed to stop vLLM profiler: %s", stage_id, e)
+            try:
+                results = TorchProfiler.stop()
+                logger.info("[Stage-%s] TorchProfiler stopped", stage_id)
+                if results:
+                    logger.info("[Stage-%s] Profiler results: %s", stage_id, list(results.keys()))
+            except Exception as e:
+                logger.error("[Stage-%s] Failed to stop TorchProfiler: %s", stage_id, e)
 
     # Signal readiness to orchestrator and send vllm_config back to main process
     try:
@@ -1419,7 +1421,7 @@ async def _stage_worker_async(
                 rid = task["request_id"]
                 asyncio.create_task(stage_engine.abort(rid))
             elif is_profiler_task(task_type):
-                await handle_profiler_task_async(task_type)
+                await handle_profiler_task_async(task)
             else:
                 asyncio.create_task(generation_single_request(task))
 

@@ -43,6 +43,7 @@ from vllm_omni.entrypoints.utils import (
 )
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniPromptType, OmniSamplingParams
 from vllm_omni.outputs import OmniRequestOutput
+from vllm_omni.profiler import ProfilerConfig
 
 logger = init_logger(__name__)
 
@@ -83,6 +84,7 @@ class OmniBase:
 
     Args:
         model: Model name or path to load.
+        profiler_config: Optional profiler configuration for performance/memory profiling.
         **kwargs: Arbitrary keyword arguments.
             - stage_configs_path: Optional path to YAML file containing stage
               configurations. If None, configurations are loaded from the model.
@@ -100,9 +102,18 @@ class OmniBase:
             - Additional keyword arguments passed to stage engines.
     """
 
-    def __init__(self, model: str, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        model: str,
+        *,
+        profiler_config: ProfilerConfig | None = None,
+        **kwargs: Any,
+    ) -> None:
         model = omni_snapshot_download(model)
         kwargs["model"] = model
+
+        # Profiler configuration
+        self._profiler_config = profiler_config
 
         # Stage management attributes
         self.stage_list: list[OmniStage] = []
@@ -379,18 +390,24 @@ class OmniBase:
     def start_profile(self, stages: list[int] | None = None) -> None:
         """Start profiling for specified stages.
 
-        Sends start_profile command to stage workers. Profiling must be enabled
-        via VLLM_TORCH_PROFILER_DIR environment variable.
+        Uses the ProfilerConfig passed at initialization. If no config was
+        provided, falls back to environment variable VLLM_TORCH_PROFILER_DIR.
 
         Args:
             stages: List of stage IDs to start profiling. If None, starts
-                profiling for all stages that have profiling enabled.
+                profiling for all stages.
 
         Example:
-            >>> # Profile all stages
+            >>> # Using ProfilerConfig (recommended)
+            >>> from vllm_omni.profiler import ProfilerConfig
+            >>> omni = Omni(model="...", profiler_config=ProfilerConfig(
+            ...     output_dir="./profiles",
+            ...     performance=True,
+            ...     memory=True,
+            ... ))
             >>> omni.start_profile()
             >>> outputs = omni.generate(prompts, sampling_params)
-            >>> omni.stop_profile()
+            >>> results = omni.stop_profile()
 
             >>> # Profile only stage 0 and 2
             >>> omni.start_profile(stages=[0, 2])
@@ -398,11 +415,20 @@ class OmniBase:
         if stages is None:
             stages = list(range(len(self.stage_list)))
 
+        timestamp = int(time.time())
+
         for stage_id in stages:
             if stage_id < len(self.stage_list):
                 try:
-                    self.stage_list[stage_id].submit({"type": OmniStageTaskType.PROFILER_START})
-                    logger.info("[%s] Sent start_profile to stage-%s", self._name, stage_id)
+                    task: dict[str, Any] = {"type": OmniStageTaskType.PROFILER_START}
+
+                    # Include profiler config if available
+                    if self._profiler_config:
+                        task["config"] = self._profiler_config
+                        task["output_prefix"] = f"{self._profiler_config.output_dir}/stage_{stage_id}_{timestamp}"
+
+                    self.stage_list[stage_id].submit(task)
+                    logger.info("[%s] Started profiling for stage-%s", self._name, stage_id)
                 except Exception as e:
                     logger.warning(
                         "[%s] Failed to send start_profile to stage-%s: %s",
@@ -412,14 +438,26 @@ class OmniBase:
                     )
 
     def stop_profile(self, stages: list[int] | None = None) -> dict:
-        """
-        Synchronously stop profiling for specified stages and collect
-        the file paths for traces and tables.
+        """Stop profiling and collect results from all stages.
+
+        Returns:
+            Dict with keys:
+                - traces: List of performance trace file paths (.json.gz)
+                - snapshots: List of memory snapshot file paths (.pickle)
+                - timelines: List of memory timeline file paths (.html)
+                - memory_stats: Dict of memory statistics per stage
+                - tables: List of table file paths (legacy, for backward compatibility)
         """
         if stages is None:
             stages = list(range(len(self.stage_list)))
 
-        all_results = {"traces": [], "tables": []}
+        all_results: dict[str, Any] = {
+            "traces": [],
+            "snapshots": [],
+            "timelines": [],
+            "memory_stats": {},
+            "tables": [],  # Legacy field for backward compatibility
+        }
 
         for stage_id in stages:
             if stage_id < len(self.stage_list):
@@ -433,32 +471,44 @@ class OmniBase:
                     stage_data = stage.stop_profile()
 
                     if isinstance(stage_data, dict):
-                        # FIX: Handle both single key and list key formats
-                        traces = stage_data.get("trace") or stage_data.get("traces")
-                        tables = stage_data.get("table") or stage_data.get("tables")
-
-                        # Debug logging
                         logger.debug(f"[{self._name}] Stage-{stage_id} returned: {stage_data.keys()}")
-                        if traces:
-                            logger.debug(f"[{self._name}] Stage-{stage_id} traces type: {type(traces)}")
-                        if tables:
-                            logger.debug(f"[{self._name}] Stage-{stage_id} tables type: {type(tables)}")
 
-                        # Handle single strings
+                        # Handle performance traces
+                        traces = stage_data.get("trace") or stage_data.get("traces")
                         if traces:
                             if isinstance(traces, str):
                                 all_results["traces"].append(traces)
                             elif isinstance(traces, list):
                                 all_results["traces"].extend(traces)
 
-                        # Handle single strings
+                        # Handle memory snapshots
+                        snapshots = stage_data.get("snapshot") or stage_data.get("snapshots")
+                        if snapshots:
+                            if isinstance(snapshots, str):
+                                all_results["snapshots"].append(snapshots)
+                            elif isinstance(snapshots, list):
+                                all_results["snapshots"].extend(snapshots)
+
+                        # Handle memory timelines
+                        timelines = stage_data.get("timeline_html") or stage_data.get("timelines")
+                        if timelines:
+                            if isinstance(timelines, str):
+                                all_results["timelines"].append(timelines)
+                            elif isinstance(timelines, list):
+                                all_results["timelines"].extend(timelines)
+
+                        # Handle memory stats
+                        stats = stage_data.get("stats") or stage_data.get("memory_stats")
+                        if stats:
+                            all_results["memory_stats"][stage_id] = stats
+
+                        # Handle legacy tables field
+                        tables = stage_data.get("table") or stage_data.get("tables")
                         if tables:
                             if isinstance(tables, str):
                                 all_results["tables"].append(tables)
                             elif isinstance(tables, list):
                                 all_results["tables"].extend(tables)
-                        else:
-                            logger.warning(f"[{self._name}] Stage-{stage_id} returned no table data")
                     else:
                         logger.warning(f"[{self._name}] Stage-{stage_id} returned non-dict data: {type(stage_data)}")
                 else:
@@ -470,9 +520,12 @@ class OmniBase:
                     )
                     stage.submit({"type": OmniStageTaskType.PROFILER_STOP})
 
-        # Final debug output
         logger.info(
-            f"[{self._name}] Collected {len(all_results['traces'])} trace(s) and {len(all_results['tables'])} table(s)"
+            "[%s] Collected %d trace(s), %d snapshot(s), %d timeline(s)",
+            self._name,
+            len(all_results["traces"]),
+            len(all_results["snapshots"]),
+            len(all_results["timelines"]),
         )
 
         return all_results
