@@ -29,11 +29,11 @@ from vllm_omni.diffusion.distributed.parallel_state import (
 )
 from vllm_omni.diffusion.forward_context import set_forward_context
 from vllm_omni.diffusion.lora.manager import DiffusionLoRAManager
-from vllm_omni.diffusion.profiler import CurrentProfiler
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.worker.diffusion_model_runner import DiffusionModelRunner
 from vllm_omni.lora.request import LoRARequest
 from vllm_omni.platforms import current_omni_platform
+from vllm_omni.profiler import ProfilerConfig, TorchProfiler
 
 logger = init_logger(__name__)
 
@@ -132,12 +132,19 @@ class DiffusionWorker:
     @classmethod
     def start_profile(cls, trace_path_template: str) -> str:
         """Start profiling for this GPU worker."""
-        return CurrentProfiler.start(trace_path_template)
+        import os
+
+        config = ProfilerConfig(
+            output_dir=os.path.dirname(trace_path_template) or ".",
+            performance=True,
+            memory=False,
+        )
+        return TorchProfiler.start(trace_path_template, config)
 
     @classmethod
     def stop_profile(cls) -> dict | None:
         """Stop profiling and return the result dictionary."""
-        return CurrentProfiler.stop()
+        return TorchProfiler.stop()
 
     def execute_model(self, req: OmniDiffusionRequest, od_config: OmniDiffusionConfig) -> DiffusionOutput:
         """Execute a forward pass by delegating to the model runner."""
