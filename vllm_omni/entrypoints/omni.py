@@ -390,8 +390,7 @@ class OmniBase:
     def start_profile(self, stages: list[int] | None = None) -> None:
         """Start profiling for specified stages.
 
-        Uses the ProfilerConfig passed at initialization. If no config was
-        provided, falls back to environment variable VLLM_TORCH_PROFILER_DIR.
+        Uses the ProfilerConfig passed at initialization.
 
         Args:
             stages: List of stage IDs to start profiling. If None, starts

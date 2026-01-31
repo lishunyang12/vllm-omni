@@ -115,15 +115,16 @@ class OmniDiffusion:
         except Exception:
             pass
 
-    def start_profile(self, trace_filename: str | None = None) -> None:
+    def start_profile(self, trace_filename: str | None = None, output_dir: str = "./profiles") -> None:
         """Start profiling for the diffusion model.
 
         Args:
             trace_filename: Optional base filename for trace files.
                            If None, a timestamp-based name will be generated.
+            output_dir: Directory to save profiler output files.
         """
         if hasattr(self, "engine") and self.engine:
-            self.engine.start_profile(trace_filename)
+            self.engine.start_profile(trace_filename, output_dir)
         else:
             raise RuntimeError("Diffusion engine not initialized")
 

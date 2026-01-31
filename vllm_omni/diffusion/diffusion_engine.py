@@ -194,7 +194,7 @@ class DiffusionEngine:
     def add_req_and_wait_for_response(self, request: OmniDiffusionRequest):
         return self.executor.add_req(request)
 
-    def start_profile(self, trace_filename: str | None = None) -> None:
+    def start_profile(self, trace_filename: str | None = None, output_dir: str = "./profiles") -> None:
         """
         Start torch profiling on all diffusion workers.
 
@@ -204,14 +204,13 @@ class DiffusionEngine:
         Args:
             trace_filename: Optional base filename (without extension or rank suffix).
                             If None, generates one using current timestamp.
+            output_dir: Directory to save profiler output files.
         """
         if trace_filename is None:
             trace_filename = f"stage_0_diffusion_{int(time.time())}_rank"
 
-        trace_dir = os.environ.get("VLLM_TORCH_PROFILER_DIR", "./profiles")
-
         # Expand ~ and ~user, then make absolute (robust against cwd changes)
-        trace_dir = os.path.expanduser(trace_dir)
+        trace_dir = os.path.expanduser(output_dir)
         trace_dir = os.path.abspath(trace_dir)
 
         try:
