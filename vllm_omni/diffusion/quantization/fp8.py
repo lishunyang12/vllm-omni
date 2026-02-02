@@ -28,6 +28,9 @@ class DiffusionFp8Config(DiffusionQuantizationConfig):
         ignored_layers: List of layer name patterns to skip quantization.
     """
 
+    # Tight coupling with vLLM's Fp8Config - delegates get_name() and get_min_capability()
+    quant_config_cls = Fp8Config
+
     def __init__(
         self,
         activation_scheme: str = "dynamic",
@@ -45,16 +48,3 @@ class DiffusionFp8Config(DiffusionQuantizationConfig):
             weight_block_size=weight_block_size,
             ignored_layers=ignored_layers,
         )
-
-    @classmethod
-    def get_name(cls) -> str:
-        return "fp8"
-
-    def get_vllm_quant_config(self) -> Fp8Config:
-        return self._vllm_config
-
-    @classmethod
-    def get_min_capability(cls) -> int:
-        # Matches vLLM's Fp8Config - Turing (SM 75) minimum
-        # Older GPUs use Marlin kernel (weight-only), newer use native FP8
-        return 75

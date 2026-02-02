@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Base class for diffusion model quantization configurations."""
 
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from abc import ABC
+from typing import TYPE_CHECKING, ClassVar
 
 import torch
 
@@ -19,21 +19,31 @@ class DiffusionQuantizationConfig(ABC):
     This provides a thin wrapper over vLLM's quantization configs,
     allowing diffusion-model-specific defaults and future extensibility.
 
-    Subclasses should implement:
-        - get_name(): Return the quantization method name
-        - get_vllm_quant_config(): Return the underlying vLLM config
+    Subclasses should:
+        - Set quant_config_cls to the vLLM QuantizationConfig class
+        - Call super().__init__() after creating self._vllm_config
+        - Optionally override get_name() and get_min_capability() if needed
     """
 
-    @classmethod
-    @abstractmethod
-    def get_name(cls) -> str:
-        """Return the quantization method name (e.g., 'fp8', 'int8')."""
-        raise NotImplementedError
+    # Subclasses should set this to the vLLM QuantizationConfig class
+    quant_config_cls: ClassVar[type["QuantizationConfig"] | None] = None
 
-    @abstractmethod
+    # The underlying vLLM config instance
+    _vllm_config: "QuantizationConfig | None" = None
+
+    @classmethod
+    def get_name(cls) -> str:
+        """Return the quantization method name (e.g., 'fp8', 'int8').
+
+        By default, delegates to the underlying vLLM config class.
+        """
+        if cls.quant_config_cls is not None:
+            return cls.quant_config_cls.get_name()
+        raise NotImplementedError("Subclass must set quant_config_cls or override get_name()")
+
     def get_vllm_quant_config(self) -> "QuantizationConfig | None":
         """Return the underlying vLLM QuantizationConfig for linear layers."""
-        raise NotImplementedError
+        return self._vllm_config
 
     @classmethod
     def get_supported_act_dtypes(cls) -> list[torch.dtype]:
@@ -44,6 +54,8 @@ class DiffusionQuantizationConfig(ABC):
     def get_min_capability(cls) -> int:
         """Minimum GPU compute capability required.
 
-        Override in subclasses for method-specific requirements.
+        By default, delegates to the underlying vLLM config class.
         """
+        if cls.quant_config_cls is not None:
+            return cls.quant_config_cls.get_min_capability()
         return 80  # Ampere default
