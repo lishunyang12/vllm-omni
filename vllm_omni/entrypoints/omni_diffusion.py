@@ -13,7 +13,7 @@ from vllm_omni.diffusion.diffusion_engine import DiffusionEngine
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniPromptType
 from vllm_omni.outputs import OmniRequestOutput
-from vllm_omni.profiler import ProfilerConfig, TorchProfiler
+from vllm_omni.profiler import ProfilerConfig
 
 # TODO configure logging properly
 logging.basicConfig(level=logging.INFO)
@@ -34,9 +34,7 @@ class OmniDiffusion:
     Args:
         od_config: Optional OmniDiffusionConfig. If not provided, will be
             created from kwargs.
-        profiler_config: Optional ProfilerConfig for profiling. If provided
-            with record_from_start=True and memory=True, memory recording
-            starts immediately to capture model loading allocations.
+        profiler_config: Optional ProfilerConfig for profiling.
         **kwargs: Additional arguments passed to OmniDiffusionConfig.from_kwargs.
     """
 
@@ -47,16 +45,6 @@ class OmniDiffusion:
         **kwargs,
     ):
         self._profiler_config = profiler_config
-
-        # Start early memory recording if configured
-        # (must happen BEFORE model loading to capture all allocations)
-        if (
-            profiler_config is not None
-            and profiler_config.memory
-            and profiler_config.record_from_start
-        ):
-            logger.info("Starting early memory recording (record_from_start=True)")
-            TorchProfiler.start_early_memory_recording(profiler_config)
 
         # Capture stage info from kwargs before they might be filtered out
         stage_id = kwargs.get("stage_id")
@@ -155,7 +143,7 @@ class OmniDiffusion:
             output_dir: Directory to save profiler output files. If None, uses
                        config.output_dir or "./profiles".
             config: Optional ProfilerConfig. If None, uses the config passed
-                   at initialization, or creates a default performance-only config.
+                   at initialization, or creates a default config.
         """
         if not hasattr(self, "engine") or not self.engine:
             raise RuntimeError("Diffusion engine not initialized")
@@ -163,21 +151,10 @@ class OmniDiffusion:
         # Use provided config, or fall back to init config, or create default
         effective_config = config or self._profiler_config
         if effective_config is None:
-            effective_config = ProfilerConfig(
-                output_dir=output_dir or "./profiles",
-                performance=True,
-                memory=False,
-            )
+            effective_config = ProfilerConfig(output_dir=output_dir or "./profiles")
         elif output_dir is not None:
             # Override output_dir if explicitly provided
-            effective_config = ProfilerConfig(
-                output_dir=output_dir,
-                performance=effective_config.performance,
-                memory=effective_config.memory,
-                backend=effective_config.backend,
-                max_entries=effective_config.max_entries,
-                record_from_start=effective_config.record_from_start,
-            )
+            effective_config = ProfilerConfig(output_dir=output_dir)
 
         self.engine.start_profile(
             trace_filename=trace_filename,

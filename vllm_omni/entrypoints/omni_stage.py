@@ -16,7 +16,10 @@ import sys
 import traceback
 from collections.abc import Sequence
 from dataclasses import fields
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
+
+if TYPE_CHECKING:
+    from vllm_omni.profiler import ProfilerConfig
 
 from vllm import PromptType, RequestOutput
 from vllm.inputs import TextPrompt
@@ -267,8 +270,7 @@ class OmniStage:
             batch_timeout: Timeout in seconds for batching requests
             connectors_config: Configuration for stage connectors
             worker_backend: Backend type ("multi_process" or "ray")
-            profiler_config: Optional profiler configuration. If provided with
-                record_from_start=True, memory recording starts before model loading.
+            profiler_config: Optional profiler configuration.
             **kwargs: Additional arguments (e.g. ray_placement_group)
 
         Raises:
@@ -291,14 +293,7 @@ class OmniStage:
         # Convert profiler_config to dict for serialization
         profiler_config_dict = None
         if profiler_config is not None:
-            profiler_config_dict = {
-                "output_dir": profiler_config.output_dir,
-                "performance": profiler_config.performance,
-                "memory": profiler_config.memory,
-                "backend": profiler_config.backend,
-                "max_entries": profiler_config.max_entries,
-                "record_from_start": profiler_config.record_from_start,
-            }
+            profiler_config_dict = {"output_dir": profiler_config.output_dir}
 
         stage_payload: dict[str, Any] = {
             "stage_id": self.stage_id,
@@ -692,17 +687,6 @@ def _stage_worker(
             stage_id,
             e,
         )
-    # Start early memory recording if configured (captures model loading)
-    profiler_config = stage_payload.get("profiler_config")
-    if profiler_config is not None:
-        from vllm_omni.profiler import ProfilerConfig, TorchProfiler
-
-        if isinstance(profiler_config, dict):
-            profiler_config = ProfilerConfig(**profiler_config)
-        if profiler_config.memory and profiler_config.record_from_start:
-            logger.info("[Stage-%s] Starting early memory recording (record_from_start=True)", stage_id)
-            TorchProfiler.start_early_memory_recording(profiler_config)
-
     # Init engine based on stage_type
     logger.debug("[Stage-%s] Initializing %s engine with args keys=%s", stage_id, stage_type, list(engine_args.keys()))
     if engine_args.get("async_chunk", False):
@@ -759,29 +743,14 @@ def _stage_worker(
 
     def handle_profiler_task_local(task: dict) -> dict:
         """Handle profiler task locally in the worker process."""
-        from vllm_omni.profiler import ProfilerConfig, TorchProfiler
+        from vllm_omni.profiler import TorchProfiler
 
         task_type = task.get("type")
-        config = task.get("config")
-        output_prefix = task.get("output_prefix")
 
         if task_type == OmniStageTaskType.PROFILER_START:
-            if config is None:
-                logger.error("[Stage-%s] ProfilerConfig is required", stage_id)
-                return {"error": "ProfilerConfig is required"}
-
-            if not isinstance(config, ProfilerConfig):
-                logger.error("[Stage-%s] Invalid profiler config type", stage_id)
-                return {"error": "Invalid config type"}
-
             try:
-                TorchProfiler.start(output_prefix, config)
-                logger.info(
-                    "[Stage-%s] TorchProfiler started (perf=%s, mem=%s)",
-                    stage_id,
-                    config.performance,
-                    config.memory,
-                )
+                TorchProfiler.start(task.get("output_prefix", ""), task.get("config"))
+                logger.info("[Stage-%s] TorchProfiler started", stage_id)
                 return {"status": "started"}
             except Exception as e:
                 logger.error("[Stage-%s] Failed to start TorchProfiler: %s", stage_id, e)
@@ -1239,17 +1208,6 @@ async def _stage_worker_async(
     except Exception as e:
         logger.debug("Failed to set up sequential initialization lock: %s", e)
 
-    # Start early memory recording if configured (captures model loading)
-    profiler_config = stage_payload.get("profiler_config")
-    if profiler_config is not None:
-        from vllm_omni.profiler import ProfilerConfig, TorchProfiler
-
-        if isinstance(profiler_config, dict):
-            profiler_config = ProfilerConfig(**profiler_config)
-        if profiler_config.memory and profiler_config.record_from_start:
-            logger.info("[Stage-%s] Starting early memory recording (record_from_start=True)", stage_id)
-            TorchProfiler.start_early_memory_recording(profiler_config)
-
     # Init engine based on stage_type
     logger.debug(
         "[Stage-%s] Initializing %s engine with args keys=%s",
@@ -1325,38 +1283,21 @@ async def _stage_worker_async(
 
     async def handle_profiler_task_async(task: dict) -> None:
         """Handle profiler task asynchronously for both LLM and diffusion stages."""
-        from vllm_omni.profiler import ProfilerConfig, TorchProfiler
+        from vllm_omni.profiler import TorchProfiler
 
         task_type = task.get("type")
-        config = task.get("config")
-        output_prefix = task.get("output_prefix")
 
         if task_type == OmniStageTaskType.PROFILER_START:
-            if config is None:
-                logger.error("[Stage-%s] ProfilerConfig is required", stage_id)
-                return
-
-            if not isinstance(config, ProfilerConfig):
-                logger.error("[Stage-%s] Invalid profiler config type", stage_id)
-                return
-
             try:
-                TorchProfiler.start(output_prefix, config)
-                logger.info(
-                    "[Stage-%s] TorchProfiler started (perf=%s, mem=%s)",
-                    stage_id,
-                    config.performance,
-                    config.memory,
-                )
+                TorchProfiler.start(task.get("output_prefix", ""), task.get("config"))
+                logger.info("[Stage-%s] TorchProfiler started", stage_id)
             except Exception as e:
                 logger.error("[Stage-%s] Failed to start TorchProfiler: %s", stage_id, e)
 
         elif task_type == OmniStageTaskType.PROFILER_STOP:
             try:
-                results = TorchProfiler.stop()
+                TorchProfiler.stop()
                 logger.info("[Stage-%s] TorchProfiler stopped", stage_id)
-                if results:
-                    logger.info("[Stage-%s] Profiler results: %s", stage_id, list(results.keys()))
             except Exception as e:
                 logger.error("[Stage-%s] Failed to stop TorchProfiler: %s", stage_id, e)
 

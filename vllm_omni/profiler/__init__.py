@@ -5,8 +5,4 @@ from .base import ProfilerBase
 from .config import ProfilerConfig
 from .torch_profiler import TorchProfiler
 
-__all__ = [
-    "ProfilerConfig",
-    "ProfilerBase",
-    "TorchProfiler",
-]
+__all__ = ["ProfilerConfig", "ProfilerBase", "TorchProfiler"]

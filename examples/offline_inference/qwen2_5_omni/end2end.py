@@ -324,15 +324,8 @@ def main(args):
     # Build profiler config from arguments
     profiler_config = None
     if args.profile_dir:
-        profiler_config = ProfilerConfig(
-            output_dir=args.profile_dir,
-            performance=args.profile_performance,
-            memory=args.profile_memory,
-        )
-        print("[Profiler] Config:")
-        print(f"  Output dir: {args.profile_dir}")
-        print(f"  Performance: {args.profile_performance}")
-        print(f"  Memory: {args.profile_memory}")
+        profiler_config = ProfilerConfig(output_dir=args.profile_dir)
+        print(f"[Profiler] Output dir: {args.profile_dir}")
 
     omni_llm = Omni(
         model=model_name,
@@ -447,14 +440,6 @@ def main(args):
                         print("\nPerformance Trace:")
                         print(f"  {trace}")
                         print("    View: chrome://tracing or ui.perfetto.dev")
-
-                # Memory snapshots
-                snapshots = profile_results.get("snapshots", [])
-                for snapshot in snapshots:
-                    if snapshot:
-                        print("\nMemory Snapshot:")
-                        print(f"  {snapshot}")
-                        print("    View: https://pytorch.org/memory_viz (drag & drop)")
 
                 # Categorized memory timelines
                 timelines = profile_results.get("timelines", [])
@@ -601,23 +586,6 @@ def parse_args():
         type=str,
         default=None,
         help="Directory to save profiling outputs. Enables profiling when set.",
-    )
-    parser.add_argument(
-        "--profile-performance",
-        action="store_true",
-        default=True,
-        help="Enable performance profiling (Chrome trace). Default: True.",
-    )
-    parser.add_argument(
-        "--no-profile-performance",
-        action="store_false",
-        dest="profile_performance",
-        help="Disable performance profiling.",
-    )
-    parser.add_argument(
-        "--profile-memory",
-        action="store_true",
-        help="Enable memory profiling (snapshot + timeline).",
     )
     parser.add_argument(
         "--output-dir",

@@ -402,8 +402,6 @@ class OmniBase:
             >>> from vllm_omni.profiler import ProfilerConfig
             >>> omni = Omni(model="...", profiler_config=ProfilerConfig(
             ...     output_dir="./profiles",
-            ...     performance=True,
-            ...     memory=True,
             ... ))
             >>> omni.start_profile()
             >>> outputs = omni.generate(prompts, sampling_params)
@@ -443,20 +441,16 @@ class OmniBase:
         Returns:
             Dict with keys:
                 - traces: List of performance trace file paths (.json.gz)
-                - snapshots: List of memory snapshot file paths (.pickle)
                 - timelines: List of memory timeline file paths (.html)
                 - memory_stats: Dict of memory statistics per stage
-                - tables: List of table file paths (legacy, for backward compatibility)
         """
         if stages is None:
             stages = list(range(len(self.stage_list)))
 
         all_results: dict[str, Any] = {
             "traces": [],
-            "snapshots": [],
             "timelines": [],
             "memory_stats": {},
-            "tables": [],  # Legacy field for backward compatibility
         }
 
         for stage_id in stages:
@@ -481,14 +475,6 @@ class OmniBase:
                             elif isinstance(traces, list):
                                 all_results["traces"].extend(traces)
 
-                        # Handle memory snapshots
-                        snapshots = stage_data.get("snapshot") or stage_data.get("snapshots")
-                        if snapshots:
-                            if isinstance(snapshots, str):
-                                all_results["snapshots"].append(snapshots)
-                            elif isinstance(snapshots, list):
-                                all_results["snapshots"].extend(snapshots)
-
                         # Handle memory timelines
                         timelines = stage_data.get("timeline_html") or stage_data.get("timelines")
                         if timelines:
@@ -501,14 +487,6 @@ class OmniBase:
                         stats = stage_data.get("stats") or stage_data.get("memory_stats")
                         if stats:
                             all_results["memory_stats"][stage_id] = stats
-
-                        # Handle legacy tables field
-                        tables = stage_data.get("table") or stage_data.get("tables")
-                        if tables:
-                            if isinstance(tables, str):
-                                all_results["tables"].append(tables)
-                            elif isinstance(tables, list):
-                                all_results["tables"].extend(tables)
                     else:
                         logger.warning(f"[{self._name}] Stage-{stage_id} returned non-dict data: {type(stage_data)}")
                 else:
@@ -521,10 +499,9 @@ class OmniBase:
                     stage.submit({"type": OmniStageTaskType.PROFILER_STOP})
 
         logger.info(
-            "[%s] Collected %d trace(s), %d snapshot(s), %d timeline(s)",
+            "[%s] Collected %d trace(s), %d timeline(s)",
             self._name,
             len(all_results["traces"]),
-            len(all_results["snapshots"]),
             len(all_results["timelines"]),
         )
 
