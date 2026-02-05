@@ -10,6 +10,22 @@ This directory contains examples for running Qwen3-TTS models with vLLM-Omni's o
 | `Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign` | VoiceDesign | Natural language voice style description |
 | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | Base | Voice cloning from reference audio |
 
+## Gradio Demo
+
+The interactive Gradio demo supports all 3 task types with a web UI.
+
+```bash
+# Option 1: Launch server + Gradio together
+./run_gradio_demo.sh                                # CustomVoice (default)
+./run_gradio_demo.sh --task-type VoiceDesign        # VoiceDesign
+./run_gradio_demo.sh --task-type Base               # Voice cloning
+
+# Option 2: If server is already running
+python gradio_demo.py --api-base http://localhost:8000
+```
+
+Then open http://127.0.0.1:7860 in your browser.
+
 ## Quick Start
 
 ### 1. Start the Server
