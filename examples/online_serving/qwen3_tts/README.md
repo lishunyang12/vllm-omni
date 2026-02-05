@@ -162,9 +162,90 @@ with open("output.wav", "wb") as f:
     f.write(response.content)
 ```
 
+## Streaming Text Input
+
+The `/v1/audio/speech/stream` WebSocket endpoint accepts text incrementally (e.g., from a real-time STT pipeline), buffers and splits at sentence boundaries, and generates audio per sentence.
+
+> **Note:** This is streaming *text input* only. Each sentence produces a complete audio response. For streaming audio output, see PR #1189.
+
+### Quick Start
+
+```bash
+# Send full text (sentences are auto-detected)
+python streaming_speech_client.py \
+    --text "Hello world. How are you? I am fine."
+
+# Simulate STT: send text word-by-word
+python streaming_speech_client.py \
+    --text "Hello world. How are you? I am fine." \
+    --simulate-stt --stt-delay 0.1
+
+# VoiceDesign task
+python streaming_speech_client.py \
+    --text "Today is a great day. The weather is nice." \
+    --task-type VoiceDesign \
+    --instructions "A cheerful young female voice"
+```
+
+### WebSocket Protocol
+
+**Client -> Server:**
+
+```jsonc
+// 1. Session config (sent once first)
+{"type": "session.config", "voice": "Vivian", "task_type": "CustomVoice", "language": "Auto"}
+
+// 2. Text chunks (sent incrementally)
+{"type": "input.text", "text": "Hello, how are you? "}
+
+// 3. End of input (flushes remaining buffer)
+{"type": "input.done"}
+```
+
+**Server -> Client:**
+
+```jsonc
+// Audio metadata (before binary frame)
+{"type": "audio.start", "sentence_index": 0, "sentence_text": "Hello, how are you?", "format": "wav"}
+
+// Binary WebSocket frame: raw audio bytes
+
+// Per-sentence completion
+{"type": "audio.done", "sentence_index": 0}
+
+// Session complete
+{"type": "session.done", "total_sentences": 3}
+
+// Error (non-fatal, session continues)
+{"type": "error", "message": "..."}
+```
+
+### Session Config Parameters
+
+All parameters from the REST API are supported:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `voice` | string | None | Speaker voice name |
+| `task_type` | string | None | CustomVoice, VoiceDesign, or Base |
+| `language` | string | None | Language code |
+| `instructions` | string | None | Voice style instructions |
+| `response_format` | string | "wav" | Audio format per sentence |
+| `speed` | float | 1.0 | Playback speed (0.25-4.0) |
+| `max_new_tokens` | int | None | Max tokens per sentence |
+| `ref_audio` | string | None | Reference audio (Base task) |
+| `ref_text` | string | None | Reference text (Base task) |
+
+### Sentence Detection
+
+Text is automatically split at sentence boundaries:
+- **English:** `.` `!` `?` followed by whitespace
+- **CJK:** fullwidth punctuation `。` `！` `？` `，` `；`
+
+If text never forms a complete sentence, it is flushed when `input.done` is sent.
+
 ## Limitations
 
-- **No streaming**: Audio is generated completely before being returned. Streaming will be supported after the pipeline is disaggregated (see RFC #938).
 - **Single request**: Batch processing is not yet optimized for online serving.
 
 ## Troubleshooting
