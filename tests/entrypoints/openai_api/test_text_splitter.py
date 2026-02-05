@@ -1,7 +1,5 @@
 """Tests for SentenceSplitter used in streaming TTS input."""
 
-import pytest
-
 from vllm_omni.entrypoints.openai.text_splitter import SentenceSplitter
 
 
