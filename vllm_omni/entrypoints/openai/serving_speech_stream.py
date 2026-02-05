@@ -97,25 +97,23 @@ class OmniStreamingSpeechHandler:
                     text = msg.get("text", "")
                     sentences = splitter.add_text(text)
                     for sentence in sentences:
-                        await self._generate_and_send(
-                            websocket, config, sentence, sentence_index
-                        )
+                        await self._generate_and_send(websocket, config, sentence, sentence_index)
                         sentence_index += 1
 
                 elif msg_type == "input.done":
                     # Flush remaining buffer
                     remaining = splitter.flush()
                     if remaining:
-                        await self._generate_and_send(
-                            websocket, config, remaining, sentence_index
-                        )
+                        await self._generate_and_send(websocket, config, remaining, sentence_index)
                         sentence_index += 1
 
                     # Send session.done
-                    await websocket.send_json({
-                        "type": "session.done",
-                        "total_sentences": sentence_index,
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "session.done",
+                            "total_sentences": sentence_index,
+                        }
+                    )
                     return
 
                 else:
@@ -133,9 +131,7 @@ class OmniStreamingSpeechHandler:
             except Exception:
                 pass
 
-    async def _receive_config(
-        self, websocket: WebSocket
-    ) -> StreamingSpeechSessionConfig | None:
+    async def _receive_config(self, websocket: WebSocket) -> StreamingSpeechSessionConfig | None:
         """Wait for and validate the session.config message."""
         try:
             raw = await asyncio.wait_for(
@@ -143,9 +139,7 @@ class OmniStreamingSpeechHandler:
                 timeout=self._config_timeout,
             )
         except asyncio.TimeoutError:
-            await self._send_error(
-                websocket, "Timeout waiting for session.config"
-            )
+            await self._send_error(websocket, "Timeout waiting for session.config")
             return None
 
         try:
@@ -162,13 +156,9 @@ class OmniStreamingSpeechHandler:
             return None
 
         try:
-            config = StreamingSpeechSessionConfig(**{
-                k: v for k, v in msg.items() if k != "type"
-            })
+            config = StreamingSpeechSessionConfig(**{k: v for k, v in msg.items() if k != "type"})
         except ValidationError as e:
-            await self._send_error(
-                websocket, f"Invalid session config: {e}"
-            )
+            await self._send_error(websocket, f"Invalid session config: {e}")
             return None
 
         return config
@@ -184,12 +174,14 @@ class OmniStreamingSpeechHandler:
         response_format = config.response_format or "wav"
 
         # Send audio.start
-        await websocket.send_json({
-            "type": "audio.start",
-            "sentence_index": sentence_index,
-            "sentence_text": sentence_text,
-            "format": response_format,
-        })
+        await websocket.send_json(
+            {
+                "type": "audio.start",
+                "sentence_index": sentence_index,
+                "sentence_text": sentence_text,
+                "format": response_format,
+            }
+        )
 
         try:
             # Build a per-sentence request reusing session config
@@ -208,35 +200,35 @@ class OmniStreamingSpeechHandler:
                 x_vector_only_mode=config.x_vector_only_mode,
             )
 
-            audio_bytes, _ = await self._speech_service._generate_audio_bytes(
-                request
-            )
+            audio_bytes, _ = await self._speech_service._generate_audio_bytes(request)
 
             # Send binary audio frame
             await websocket.send_bytes(audio_bytes)
 
         except Exception as e:
-            logger.error(
-                "Generation failed for sentence %d: %s", sentence_index, e
-            )
+            logger.error("Generation failed for sentence %d: %s", sentence_index, e)
             await self._send_error(
                 websocket,
                 f"Generation failed for sentence {sentence_index}: {e}",
             )
 
         # Send audio.done (even on error, so client can track progress)
-        await websocket.send_json({
-            "type": "audio.done",
-            "sentence_index": sentence_index,
-        })
+        await websocket.send_json(
+            {
+                "type": "audio.done",
+                "sentence_index": sentence_index,
+            }
+        )
 
     @staticmethod
     async def _send_error(websocket: WebSocket, message: str) -> None:
         """Send an error message to the client."""
         try:
-            await websocket.send_json({
-                "type": "error",
-                "message": message,
-            })
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "message": message,
+                }
+            )
         except Exception:
             pass  # Connection may already be closed

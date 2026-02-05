@@ -64,17 +64,25 @@ async def stream_tts(
                 words = text.split(" ")
                 for i, word in enumerate(words):
                     chunk = word + (" " if i < len(words) - 1 else "")
-                    await ws.send(json.dumps({
-                        "type": "input.text",
-                        "text": chunk,
-                    }))
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "type": "input.text",
+                                "text": chunk,
+                            }
+                        )
+                    )
                     print(f"  Sent: {chunk!r}")
                     await asyncio.sleep(stt_delay)
             else:
-                await ws.send(json.dumps({
-                    "type": "input.text",
-                    "text": text,
-                }))
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "input.text",
+                            "text": text,
+                        }
+                    )
+                )
                 print(f"Sent full text: {text!r}")
 
             # 3. Signal end of input
@@ -107,19 +115,11 @@ async def stream_tts(
                     msg_type = msg.get("type")
 
                     if msg_type == "audio.start":
-                        print(
-                            f"  [sentence {msg['sentence_index']}] "
-                            f"Generating: {msg['sentence_text']!r}"
-                        )
+                        print(f"  [sentence {msg['sentence_index']}] Generating: {msg['sentence_text']!r}")
                     elif msg_type == "audio.done":
-                        print(
-                            f"  [sentence {msg['sentence_index']}] Done"
-                        )
+                        print(f"  [sentence {msg['sentence_index']}] Done")
                     elif msg_type == "session.done":
-                        print(
-                            f"\nSession complete: {msg['total_sentences']} "
-                            f"sentence(s) generated"
-                        )
+                        print(f"\nSession complete: {msg['total_sentences']} sentence(s) generated")
                         break
                     elif msg_type == "error":
                         print(f"  ERROR: {msg['message']}")
@@ -136,9 +136,7 @@ async def stream_tts(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Streaming text-input TTS client"
-    )
+    parser = argparse.ArgumentParser(description="Streaming text-input TTS client")
     parser.add_argument(
         "--url",
         default="ws://localhost:8000/v1/audio/speech/stream",
@@ -165,21 +163,15 @@ def main():
         help="TTS task type",
     )
     parser.add_argument("--language", default="Auto", help="Language")
-    parser.add_argument(
-        "--instructions", default=None, help="Voice style instructions"
-    )
+    parser.add_argument("--instructions", default=None, help="Voice style instructions")
     parser.add_argument(
         "--response-format",
         default="wav",
         choices=["wav", "pcm", "flac", "mp3", "aac", "opus"],
         help="Audio format",
     )
-    parser.add_argument(
-        "--speed", type=float, default=1.0, help="Playback speed (0.25-4.0)"
-    )
-    parser.add_argument(
-        "--max-new-tokens", type=int, default=None, help="Max tokens"
-    )
+    parser.add_argument("--speed", type=float, default=1.0, help="Playback speed (0.25-4.0)")
+    parser.add_argument("--max-new-tokens", type=int, default=None, help="Max tokens")
 
     # Base task options
     parser.add_argument("--ref-audio", default=None, help="Reference audio")
@@ -209,8 +201,15 @@ def main():
     # Build session config (only include non-None values)
     config = {}
     for key in [
-        "model", "voice", "task_type", "language", "instructions",
-        "response_format", "speed", "max_new_tokens", "ref_audio",
+        "model",
+        "voice",
+        "task_type",
+        "language",
+        "instructions",
+        "response_format",
+        "speed",
+        "max_new_tokens",
+        "ref_audio",
         "ref_text",
     ]:
         val = getattr(args, key.replace("-", "_"), None)

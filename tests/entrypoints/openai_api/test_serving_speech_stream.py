@@ -1,24 +1,17 @@
 """Integration tests for the streaming speech WebSocket endpoint."""
 
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-import numpy as np
-import pytest
-import torch
 from fastapi import FastAPI
 from starlette.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
 
 from vllm_omni.entrypoints.openai.protocol.audio import (
-    AudioResponse,
     StreamingSpeechSessionConfig,
 )
 from vllm_omni.entrypoints.openai.serving_speech import OmniOpenAIServingSpeech
 from vllm_omni.entrypoints.openai.serving_speech_stream import (
     OmniStreamingSpeechHandler,
 )
-from vllm_omni.outputs import OmniRequestOutput
 
 
 def _create_mock_speech_service():
@@ -68,17 +61,21 @@ class TestStreamingSpeechBasicLifecycle:
         with TestClient(app) as client:
             with client.websocket_connect("/v1/audio/speech/stream") as ws:
                 # Send config
-                ws.send_json({
-                    "type": "session.config",
-                    "voice": "Vivian",
-                    "response_format": "wav",
-                })
+                ws.send_json(
+                    {
+                        "type": "session.config",
+                        "voice": "Vivian",
+                        "response_format": "wav",
+                    }
+                )
 
                 # Send text with sentence boundary
-                ws.send_json({
-                    "type": "input.text",
-                    "text": "Hello world. ",
-                })
+                ws.send_json(
+                    {
+                        "type": "input.text",
+                        "text": "Hello world. ",
+                    }
+                )
 
                 # Receive audio.start
                 msg = ws.receive_json()
@@ -109,15 +106,19 @@ class TestStreamingSpeechBasicLifecycle:
 
         with TestClient(app) as client:
             with client.websocket_connect("/v1/audio/speech/stream") as ws:
-                ws.send_json({
-                    "type": "session.config",
-                    "voice": "Vivian",
-                })
+                ws.send_json(
+                    {
+                        "type": "session.config",
+                        "voice": "Vivian",
+                    }
+                )
 
-                ws.send_json({
-                    "type": "input.text",
-                    "text": "Hello world. How are you? ",
-                })
+                ws.send_json(
+                    {
+                        "type": "input.text",
+                        "text": "Hello world. How are you? ",
+                    }
+                )
 
                 # First sentence
                 msg = ws.receive_json()
@@ -147,10 +148,12 @@ class TestStreamingSpeechBasicLifecycle:
 
         with TestClient(app) as client:
             with client.websocket_connect("/v1/audio/speech/stream") as ws:
-                ws.send_json({
-                    "type": "session.config",
-                    "voice": "Vivian",
-                })
+                ws.send_json(
+                    {
+                        "type": "session.config",
+                        "voice": "Vivian",
+                    }
+                )
 
                 # Send text incrementally
                 ws.send_json({"type": "input.text", "text": "Hello "})
@@ -181,15 +184,19 @@ class TestStreamingSpeechFlush:
 
         with TestClient(app) as client:
             with client.websocket_connect("/v1/audio/speech/stream") as ws:
-                ws.send_json({
-                    "type": "session.config",
-                    "voice": "Vivian",
-                })
+                ws.send_json(
+                    {
+                        "type": "session.config",
+                        "voice": "Vivian",
+                    }
+                )
 
-                ws.send_json({
-                    "type": "input.text",
-                    "text": "Hello world without punctuation",
-                })
+                ws.send_json(
+                    {
+                        "type": "input.text",
+                        "text": "Hello world without punctuation",
+                    }
+                )
 
                 # No sentence boundary, so nothing generated yet
                 # Now send done to flush
@@ -213,10 +220,12 @@ class TestStreamingSpeechFlush:
 
         with TestClient(app) as client:
             with client.websocket_connect("/v1/audio/speech/stream") as ws:
-                ws.send_json({
-                    "type": "session.config",
-                    "voice": "Vivian",
-                })
+                ws.send_json(
+                    {
+                        "type": "session.config",
+                        "voice": "Vivian",
+                    }
+                )
 
                 # Send nothing, just done
                 ws.send_json({"type": "input.done"})
@@ -236,10 +245,12 @@ class TestStreamingSpeechErrors:
         with TestClient(app) as client:
             with client.websocket_connect("/v1/audio/speech/stream") as ws:
                 # Send text instead of config
-                ws.send_json({
-                    "type": "input.text",
-                    "text": "Hello",
-                })
+                ws.send_json(
+                    {
+                        "type": "input.text",
+                        "text": "Hello",
+                    }
+                )
 
                 # Should get error about expecting session.config
                 msg = ws.receive_json()
@@ -252,10 +263,12 @@ class TestStreamingSpeechErrors:
 
         with TestClient(app) as client:
             with client.websocket_connect("/v1/audio/speech/stream") as ws:
-                ws.send_json({
-                    "type": "session.config",
-                    "voice": "Vivian",
-                })
+                ws.send_json(
+                    {
+                        "type": "session.config",
+                        "voice": "Vivian",
+                    }
+                )
 
                 # Send invalid JSON
                 ws.send_text("not json at all")
@@ -276,10 +289,12 @@ class TestStreamingSpeechErrors:
 
         with TestClient(app) as client:
             with client.websocket_connect("/v1/audio/speech/stream") as ws:
-                ws.send_json({
-                    "type": "session.config",
-                    "voice": "Vivian",
-                })
+                ws.send_json(
+                    {
+                        "type": "session.config",
+                        "voice": "Vivian",
+                    }
+                )
 
                 ws.send_json({"type": "unknown.type"})
 
@@ -304,24 +319,26 @@ class TestStreamingSpeechErrors:
                 raise RuntimeError("Generation failed")
             return b"RIFF" + b"\x00" * 100, "audio/wav"
 
-        service._generate_audio_bytes = AsyncMock(
-            side_effect=mock_generate_with_failure
-        )
+        service._generate_audio_bytes = AsyncMock(side_effect=mock_generate_with_failure)
 
         app, _, _ = _build_test_app(speech_service=service)
 
         with TestClient(app) as client:
             with client.websocket_connect("/v1/audio/speech/stream") as ws:
-                ws.send_json({
-                    "type": "session.config",
-                    "voice": "Vivian",
-                })
+                ws.send_json(
+                    {
+                        "type": "session.config",
+                        "voice": "Vivian",
+                    }
+                )
 
                 # First sentence will fail
-                ws.send_json({
-                    "type": "input.text",
-                    "text": "First sentence. Second sentence. ",
-                })
+                ws.send_json(
+                    {
+                        "type": "input.text",
+                        "text": "First sentence. Second sentence. ",
+                    }
+                )
 
                 # First sentence: audio.start -> error -> audio.done
                 msg = ws.receive_json()
@@ -358,16 +375,18 @@ class TestStreamingSpeechSessionConfig:
 
         with TestClient(app) as client:
             with client.websocket_connect("/v1/audio/speech/stream") as ws:
-                ws.send_json({
-                    "type": "session.config",
-                    "voice": "Vivian",
-                    "task_type": "CustomVoice",
-                    "language": "English",
-                    "instructions": "Speak cheerfully",
-                    "response_format": "mp3",
-                    "speed": 1.5,
-                    "max_new_tokens": 1024,
-                })
+                ws.send_json(
+                    {
+                        "type": "session.config",
+                        "voice": "Vivian",
+                        "task_type": "CustomVoice",
+                        "language": "English",
+                        "instructions": "Speak cheerfully",
+                        "response_format": "mp3",
+                        "speed": 1.5,
+                        "max_new_tokens": 1024,
+                    }
+                )
 
                 ws.send_json({"type": "input.done"})
                 msg = ws.receive_json()
@@ -378,10 +397,12 @@ class TestStreamingSpeechSessionConfig:
 
         with TestClient(app) as client:
             with client.websocket_connect("/v1/audio/speech/stream") as ws:
-                ws.send_json({
-                    "type": "session.config",
-                    "speed": 10.0,  # invalid: > 4.0
-                })
+                ws.send_json(
+                    {
+                        "type": "session.config",
+                        "speed": 10.0,  # invalid: > 4.0
+                    }
+                )
 
                 msg = ws.receive_json()
                 assert msg["type"] == "error"
@@ -392,10 +413,12 @@ class TestStreamingSpeechSessionConfig:
 
         with TestClient(app) as client:
             with client.websocket_connect("/v1/audio/speech/stream") as ws:
-                ws.send_json({
-                    "type": "session.config",
-                    "response_format": "invalid",
-                })
+                ws.send_json(
+                    {
+                        "type": "session.config",
+                        "response_format": "invalid",
+                    }
+                )
 
                 msg = ws.receive_json()
                 assert msg["type"] == "error"

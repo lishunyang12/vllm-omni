@@ -834,10 +834,12 @@ async def streaming_speech(websocket: WebSocket):
     handler = getattr(websocket.app.state, "openai_streaming_speech", None)
     if handler is None:
         await websocket.accept()
-        await websocket.send_json({
-            "type": "error",
-            "message": "Streaming speech is not available",
-        })
+        await websocket.send_json(
+            {
+                "type": "error",
+                "message": "Streaming speech is not available",
+            }
+        )
         await websocket.close()
         return
     await handler.handle_session(websocket)
