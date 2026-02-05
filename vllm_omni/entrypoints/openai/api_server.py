@@ -19,7 +19,7 @@ from typing import Annotated, Any, cast
 
 import httpx
 import vllm.envs as envs
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, WebSocket
 from fastapi.responses import JSONResponse, StreamingResponse
 from PIL import Image
 from starlette.datastructures import State
@@ -98,6 +98,7 @@ from vllm_omni.entrypoints.openai.protocol.videos import (
 )
 from vllm_omni.entrypoints.openai.serving_chat import OmniOpenAIServingChat
 from vllm_omni.entrypoints.openai.serving_speech import OmniOpenAIServingSpeech
+from vllm_omni.entrypoints.openai.serving_speech_stream import OmniStreamingSpeechHandler
 from vllm_omni.entrypoints.openai.serving_video import OmniOpenAIServingVideo
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniSamplingParams, OmniTextPrompt
 from vllm_omni.lora.request import LoRARequest
@@ -704,6 +705,10 @@ async def omni_init_app_state(
         engine_client, state.openai_serving_models, request_logger=request_logger
     )
 
+    state.openai_streaming_speech = OmniStreamingSpeechHandler(
+        speech_service=state.openai_serving_speech,
+    )
+
     state.openai_serving_video = OmniOpenAIServingVideo(
         engine_client,
         model_name=served_model_names[0] if served_model_names else None,
@@ -847,6 +852,25 @@ async def list_voices(raw_request: Request):
 
     speakers = sorted(handler.supported_speakers) if handler.supported_speakers else []
     return JSONResponse(content={"voices": speakers})
+
+
+@router.websocket("/v1/audio/speech/stream")
+async def streaming_speech(websocket: WebSocket):
+    """WebSocket endpoint for streaming text input TTS.
+
+    Accepts text incrementally, splits at sentence boundaries, and
+    returns audio per sentence. See serving_speech_stream.py for protocol.
+    """
+    handler = getattr(websocket.app.state, "openai_streaming_speech", None)
+    if handler is None:
+        await websocket.accept()
+        await websocket.send_json({
+            "type": "error",
+            "message": "Streaming speech is not available",
+        })
+        await websocket.close()
+        return
+    await handler.handle_session(websocket)
 
 
 # Health and Model endpoints for diffusion mode
