@@ -108,16 +108,12 @@ def generate_speech(
 
     elif task_type == "VoiceDesign":
         if not instructions or not instructions.strip():
-            raise gr.Error(
-                "VoiceDesign task requires voice style instructions."
-            )
+            raise gr.Error("VoiceDesign task requires voice style instructions.")
         payload["instructions"] = instructions.strip()
 
     elif task_type == "Base":
         if ref_audio is None:
-            raise gr.Error(
-                "Base (voice clone) task requires reference audio."
-            )
+            raise gr.Error("Base (voice clone) task requires reference audio.")
         payload["ref_audio"] = encode_audio_to_base64(ref_audio)
         if ref_text and ref_text.strip():
             payload["ref_text"] = ref_text.strip()
@@ -136,10 +132,7 @@ def generate_speech(
     except httpx.TimeoutException:
         raise gr.Error("Request timed out. The server may be busy.")
     except httpx.ConnectError:
-        raise gr.Error(
-            f"Cannot connect to server at {api_base}. "
-            "Make sure the vLLM server is running."
-        )
+        raise gr.Error(f"Cannot connect to server at {api_base}. Make sure the vLLM server is running.")
 
     if resp.status_code != 200:
         raise gr.Error(f"Server error ({resp.status_code}): {resp.text}")
@@ -167,7 +160,7 @@ def on_task_type_change(task_type: str):
     """Update UI visibility based on selected task type."""
     if task_type == "CustomVoice":
         return (
-            gr.update(visible=True),   # voice dropdown
+            gr.update(visible=True),  # voice dropdown
             gr.update(visible=True, info="Optional style/emotion instructions"),
             gr.update(visible=False),  # ref_audio
             gr.update(visible=False),  # ref_text
@@ -183,8 +176,8 @@ def on_task_type_change(task_type: str):
         return (
             gr.update(visible=False),  # voice dropdown
             gr.update(visible=False),  # instructions
-            gr.update(visible=True),   # ref_audio
-            gr.update(visible=True),   # ref_text
+            gr.update(visible=True),  # ref_audio
+            gr.update(visible=True),  # ref_text
         )
     return (
         gr.update(visible=True),
@@ -242,10 +235,7 @@ def build_interface(api_base: str):
                 # Instructions (CustomVoice optional, VoiceDesign required)
                 instructions = gr.Textbox(
                     label="Instructions",
-                    placeholder=(
-                        "e.g., Speak with excitement / "
-                        "A warm, friendly female voice"
-                    ),
+                    placeholder=("e.g., Speak with excitement / A warm, friendly female voice"),
                     lines=2,
                     visible=True,
                     info="Optional style/emotion instructions",
@@ -332,9 +322,7 @@ def build_interface(api_base: str):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Gradio demo for Qwen3-TTS online serving."
-    )
+    parser = argparse.ArgumentParser(description="Gradio demo for Qwen3-TTS online serving.")
     parser.add_argument(
         "--api-base",
         default="http://localhost:8000",
