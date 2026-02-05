@@ -23,6 +23,8 @@ from vllm.model_executor.layers.linear import ColumnParallelLinear, QKVParallelL
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 
 from vllm_omni.diffusion.attention.layer import Attention
+from vllm_omni.diffusion.distributed.comm import SeqAllToAll4D
+from vllm_omni.diffusion.distributed.parallel_state import get_sp_group
 from vllm_omni.diffusion.distributed.sp_plan import (
     SequenceParallelInput,
     SequenceParallelOutput,
@@ -515,6 +517,28 @@ class WanCrossAttention(nn.Module):
         key = key.unflatten(2, (self.num_heads, self.head_dim))
         value = value.unflatten(2, (self.num_heads, self.head_dim))
 
+        # Ulysses SP cross-attention fix:
+        # In cross-attention, Q comes from SP-split hidden_states but K/V come from
+        # encoder_hidden_states which is replicated (NOT split) across SP ranks.
+        # Standard Ulysses AllToAll on replicated K/V would incorrectly duplicate the
+        # encoder context P times. Fix: AllToAll on Q only, head-slice K/V per rank.
+        use_ulysses = self.attn.parallel_strategy.name == "ulysses"
+
+        if use_ulysses:
+            sp_group = get_sp_group()
+            ulysses_pg = sp_group.ulysses_group
+            ulysses_rank = sp_group.ulysses_rank
+            ulysses_world_size = sp_group.ulysses_world_size
+            heads_per_rank = self.num_heads // ulysses_world_size
+            h_start = ulysses_rank * heads_per_rank
+            h_end = h_start + heads_per_rank
+
+            # AllToAll on Q: [B, S/P, H, D] -> [B, S, H/P, D]
+            query = SeqAllToAll4D.apply(ulysses_pg, query, 2, 1, False)
+            # Head-slice K/V for current rank: [B, T, H, D] -> [B, T, H/P, D]
+            key = key[:, :, h_start:h_end, :].contiguous()
+            value = value[:, :, h_start:h_end, :].contiguous()
+
         # I2V: Additional attention with image embeddings
         hidden_states_img = None
         if encoder_hidden_states_img is not None:
@@ -525,18 +549,28 @@ class WanCrossAttention(nn.Module):
             key_img = key_img.unflatten(2, (self.num_heads, self.head_dim))
             value_img = value_img.unflatten(2, (self.num_heads, self.head_dim))
 
-            hidden_states_img = self.attn(query, key_img, value_img)
+            if use_ulysses:
+                key_img = key_img[:, :, h_start:h_end, :].contiguous()
+                value_img = value_img[:, :, h_start:h_end, :].contiguous()
+
+            hidden_states_img = self.attn(query, key_img, value_img, skip_parallel=use_ulysses)
             hidden_states_img = hidden_states_img.flatten(2, 3)
             hidden_states_img = hidden_states_img.type_as(query)
 
         # Main cross-attention using unified attention layer
-        hidden_states = self.attn(query, key, value)
+        hidden_states = self.attn(query, key, value, skip_parallel=use_ulysses)
         hidden_states = hidden_states.flatten(2, 3)
         hidden_states = hidden_states.type_as(query)
 
         # Add image attention output if present
         if hidden_states_img is not None:
             hidden_states = hidden_states + hidden_states_img
+
+        # Reverse AllToAll: [B, S, H/P, D] -> [B, S/P, H, D]
+        if use_ulysses:
+            hidden_states = hidden_states.unflatten(2, (heads_per_rank, self.head_dim))
+            hidden_states = SeqAllToAll4D.apply(ulysses_pg, hidden_states, 1, 2, False)
+            hidden_states = hidden_states.flatten(2, 3)
 
         # Output projection
         hidden_states = self.to_out(hidden_states)

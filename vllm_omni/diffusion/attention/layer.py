@@ -94,21 +94,28 @@ class Attention(nn.Module):
         key: torch.Tensor,
         value: torch.Tensor,
         attn_metadata: AttentionMetadata = None,
+        skip_parallel: bool = False,
     ) -> torch.Tensor:
-        # 1. Prepare inputs (Communication / Resharding)
-        # For Ulysses: AllToAll Q/K/V; Slicing joint_q/k/v
-        # For Ring: Concat joint_q
-        query, key, value, attn_metadata, ctx = self.parallel_strategy.pre_attention(query, key, value, attn_metadata)
+        if not skip_parallel:
+            # 1. Prepare inputs (Communication / Resharding)
+            # For Ulysses: AllToAll Q/K/V; Slicing joint_q/k/v
+            # For Ring: Concat joint_q
+            query, key, value, attn_metadata, ctx = self.parallel_strategy.pre_attention(
+                query, key, value, attn_metadata
+            )
+        else:
+            ctx = None
 
         # 2. Kernel Execution (Computation)
-        if self.use_ring:
+        if self.use_ring and not skip_parallel:
             out = self._run_ring_attention(query, key, value, attn_metadata)
         else:
             out = self._run_local_attention(query, key, value, attn_metadata)
 
         # 3. Post-processing (Reverse Communication)
         # For Ulysses: AllToAll Output, and AllGather Joint Output
-        out = self.parallel_strategy.post_attention(out, ctx)
+        if not skip_parallel:
+            out = self.parallel_strategy.post_attention(out, ctx)
 
         return out
 
