@@ -19,15 +19,17 @@ if [[ ! -f "$INPUT_IMG" ]]; then
   exit 1
 fi
 
-IMG_B64=$(base64 -w0 "$INPUT_IMG")
+REQUEST_JSON_FILE=$(mktemp)
+trap 'rm -f "$REQUEST_JSON_FILE"' EXIT
 
-REQUEST_JSON=$(
-  jq -n --arg prompt "$PROMPT" --arg img "$IMG_B64" '{
+# Pipe base64 into jq via stdin to avoid ARG_MAX limit on large images
+base64 -w0 "$INPUT_IMG" \
+  | jq -Rs --arg prompt "$PROMPT" '{
     messages: [{
       role: "user",
       content: [
         {"type": "text", "text": $prompt},
-        {"type": "image_url", "image_url": {"url": ("data:image/png;base64," + $img)}}
+        {"type": "image_url", "image_url": {"url": ("data:image/png;base64," + .)}}
       ]
     }],
     extra_body: {
@@ -35,8 +37,7 @@ REQUEST_JSON=$(
       guidance_scale: 1,
       seed: 42
     }
-  }'
-)
+  }' > "$REQUEST_JSON_FILE"
 
 echo "Generating edited image..."
 echo "Server: $SERVER"
@@ -46,7 +47,7 @@ echo "Output: $OUTPUT"
 
 curl -s "$SERVER/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -d "$REQUEST_JSON" \
+  -d @"$REQUEST_JSON_FILE" \
   | jq -r '.choices[0].message.content[0].image_url.url' \
   | cut -d',' -f2 \
   | base64 -d > "$OUTPUT"
