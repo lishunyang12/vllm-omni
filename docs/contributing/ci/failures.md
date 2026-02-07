@@ -10,7 +10,7 @@ When you open a PR against vLLM-Omni, several CI checks run automatically:
 | Check | Platform | What it does |
 | ----- | -------- | ------------ |
 | **pre-commit** | GitHub Actions | Runs linting (Ruff), formatting, spell-checking (typos), and YAML validation. |
-| **Build Wheel** | GitHub Actions | Builds Python wheels for Python 3.11 and 3.12 on Ubuntu. |
+| **Build Wheel** | GitHub Actions | Builds Python wheels for Python 3.11 and 3.12 on Ubuntu. Skipped for docs-only or markdown-only changes (controlled by `paths-ignore` in the workflow). |
 | **DCO** | GitHub | Verifies every commit has a `Signed-off-by` line. |
 | **docs/readthedocs.org:vllm-omni** | Read the Docs | Builds the MkDocs documentation site. |
 | **buildkite/vllm-omni** | Buildkite | Runs GPU-based tests on NVIDIA (L4, H100) and AMD (MI325) hardware. |
