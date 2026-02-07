@@ -31,8 +31,6 @@ REQUEST_JSON=$(
       ]
     }],
     extra_body: {
-      height: 1024,
-      width: 1024,
       num_inference_steps: 50,
       guidance_scale: 1,
       seed: 42
