@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Ablation study: FP8 quantization with different ignored_layers configs.
 
-Measures generation time and saves images for visual quality comparison
-across different ignored_layers combinations on Qwen-Image-2512.
+Spawns a separate subprocess for each config via text_to_image.py so that
+GPU memory is fully released between runs (avoids OOM).
 
 Usage:
     python ablation_fp8_ignored_layers.py
@@ -24,17 +24,11 @@ Layer reference (QwenImageTransformerBlock):
 import argparse
 import csv
 import json
-import os
-import time
+import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
-
-import torch
-
-from vllm_omni.diffusion.data import DiffusionParallelConfig, logger
-from vllm_omni.entrypoints.omni import Omni
-from vllm_omni.inputs.data import OmniDiffusionSamplingParams
-from vllm_omni.platforms import current_omni_platform
 
 # ---------------------------------------------------------------------------
 # Ablation configurations
@@ -81,6 +75,9 @@ DEFAULT_PROMPTS = [
     "a futuristic cityscape at night with neon lights and flying cars",
 ]
 
+# Regex to extract generation time from text_to_image.py stdout
+_TIME_RE = re.compile(r"Total generation time:\s*([\d.]+)\s*seconds")
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -109,31 +106,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def build_omni(
+def run_single_config(
     model: str,
-    quantization: str | None,
-    ignored_layers: list[str] | None,
-    enforce_eager: bool,
-) -> Omni:
-    """Create an Omni instance with the given quantization settings."""
-    quant_kwargs: dict[str, Any] = {}
-    if quantization and ignored_layers:
-        quant_kwargs["quantization_config"] = {
-            "method": quantization,
-            "ignored_layers": ignored_layers,
-        }
-    elif quantization:
-        quant_kwargs["quantization"] = quantization
-
-    return Omni(
-        model=model,
-        enforce_eager=enforce_eager,
-        **quant_kwargs,
-    )
-
-
-def generate_image(
-    omni: Omni,
     prompt: str,
     seed: int,
     height: int,
@@ -141,27 +115,52 @@ def generate_image(
     num_inference_steps: int,
     cfg_scale: float,
     guidance_scale: float,
-) -> tuple[Any, float]:
-    """Generate one image, return (PIL.Image, elapsed_seconds)."""
-    generator = torch.Generator(
-        device=current_omni_platform.device_type).manual_seed(seed)
+    output_path: str,
+    quantization: str | None,
+    ignored_layers: list[str] | None,
+    enforce_eager: bool,
+) -> float | None:
+    """Run text_to_image.py as a subprocess. Returns generation time or None on failure."""
+    script = str(Path(__file__).parent / "text_to_image.py")
+    cmd = [
+        sys.executable, script,
+        "--model", model,
+        "--prompt", prompt,
+        "--seed", str(seed),
+        "--height", str(height),
+        "--width", str(width),
+        "--num_inference_steps", str(num_inference_steps),
+        "--cfg_scale", str(cfg_scale),
+        "--guidance_scale", str(guidance_scale),
+        "--output", output_path,
+    ]
+    if quantization:
+        cmd += ["--quantization", quantization]
+    if ignored_layers:
+        cmd += ["--ignored-layers", ",".join(ignored_layers)]
+    if enforce_eager:
+        cmd += ["--enforce_eager"]
 
-    t0 = time.perf_counter()
-    outputs = omni.generate(
-        {"prompt": prompt},
-        OmniDiffusionSamplingParams(
-            height=height,
-            width=width,
-            generator=generator,
-            true_cfg_scale=cfg_scale,
-            guidance_scale=guidance_scale,
-            num_inference_steps=num_inference_steps,
-        ),
-    )
-    elapsed = time.perf_counter() - t0
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
-    image = outputs[0].request_output[0].images[0]
-    return image, elapsed
+    # Print subprocess output for visibility
+    if result.stdout:
+        for line in result.stdout.strip().split("\n"):
+            print(f"    | {line}")
+    if result.returncode != 0:
+        print(f"    [ERROR] exit code {result.returncode}")
+        if result.stderr:
+            # Print last 10 lines of stderr
+            for line in result.stderr.strip().split("\n")[-10:]:
+                print(f"    | {line}")
+        return None
+
+    # Extract generation time from stdout
+    match = _TIME_RE.search(result.stdout)
+    if match:
+        return float(match.group(1))
+    print("    [WARN] Could not parse generation time from output")
+    return None
 
 
 def run_ablation(args: argparse.Namespace) -> None:
@@ -180,17 +179,21 @@ def run_ablation(args: argparse.Namespace) -> None:
                 f"{[n for n, _ in ABLATION_CONFIGS]}")
 
     results: list[dict[str, Any]] = []
+    total_runs = len(configs) * len(prompts)
 
     print(f"\n{'=' * 70}")
     print(f"FP8 Ablation Study: {args.model}")
     print(f"  Configs to test : {len(configs)}")
     print(f"  Prompts          : {len(prompts)}")
+    print(f"  Total runs       : {total_runs}")
     print(f"  Image size       : {args.width}x{args.height}")
     print(f"  Inference steps  : {args.num_inference_steps}")
     print(f"  Seed             : {args.seed}")
     print(f"  Output directory : {output_dir}")
+    print(f"  Method           : subprocess per run (full GPU release)")
     print(f"{'=' * 70}\n")
 
+    run_idx = 0
     for cfg_idx, (config_name, ignored_layers) in enumerate(configs):
         is_baseline = ignored_layers is None
         quantization = None if is_baseline else "fp8"
@@ -202,20 +205,16 @@ def run_ablation(args: argparse.Namespace) -> None:
             print(f"  Mode: FP8, ignored_layers={ignored_layers or '(none)'}")
         print("-" * 50)
 
-        # Build model for this config
-        omni = build_omni(
-            model=args.model,
-            quantization=quantization,
-            ignored_layers=ignored_layers,
-            enforce_eager=args.enforce_eager,
-        )
-
         for p_idx, prompt in enumerate(prompts):
-            short_prompt = prompt[:50] + "..." if len(prompt) > 50 else prompt
-            print(f"  Prompt {p_idx + 1}/{len(prompts)}: {short_prompt}")
+            run_idx += 1
+            short_prompt = prompt[:50] + ("..." if len(prompt) > 50 else "")
+            print(f"  [{run_idx}/{total_runs}] Prompt {p_idx}: {short_prompt}")
 
-            image, elapsed = generate_image(
-                omni=omni,
+            img_filename = f"{config_name}_prompt{p_idx}.png"
+            img_path = str(output_dir / img_filename)
+
+            elapsed = run_single_config(
+                model=args.model,
                 prompt=prompt,
                 seed=args.seed,
                 height=args.height,
@@ -223,13 +222,14 @@ def run_ablation(args: argparse.Namespace) -> None:
                 num_inference_steps=args.num_inference_steps,
                 cfg_scale=args.cfg_scale,
                 guidance_scale=args.guidance_scale,
+                output_path=img_path,
+                quantization=quantization,
+                ignored_layers=ignored_layers if ignored_layers else None,
+                enforce_eager=args.enforce_eager,
             )
 
-            # Save image
-            img_filename = f"{config_name}_prompt{p_idx}.png"
-            img_path = output_dir / img_filename
-            image.save(img_path)
-            print(f"    -> {elapsed:.2f}s  saved: {img_path}")
+            status = f"{elapsed:.2f}s" if elapsed else "FAILED"
+            print(f"    -> {status}  saved: {img_path}")
 
             results.append({
                 "config": config_name,
@@ -237,13 +237,9 @@ def run_ablation(args: argparse.Namespace) -> None:
                 "ignored_layers": ",".join(ignored_layers) if ignored_layers else "",
                 "prompt_index": p_idx,
                 "prompt": prompt,
-                "time_seconds": round(elapsed, 4),
-                "image_path": str(img_path),
+                "time_seconds": round(elapsed, 4) if elapsed else None,
+                "image_path": img_path,
             })
-
-        # Free GPU memory between configs
-        del omni
-        torch.cuda.empty_cache()
 
     # ── Save summary ──
     csv_path = output_dir / "ablation_results.csv"
@@ -260,15 +256,15 @@ def run_ablation(args: argparse.Namespace) -> None:
     print(f"\n\n{'=' * 70}")
     print("ABLATION RESULTS SUMMARY")
     print(f"{'=' * 70}")
-    print(f"{'Config':<30} {'Avg Time (s)':>12}  {'Ignored Layers'}")
+    print(f"  {'Config':<30} {'Avg Time (s)':>12}  {'Ignored Layers'}")
     print("-" * 70)
 
-    # Group by config
     from collections import defaultdict
     times_by_config: dict[str, list[float]] = defaultdict(list)
     layers_by_config: dict[str, str] = {}
     for r in results:
-        times_by_config[r["config"]].append(r["time_seconds"])
+        if r["time_seconds"] is not None:
+            times_by_config[r["config"]].append(r["time_seconds"])
         layers_by_config[r["config"]] = r["ignored_layers"] or "(none)"
 
     baseline_avg = None
@@ -281,6 +277,11 @@ def run_ablation(args: argparse.Namespace) -> None:
             speedup = f"  ({baseline_avg / avg:.2f}x vs BF16)"
         print(f"  {config_name:<28} {avg:>10.2f}s  "
               f"{layers_by_config[config_name]}{speedup}")
+
+    # Print failed configs
+    failed = [r["config"] for r in results if r["time_seconds"] is None]
+    if failed:
+        print(f"\n  FAILED: {', '.join(set(failed))}")
 
     print(f"\nResults saved to:")
     print(f"  CSV  : {csv_path}")

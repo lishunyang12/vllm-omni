@@ -351,6 +351,7 @@ class ColumnParallelApproxGELU(nn.Module):
         approximate: str,
         bias: bool = True,
         quant_config: "QuantizationConfig | None" = None,
+        prefix: str = "",
     ):
         super().__init__()
         self.proj = ColumnParallelLinear(
@@ -360,6 +361,7 @@ class ColumnParallelApproxGELU(nn.Module):
             gather_output=False,
             return_bias=False,
             quant_config=quant_config,
+            prefix=prefix,
         )
         self.approximate = approximate
 
@@ -378,6 +380,7 @@ class FeedForward(nn.Module):
         inner_dim: int | None = None,
         bias: bool = True,
         quant_config: "QuantizationConfig | None" = None,
+        prefix: str = "",
     ) -> None:
         super().__init__()
 
@@ -387,7 +390,8 @@ class FeedForward(nn.Module):
         dim_out = dim_out or dim
 
         layers: list[nn.Module] = [
-            ColumnParallelApproxGELU(dim, inner_dim, approximate="tanh", bias=bias, quant_config=quant_config),
+            ColumnParallelApproxGELU(dim, inner_dim, approximate="tanh", bias=bias, quant_config=quant_config,
+                                     prefix=prefix),
             nn.Identity(),  # placeholder for weight loading
             RowParallelLinear(
                 inner_dim,
@@ -395,6 +399,7 @@ class FeedForward(nn.Module):
                 input_is_parallel=True,
                 return_bias=False,
                 quant_config=quant_config,
+                prefix=prefix,
             ),
         ]
 
@@ -437,6 +442,7 @@ class QwenImageCrossAttention(nn.Module):
             head_size=self.head_dim,
             total_num_heads=num_heads,
             quant_config=quant_config,
+            prefix="to_qkv",
         )
         self.query_num_heads = self.to_qkv.num_heads
         self.kv_num_heads = self.to_qkv.num_kv_heads
@@ -452,6 +458,7 @@ class QwenImageCrossAttention(nn.Module):
             head_size=head_dim,
             total_num_heads=num_heads,
             quant_config=quant_config,
+            prefix="add_kv_proj",
         )
         self.add_query_num_heads = self.add_kv_proj.num_heads
         self.add_kv_num_heads = self.add_kv_proj.num_kv_heads
@@ -464,6 +471,7 @@ class QwenImageCrossAttention(nn.Module):
             input_is_parallel=True,
             return_bias=False,
             quant_config=quant_config,
+            prefix="to_add_out",
         )
 
         assert not pre_only
@@ -474,6 +482,7 @@ class QwenImageCrossAttention(nn.Module):
             input_is_parallel=True,
             return_bias=False,
             quant_config=quant_config,
+            prefix="to_out",
         )
 
         self.norm_added_q = RMSNorm(head_dim, eps=eps)
@@ -629,7 +638,7 @@ class QwenImageTransformerBlock(nn.Module):
             quant_config=quant_config,
         )
         self.img_norm2 = AdaLayerNorm(dim, elementwise_affine=False, eps=eps)
-        self.img_mlp = FeedForward(dim=dim, dim_out=dim, quant_config=quant_config)
+        self.img_mlp = FeedForward(dim=dim, dim_out=dim, quant_config=quant_config, prefix="img_mlp")
 
         # Text processing modules
         self.txt_mod = nn.Sequential(
@@ -639,7 +648,7 @@ class QwenImageTransformerBlock(nn.Module):
         self.txt_norm1 = AdaLayerNorm(dim, elementwise_affine=False, eps=eps)
         # Text doesn't need separate attention - it's handled by img_attn joint computation
         self.txt_norm2 = AdaLayerNorm(dim, elementwise_affine=False, eps=eps)
-        self.txt_mlp = FeedForward(dim=dim, dim_out=dim, quant_config=quant_config)
+        self.txt_mlp = FeedForward(dim=dim, dim_out=dim, quant_config=quant_config, prefix="txt_mlp")
 
         self.zero_cond_t = zero_cond_t
 
