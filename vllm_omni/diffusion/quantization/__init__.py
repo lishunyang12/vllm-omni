@@ -3,7 +3,7 @@
 """Quantization support for diffusion models.
 
 This module provides a unified interface for quantizing diffusion transformers
-using various methods (FP8, INT8, etc.). It wraps vLLM's quantization infrastructure
+using various methods (FP8, etc.). It wraps vLLM's quantization infrastructure
 while allowing diffusion-model-specific defaults and optimizations.
 
 Example usage:
