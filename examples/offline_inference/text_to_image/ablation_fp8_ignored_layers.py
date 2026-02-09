@@ -48,28 +48,23 @@ ABLATION_CONFIGS: list[tuple[str, list[str] | None]] = [
     # ── Baselines ──
     ("bf16_baseline", None),
     ("fp8_all_layers", []),
-
     # ── Single-group ablations ──
     # Text-stream attention
     ("fp8_skip_text_attn_kv", ["add_kv_proj"]),
     ("fp8_skip_text_attn_out", ["to_add_out"]),
     ("fp8_skip_text_attn_all", ["add_kv_proj", "to_add_out"]),
-
     # Image-stream attention
     ("fp8_skip_img_attn_qkv", ["to_qkv"]),
     ("fp8_skip_img_attn_out", ["to_out"]),
     ("fp8_skip_img_attn_all", ["to_qkv", "to_out"]),
-
     # MLP
     ("fp8_skip_img_mlp", ["img_mlp"]),
     ("fp8_skip_txt_mlp", ["txt_mlp"]),
     ("fp8_skip_all_mlp", ["img_mlp", "txt_mlp"]),
-
     # ── Combined ablations ──
     ("fp8_skip_all_attn", ["to_qkv", "to_out", "add_kv_proj", "to_add_out"]),
     ("fp8_skip_text_stream", ["add_kv_proj", "to_add_out", "txt_mlp"]),
-    ("fp8_skip_attn_and_txt_mlp",
-     ["to_qkv", "to_out", "add_kv_proj", "to_add_out", "txt_mlp"]),
+    ("fp8_skip_attn_and_txt_mlp", ["to_qkv", "to_out", "add_kv_proj", "to_add_out", "txt_mlp"]),
 ]
 
 # Diverse prompts spanning different domains for robust evaluation
@@ -86,32 +81,19 @@ _PEAK_MEM_RE = re.compile(r"Peak memory:\s*([\d.]+)\s*GiB")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Ablation study for FP8 ignored_layers on DiT models.")
-    parser.add_argument(
-        "--model", default="Qwen/Qwen-Image-2512",
-        help="Model name or path.")
-    parser.add_argument(
-        "--output-dir", default="outputs/ablation_fp8",
-        help="Directory to save images and results.")
-    parser.add_argument(
-        "--prompts", nargs="+", default=None,
-        help="Custom prompts (overrides defaults).")
+    parser = argparse.ArgumentParser(description="Ablation study for FP8 ignored_layers on DiT models.")
+    parser.add_argument("--model", default="Qwen/Qwen-Image-2512", help="Model name or path.")
+    parser.add_argument("--output-dir", default="outputs/ablation_fp8", help="Directory to save images and results.")
+    parser.add_argument("--prompts", nargs="+", default=None, help="Custom prompts (overrides defaults).")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--height", type=int, default=1024)
     parser.add_argument("--width", type=int, default=1024)
     parser.add_argument("--num-inference-steps", type=int, default=50)
     parser.add_argument("--cfg-scale", type=float, default=4.0)
     parser.add_argument("--guidance-scale", type=float, default=1.0)
-    parser.add_argument(
-        "--configs", nargs="+", default=None,
-        help="Run only these config names (default: all).")
-    parser.add_argument(
-        "--enforce-eager", action="store_true",
-        help="Disable torch.compile for stable benchmarking.")
-    parser.add_argument(
-        "--skip-lpips", action="store_true",
-        help="Skip LPIPS computation (generate images only).")
+    parser.add_argument("--configs", nargs="+", default=None, help="Run only these config names (default: all).")
+    parser.add_argument("--enforce-eager", action="store_true", help="Disable torch.compile for stable benchmarking.")
+    parser.add_argument("--skip-lpips", action="store_true", help="Skip LPIPS computation (generate images only).")
     return parser.parse_args()
 
 
@@ -136,16 +118,26 @@ def run_single_config(
     """
     script = str(Path(__file__).parent / "text_to_image.py")
     cmd = [
-        sys.executable, script,
-        "--model", model,
-        "--prompt", prompt,
-        "--seed", str(seed),
-        "--height", str(height),
-        "--width", str(width),
-        "--num_inference_steps", str(num_inference_steps),
-        "--cfg_scale", str(cfg_scale),
-        "--guidance_scale", str(guidance_scale),
-        "--output", output_path,
+        sys.executable,
+        script,
+        "--model",
+        model,
+        "--prompt",
+        prompt,
+        "--seed",
+        str(seed),
+        "--height",
+        str(height),
+        "--width",
+        str(width),
+        "--num_inference_steps",
+        str(num_inference_steps),
+        "--cfg_scale",
+        str(cfg_scale),
+        "--guidance_scale",
+        str(guidance_scale),
+        "--output",
+        output_path,
     ]
     if quantization:
         cmd += ["--quantization", quantization]
@@ -229,10 +221,12 @@ def compute_lpips_scores(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     loss_fn = lpips.LPIPS(net="alex").to(device)
 
-    to_tensor = transforms.Compose([
-        transforms.ToTensor(),           # [0, 1]
-        transforms.Normalize(0.5, 0.5),  # [-1, 1] as LPIPS expects
-    ])
+    to_tensor = transforms.Compose(
+        [
+            transforms.ToTensor(),  # [0, 1]
+            transforms.Normalize(0.5, 0.5),  # [-1, 1] as LPIPS expects
+        ]
+    )
 
     scores: dict[tuple[str, int], float] = {}
     for r in results:
@@ -268,11 +262,9 @@ def run_ablation(args: argparse.Namespace) -> None:
     configs = ABLATION_CONFIGS
     if args.configs:
         selected = set(args.configs)
-        configs = [(n, l) for n, l in configs if n in selected]
+        configs = [(name, layers) for name, layers in configs if name in selected]
         if not configs:
-            raise ValueError(
-                f"No matching configs found. Available: "
-                f"{[n for n, _ in ABLATION_CONFIGS]}")
+            raise ValueError(f"No matching configs found. Available: {[n for n, _ in ABLATION_CONFIGS]}")
 
     results: list[dict[str, Any]] = []
     total_runs = len(configs) * len(prompts)
@@ -287,7 +279,7 @@ def run_ablation(args: argparse.Namespace) -> None:
     print(f"  Seed             : {args.seed}")
     print(f"  Output directory : {output_dir}")
     print(f"  LPIPS            : {'skip' if args.skip_lpips else 'enabled'}")
-    print(f"  Method           : subprocess per run (full GPU release)")
+    print("  Method           : subprocess per run (full GPU release)")
     print(f"{'=' * 70}\n")
 
     run_idx = 0
@@ -335,17 +327,19 @@ def run_ablation(args: argparse.Namespace) -> None:
                 parts.append(f"peak={mem_peak:.2f}GiB")
             print(f"    -> {', '.join(parts)}  saved: {img_path}")
 
-            results.append({
-                "config": config_name,
-                "quantization": quantization or "none",
-                "ignored_layers": ",".join(ignored_layers) if ignored_layers else "",
-                "prompt_index": p_idx,
-                "prompt": prompt,
-                "time_seconds": round(elapsed, 4) if elapsed else None,
-                "model_memory_gib": round(mem_model, 4) if mem_model else None,
-                "peak_memory_gib": round(mem_peak, 4) if mem_peak else None,
-                "image_path": img_path,
-            })
+            results.append(
+                {
+                    "config": config_name,
+                    "quantization": quantization or "none",
+                    "ignored_layers": ",".join(ignored_layers) if ignored_layers else "",
+                    "prompt_index": p_idx,
+                    "prompt": prompt,
+                    "time_seconds": round(elapsed, 4) if elapsed else None,
+                    "model_memory_gib": round(mem_model, 4) if mem_model else None,
+                    "peak_memory_gib": round(mem_peak, 4) if mem_peak else None,
+                    "image_path": img_path,
+                }
+            )
 
     # ── Compute LPIPS ──
     lpips_scores: dict[tuple[str, int], float] = {}
@@ -420,7 +414,9 @@ def run_ablation(args: argparse.Namespace) -> None:
             lpips_col = f"  {'(ref)':>11}"
 
         layers = layers_by_config[config_name]
-        print(f"  {config_name:<28} {avg_time:>7.2f}s {model_mem_col:>10} {peak_mem_col:>10}{lpips_col}  {layers}{speedup}")
+        print(
+            f"  {config_name:<28} {avg_time:>7.2f}s {model_mem_col:>10} {peak_mem_col:>10}{lpips_col}  {layers}{speedup}"
+        )
 
     # Highlight best FP8 config by LPIPS
     if has_lpips and lpips_by_config:
@@ -432,7 +428,7 @@ def run_ablation(args: argparse.Namespace) -> None:
     if failed:
         print(f"\n  FAILED: {', '.join(set(failed))}")
 
-    print(f"\nResults saved to:")
+    print("\nResults saved to:")
     print(f"  CSV  : {csv_path}")
     print(f"  JSON : {json_path}")
     print(f"  Images: {output_dir}/")
