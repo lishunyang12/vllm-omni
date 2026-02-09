@@ -4,9 +4,9 @@
 import enum
 import os
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 from pydantic import model_validator
@@ -15,6 +15,12 @@ from vllm.config.utils import config
 from vllm.logger import init_logger
 
 from vllm_omni.diffusion.utils.network_utils import is_port_available
+
+if TYPE_CHECKING:
+    from vllm_omni.diffusion.quantization import DiffusionQuantizationConfig
+
+# Import after TYPE_CHECKING to avoid circular imports at runtime
+# The actual import is deferred to __post_init__ to avoid import order issues
 
 logger = init_logger(__name__)
 
@@ -369,6 +375,11 @@ class OmniDiffusionConfig:
     # Omni configuration (injected from stage config)
     omni_kv_config: dict[str, Any] = field(default_factory=dict)
 
+    # Quantization settings
+    # Supported methods: "fp8" (FP8 W8A8 on Ada/Hopper, weight-only on older GPUs)
+    quantization: str | None = None
+    quantization_config: "DiffusionQuantizationConfig | dict[str, Any] | None" = None
+
     def settle_port(self, port: int, port_inc: int = 42, max_attempts: int = 100) -> int:
         """
         Find an available port with retry logic.
@@ -454,6 +465,38 @@ class OmniDiffusionConfig:
         elif not isinstance(self.cache_config, DiffusionCacheConfig):
             # If it's neither dict nor DiffusionCacheConfig, convert to empty config
             self.cache_config = DiffusionCacheConfig()
+
+        # Convert quantization config (deferred import to avoid circular imports)
+        if self.quantization is not None or self.quantization_config is not None:
+            from vllm_omni.diffusion.quantization import (
+                DiffusionQuantizationConfig,
+                get_diffusion_quant_config,
+            )
+
+            # Handle dict or DictConfig (from OmegaConf) - use Mapping for broader compatibility
+            if isinstance(self.quantization_config, Mapping):
+                # Convert DictConfig to dict if needed (OmegaConf compatibility)
+                config_dict = dict(self.quantization_config)
+                # Use get() instead of pop() to avoid mutating original dict
+                quant_method = config_dict.get("method", self.quantization)
+                # Filter out "method" key for kwargs
+                quant_kwargs = {k: v for k, v in config_dict.items() if k != "method"}
+
+                # Validate conflicting methods
+                if self.quantization is not None and quant_method is not None and quant_method != self.quantization:
+                    logger.warning(
+                        f"Conflicting quantization methods: quantization={self.quantization!r}, "
+                        f"quantization_config['method']={quant_method!r}. Using quantization_config['method']."
+                    )
+
+                self.quantization_config = get_diffusion_quant_config(quant_method, **quant_kwargs)
+            elif self.quantization_config is None and self.quantization is not None:
+                self.quantization_config = get_diffusion_quant_config(self.quantization)
+            elif not isinstance(self.quantization_config, DiffusionQuantizationConfig):
+                raise TypeError(
+                    f"quantization_config must be a DiffusionQuantizationConfig, dict, or None, "
+                    f"got {type(self.quantization_config)!r}"
+                )
 
         if self.max_cpu_loras is None:
             self.max_cpu_loras = 1
