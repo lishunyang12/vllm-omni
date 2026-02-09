@@ -74,40 +74,15 @@ ABLATION_CONFIGS: list[tuple[str, list[str] | None]] = [
 
 # Diverse prompts spanning different domains for robust evaluation
 DEFAULT_PROMPTS = [
-    # Photorealistic scenes
     "a mountain landscape with a lake reflection at sunset, photorealistic",
-    "a cup of coffee on a wooden table with morning sunlight streaming through a window",
-    "a busy street market in Tokyo at night with neon signs and rain reflections",
-    # Portraits / people
     "a portrait of a woman with intricate jewelry, studio lighting",
-    "a young child laughing while playing in autumn leaves, natural lighting",
-    # Architecture / interiors
-    "a modern minimalist living room with floor-to-ceiling windows overlooking the ocean",
-    "an ancient stone temple overgrown with vines in a misty jungle",
-    # Animals / nature
-    "a cat sitting on a windowsill at sunset with soft bokeh background",
-    "a close-up of a hummingbird hovering near a red flower, macro photography",
-    # Text rendering (stress test for precision)
-    "a wooden sign that reads 'OPEN' hanging on a blue door",
-    "a chalkboard menu in a cafe displaying 'Today Special: Latte' in handwritten text",
-    # Abstract / artistic
     "a futuristic cityscape at night with neon lights and flying cars",
-    "an oil painting of sunflowers in the style of Van Gogh with thick impasto brushstrokes",
-    # Fine detail / texture
-    "a close-up of a butterfly wing showing iridescent scales and intricate patterns",
-    "a stack of old leather-bound books on a mahogany desk with dust motes in a sunbeam",
-    # Complex composition
-    "a cozy bookshop interior with a cat sleeping on a stack of books near a fireplace",
-    "an aerial view of a coral reef with crystal clear turquoise water and colorful fish",
-    # Low-light / challenging lighting
-    "a campfire in a dark forest with sparks rising into a starry sky",
-    "northern lights over a snowy mountain range reflected in a still lake",
-    # Food (fine color gradients)
-    "a gourmet dessert plate with chocolate mousse, raspberry coulis, and gold leaf garnish",
 ]
 
-# Regex to extract generation time from text_to_image.py stdout
+# Regexes to extract metrics from text_to_image.py stdout
 _TIME_RE = re.compile(r"Total generation time:\s*([\d.]+)\s*seconds")
+_MODEL_MEM_RE = re.compile(r"Model loaded memory:\s*([\d.]+)\s*GiB")
+_PEAK_MEM_RE = re.compile(r"Peak memory:\s*([\d.]+)\s*GiB")
 
 
 def parse_args() -> argparse.Namespace:
@@ -153,8 +128,12 @@ def run_single_config(
     quantization: str | None,
     ignored_layers: list[str] | None,
     enforce_eager: bool,
-) -> float | None:
-    """Run text_to_image.py as a subprocess. Returns generation time or None."""
+) -> dict[str, float | None]:
+    """Run text_to_image.py as a subprocess.
+
+    Returns dict with keys: time_seconds, model_memory_gib, peak_memory_gib.
+    Values are None on failure or if not reported.
+    """
     script = str(Path(__file__).parent / "text_to_image.py")
     cmd = [
         sys.executable, script,
@@ -175,6 +154,12 @@ def run_single_config(
     if enforce_eager:
         cmd += ["--enforce_eager"]
 
+    metrics: dict[str, float | None] = {
+        "time_seconds": None,
+        "model_memory_gib": None,
+        "peak_memory_gib": None,
+    }
+
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
     if result.stdout:
@@ -185,13 +170,24 @@ def run_single_config(
         if result.stderr:
             for line in result.stderr.strip().split("\n")[-10:]:
                 print(f"    | {line}")
-        return None
+        return metrics
 
-    match = _TIME_RE.search(result.stdout)
-    if match:
-        return float(match.group(1))
-    print("    [WARN] Could not parse generation time from output")
-    return None
+    stdout = result.stdout
+    m = _TIME_RE.search(stdout)
+    if m:
+        metrics["time_seconds"] = float(m.group(1))
+    else:
+        print("    [WARN] Could not parse generation time from output")
+
+    m = _MODEL_MEM_RE.search(stdout)
+    if m:
+        metrics["model_memory_gib"] = float(m.group(1))
+
+    m = _PEAK_MEM_RE.search(stdout)
+    if m:
+        metrics["peak_memory_gib"] = float(m.group(1))
+
+    return metrics
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +310,7 @@ def run_ablation(args: argparse.Namespace) -> None:
             img_filename = f"{config_name}_prompt{p_idx}.png"
             img_path = str(output_dir / img_filename)
 
-            elapsed = run_single_config(
+            metrics = run_single_config(
                 model=args.model,
                 prompt=prompt,
                 seed=args.seed,
@@ -329,8 +325,15 @@ def run_ablation(args: argparse.Namespace) -> None:
                 enforce_eager=args.enforce_eager,
             )
 
-            status = f"{elapsed:.2f}s" if elapsed else "FAILED"
-            print(f"    -> {status}  saved: {img_path}")
+            elapsed = metrics["time_seconds"]
+            mem_model = metrics["model_memory_gib"]
+            mem_peak = metrics["peak_memory_gib"]
+            parts = [f"{elapsed:.2f}s" if elapsed else "FAILED"]
+            if mem_model is not None:
+                parts.append(f"model={mem_model:.2f}GiB")
+            if mem_peak is not None:
+                parts.append(f"peak={mem_peak:.2f}GiB")
+            print(f"    -> {', '.join(parts)}  saved: {img_path}")
 
             results.append({
                 "config": config_name,
@@ -339,6 +342,8 @@ def run_ablation(args: argparse.Namespace) -> None:
                 "prompt_index": p_idx,
                 "prompt": prompt,
                 "time_seconds": round(elapsed, 4) if elapsed else None,
+                "model_memory_gib": round(mem_model, 4) if mem_model else None,
+                "peak_memory_gib": round(mem_peak, 4) if mem_peak else None,
                 "image_path": img_path,
             })
 
@@ -368,15 +373,21 @@ def run_ablation(args: argparse.Namespace) -> None:
 
     has_lpips = bool(lpips_scores)
     header_lpips = f"  {'Mean LPIPS':>11}" if has_lpips else ""
-    print(f"  {'Config':<30} {'Avg Time (s)':>12}{header_lpips}  {'Ignored Layers'}")
-    print("-" * 70)
+    print(f"  {'Config':<28} {'Avg Time':>9} {'Model Mem':>10} {'Peak Mem':>10}{header_lpips}  {'Ignored Layers'}")
+    print("-" * (90 if has_lpips else 78))
 
     times_by_config: dict[str, list[float]] = defaultdict(list)
+    model_mem_by_config: dict[str, list[float]] = defaultdict(list)
+    peak_mem_by_config: dict[str, list[float]] = defaultdict(list)
     lpips_by_config: dict[str, list[float]] = defaultdict(list)
     layers_by_config: dict[str, str] = {}
     for r in results:
         if r["time_seconds"] is not None:
             times_by_config[r["config"]].append(r["time_seconds"])
+        if r.get("model_memory_gib") is not None:
+            model_mem_by_config[r["config"]].append(r["model_memory_gib"])
+        if r.get("peak_memory_gib") is not None:
+            peak_mem_by_config[r["config"]].append(r["peak_memory_gib"])
         if r.get("lpips_vs_bf16") is not None:
             lpips_by_config[r["config"]].append(r["lpips_vs_bf16"])
         layers_by_config[r["config"]] = r["ignored_layers"] or "(none)"
@@ -391,6 +402,16 @@ def run_ablation(args: argparse.Namespace) -> None:
         if baseline_avg and config_name != "bf16_baseline":
             speedup = f"  ({baseline_avg / avg_time:.2f}x)"
 
+        model_mem_col = ""
+        if config_name in model_mem_by_config:
+            avg_mm = sum(model_mem_by_config[config_name]) / len(model_mem_by_config[config_name])
+            model_mem_col = f"{avg_mm:>8.2f}Gi"
+
+        peak_mem_col = ""
+        if config_name in peak_mem_by_config:
+            avg_pm = sum(peak_mem_by_config[config_name]) / len(peak_mem_by_config[config_name])
+            peak_mem_col = f"{avg_pm:>8.2f}Gi"
+
         lpips_col = ""
         if has_lpips and config_name in lpips_by_config:
             avg_lpips = sum(lpips_by_config[config_name]) / len(lpips_by_config[config_name])
@@ -399,7 +420,7 @@ def run_ablation(args: argparse.Namespace) -> None:
             lpips_col = f"  {'(ref)':>11}"
 
         layers = layers_by_config[config_name]
-        print(f"  {config_name:<28} {avg_time:>10.2f}s{lpips_col}  {layers}{speedup}")
+        print(f"  {config_name:<28} {avg_time:>7.2f}s {model_mem_col:>10} {peak_mem_col:>10}{lpips_col}  {layers}{speedup}")
 
     # Highlight best FP8 config by LPIPS
     if has_lpips and lpips_by_config:

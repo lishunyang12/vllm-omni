@@ -234,6 +234,13 @@ def main():
         **quant_kwargs,
     )
 
+    # Record GPU memory after model load
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        model_memory_gib = torch.cuda.memory_allocated() / (1024**3)
+        torch.cuda.reset_peak_memory_stats()
+        print(f"Model loaded memory: {model_memory_gib:.4f} GiB")
+
     if profiler_enabled:
         print("[Profiler] Starting profiling...")
         omni.start_profile()
@@ -277,6 +284,12 @@ def main():
 
     # Print profiling results
     print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
+
+    # Record peak GPU memory during generation
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        peak_memory_gib = torch.cuda.max_memory_allocated() / (1024**3)
+        print(f"Peak memory: {peak_memory_gib:.4f} GiB")
 
     if profiler_enabled:
         print("\n[Profiler] Stopping profiler and collecting results...")
