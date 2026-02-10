@@ -2,12 +2,14 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import argparse
+import time
 from pathlib import Path
 
 from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 from vllm_omni.lora.request import LoRARequest
 from vllm_omni.lora.utils import stable_lora_int_id
+from vllm_omni.profiler import ProfilerConfig
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,6 +58,14 @@ def parse_args() -> argparse.Namespace:
         default=1.0,
         help="Scale factor for LoRA weights (default: 1.0).",
     )
+
+    # Profiler arguments
+    parser.add_argument(
+        "--profile-dir",
+        type=str,
+        default=None,
+        help="Directory to save profiling outputs. Enables profiling when set.",
+    )
     return parser.parse_args()
 
 
@@ -64,13 +74,19 @@ def main():
 
     model = args.model
 
+    # Build profiler config from arguments
+    profiler_config = None
+    if args.profile_dir:
+        profiler_config = ProfilerConfig(profiler="torch", torch_profiler_dir=args.profile_dir)
+        print(f"[Profiler] Output dir: {args.profile_dir}")
+
     omni_kwargs = {}
 
     if args.lora_path:
         omni_kwargs["lora_path"] = args.lora_path
         print(f"Using static LoRA from: {args.lora_path}")
 
-    omni = Omni(model=model, **omni_kwargs)
+    omni = Omni(model=model, profiler_config=profiler_config, **omni_kwargs)
 
     lora_request = None
     if args.lora_request_path:
@@ -106,7 +122,15 @@ def main():
         sampling_params.lora_request = lora_request
         sampling_params.lora_scale = args.lora_scale
 
+    if profiler_config:
+        print("[Profiler] Starting profiling...")
+        omni.start_profile()
+
+    generation_start = time.perf_counter()
     outputs = omni.generate(args.prompt, sampling_params)
+    generation_end = time.perf_counter()
+    generation_time = generation_end - generation_start
+    print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
 
     if not outputs or len(outputs) == 0:
         raise ValueError("No output generated from omni.generate()")
@@ -141,6 +165,11 @@ def main():
             save_path = output_path.parent / f"{stem}_{idx}{suffix}"
             img.save(save_path)
             print(f"Saved generated image to {save_path}")
+
+    if profiler_config:
+        print("\n[Profiler] Stopping profiler and collecting results...")
+        omni.stop_profile()
+        print("[Profiler] Profiling stopped.")
 
 
 if __name__ == "__main__":

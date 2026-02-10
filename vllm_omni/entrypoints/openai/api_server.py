@@ -24,7 +24,6 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from PIL import Image
 from starlette.datastructures import State
 from starlette.routing import Route
-from vllm import SamplingParams
 from vllm.engine.protocol import EngineClient
 from vllm.entrypoints.anthropic.serving import AnthropicServingMessages
 from vllm.entrypoints.chat_utils import load_chat_template
@@ -74,6 +73,7 @@ from vllm.tasks import POOLING_TASKS
 from vllm.tool_parsers import ToolParserManager
 from vllm.utils.system_utils import decorate_logs
 
+from vllm import SamplingParams
 from vllm_omni.entrypoints.async_omni import AsyncOmni
 from vllm_omni.entrypoints.openai.image_api_utils import (
     encode_image_base64,
@@ -212,6 +212,14 @@ async def omni_run_server_worker(listen_address, sock, args, client_config=None,
         _remove_route_from_app(app, "/v1/models", {"GET"})  # Remove upstream /v1/models to use omni's handler
         app.include_router(router)
 
+        # Replace default profiler routes with stage-aware versions
+        _remove_route_from_router(app, "/start_profile", {"POST"})
+        _remove_route_from_router(app, "/stop_profile", {"POST"})
+
+        from vllm_omni.entrypoints.serve.profile.api_router import attach_router as attach_profile_router
+
+        attach_profile_router(app)
+
         await omni_init_app_state(engine_client, app.state, args)
 
         vllm_config = await engine_client.get_vllm_config()
@@ -332,6 +340,15 @@ async def build_async_omni_from_stage_config(
         kwargs = vars(args).copy()
         # Remove model as it will be passed separately
         kwargs.pop("model", None)
+
+        # Convert profiler_config to our ProfilerConfig so that
+        # OmniBase can serialize it via to_dict() for each stage worker.
+        from vllm_omni.profiler import ProfilerConfig as OmniProfilerConfig
+
+        profiler_config = OmniProfilerConfig.from_any(kwargs.pop("profiler_config", None))
+        if profiler_config is not None:
+            kwargs["profiler_config"] = profiler_config
+
         async_omni = AsyncOmni(model=args.model, **kwargs)
 
         # # Don't keep the dummy data in memory

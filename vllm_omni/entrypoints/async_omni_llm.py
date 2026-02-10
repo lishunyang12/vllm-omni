@@ -1,12 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import asyncio
-import os
-import socket
 from typing import TYPE_CHECKING
 
-import torch
-import vllm.envs as envs
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
 from vllm.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
@@ -163,26 +159,6 @@ class AsyncOmniLLM(AsyncLLM):
             self._run_output_handler()
         except RuntimeError:
             pass
-
-        if envs.VLLM_TORCH_PROFILER_DIR and not envs.VLLM_TORCH_PROFILER_DISABLE_ASYNC_LLM:
-            logger.info(
-                "Torch profiler enabled. AsyncOmniLLM CPU traces will be collected under %s",
-                envs.VLLM_TORCH_PROFILER_DIR,
-            )
-            worker_name = f"{socket.gethostname()}_{os.getpid()}.async_omni_llm"
-            self.profiler = torch.profiler.profile(
-                activities=[
-                    torch.profiler.ProfilerActivity.CPU,
-                ],
-                with_stack=envs.VLLM_TORCH_PROFILER_WITH_STACK,
-                on_trace_ready=torch.profiler.tensorboard_trace_handler(
-                    envs.VLLM_TORCH_PROFILER_DIR,
-                    worker_name=worker_name,
-                    use_gzip=envs.VLLM_TORCH_PROFILER_USE_GZIP,
-                ),
-            )
-        else:
-            self.profiler = None
 
     @classmethod
     @deprecate_kwargs(

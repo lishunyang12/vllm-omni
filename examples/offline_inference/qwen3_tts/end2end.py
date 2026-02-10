@@ -5,16 +5,18 @@ tasks, then runs Omni generation and saves output wav files.
 """
 
 import os
+import time
 from typing import NamedTuple
 
 import soundfile as sf
 
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
-from vllm import SamplingParams
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
+from vllm import SamplingParams
 from vllm_omni import Omni
+from vllm_omni.profiler import ProfilerConfig
 
 
 class QueryResult(NamedTuple):
@@ -215,9 +217,16 @@ def main(args):
     else:
         query_result = query_func()
 
+    # Build profiler config from arguments
+    profiler_config = None
+    if args.profile_dir:
+        profiler_config = ProfilerConfig(profiler="torch", torch_profiler_dir=args.profile_dir)
+        print(f"[Profiler] Output dir: {args.profile_dir}")
+
     model_name = query_result.model_name
     omni = Omni(
         model=model_name,
+        profiler_config=profiler_config,
         stage_configs_path=args.stage_configs_path,
         log_stats=args.log_stats,
         stage_init_timeout=args.stage_init_timeout,
@@ -240,6 +249,11 @@ def main(args):
     output_dir = args.output_dir if getattr(args, "output_dir", None) else args.output_wav
     os.makedirs(output_dir, exist_ok=True)
 
+    if profiler_config:
+        print("[Profiler] Starting profiling...")
+        omni.start_profile()
+
+    generation_start = time.perf_counter()
     omni_generator = omni.generate(query_result.inputs, sampling_params_list)
     for stage_outputs in omni_generator:
         for output in stage_outputs.request_output:
@@ -257,6 +271,15 @@ def main(args):
             # Save audio file with explicit WAV format
             sf.write(output_wav, audio_numpy, samplerate=audio_samplerate, format="WAV")
             print(f"Request ID: {request_id}, Saved audio to {output_wav}")
+
+    generation_end = time.perf_counter()
+    generation_time = generation_end - generation_start
+    print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
+
+    if profiler_config:
+        print("\n[Profiler] Stopping profiler and collecting results...")
+        omni.stop_profile()
+        print("[Profiler] Profiling stopped.")
 
 
 def parse_args():
@@ -364,6 +387,20 @@ def parse_args():
         default="icl",
         choices=["icl", "xvec_only"],
         help="Mode tag for Base query x_vector_only_mode (default: icl).",
+    )
+
+    # Profiler arguments
+    parser.add_argument(
+        "--profile-dir",
+        type=str,
+        default=None,
+        help="Directory to save profiling outputs. Enables profiling when set.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Output directory for generated files (preferred over --output-wav).",
     )
 
     return parser.parse_args()

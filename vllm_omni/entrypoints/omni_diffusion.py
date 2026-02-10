@@ -13,6 +13,7 @@ from vllm_omni.diffusion.diffusion_engine import DiffusionEngine
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniPromptType
 from vllm_omni.outputs import OmniRequestOutput
+from vllm_omni.profiler import ProfilerConfig
 
 # TODO configure logging properly
 logging.basicConfig(level=logging.INFO)
@@ -29,9 +30,22 @@ class OmniDiffusion:
     You can pass either an `OmniDiffusionConfig` via `od_config`, or
     pass kwargs such as `model="Qwen/Qwen-Image"`,
     which will be forwarded to `OmniDiffusionConfig.from_kwargs`.
+
+    Args:
+        od_config: Optional OmniDiffusionConfig. If not provided, will be
+            created from kwargs.
+        profiler_config: Optional ProfilerConfig for profiling.
+        **kwargs: Additional arguments passed to OmniDiffusionConfig.from_kwargs.
     """
 
-    def __init__(self, od_config: OmniDiffusionConfig | None = None, **kwargs):
+    def __init__(
+        self,
+        od_config: OmniDiffusionConfig | None = None,
+        profiler_config: ProfilerConfig | None = None,
+        **kwargs,
+    ):
+        self._profiler_config = profiler_config
+
         # Capture stage info from kwargs before they might be filtered out
         stage_id = kwargs.get("stage_id")
         engine_input_source = kwargs.get("engine_input_source")
@@ -117,25 +131,18 @@ class OmniDiffusion:
         except Exception:
             pass
 
-    def start_profile(self, trace_filename: str | None = None) -> None:
+    def start_profile(self, config: ProfilerConfig | None = None) -> None:
         """Start profiling for the diffusion model.
 
         Args:
-            trace_filename: Optional base filename for trace files.
-                           If None, a timestamp-based name will be generated.
+            config: Optional ProfilerConfig. If None, uses the config passed
+                   at initialization.
         """
-        if hasattr(self, "engine") and self.engine:
-            self.engine.start_profile(trace_filename)
-        else:
-            raise RuntimeError("Diffusion engine not initialized")
+        effective_config = config or self._profiler_config
+        if effective_config is None:
+            raise ValueError("ProfilerConfig required")
+        self.engine.start_profile(config=effective_config)
 
-    def stop_profile(self) -> dict:
-        """Stop profiling and return profiling results.
-
-        Returns:
-            Dictionary containing paths to trace and table files.
-        """
-        if hasattr(self, "engine") and self.engine:
-            return self.engine.stop_profile()
-        else:
-            raise RuntimeError("Diffusion engine not initialized")
+    def stop_profile(self) -> None:
+        """Stop profiling."""
+        self.engine.stop_profile()

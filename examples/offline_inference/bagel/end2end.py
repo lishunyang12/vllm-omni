@@ -1,8 +1,10 @@
 import argparse
 import os
+import time
 from typing import cast
 
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniPromptType
+from vllm_omni.profiler import ProfilerConfig
 
 
 def parse_args():
@@ -45,6 +47,14 @@ def parse_args():
     parser.add_argument("--ray-address", type=str, default=None)
     parser.add_argument("--stage-configs-path", type=str, default=None)
     parser.add_argument("--steps", type=int, default=50, help="Number of inference steps.")
+
+    # Profiler arguments
+    parser.add_argument(
+        "--profile-dir",
+        type=str,
+        default=None,
+        help="Directory to save profiling outputs. Enables profiling when set.",
+    )
 
     args = parser.parse_args()
     return args
@@ -114,6 +124,12 @@ def main():
     else:
         from vllm_omni.entrypoints.omni import Omni
 
+        # Build profiler config from arguments
+        profiler_config = None
+        if args.profile_dir:
+            profiler_config = ProfilerConfig(profiler="torch", torch_profiler_dir=args.profile_dir)
+            print(f"[Profiler] Output dir: {args.profile_dir}")
+
         omni_kwargs = {}
         if args.stage_configs_path:
             omni_kwargs["stage_configs_path"] = args.stage_configs_path
@@ -130,7 +146,7 @@ def main():
             }
         )
 
-        omni = Omni(model=model_name, **omni_kwargs)
+        omni = Omni(model=model_name, profiler_config=profiler_config, **omni_kwargs)
 
         formatted_prompts = []
         for p in args.prompts:
@@ -160,7 +176,20 @@ def main():
             if len(params_list) > 1:
                 params_list[1].num_inference_steps = args.steps  # type: ignore # The second stage is an OmniDiffusionSamplingParam
 
+        if profiler_config:
+            print("[Profiler] Starting profiling...")
+            omni.start_profile()
+
+        generation_start = time.perf_counter()
         omni_outputs = list(omni.generate(prompts=formatted_prompts, sampling_params_list=params_list))
+        generation_end = time.perf_counter()
+        generation_time = generation_end - generation_start
+        print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
+
+        if profiler_config:
+            print("\n[Profiler] Stopping profiler and collecting results...")
+            omni.stop_profile()
+            print("[Profiler] Profiling stopped.")
 
     for i, req_output in enumerate(omni_outputs):
         images = getattr(req_output, "images", None)

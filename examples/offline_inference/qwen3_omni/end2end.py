@@ -6,22 +6,22 @@ with the correct prompt format on Qwen3-Omni (thinker only).
 """
 
 import os
-import time
 from typing import NamedTuple
 
 import librosa
 import numpy as np
 import soundfile as sf
-import vllm
 from PIL import Image
-from vllm import SamplingParams
 from vllm.assets.audio import AudioAsset
 from vllm.assets.image import ImageAsset
 from vllm.assets.video import VideoAsset, video_to_ndarrays
 from vllm.multimodal.image import convert_image_mode
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
+import vllm
+from vllm import SamplingParams
 from vllm_omni.entrypoints.omni import Omni
+from vllm_omni.profiler import ProfilerConfig
 
 SEED = 42
 
@@ -325,8 +325,15 @@ def main(args):
     else:
         query_result = query_func()
 
+    # Build profiler config from arguments
+    profiler_config = None
+    if args.profile_dir:
+        profiler_config = ProfilerConfig(profiler="torch", torch_profiler_dir=args.profile_dir)
+        print(f"[Profiler] Output dir: {args.profile_dir}")
+
     omni_llm = Omni(
         model=model_name,
+        profiler_config=profiler_config,
         stage_configs_path=args.stage_configs_path,
         log_stats=args.log_stats,
         stage_init_timeout=args.stage_init_timeout,
@@ -383,8 +390,8 @@ def main(args):
         for i, prompt in enumerate(prompts):
             prompt["modalities"] = output_modalities
 
-    profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
-    if profiler_enabled:
+    if profiler_config:
+        print("[Profiler] Starting profiling...")
         omni_llm.start_profile(stages=[0])
     omni_generator = omni_llm.generate(prompts, sampling_params_list, py_generator=args.py_generator)
     # Determine output directory: prefer --output-dir; fallback to --output-wav
@@ -433,14 +440,11 @@ def main(args):
                 print(f"Request ID: {request_id}, Saved audio to {output_wav}")
 
         processed_count += len(stage_outputs.request_output)
-        if profiler_enabled and processed_count >= total_requests:
+        if profiler_config and processed_count >= total_requests:
             print(f"[Info] Processed {processed_count}/{total_requests}. Stopping profiler inside active loop...")
             # Stop the profiler while workers are still alive
             omni_llm.stop_profile()
-
-            print("[Info] Waiting 30s for workers to write trace files to disk...")
-            time.sleep(30)
-            print("[Info] Trace export wait time finished.")
+            print("[Profiler] Profiling stopped.")
     omni_llm.close()
 
 
@@ -557,6 +561,20 @@ def parse_args():
         action="store_true",
         default=False,
         help="Use py_generator mode. The returned type of Omni.generate() is a Python Generator object.",
+    )
+
+    # Profiler arguments
+    parser.add_argument(
+        "--profile-dir",
+        type=str,
+        default=None,
+        help="Directory to save profiling outputs. Enables profiling when set.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Output directory for generated files (preferred over --output-wav).",
     )
 
     return parser.parse_args()

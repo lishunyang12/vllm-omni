@@ -4,7 +4,6 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, TypeAlias
 
 from vllm import PromptType, SamplingParams
-
 from vllm_omni.lora.request import LoRARequest
 
 try:

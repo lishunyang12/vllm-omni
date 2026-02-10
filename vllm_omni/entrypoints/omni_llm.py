@@ -26,6 +26,7 @@ from vllm_omni.entrypoints.utils import (
     load_stage_configs_from_yaml,
     resolve_model_config_path,
 )
+from vllm_omni.profiler import ProfilerConfig, TorchProfiler
 
 logger = init_logger(__name__)
 
@@ -74,9 +75,13 @@ class OmniLLM(LLM):
         shm_threshold_bytes: int = 65536,
         batch_timeout: int = 10,
         init_timeout: int = 300,
+        profiler_config: ProfilerConfig | None = None,
         **kwargs: Any,
     ):
         """LLM constructor with omni-specific configuration loading."""
+        # Store profiler config (overrides vLLM's built-in profiler)
+        self._profiler_config = profiler_config
+
         # Store stage management parameters (used by Omni class)
         self.worker_backend = kwargs.get("worker_backend", "multi_process")
         self.ray_address = kwargs.get("ray_address", None)
@@ -239,3 +244,40 @@ class OmniLLM(LLM):
         # This is necessary because some requests may be finished earlier than
         # its previous requests.
         return sorted(outputs, key=lambda x: int(x.request_id.split("-")[0]))
+
+    def start_profile(self) -> None:
+        """Start profiling using our own TorchProfiler, fully decoupled
+        from upstream vLLM's profiler.
+
+        Raises:
+            ValueError: If profiler_config was not set at initialization.
+        """
+        if self._profiler_config is None:
+            raise ValueError(
+                "profiler_config not set at initialization. Pass profiler_config to OmniLLM() constructor."
+            )
+
+        if hasattr(self, "_profiler_instance") and self._profiler_instance is not None:
+            logger.warning("Profiler already active, stopping first")
+            self._profiler_instance.stop()
+
+        import os
+
+        os.makedirs(self._profiler_config.torch_profiler_dir, exist_ok=True)
+        rank = int(os.getenv("RANK", "0"))
+        self._profiler_instance = TorchProfiler(
+            self._profiler_config,
+            worker_name=f"llm-rank-{rank}",
+            local_rank=rank,
+        )
+        self._profiler_instance.start()
+        logger.info("Started profiling for OmniLLM")
+
+    def stop_profile(self) -> None:
+        """Stop profiling."""
+        if not hasattr(self, "_profiler_instance") or self._profiler_instance is None:
+            logger.warning("No active profiler to stop")
+            return
+        self._profiler_instance.stop()
+        self._profiler_instance = None
+        logger.info("Stopped profiling for OmniLLM")

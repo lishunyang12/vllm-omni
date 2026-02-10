@@ -19,7 +19,6 @@ Usage:
 """
 
 import argparse
-import os
 from pathlib import Path
 
 import numpy as np
@@ -31,6 +30,7 @@ from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 from vllm_omni.outputs import OmniRequestOutput
 from vllm_omni.platforms import current_omni_platform
+from vllm_omni.profiler import ProfilerConfig
 
 
 def parse_args() -> argparse.Namespace:
@@ -98,6 +98,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable torch.compile and force eager execution.",
     )
+
+    # Profiler arguments
+    parser.add_argument(
+        "--profile-dir",
+        type=str,
+        default=None,
+        help="Directory to save profiling outputs. Enables profiling when set.",
+    )
     return parser.parse_args()
 
 
@@ -131,13 +139,18 @@ def main():
     # Resize image to target dimensions
     image = image.resize((width, height), PIL.Image.Resampling.LANCZOS)
 
-    # Check if profiling is requested via environment variable
-    profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
+    # Build profiler config from arguments
+    profiler_config = None
+    if args.profile_dir:
+        profiler_config = ProfilerConfig(profiler="torch", torch_profiler_dir=args.profile_dir)
+        print(f"[Profiler] Output dir: {args.profile_dir}")
+
     parallel_config = DiffusionParallelConfig(
         cfg_parallel_size=args.cfg_parallel_size,
     )
     omni = Omni(
         model=args.model,
+        profiler_config=profiler_config,
         enable_layerwise_offload=args.enable_layerwise_offload,
         layerwise_num_gpu_layers=args.layerwise_num_gpu_layers,
         vae_use_slicing=args.vae_use_slicing,
@@ -149,7 +162,7 @@ def main():
         enforce_eager=args.enforce_eager,
     )
 
-    if profiler_enabled:
+    if profiler_config:
         print("[Profiler] Starting profiling...")
         omni.start_profile()
 
@@ -242,22 +255,10 @@ def main():
     export_to_video(video_array, str(output_path), fps=args.fps)
     print(f"Saved generated video to {output_path}")
 
-    if profiler_enabled:
+    if profiler_config:
         print("\n[Profiler] Stopping profiler and collecting results...")
-        profile_results = omni.stop_profile()
-        if profile_results and isinstance(profile_results, dict):
-            traces = profile_results.get("traces", [])
-            print("\n" + "=" * 60)
-            print("PROFILING RESULTS:")
-            for rank, trace in enumerate(traces):
-                print(f"\nRank {rank}:")
-                if trace:
-                    print(f"  • Trace: {trace}")
-            if not traces:
-                print("  No traces collected.")
-            print("=" * 60)
-        else:
-            print("[Profiler] No valid profiling data returned.")
+        omni.stop_profile()
+        print("[Profiler] Profiling stopped.")
 
 
 if __name__ == "__main__":

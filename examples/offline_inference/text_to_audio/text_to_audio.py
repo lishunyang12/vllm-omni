@@ -23,6 +23,7 @@ import torch
 from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 from vllm_omni.platforms import current_omni_platform
+from vllm_omni.profiler import ProfilerConfig
 
 
 def parse_args() -> argparse.Namespace:
@@ -90,6 +91,14 @@ def parse_args() -> argparse.Namespace:
         default=44100,
         help="Sample rate for output audio (Stable Audio uses 44100 Hz).",
     )
+
+    # Profiler arguments
+    parser.add_argument(
+        "--profile-dir",
+        type=str,
+        default=None,
+        help="Directory to save profiling outputs. Enables profiling when set.",
+    )
     return parser.parse_args()
 
 
@@ -120,6 +129,12 @@ def main():
     args = parse_args()
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(args.seed)
 
+    # Build profiler config from arguments
+    profiler_config = None
+    if args.profile_dir:
+        profiler_config = ProfilerConfig(profiler="torch", torch_profiler_dir=args.profile_dir)
+        print(f"[Profiler] Output dir: {args.profile_dir}")
+
     print(f"\n{'=' * 60}")
     print("Stable Audio Open - Text-to-Audio Generation")
     print(f"{'=' * 60}")
@@ -133,10 +148,14 @@ def main():
     print(f"{'=' * 60}\n")
 
     # Initialize Omni with Stable Audio model
-    omni = Omni(model=args.model)
+    omni = Omni(model=args.model, profiler_config=profiler_config)
 
     # Calculate audio end time
     audio_end_in_s = args.audio_start + args.audio_length
+
+    if profiler_config:
+        print("[Profiler] Starting profiling...")
+        omni.start_profile()
 
     # Time profiling for generation
     generation_start = time.perf_counter()
@@ -213,6 +232,11 @@ def main():
         print(f"Saved generated audio to {output_path}")
 
     print(f"\nGenerated {args.audio_length}s of audio at {args.sample_rate} Hz")
+
+    if profiler_config:
+        print("\n[Profiler] Stopping profiler and collecting results...")
+        omni.stop_profile()
+        print("[Profiler] Profiling stopped.")
 
 
 if __name__ == "__main__":

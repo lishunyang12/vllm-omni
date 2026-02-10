@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import argparse
-import os
 import time
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 from vllm_omni.outputs import OmniRequestOutput
 from vllm_omni.platforms import current_omni_platform
+from vllm_omni.profiler import ProfilerConfig
 
 
 def parse_args() -> argparse.Namespace:
@@ -140,6 +140,14 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Number of ranks used for VAE patch/tile parallelism (decode/encode).",
     )
+
+    # Profiler arguments
+    parser.add_argument(
+        "--profile-dir",
+        type=str,
+        default=None,
+        help="Directory to save profiling outputs. Enables profiling when set.",
+    )
     return parser.parse_args()
 
 
@@ -185,11 +193,15 @@ def main():
         vae_patch_parallel_size=args.vae_patch_parallel_size,
     )
 
-    # Check if profiling is requested via environment variable
-    profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
+    # Build profiler config from arguments
+    profiler_config = None
+    if args.profile_dir:
+        profiler_config = ProfilerConfig(profiler="torch", torch_profiler_dir=args.profile_dir)
+        print(f"[Profiler] Output dir: {args.profile_dir}")
 
     omni = Omni(
         model=args.model,
+        profiler_config=profiler_config,
         enable_layerwise_offload=args.enable_layerwise_offload,
         layerwise_num_gpu_layers=args.layerwise_num_gpu_layers,
         vae_use_slicing=args.vae_use_slicing,
@@ -202,7 +214,7 @@ def main():
         enable_cpu_offload=args.enable_cpu_offload,
     )
 
-    if profiler_enabled:
+    if profiler_config:
         print("[Profiler] Starting profiling...")
         omni.start_profile()
 
@@ -243,22 +255,10 @@ def main():
     # Print profiling results
     print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
 
-    if profiler_enabled:
+    if profiler_config:
         print("\n[Profiler] Stopping profiler and collecting results...")
-        profile_results = omni.stop_profile()
-        if profile_results and isinstance(profile_results, dict):
-            traces = profile_results.get("traces", [])
-            print("\n" + "=" * 60)
-            print("PROFILING RESULTS:")
-            for rank, trace in enumerate(traces):
-                print(f"\nRank {rank}:")
-                if trace:
-                    print(f"  • Trace: {trace}")
-            if not traces:
-                print("  No traces collected.")
-            print("=" * 60)
-        else:
-            print("[Profiler] No valid profiling data returned.")
+        omni.stop_profile()
+        print("[Profiler] Profiling stopped.")
 
     # Extract images from OmniRequestOutput
     # omni.generate() returns list[OmniRequestOutput], extract images from the first output

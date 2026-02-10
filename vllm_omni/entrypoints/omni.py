@@ -13,9 +13,9 @@ from typing import Any, Literal, overload
 import huggingface_hub
 from omegaconf import OmegaConf
 from tqdm.auto import tqdm
-from vllm import SamplingParams
 from vllm.logger import init_logger
 
+from vllm import SamplingParams
 from vllm_omni.distributed.omni_connectors import (
     get_stage_connector_config,
     initialize_orchestrator_connectors,
@@ -45,6 +45,7 @@ from vllm_omni.model_executor.model_loader.weight_utils import (
     download_weights_from_hf_specific,
 )
 from vllm_omni.outputs import OmniRequestOutput
+from vllm_omni.profiler import ProfilerConfig
 
 logger = init_logger(__name__)
 
@@ -99,6 +100,7 @@ class OmniBase:
 
     Args:
         model: Model name or path to load.
+        profiler_config: Optional profiler configuration for performance/memory profiling.
         **kwargs: Arbitrary keyword arguments.
             - stage_configs_path: Optional path to YAML file containing stage
               configurations. If None, configurations are loaded from the model.
@@ -116,9 +118,18 @@ class OmniBase:
             - Additional keyword arguments passed to stage engines.
     """
 
-    def __init__(self, model: str, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        model: str,
+        *,
+        profiler_config: ProfilerConfig | None = None,
+        **kwargs: Any,
+    ) -> None:
         model = omni_snapshot_download(model)
         kwargs["model"] = model
+
+        # Profiler configuration
+        self._profiler_config = profiler_config
 
         # Stage management attributes
         self.stage_list: list[OmniStage] = []
@@ -338,6 +349,7 @@ class OmniBase:
                 connectors_config=stage_connectors_config,
                 worker_backend=self.worker_backend,
                 ray_placement_group=self._ray_pg,
+                profiler_config=self._profiler_config,
             )
 
             logger.debug(f"[{self._name}] Stage-{stage_id} process started")
@@ -395,21 +407,21 @@ class OmniBase:
     def start_profile(self, stages: list[int] | None = None) -> None:
         """Start profiling for specified stages.
 
-        Sends start_profile command to stage workers. Profiling must be enabled
-        via VLLM_TORCH_PROFILER_DIR environment variable.
+        Uses the ProfilerConfig passed at initialization.
 
         Args:
             stages: List of stage IDs to start profiling. If None, starts
-                profiling for all stages that have profiling enabled.
+                profiling for all stages.
 
         Example:
-            >>> # Profile all stages
+            >>> from vllm_omni.profiler import ProfilerConfig
+            >>> omni = Omni(model="...", profiler_config=ProfilerConfig(
+            ...     profiler="torch",
+            ...     torch_profiler_dir="./profiles",
+            ... ))
             >>> omni.start_profile()
             >>> outputs = omni.generate(prompts, sampling_params)
             >>> omni.stop_profile()
-
-            >>> # Profile only stage 0 and 2
-            >>> omni.start_profile(stages=[0, 2])
         """
         if stages is None:
             stages = list(range(len(self.stage_list)))
@@ -417,8 +429,11 @@ class OmniBase:
         for stage_id in stages:
             if stage_id < len(self.stage_list):
                 try:
-                    self.stage_list[stage_id].submit({"type": OmniStageTaskType.PROFILER_START})
-                    logger.info("[%s] Sent start_profile to stage-%s", self._name, stage_id)
+                    task: dict[str, Any] = {"type": OmniStageTaskType.PROFILER_START}
+                    if self._profiler_config:
+                        task["config"] = self._profiler_config.to_dict()
+                    self.stage_list[stage_id].submit(task)
+                    logger.info("[%s] Started profiling for stage-%s", self._name, stage_id)
                 except Exception as e:
                     logger.warning(
                         "[%s] Failed to send start_profile to stage-%s: %s",
@@ -427,71 +442,26 @@ class OmniBase:
                         e,
                     )
 
-    def stop_profile(self, stages: list[int] | None = None) -> dict:
-        """
-        Synchronously stop profiling for specified stages and collect
-        the file paths for traces and tables.
+    def stop_profile(self, stages: list[int] | None = None) -> None:
+        """Stop profiling for specified stages.
+
+        Trace files are written to ``torch_profiler_dir`` by each worker.
+
+        Args:
+            stages: List of stage IDs to stop profiling. If None, stops
+                profiling for all stages.
         """
         if stages is None:
             stages = list(range(len(self.stage_list)))
 
-        all_results = {"traces": [], "tables": []}
-
         for stage_id in stages:
             if stage_id < len(self.stage_list):
                 stage = self.stage_list[stage_id]
-
-                # Check if the stage object has our new bridge method
                 if hasattr(stage, "stop_profile"):
-                    logger.info("[%s] Requesting profile data collection from stage-%s", self._name, stage_id)
-
-                    # This is the blocking call that triggers the RPC chain
-                    stage_data = stage.stop_profile()
-
-                    if isinstance(stage_data, dict):
-                        # FIX: Handle both single key and list key formats
-                        traces = stage_data.get("trace") or stage_data.get("traces")
-                        tables = stage_data.get("table") or stage_data.get("tables")
-
-                        # Debug logging
-                        logger.debug(f"[{self._name}] Stage-{stage_id} returned: {stage_data.keys()}")
-                        if traces:
-                            logger.debug(f"[{self._name}] Stage-{stage_id} traces type: {type(traces)}")
-                        if tables:
-                            logger.debug(f"[{self._name}] Stage-{stage_id} tables type: {type(tables)}")
-
-                        # Handle single strings
-                        if traces:
-                            if isinstance(traces, str):
-                                all_results["traces"].append(traces)
-                            elif isinstance(traces, list):
-                                all_results["traces"].extend(traces)
-
-                        # Handle single strings
-                        if tables:
-                            if isinstance(tables, str):
-                                all_results["tables"].append(tables)
-                            elif isinstance(tables, list):
-                                all_results["tables"].extend(tables)
-                        else:
-                            logger.warning(f"[{self._name}] Stage-{stage_id} returned no table data")
-                    else:
-                        logger.warning(f"[{self._name}] Stage-{stage_id} returned non-dict data: {type(stage_data)}")
+                    stage.stop_profile()
                 else:
-                    # Fallback for non-diffusion stages
-                    logger.warning(
-                        "[%s] Stage-%s does not support synchronous stop_profile. Falling back to async.",
-                        self._name,
-                        stage_id,
-                    )
                     stage.submit({"type": OmniStageTaskType.PROFILER_STOP})
-
-        # Final debug output
-        logger.info(
-            f"[{self._name}] Collected {len(all_results['traces'])} trace(s) and {len(all_results['tables'])} table(s)"
-        )
-
-        return all_results
+                logger.info("[%s] Stopped profiling for stage-%s", self._name, stage_id)
 
     def close(self) -> None:
         """Close all stage processes and clean up resources."""

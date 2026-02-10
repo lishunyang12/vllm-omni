@@ -5,10 +5,10 @@ from contextlib import ExitStack
 from pathlib import Path
 
 import pytest
-from vllm import SamplingParams
 from vllm.inputs import PromptType
 
 from tests.utils import hardware_test
+from vllm import SamplingParams
 from vllm_omni.entrypoints.async_omni import AsyncOmni
 
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
