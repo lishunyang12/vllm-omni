@@ -117,6 +117,9 @@ ignore = [
     "N812",  # lowercase imported as non-lowercase: functional as F
 ]
 
+[tool.ruff.lint.isort]
+known-third-party = ["vllm"]
+
 [tool.ruff.lint.per-file-ignores]
 "examples/**" = ["E501"]  # Allow long lines in examples
 "tests/**" = ["E501"]  # Allow long lines in tests

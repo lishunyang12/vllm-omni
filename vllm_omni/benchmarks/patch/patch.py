@@ -17,6 +17,7 @@ import aiohttp
 from pydub import AudioSegment
 from tqdm.asyncio import tqdm
 from transformers import PreTrainedTokenizerBase
+from vllm.benchmarks import datasets
 from vllm.benchmarks.datasets import SampleRequest
 from vllm.benchmarks.lib.endpoint_request_func import (
     ASYNC_REQUEST_FUNCS,
@@ -31,10 +32,10 @@ from vllm.benchmarks.lib.endpoint_request_func import (
 )
 from vllm.logger import init_logger
 
-from vllm.benchmarks import datasets
-
 logger = init_logger(__name__)
-from vllm_omni.benchmarks.data_modules.random_multi_modal_dataset import OmniRandomMultiModalDataset
+from vllm_omni.benchmarks.data_modules.random_multi_modal_dataset import (
+    OmniRandomMultiModalDataset,
+)
 
 get_samples_old = datasets.get_samples
 
@@ -202,10 +203,18 @@ if "openai-chat-omni" not in OPENAI_COMPATIBLE_BACKENDS:
 
 # ruff: noqa: E402
 # Prevent import order from causing patch failures
-from vllm.benchmarks.serve import TaskType, calculate_metrics_for_embeddings, get_request, wait_for_endpoint
-
 from vllm.benchmarks import serve
-from vllm_omni.benchmarks.metrics.metrics import MultiModalsBenchmarkMetrics, calculate_metrics
+from vllm.benchmarks.serve import (
+    TaskType,
+    calculate_metrics_for_embeddings,
+    get_request,
+    wait_for_endpoint,
+)
+
+from vllm_omni.benchmarks.metrics.metrics import (
+    MultiModalsBenchmarkMetrics,
+    calculate_metrics,
+)
 
 # ruff: noqa: E402
 

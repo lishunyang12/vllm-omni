@@ -24,6 +24,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from PIL import Image
 from starlette.datastructures import State
 from starlette.routing import Route
+from vllm import SamplingParams
 from vllm.engine.protocol import EngineClient
 from vllm.entrypoints.anthropic.serving import AnthropicServingMessages
 from vllm.entrypoints.chat_utils import load_chat_template
@@ -73,7 +74,6 @@ from vllm.tasks import POOLING_TASKS
 from vllm.tool_parsers import ToolParserManager
 from vllm.utils.system_utils import decorate_logs
 
-from vllm import SamplingParams
 from vllm_omni.entrypoints.async_omni import AsyncOmni
 from vllm_omni.entrypoints.openai.image_api_utils import (
     encode_image_base64,
@@ -87,7 +87,11 @@ from vllm_omni.entrypoints.openai.protocol.images import (
 )
 from vllm_omni.entrypoints.openai.serving_chat import OmniOpenAIServingChat
 from vllm_omni.entrypoints.openai.serving_speech import OmniOpenAIServingSpeech
-from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniSamplingParams, OmniTextPrompt
+from vllm_omni.inputs.data import (
+    OmniDiffusionSamplingParams,
+    OmniSamplingParams,
+    OmniTextPrompt,
+)
 from vllm_omni.lora.request import LoRARequest
 from vllm_omni.lora.utils import stable_lora_int_id
 
@@ -216,7 +220,9 @@ async def omni_run_server_worker(listen_address, sock, args, client_config=None,
         _remove_route_from_router(app, "/start_profile", {"POST"})
         _remove_route_from_router(app, "/stop_profile", {"POST"})
 
-        from vllm_omni.entrypoints.serve.profile.api_router import attach_router as attach_profile_router
+        from vllm_omni.entrypoints.serve.profile.api_router import (
+            attach_router as attach_profile_router,
+        )
 
         attach_profile_router(app)
 

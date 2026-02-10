@@ -13,9 +13,9 @@ from typing import Any, Literal, overload
 import huggingface_hub
 from omegaconf import OmegaConf
 from tqdm.auto import tqdm
+from vllm import SamplingParams
 from vllm.logger import init_logger
 
-from vllm import SamplingParams
 from vllm_omni.distributed.omni_connectors import (
     get_stage_connector_config,
     initialize_orchestrator_connectors,
@@ -39,7 +39,11 @@ from vllm_omni.entrypoints.utils import (
     load_stage_configs_from_yaml,
     resolve_model_config_path,
 )
-from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniPromptType, OmniSamplingParams
+from vllm_omni.inputs.data import (
+    OmniDiffusionSamplingParams,
+    OmniPromptType,
+    OmniSamplingParams,
+)
 from vllm_omni.metrics import OrchestratorAggregator, StageRequestStats
 from vllm_omni.model_executor.model_loader.weight_utils import (
     download_weights_from_hf_specific,

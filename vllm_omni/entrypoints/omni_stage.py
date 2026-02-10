@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 if TYPE_CHECKING:
     from vllm_omni.profiler import ProfilerConfig
 
+from vllm import PromptType, RequestOutput
 from vllm.inputs import TextPrompt
 from vllm.inputs.preprocess import InputPreprocessor
 from vllm.logger import init_logger
@@ -33,7 +34,6 @@ from vllm.v1.engine import EngineCoreOutput
 from vllm.v1.engine.async_llm import AsyncLLM
 from vllm.v1.engine.llm_engine import LLMEngine
 
-from vllm import PromptType, RequestOutput
 from vllm_omni.diffusion.data import OmniDiffusionConfig
 from vllm_omni.distributed.omni_connectors import build_stage_connectors
 from vllm_omni.distributed.omni_connectors.adapter import try_recv_via_connector
@@ -52,7 +52,12 @@ from vllm_omni.entrypoints.stage_utils import (
     maybe_dump_to_shm,
     set_stage_devices,
 )
-from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniPromptType, OmniSamplingParams, OmniTokensPrompt
+from vllm_omni.inputs.data import (
+    OmniDiffusionSamplingParams,
+    OmniPromptType,
+    OmniSamplingParams,
+    OmniTokensPrompt,
+)
 from vllm_omni.metrics import count_tokens_from_outputs
 from vllm_omni.outputs import OmniRequestOutput
 

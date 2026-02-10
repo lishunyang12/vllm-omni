@@ -12,9 +12,9 @@ import soundfile as sf
 
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
+from vllm import SamplingParams
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
-from vllm import SamplingParams
 from vllm_omni import Omni
 from vllm_omni.profiler import ProfilerConfig
 
