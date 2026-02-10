@@ -4,6 +4,7 @@
 import logging
 import uuid
 from collections.abc import Sequence
+from typing import Any
 
 from vllm.logger import init_logger
 from vllm.transformers_utils.config import get_hf_file_to_dict
@@ -42,7 +43,7 @@ class OmniDiffusion:
         self,
         od_config: OmniDiffusionConfig | None = None,
         profiler_config: ProfilerConfig | None = None,
-        **kwargs,
+        **kwargs: Any,
     ):
         self._profiler_config = profiler_config
 
