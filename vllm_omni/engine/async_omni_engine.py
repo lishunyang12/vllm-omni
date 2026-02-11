@@ -12,11 +12,13 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import threading
+import time as _time
 from dataclasses import dataclass, field
 from typing import Any
 
+import torch
 from omegaconf import OmegaConf
-from vllm.config import VllmConfig
+from vllm.config import ModelConfig, VllmConfig
 from vllm.inputs import PromptType
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
@@ -26,6 +28,12 @@ from vllm.tokenizers import TokenizerLike, cached_tokenizer_from_config
 from vllm.v1.engine import EngineCoreRequest
 
 from vllm_omni.distributed.omni_connectors import initialize_orchestrator_connectors
+from vllm_omni.engine import (
+    AdditionalInformationEntry,
+    AdditionalInformationPayload,
+    OmniEngineCoreRequest,
+    PromptEmbedsPayload,
+)
 from vllm_omni.engine.input_processor import OmniInputProcessor
 from vllm_omni.engine.output_processor import MultimodalOutputProcessor
 from vllm_omni.engine.stage_async_core_client import StageAsyncCoreClient
@@ -44,6 +52,91 @@ from vllm_omni.entrypoints.utils import (
 )
 
 logger = init_logger(__name__)
+
+
+def _build_engine_core_request_from_tokens(
+    request_id: str,
+    prompt: dict[str, Any],
+    params: SamplingParams | PoolingParams,
+    arrival_time: float | None = None,
+    model_config: ModelConfig | None = None,
+) -> OmniEngineCoreRequest:
+    """Build an OmniEngineCoreRequest directly from an OmniTokensPrompt.
+
+    Lightweight alternative to the full InputProcessor pipeline — skips
+    tokenization, multimodal preprocessing, LoRA validation, and platform
+    validation.  Intended for stage 1+ where the upstream stage has already
+    produced token IDs and optional embeddings.
+    """
+    if arrival_time is None:
+        arrival_time = _time.time()
+
+    prompt_token_ids = prompt["prompt_token_ids"]
+
+    # Clone params and set max_tokens if needed
+    sampling_params = None
+    pooling_params = None
+    if isinstance(params, SamplingParams):
+        sampling_params = params.clone()
+        if sampling_params.max_tokens is None and model_config is not None:
+            sampling_params.max_tokens = (
+                model_config.max_model_len - len(prompt_token_ids)
+            )
+    else:
+        pooling_params = params.clone()
+
+    # Serialize prompt_embeds if present
+    prompt_embeds_payload: PromptEmbedsPayload | None = None
+    pe: torch.Tensor | None = prompt.get("prompt_embeds")
+    if pe is not None:
+        pe_cpu = pe.detach().to("cpu").contiguous()
+        prompt_embeds_payload = PromptEmbedsPayload(
+            data=pe_cpu.numpy().tobytes(),
+            shape=list(pe_cpu.shape),
+            dtype=OmniInputProcessor._dtype_to_name(pe_cpu.dtype),
+        )
+
+    # Serialize additional_information if present
+    additional_info_payload: AdditionalInformationPayload | None = None
+    raw_info: dict[str, Any] | None = prompt.get("additional_information")
+    if raw_info is not None:
+        entries: dict[str, AdditionalInformationEntry] = {}
+        for key, value in raw_info.items():
+            if isinstance(value, torch.Tensor):
+                v_cpu = value.detach().to("cpu").contiguous()
+                entries[key] = AdditionalInformationEntry(
+                    tensor_data=v_cpu.numpy().tobytes(),
+                    tensor_shape=list(v_cpu.shape),
+                    tensor_dtype=OmniInputProcessor._dtype_to_name(v_cpu.dtype),
+                )
+            elif isinstance(value, list):
+                entries[key] = AdditionalInformationEntry(list_data=value)
+            else:
+                logger.warning(
+                    "[_build_engine_core_request_from_tokens] req=%s "
+                    "skipping unsupported type key=%s type=%s",
+                    request_id, key, type(value).__name__,
+                )
+        additional_info_payload = AdditionalInformationPayload(entries=entries)
+
+    eos_token_id = None
+    if model_config is not None and hasattr(model_config, "hf_config"):
+        eos_token_id = getattr(model_config.hf_config, "eos_token_id", None)
+
+    return OmniEngineCoreRequest(
+        request_id=request_id,
+        prompt_token_ids=prompt_token_ids,
+        mm_features=None,
+        sampling_params=sampling_params,
+        pooling_params=pooling_params,
+        eos_token_id=eos_token_id,
+        arrival_time=arrival_time,
+        lora_request=None,
+        cache_salt=None,
+        data_parallel_rank=None,
+        prompt_embeds=prompt_embeds_payload,
+        additional_information=additional_info_payload,
+    )
 
 
 # ============================================================
@@ -447,9 +540,13 @@ class _Orchestrator:
                     stage_id - 1,
                 )
 
-        # Process inputs
+        # Process inputs — two paths depending on stage
         prompt_text: str | None = None
-        if not isinstance(prompt, EngineCoreRequest):
+        if isinstance(prompt, EngineCoreRequest):
+            # Already a fully-formed request (rare, but supported)
+            request = prompt
+        elif stage_id == 0:
+            # Path A: Stage 0 — full InputProcessor (tokenization, mm, etc.)
             if stage_input_processor is None:
                 raise ValueError(
                     f"Stage {stage_id} has no input processor"
@@ -463,7 +560,17 @@ class _Orchestrator:
             request = processed
             prompt_text = prompt
         else:
-            request = prompt
+            # Path B: Stage 1+ — lightweight conversion from OmniTokensPrompt
+            request = _build_engine_core_request_from_tokens(
+                request_id=request_id,
+                prompt=prompt,
+                params=params,
+                arrival_time=arrival_time,
+                model_config=self.stage_vllm_configs[stage_id].model_config,
+            )
+            # Keep original prompt for output processor (it reads
+            # prompt fields like "addition_information" later).
+            prompt_text = prompt
 
         stage_input_processor.assign_request_id(request)
         request.request_id = request_id
