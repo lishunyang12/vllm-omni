@@ -25,9 +25,18 @@ from vllm.sampling_params import SamplingParams
 from vllm.tokenizers import TokenizerLike, cached_tokenizer_from_config
 from vllm.v1.engine import EngineCoreRequest
 
+from vllm_omni.distributed.omni_connectors import initialize_orchestrator_connectors
 from vllm_omni.engine.input_processor import OmniInputProcessor
 from vllm_omni.engine.output_processor import MultimodalOutputProcessor
 from vllm_omni.engine.stage_async_core_client import StageAsyncCoreClient
+from vllm_omni.engine.stage_init import (
+    acquire_device_locks,
+    build_vllm_config,
+    extract_stage_metadata,
+    prepare_engine_environment,
+    release_device_locks,
+    setup_stage_devices,
+)
 from vllm_omni.entrypoints.utils import (
     load_stage_configs_from_model,
     load_stage_configs_from_yaml,
@@ -91,20 +100,61 @@ class _Orchestrator:
         self._shutdown_event = asyncio.Event()
 
         self._initialize_stages()
-        self._initialize_connectors()
 
     def _initialize_stages(self) -> None:
-        """Initialize all stage clients and their processors."""
+        """Initialize all stage clients and their processors sequentially.
+
+        Performs one-time environment setup, initializes connectors,
+        then for each stage: extracts metadata, sets up devices, builds
+        vllm config, acquires device locks, creates the client, and
+        builds tokenizer / input / output processors.
+        """
+        from vllm_omni.entrypoints.stage_utils import _to_dict
+
+        # One-time global setup
+        prepare_engine_environment()
+
+        # Initialize connectors once
+        try:
+            config_path = resolve_model_config_path(self.model)
+            omni_transfer_config, connectors = initialize_orchestrator_connectors(
+                config_path,
+                worker_backend="multi_process",
+                shm_threshold_bytes=65536,
+            )
+            self.omni_transfer_config = omni_transfer_config
+            self.connectors = connectors
+            if connectors:
+                logger.info(
+                    f"[Orchestrator] Initialized {len(connectors)} connectors"
+                )
+        except Exception as e:
+            logger.warning(f"[Orchestrator] Failed to initialize connectors: {e}")
+            self.omni_transfer_config = None
+            self.connectors = {}
+
+        # Per-stage initialization
         for stage_id, stage_cfg in enumerate(self.stage_configs):
             logger.info(f"[Orchestrator] Initializing stage {stage_id}")
 
-            stage_client = StageAsyncCoreClient(
-                stage_config=stage_cfg,
-                model=self.model,
-                stage_init_timeout=self.stage_init_timeout,
+            metadata = extract_stage_metadata(stage_cfg)
+            setup_stage_devices(stage_id, metadata.runtime_cfg)
+            vllm_config, executor_class = build_vllm_config(stage_cfg, self.model)
+
+            engine_args_dict = _to_dict(stage_cfg.engine_args)
+            engine_args_dict["model"] = self.model
+            lock_fds = acquire_device_locks(
+                stage_id, engine_args_dict, self.stage_init_timeout
             )
 
-            vllm_config = stage_client.vllm_config
+            try:
+                stage_client = StageAsyncCoreClient(
+                    vllm_config=vllm_config,
+                    executor_class=executor_class,
+                    metadata=metadata,
+                )
+            finally:
+                release_device_locks(lock_fds)
 
             if vllm_config.model_config.skip_tokenizer_init:
                 tokenizer = None
@@ -112,10 +162,6 @@ class _Orchestrator:
                 tokenizer = cached_tokenizer_from_config(
                     model_config=vllm_config.model_config
                 )
-
-            engine_output_type = getattr(
-                stage_cfg.engine_args, "engine_output_type", None
-            )
 
             stage_input_processor = OmniInputProcessor(
                 vllm_config=vllm_config,
@@ -125,7 +171,7 @@ class _Orchestrator:
             stage_output_processor = MultimodalOutputProcessor(
                 tokenizer=tokenizer,
                 log_stats=False,
-                engine_core_output_type=engine_output_type,
+                engine_core_output_type=metadata.engine_output_type,
             )
 
             self.stage_clients.append(stage_client)
@@ -135,31 +181,6 @@ class _Orchestrator:
             self.stage_vllm_configs.append(vllm_config)
 
             logger.info(f"[Orchestrator] Stage {stage_id} initialized")
-
-    def _initialize_connectors(self) -> None:
-        """Initialize connectors for cross-stage data transfer."""
-        try:
-            from vllm_omni.distributed.omni_connectors import (
-                initialize_orchestrator_connectors,
-            )
-
-            config_path = resolve_model_config_path(self.model)
-            omni_transfer_config, connectors = initialize_orchestrator_connectors(
-                config_path,
-                worker_backend="multi_process",
-                shm_threshold_bytes=65536,
-            )
-            self.omni_transfer_config = omni_transfer_config
-            self.connectors = connectors
-
-            if connectors:
-                logger.info(
-                    f"[Orchestrator] Initialized {len(connectors)} connectors"
-                )
-        except Exception as e:
-            logger.warning(f"[Orchestrator] Failed to initialize connectors: {e}")
-            self.omni_transfer_config = None
-            self.connectors = {}
 
     async def run(self) -> None:
         """Main entry point for the Orchestrator event loop."""
@@ -183,10 +204,36 @@ class _Orchestrator:
         })
 
         logger.info("[Orchestrator] Ready signal sent, starting event loop")
-        await asyncio.gather(
-            self._request_handler(),
-            self._output_handler(),
+
+        request_task = asyncio.create_task(
+            self._request_handler(), name="orchestrator-request-handler"
         )
+        output_task = asyncio.create_task(
+            self._output_handler(), name="orchestrator-output-handler"
+        )
+
+        try:
+            # _request_handler exits on shutdown; once it's done, cancel
+            # the output handler so we don't leave dangling wait_for tasks.
+            await request_task
+        finally:
+            output_task.cancel()
+            try:
+                await output_task
+            except asyncio.CancelledError:
+                pass
+
+            # Cancel any remaining tasks spawned by wait_for / gather so
+            # the event loop can close cleanly without "pending task" errors.
+            loop = asyncio.get_running_loop()
+            pending = [
+                t for t in asyncio.all_tasks(loop)
+                if t is not asyncio.current_task() and not t.done()
+            ]
+            for t in pending:
+                t.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
 
     async def _request_handler(self) -> None:
         """Read messages from the main thread via request_queue."""
@@ -208,6 +255,14 @@ class _Orchestrator:
 
     async def _output_handler(self) -> None:
         """Poll all stages, handle transfers, send final outputs to main."""
+        try:
+            await self._output_handler_loop()
+        except asyncio.CancelledError:
+            logger.debug("[Orchestrator] _output_handler cancelled")
+            return
+
+    async def _output_handler_loop(self) -> None:
+        """Inner loop for _output_handler (separated for clean cancellation)."""
         while not self._shutdown_event.is_set():
             idle = True
             for stage_id in range(self.num_stages):
@@ -219,6 +274,8 @@ class _Orchestrator:
                     )
                 except asyncio.TimeoutError:
                     continue
+                except asyncio.CancelledError:
+                    raise
                 except Exception:
                     if self._shutdown_event.is_set():
                         return
