@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from __future__ import annotations
+
 from collections.abc import Iterable
 from functools import lru_cache
 from math import prod
@@ -402,7 +404,7 @@ class ColumnParallelApproxGELU(nn.Module):
         *,
         approximate: str,
         bias: bool = True,
-        quant_config: "QuantizationConfig | None" = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
         super().__init__()
@@ -431,7 +433,7 @@ class FeedForward(nn.Module):
         activation_fn: str = "gelu-approximate",
         inner_dim: int | None = None,
         bias: bool = True,
-        quant_config: "QuantizationConfig | None" = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
         super().__init__()
@@ -478,7 +480,7 @@ class QwenImageCrossAttention(nn.Module):
         pre_only: bool = False,
         context_pre_only: bool = False,
         out_dim: int | None = None,
-        quant_config: "QuantizationConfig | None" = None,
+        quant_config: QuantizationConfig | None = None,
     ) -> None:
         super().__init__()
         assert dim % num_heads == 0
@@ -668,7 +670,7 @@ class QwenImageTransformerBlock(nn.Module):
         qk_norm: str = "rms_norm",
         eps: float = 1e-6,
         zero_cond_t: bool = False,
-        quant_config: "QuantizationConfig | None" = None,
+        quant_config: QuantizationConfig | None = None,
     ):
         super().__init__()
 
@@ -895,7 +897,7 @@ class QwenImageTransformer2DModel(CachedTransformer):
         zero_cond_t: bool = False,
         use_additional_t_cond: bool = False,
         use_layer3d_rope: bool = False,
-        quant_config: "QuantizationConfig | None" = None,
+        quant_config: QuantizationConfig | None = None,
     ):
         super().__init__()
         self.parallel_config = od_config.parallel_config

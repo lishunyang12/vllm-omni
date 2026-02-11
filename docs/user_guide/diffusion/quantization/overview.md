@@ -6,13 +6,12 @@ vLLM-Omni supports quantization of DiT linear layers to reduce memory usage and 
 
 | Method | Guide |
 |--------|-------|
-| FP8 | [Online FP8](fp8_online.md) |
+| FP8 | [FP8](fp8.md) |
 
 ## Device Compatibility
 
 | GPU Generation | Example GPUs | FP8 Mode |
 |---------------|-------------------|----------|
-| Turing (SM 75+) | T4, RTX 2080 | Weight-only via Marlin kernel |
 | Ada/Hopper (SM 89+) | RTX 4090, H100, H200 | Full W8A8 with native hardware |
 
 Kernel selection is automatic.

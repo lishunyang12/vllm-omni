@@ -45,7 +45,7 @@ nav:
       - Cache-DiT: user_guide/diffusion/cache_dit_acceleration.md
       - Quantization:
         - Overview: user_guide/diffusion/quantization/overview.md
-        - Online FP8: user_guide/diffusion/quantization/fp8_online.md
+        - FP8: user_guide/diffusion/quantization/fp8.md
       - Parallelism Acceleration: user_guide/diffusion/parallelism_acceleration.md
       - CPU Offloading: user_guide/diffusion/cpu_offload_diffusion.md
     - ComfyUI: features/comfyui.md

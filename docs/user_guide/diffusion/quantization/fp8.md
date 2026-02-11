@@ -1,8 +1,8 @@
-# Online FP8 Quantization
+# FP8 Quantization
 
 ## Overview
 
-Online FP8 converts BF16/FP16 weights to FP8 at model load time. No calibration or pre-quantized checkpoint needed.
+FP8 quantization converts BF16/FP16 weights to FP8 at model load time. No calibration or pre-quantized checkpoint needed.
 
 Depending on the model, either all layers can be quantized, or some sensitive layers should stay in BF16. See the [per-model table](#supported-models) for which case applies.
 
