@@ -6,6 +6,8 @@ Online FP8 converts BF16/FP16 weights to FP8 at model load time. No calibration 
 
 Depending on the model, either all layers can be quantized, or some sensitive layers should stay in BF16. See the [per-model table](#supported-models) for which case applies.
 
+Common sensitive layers in DiT-based diffusion models include **image-stream MLPs** (`img_mlp`). These are particularly vulnerable to FP8 precision loss because they process denoising latents whose dynamic range shifts significantly across timesteps, and unlike attention projections (which benefit from QK-Norm stabilization), MLPs have no built-in normalization to absorb quantization error. In deep architectures (e.g., 60+ residual blocks), small per-layer errors compound and degrade output quality. Other layers such as **attention projections** (`to_qkv`, `to_out`) and **text-stream MLPs** (`txt_mlp`) are generally more robust due to normalization or more stable input statistics.
+
 ## Configuration
 
 1. **Python API**: set `quantization="fp8"`. To skip sensitive layers, use `quantization_config` with `ignored_layers`.
