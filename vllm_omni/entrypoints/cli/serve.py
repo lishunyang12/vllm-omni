@@ -137,6 +137,16 @@ class OmniServeCommand(CLISubcommand):
             help="The address of the Ray cluster to connect to.",
         )
 
+        # Independent stage launch support
+        omni_config_group.add_argument(
+            "--stage-id",
+            type=int,
+            default=None,
+            help="Launch only the specified stage ID for distributed deployments. "
+            "Use this when deploying stages independently across nodes. "
+            "Example: --stage-id 0 launches only the first stage.",
+        )
+
         # Diffusion model specific arguments
         omni_config_group.add_argument(
             "--num-gpus",

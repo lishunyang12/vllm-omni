@@ -4,11 +4,11 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
-from omegaconf import OmegaConf
 from vllm.logger import init_logger
 from vllm.transformers_utils.config import get_config, get_hf_file_to_dict
 from vllm.transformers_utils.repo_utils import file_or_path_exists
 
+from vllm_omni.config.yaml_util import create_config, load_yaml_raw, merge_configs
 from vllm_omni.entrypoints.stage_utils import _to_dict
 from vllm_omni.platforms import current_omni_platform
 
@@ -215,17 +215,17 @@ def load_stage_configs_from_yaml(config_path: str, base_engine_args: dict | None
     """
     if base_engine_args is None:
         base_engine_args = {}
-    config_data = OmegaConf.load(config_path)
+    config_data = load_yaml_raw(config_path)
     stage_args = config_data.stage_args
     global_async_chunk = config_data.get("async_chunk", False)
-    # Convert any nested dataclass objects to dicts before creating OmegaConf
+    # Convert any nested dataclass objects to dicts before creating DictConfig
     base_engine_args = _convert_dataclasses_to_dict(base_engine_args)
-    base_engine_args = OmegaConf.create(base_engine_args)
+    base_engine_args = create_config(base_engine_args)
     for stage_arg in stage_args:
         base_engine_args_tmp = base_engine_args.copy()
         # Update base_engine_args with stage-specific engine_args if they exist
         if hasattr(stage_arg, "engine_args") and stage_arg.engine_args is not None:
-            base_engine_args_tmp = OmegaConf.merge(base_engine_args_tmp, stage_arg.engine_args)
+            base_engine_args_tmp = create_config(merge_configs(base_engine_args_tmp, stage_arg.engine_args))
         stage_type = getattr(stage_arg, "stage_type", "llm")
         if hasattr(stage_arg, "runtime") and stage_arg.runtime is not None and stage_type != "diffusion":
             runtime_cfg = stage_arg.runtime
@@ -234,6 +234,33 @@ def load_stage_configs_from_yaml(config_path: str, base_engine_args: dict | None
             base_engine_args_tmp.async_chunk = global_async_chunk
         stage_arg.engine_args = base_engine_args_tmp
     return stage_args
+
+
+def extract_runtime_overrides(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Extract Tier-2 runtime parameters from kwargs.
+
+    All CLI arguments registered by engine config classes are accepted,
+    not just the well-known set in ``StageConfigFactory.RUNTIME_PARAMS``.
+    Internal / orchestrator-only keys are excluded automatically.
+
+    Args:
+        kwargs: Dictionary of keyword arguments from CLI/API.
+
+    Returns:
+        Dictionary containing the Tier-2 runtime parameters that were
+        explicitly set (non-None values).
+    """
+    from vllm_omni.config.stage_config import StageConfigFactory
+
+    result: dict[str, Any] = {}
+
+    for key, value in kwargs.items():
+        if key in StageConfigFactory._INTERNAL_KEYS:
+            continue
+        if value is not None:
+            result[key] = value
+
+    return result
 
 
 def get_final_stage_id_for_e2e(

@@ -21,6 +21,7 @@ from vllm.assets.video import VideoAsset, video_to_ndarrays
 from vllm.multimodal.image import convert_image_mode
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
+# Import StageConfigFactory for Tier-2 CLI override testing
 from vllm_omni.entrypoints.omni import Omni
 
 SEED = 42
@@ -325,11 +326,30 @@ def main(args):
     else:
         query_result = query_func()
 
+    # Build kwargs with Tier-2 CLI overrides
+    omni_kwargs = {
+        "stage_configs_path": args.stage_configs_path,
+        "log_stats": args.log_stats,
+        "stage_init_timeout": args.stage_init_timeout,
+    }
+
+    # Add Tier-2 CLI overrides if specified
+    if args.gpu_memory_utilization is not None:
+        omni_kwargs["gpu_memory_utilization"] = args.gpu_memory_utilization
+    if args.tensor_parallel_size is not None:
+        omni_kwargs["tensor_parallel_size"] = args.tensor_parallel_size
+    if args.devices is not None:
+        omni_kwargs["devices"] = args.devices
+    if args.enforce_eager:
+        omni_kwargs["enforce_eager"] = args.enforce_eager
+    if args.trust_remote_code:
+        omni_kwargs["trust_remote_code"] = args.trust_remote_code
+    if args.stage_id is not None:
+        omni_kwargs["stage_id"] = args.stage_id
+
     omni_llm = Omni(
         model=model_name,
-        stage_configs_path=args.stage_configs_path,
-        log_stats=args.log_stats,
-        stage_init_timeout=args.stage_init_timeout,
+        **omni_kwargs,
     )
 
     thinker_sampling_params = SamplingParams(
@@ -490,6 +510,12 @@ def parse_args():
         help="[Deprecated] Output wav directory (use --output-dir).",
     )
     parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Output directory for generated files (text and audio).",
+    )
+    parser.add_argument(
         "--num-prompts",
         type=int,
         default=1,
@@ -505,7 +531,44 @@ def parse_args():
         "--stage-configs-path",
         type=str,
         default=None,
-        help="Path to a stage configs file.",
+        help="Path to a stage configs file. If not specified, uses auto-detected Tier-1 topology.",
+    )
+    # Tier-2 CLI override arguments
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=None,
+        help="GPU memory utilization for all stages (Tier-2 override). Example: 0.9",
+    )
+    parser.add_argument(
+        "--tensor-parallel-size",
+        type=int,
+        default=None,
+        help="Tensor parallel size for all stages (Tier-2 override). Example: 2",
+    )
+    parser.add_argument(
+        "--devices",
+        type=str,
+        default=None,
+        help="Device assignment for stages (Tier-2 override). Example: '0,1'",
+    )
+    parser.add_argument(
+        "--enforce-eager",
+        action="store_true",
+        default=False,
+        help="Enforce eager mode for all stages (Tier-2 override).",
+    )
+    parser.add_argument(
+        "--trust-remote-code",
+        action="store_true",
+        default=False,
+        help="Trust remote code for model loading (Tier-2 override).",
+    )
+    parser.add_argument(
+        "--stage-id",
+        type=int,
+        default=None,
+        help="Launch only the specified stage ID for independent stage testing.",
     )
     parser.add_argument(
         "--video-path",

@@ -10,11 +10,12 @@ from collections.abc import Callable, Generator, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Literal, overload
 
-from omegaconf import OmegaConf
 from tqdm.auto import tqdm
 from vllm import SamplingParams
 from vllm.logger import init_logger
 
+from vllm_omni.config.stage_config import StageConfigFactory
+from vllm_omni.config.yaml_util import create_config
 from vllm_omni.distributed.omni_connectors import (
     get_stage_connector_config,
     initialize_orchestrator_connectors,
@@ -147,43 +148,29 @@ class OmniBase:
             cache_config = self._get_default_cache_config(cache_backend)
         return cache_config
 
-    def _create_default_diffusion_stage_cfg(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """Create default diffusion stage configuration."""
-        # We temporally create a default config for diffusion stage.
-        # In the future, we should merge the default config with the user-provided config.
-        # TODO: hack, convert dtype to string to avoid non-premitive omegaconf create error.
-        if "dtype" in kwargs:
-            kwargs["dtype"] = str(kwargs["dtype"])
+    def _create_default_diffusion_stage_cfg(self, kwargs: dict[str, Any]) -> list[dict[str, Any]]:
+        """Create default diffusion stage configuration.
+
+        Uses StageConfigFactory for typed configuration creation while
+        maintaining backward compatibility with the legacy format.
+
+        Args:
+            kwargs: Engine arguments from CLI/API.
+
+        Returns:
+            List containing a single OmegaConf config for the diffusion stage.
+        """
+        # Normalize cache config before passing to factory
         cache_backend = kwargs.get("cache_backend", "none")
         cache_config = self._normalize_cache_config(cache_backend, kwargs.get("cache_config", None))
-        # TODO: hack, calculate devices based on parallel config.
-        devices = "0"
-        if "parallel_config" in kwargs:
-            num_devices = kwargs["parallel_config"].world_size
-            for i in range(1, num_devices):
-                devices += f",{i}"
-        default_stage_cfg = [
-            {
-                "stage_id": 0,
-                "stage_type": "diffusion",
-                "runtime": {
-                    "process": True,
-                    "devices": devices,
-                    "max_batch_size": 1,
-                },
-                "engine_args": OmegaConf.create(
-                    {
-                        **kwargs,
-                        "cache_backend": cache_backend,
-                        "cache_config": cache_config,
-                    }
-                ),
-                "final_output": True,
-                "final_output_type": "image",
-            }
-        ]
-        default_stage_cfg[0]["engine_args"]["model_stage"] = "diffusion"
-        return default_stage_cfg
+
+        # Update kwargs with normalized values
+        kwargs_copy = dict(kwargs)
+        kwargs_copy["cache_backend"] = cache_backend
+        kwargs_copy["cache_config"] = cache_config
+
+        # Use the factory to create default diffusion config
+        return StageConfigFactory.create_default_diffusion(kwargs_copy)
 
     def _initialize_stages(self, model: str, kwargs: dict[str, Any]) -> None:
         """Initialize stage list management."""
@@ -195,6 +182,7 @@ class OmniBase:
         batch_timeout = kwargs.get("batch_timeout", 10)
         stage_configs_path = kwargs.get("stage_configs_path", None)
         log_stats = kwargs.get("log_stats", False)
+        stage_id = kwargs.get("stage_id", None)  # For independent stage launch
 
         ### base engine args
         tokenizer = kwargs.get("tokenizer", None)
@@ -207,10 +195,27 @@ class OmniBase:
             self.stage_configs = load_stage_configs_from_model(model, base_engine_args=base_engine_args)
             if not self.stage_configs:
                 default_stage_cfg = self._create_default_diffusion_stage_cfg(kwargs)
-                self.stage_configs = OmegaConf.create(default_stage_cfg)
+                self.stage_configs = create_config(default_stage_cfg)
         else:
             self.config_path = stage_configs_path
             self.stage_configs = load_stage_configs_from_yaml(stage_configs_path, base_engine_args=base_engine_args)
+
+        # Filter stages if --stage-id is specified (for independent launch).
+        # NOTE: In independent launch mode the filtered stage occupies list
+        # index 0 regardless of its original stage_id.  This is intentional
+        # because the stage runs in isolation without cross-stage connectors.
+        if stage_id is not None:
+            filtered_configs = [cfg for cfg in self.stage_configs if getattr(cfg, "stage_id", None) == stage_id]
+            if not filtered_configs:
+                logger.warning(
+                    f"Stage ID {stage_id} not found in configs. Available IDs: "
+                    f"{[getattr(cfg, 'stage_id', None) for cfg in self.stage_configs]}"
+                )
+            else:
+                logger.info(f"Independent launch mode: loading only stage {stage_id}")
+                self.stage_configs = (
+                    create_config(filtered_configs) if isinstance(filtered_configs[0], dict) else filtered_configs
+                )
 
         # Inject diffusion LoRA-related knobs from kwargs if not present in the stage config.
         for cfg in self.stage_configs:
@@ -218,7 +223,7 @@ class OmniBase:
                 if getattr(cfg, "stage_type", None) != "diffusion":
                     continue
                 if not hasattr(cfg, "engine_args") or cfg.engine_args is None:
-                    cfg.engine_args = OmegaConf.create({})
+                    cfg.engine_args = create_config({})
                 if kwargs.get("lora_path") is not None:
                     if not hasattr(cfg.engine_args, "lora_path") or cfg.engine_args.lora_path is None:
                         cfg.engine_args.lora_path = kwargs["lora_path"]
