@@ -97,6 +97,9 @@ class FlashAttentionImpl(AttentionImpl):
         attn_metadata: AttentionMetadata = None,
     ) -> torch.Tensor:
         """CUDA/ROCm flash attention implementation."""
+        # Dispatch to FP8 path if K/V are quantized
+        if key.dtype == torch.float8_e4m3fn:
+            return self._forward_fp8(query, key, value, attn_metadata)
         from vllm_omni.diffusion.attention.backends.utils.fa import (
             HAS_FLASH_ATTN,
             flash_attn_func,
@@ -209,3 +212,63 @@ class FlashAttentionImpl(AttentionImpl):
             layout="BNSD",
         )
         return output
+
+    def _forward_fp8(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_metadata: AttentionMetadata,
+    ) -> torch.Tensor:
+        """FP8 KV attention path: native FA3 or dequant fallback.
+
+        When an attention mask with padding is present, we dequantize and
+        fall through to the standard varlen path to avoid bypassing the
+        mask (FA3's varlen API does not support descale_k/descale_v).
+        """
+        from vllm_omni.quantization.kv_quant import dequantize_fp8
+
+        k_scale = attn_metadata.k_scale
+        v_scale = attn_metadata.v_scale
+
+        attention_mask = attn_metadata.attn_mask if attn_metadata is not None else None
+        has_padding = attention_mask is not None and torch.any(~attention_mask)
+
+        # If padding is present, dequant and use the standard masked path
+        if has_padding:
+            key = dequantize_fp8(key, k_scale, query.dtype)
+            value = dequantize_fp8(value, v_scale, query.dtype)
+            attn_metadata.k_scale = None
+            attn_metadata.v_scale = None
+            return self.forward_cuda(query, key, value, attn_metadata)
+
+        # Try FA3 native FP8 (Hopper / Ada / Ampere via fa3-fwd)
+        from vllm_omni.diffusion.attention.backends.ring.ring_globals import (
+            HAS_FA3,
+            fa3_attn_func,
+        )
+
+        if HAS_FA3 and fa3_attn_func is not None:
+            out = fa3_attn_func(
+                query,
+                key,
+                value,
+                softmax_scale=self.softmax_scale,
+                causal=self.causal,
+                descale_k=k_scale,
+                descale_v=v_scale,
+            )
+            if isinstance(out, tuple):
+                out = out[0]
+            return out
+
+        # Fallback: dequantize to compute dtype and use standard path
+        logger.warning_once(
+            "FP8 KV quantization without FA3 provides no performance benefit. "
+            "Install FA3 for optimal FP8 support on Hopper GPUs."
+        )
+        key = dequantize_fp8(key, k_scale, query.dtype)
+        value = dequantize_fp8(value, v_scale, query.dtype)
+        attn_metadata.k_scale = None
+        attn_metadata.v_scale = None
+        return self.forward_cuda(query, key, value, attn_metadata)

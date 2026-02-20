@@ -169,6 +169,13 @@ def parse_args() -> argparse.Namespace:
         "Example: --ignored-layers 'add_kv_proj,to_add_out'",
     )
     parser.add_argument(
+        "--kv-quantization",
+        action="store_true",
+        help="Enable FP8 quantization of attention K/V tensors for memory reduction. "
+        "Requires --quantization fp8. On Hopper GPUs with FA3, also accelerates attention. "
+        "On other backends (FA2/SDPA), K/V are dequantized before the kernel (memory-only benefit).",
+    )
+    parser.add_argument(
         "--vae-use-slicing",
         action="store_true",
         help="Enable VAE slicing for memory optimization.",
@@ -304,6 +311,7 @@ def main():
     # ignored_layers is specified so the list flows through OmniDiffusionConfig
     quant_kwargs: dict[str, Any] = {}
     ignored_layers = [s.strip() for s in args.ignored_layers.split(",") if s.strip()] if args.ignored_layers else None
+    kv_quantization = getattr(args, "kv_quantization", False)
     if args.quantization == "gguf":
         if not args.gguf_model:
             raise ValueError("--gguf-model is required when --quantization gguf is set.")
@@ -331,6 +339,7 @@ def main():
         "enforce_eager": args.enforce_eager,
         "enable_cpu_offload": args.enable_cpu_offload,
         "mode": "text-to-image",
+        "kv_quantization": kv_quantization,
         "log_stats": args.log_stats,
         "enable_diffusion_pipeline_profiler": args.enable_diffusion_pipeline_profiler,
         **lora_args,
@@ -354,6 +363,8 @@ def main():
     print(f"  Inference steps: {args.num_inference_steps}")
     print(f"  Cache backend: {cache_backend if cache_backend else 'None (no acceleration)'}")
     print(f"  Quantization: {args.quantization if args.quantization else 'None (BF16)'}")
+    if kv_quantization:
+        print("  KV quantization: FP8 (enabled)")
     if ignored_layers:
         print(f"  Ignored layers: {ignored_layers}")
     print(
