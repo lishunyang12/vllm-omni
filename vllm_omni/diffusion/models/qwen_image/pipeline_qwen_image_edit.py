@@ -249,6 +249,14 @@ class QwenImageEditPipeline(nn.Module, SupportImageInput, QwenImageCFGParallelMi
         self.vae = AutoencoderKLQwenImage.from_pretrained(model, subfolder="vae", local_files_only=local_files_only).to(
             self.device
         )
+
+        # Apply FP8 weight quantization to VAE and text encoder
+        if od_config.quantization_config is not None:
+            from vllm_omni.diffusion.models.utils import apply_fp8_weight_storage
+
+            apply_fp8_weight_storage(self.vae)
+            apply_fp8_weight_storage(self.text_encoder)
+
         transformer_kwargs = get_transformer_config_kwargs(od_config.tf_model_config, QwenImageTransformer2DModel)
         self.transformer = QwenImageTransformer2DModel(od_config=od_config, **transformer_kwargs)
         self.tokenizer = Qwen2Tokenizer.from_pretrained(model, subfolder="tokenizer", local_files_only=local_files_only)
@@ -818,4 +826,9 @@ class QwenImageEditPipeline(nn.Module, SupportImageInput, QwenImageCFGParallelMi
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         loader = AutoWeightsLoader(self)
-        return loader.load_weights(weights)
+        loaded_weights = loader.load_weights(weights)
+        # VAE and text_encoder are loaded via from_pretrained(), not through
+        # the weight pipeline, so mark their weights as loaded.
+        loaded_weights |= {f"vae.{name}" for name, _ in self.vae.named_parameters()}
+        loaded_weights |= {f"text_encoder.{name}" for name, _ in self.text_encoder.named_parameters()}
+        return loaded_weights
