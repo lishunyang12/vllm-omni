@@ -16,7 +16,7 @@ Both methods can provide significant speedups (typically **1.5x-2.0x**) while ma
 
 vLLM-Omni also supports quantization methods:
 
-3. **[FP8 Quantization](diffusion/quantization/overview.md)** - Reduces DiT linear layers from BF16 to FP8, providing ~1.28x speedup with minimal quality loss. Supports per-layer skip for sensitive layers.
+3. **[FP8 Quantization](diffusion/quantization/overview.md)** - Reduces weights from BF16 to FP8 for DiT linear layers, text encoder, and VAE, providing memory savings and inference speedup. Supports per-layer skip for sensitive layers.
 
 vLLM-Omni also supports parallelism methods for diffusion models, including:
 
@@ -78,6 +78,9 @@ The following table shows which models are currently supported by each accelerat
 |-------|------------------|:---:|
 | **Qwen-Image** | `Qwen/Qwen-Image` | ✅ |
 | **Qwen-Image-2512** | `Qwen/Qwen-Image-2512` | ✅ |
+| **Qwen-Image-Edit** | `Qwen/Qwen-Image-Edit` | ✅ |
+| **Qwen-Image-Edit-Plus** | `Qwen/Qwen-Image-Layered` | ✅ |
+| **Wan 2.2** | `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | ✅ |
 | **Z-Image** | `Tongyi-MAI/Z-Image-Turbo` | ✅ |
 
 

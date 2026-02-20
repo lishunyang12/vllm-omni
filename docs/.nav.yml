@@ -64,6 +64,7 @@ nav:
       - contributing/features/tensor_parallel.md
       - contributing/features/cache_dit.md
       - contributing/features/teacache.md
+      - contributing/features/quantization.md
   - CI: contributing/ci
   - Design Documents:
     - design/index.md
