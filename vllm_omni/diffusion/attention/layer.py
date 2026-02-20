@@ -91,6 +91,15 @@ class Attention(nn.Module):
         # Fallback strategy when SP is not active (outside sharded regions)
         self._no_parallel_strategy = NoParallelAttention()
 
+        # FP8 KV quantization: read from forward context config
+        self._kv_quant_enabled = False
+        try:
+            config = get_forward_context().omni_diffusion_config
+            if config.quantization_config is not None:
+                self._kv_quant_enabled = config.quantization_config.kv_quantization
+        except Exception:
+            pass
+
     def _get_active_parallel_strategy(self):
         """Get the parallel strategy based on current SP active state.
 
@@ -103,6 +112,30 @@ class Attention(nn.Module):
             if not ctx.sp_active:
                 return self._no_parallel_strategy
         return self.parallel_strategy
+
+    def _quantize_kv(
+        self,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_metadata: AttentionMetadata | None,
+    ) -> tuple[torch.Tensor, torch.Tensor, AttentionMetadata | None]:
+        """Quantize K/V tensors to FP8 and store scales in attn_metadata."""
+        from vllm_omni.diffusion.quantization.kv_quant import quantize_kv_fp8
+
+        fp8_key, fp8_value, k_scale, v_scale = quantize_kv_fp8(key, value)
+
+        if attn_metadata is None:
+            attn_metadata = AttentionMetadata()
+        attn_metadata.k_scale = k_scale
+        attn_metadata.v_scale = v_scale
+
+        # Also quantize joint_key/joint_value if present
+        if attn_metadata.joint_key is not None and attn_metadata.joint_value is not None:
+            jk, jv, _, _ = quantize_kv_fp8(attn_metadata.joint_key, attn_metadata.joint_value)
+            attn_metadata.joint_key = jk
+            attn_metadata.joint_value = jv
+
+        return fp8_key, fp8_value, attn_metadata
 
     def forward(
         self,
@@ -118,6 +151,10 @@ class Attention(nn.Module):
         # For Ulysses: AllToAll Q/K/V; Slicing joint_q/k/v
         # For Ring: Concat joint_q
         query, key, value, attn_metadata, ctx = strategy.pre_attention(query, key, value, attn_metadata)
+
+        # 1.5 FP8 KV quantization (after AllToAll stays BF16, before kernel)
+        if self._kv_quant_enabled:
+            key, value, attn_metadata = self._quantize_kv(key, value, attn_metadata)
 
         # 2. Kernel Execution (Computation)
         if self.use_ring and strategy is not self._no_parallel_strategy:

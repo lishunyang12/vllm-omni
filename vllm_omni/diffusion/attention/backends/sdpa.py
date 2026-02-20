@@ -77,6 +77,19 @@ class SDPAImpl(AttentionImpl):
         value: torch.Tensor,
         attn_metadata: AttentionMetadata | None = None,
     ) -> torch.Tensor:
+        # FP8 KV dequantization: SDPA does not support FP8 natively
+        if key.dtype == torch.float8_e4m3fn:
+            from vllm_omni.diffusion.quantization.kv_quant import dequantize_fp8
+
+            k_scale = attn_metadata.k_scale if attn_metadata else None
+            v_scale = attn_metadata.v_scale if attn_metadata else None
+            key = dequantize_fp8(key, k_scale, query.dtype)
+            value = dequantize_fp8(value, v_scale, query.dtype)
+            logger.warning_once(
+                "FP8 KV with SDPA backend: dequantizing to compute dtype. "
+                "No memory or performance benefit. Use FA3 for optimal FP8 support."
+            )
+
         query, key, value = (x.permute(0, 2, 1, 3) for x in (query, key, value))
         attention_mask = attn_metadata.attn_mask if attn_metadata else None
         output = torch.nn.functional.scaled_dot_product_attention(

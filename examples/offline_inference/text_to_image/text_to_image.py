@@ -132,6 +132,13 @@ def parse_args() -> argparse.Namespace:
         "Example: --ignored-layers 'add_kv_proj,to_add_out'",
     )
     parser.add_argument(
+        "--kv-quantization",
+        action="store_true",
+        help="Enable FP8 quantization of attention K/V tensors for memory reduction. "
+        "Requires --quantization fp8. On Hopper GPUs with FA3, also accelerates attention. "
+        "On other backends (FA2/SDPA), K/V are dequantized before the kernel (memory-only benefit).",
+    )
+    parser.add_argument(
         "--vae-use-slicing",
         action="store_true",
         help="Enable VAE slicing for memory optimization.",
@@ -202,14 +209,17 @@ def main():
     profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
 
     # Build quantization kwargs: use quantization_config dict when
-    # ignored_layers is specified so the list flows through OmniDiffusionConfig
+    # ignored_layers or kv_quantization is specified so they flow through OmniDiffusionConfig
     quant_kwargs: dict[str, Any] = {}
     ignored_layers = [s.strip() for s in args.ignored_layers.split(",") if s.strip()] if args.ignored_layers else None
-    if args.quantization and ignored_layers:
-        quant_kwargs["quantization_config"] = {
-            "method": args.quantization,
-            "ignored_layers": ignored_layers,
-        }
+    kv_quantization = getattr(args, "kv_quantization", False)
+    if args.quantization and (ignored_layers or kv_quantization):
+        quant_config: dict[str, Any] = {"method": args.quantization}
+        if ignored_layers:
+            quant_config["ignored_layers"] = ignored_layers
+        if kv_quantization:
+            quant_config["kv_quantization"] = True
+        quant_kwargs["quantization_config"] = quant_config
     elif args.quantization:
         quant_kwargs["quantization"] = args.quantization
 
@@ -238,6 +248,8 @@ def main():
     print(f"  Inference steps: {args.num_inference_steps}")
     print(f"  Cache backend: {args.cache_backend if args.cache_backend else 'None (no acceleration)'}")
     print(f"  Quantization: {args.quantization if args.quantization else 'None (BF16)'}")
+    if kv_quantization:
+        print("  KV quantization: FP8 (enabled)")
     if ignored_layers:
         print(f"  Ignored layers: {ignored_layers}")
     print(

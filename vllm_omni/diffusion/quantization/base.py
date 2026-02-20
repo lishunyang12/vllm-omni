@@ -50,6 +50,11 @@ class DiffusionQuantizationConfig(ABC):
         """Return supported activation dtypes."""
         return [torch.bfloat16, torch.float16]
 
+    @property
+    def kv_quantization(self) -> bool:
+        """Whether FP8 KV quantization is enabled for attention layers."""
+        return False
+
     @classmethod
     def get_min_capability(cls) -> int:
         """Minimum GPU compute capability required.

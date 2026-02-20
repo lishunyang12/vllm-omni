@@ -36,10 +36,12 @@ class DiffusionFp8Config(DiffusionQuantizationConfig):
         activation_scheme: str = "dynamic",
         weight_block_size: list[int] | None = None,
         ignored_layers: list[str] | None = None,
+        kv_quantization: bool = False,
     ):
         self.activation_scheme = activation_scheme
         self.weight_block_size = weight_block_size
         self.ignored_layers = ignored_layers or []
+        self._kv_quantization = kv_quantization
 
         # Create underlying vLLM FP8 config
         self._vllm_config = Fp8Config(
@@ -48,3 +50,8 @@ class DiffusionFp8Config(DiffusionQuantizationConfig):
             weight_block_size=weight_block_size,
             ignored_layers=ignored_layers,
         )
+
+    @property
+    def kv_quantization(self) -> bool:
+        """Whether FP8 KV quantization is enabled for attention layers."""
+        return self._kv_quantization
