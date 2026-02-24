@@ -78,9 +78,6 @@ The following table shows which models are currently supported by each accelerat
 |-------|------------------|:---:|
 | **Qwen-Image** | `Qwen/Qwen-Image` | ✅ |
 | **Qwen-Image-2512** | `Qwen/Qwen-Image-2512` | ✅ |
-| **Qwen-Image-Edit** | `Qwen/Qwen-Image-Edit` | ✅ |
-| **Qwen-Image-Edit-Plus** | `Qwen/Qwen-Image-Layered` | ✅ |
-| **Wan 2.2** | `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | ✅ |
 | **Z-Image** | `Tongyi-MAI/Z-Image-Turbo` | ✅ |
 
 

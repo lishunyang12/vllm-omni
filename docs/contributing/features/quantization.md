@@ -60,7 +60,7 @@ Key function:
 
 | Function | Location | Purpose |
 |----------|----------|---------|
-| `apply_fp8_weight_storage` | `vllm_omni/diffusion/models/utils.py` | Apply FP8 hooks to Linear/Conv layers |
+| `apply_fp8_weight_storage` | `vllm_omni/diffusion/models/utils.py` | Apply FP8 hooks to Linear/Conv layers (introduced in [#1414](https://github.com/vllm-project/vllm-omni/pull/1414)) |
 
 ---
 
@@ -182,7 +182,10 @@ class YourPipeline(nn.Module):
 
 #### 2.2: Apply FP8 Weight Storage to Text Encoder and VAE
 
-For models loaded via `from_pretrained()`, apply hook-based FP8 weight storage:
+For models loaded via `from_pretrained()`, apply hook-based FP8 weight storage.
+
+!!! note
+    The `apply_fp8_weight_storage` function is provided by `vllm_omni/diffusion/models/utils.py`, introduced in [PR #1414](https://github.com/vllm-project/vllm-omni/pull/1414). This step only applies once that PR has been merged.
 
 ```python
 from vllm_omni.diffusion.models.utils import apply_fp8_weight_storage
@@ -195,7 +198,10 @@ class YourPipeline(nn.Module):
         self.vae = SomeVAE.from_pretrained(...).to(self.device)
 
         # Apply FP8 weight storage to text encoder and VAE
-        if od_config.quantization_config is not None:
+        if (
+            od_config.quantization_config is not None
+            and getattr(od_config.quantization_config, "quant_method", None) == "fp8"
+        ):
             apply_fp8_weight_storage(self.vae)
             apply_fp8_weight_storage(self.text_encoder)
 
@@ -315,8 +321,7 @@ omni = Omni(
 | Model | Pipeline File | Transformer File | Notes |
 |-------|-------------|-----------------|-------|
 | **Z-Image** | `models/z_image/pipeline_z_image.py` | `models/z_image/z_image_transformer.py` | DiT + text encoder FP8 |
-| **Qwen-Image** | `models/qwen_image/pipeline_qwen_image.py` | `models/qwen_image/qwen_image_transformer.py` | DiT + text encoder + VAE FP8 |
-| **Qwen-Image-Edit** | `models/qwen_image/pipeline_qwen_image_edit.py` | (shared transformer) | Same pattern with image input |
+| **Qwen-Image** | `models/qwen_image/pipeline_qwen_image.py` | `models/qwen_image/qwen_image_transformer.py` | DiT FP8 (text encoder + VAE FP8 in [#1414](https://github.com/vllm-project/vllm-omni/pull/1414)) |
 
 All files are under `vllm_omni/diffusion/`.
 

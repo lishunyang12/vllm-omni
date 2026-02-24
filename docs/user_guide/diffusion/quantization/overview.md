@@ -1,6 +1,6 @@
 # Quantization for Diffusion Models
 
-vLLM-Omni supports quantization of diffusion model components to reduce memory usage and accelerate inference. This includes DiT linear layers, text encoders, and VAEs.
+vLLM-Omni supports quantization of diffusion model components to reduce memory usage and accelerate inference. This includes DiT, text encoders, and VAEs.
 
 ## Supported Methods
 
@@ -23,9 +23,10 @@ When `--quantization fp8` is enabled, the following components are quantized:
 
 ## Device Compatibility
 
-| GPU Generation | Example GPUs | FP8 Mode |
-|---------------|-------------------|----------|
-| Ada/Hopper (SM 89+) | RTX 4090, H100, H200 | Full W8A8 with native hardware (DiT) + weight storage (encoder/VAE) |
-| Turing/Ampere (SM 75-86) | RTX 3090, A100 | Weight-only via Marlin kernel (DiT) + weight storage (encoder/VAE) |
+| Device | Example Hardware | FP8 Mode |
+|--------|-----------------|----------|
+| Ada/Hopper GPU (SM 89+) | RTX 4090, H100, H200 | Full W8A8 with native hardware (DiT) + weight storage (encoder/VAE) |
+| Turing/Ampere GPU (SM 75-86) | RTX 3090, A100 | Weight-only via Marlin kernel (DiT) + weight storage (encoder/VAE) |
+| Ascend NPU | Atlas 800T A2 (910B) | Not yet supported |
 
-Kernel selection is automatic.
+Kernel selection is automatic on CUDA GPUs.

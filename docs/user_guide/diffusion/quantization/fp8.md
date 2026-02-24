@@ -94,10 +94,10 @@ The available `ignored_layers` names depend on the model architecture (e.g., `to
 | Model | HF Models | DiT FP8 | Text Encoder FP8 | VAE FP8 | `ignored_layers` |
 |-------|-----------|:-------:|:-----------------:|:-------:|------------------|
 | Z-Image | `Tongyi-MAI/Z-Image-Turbo` | ✅ | ✅ | — | None |
-| Qwen-Image | `Qwen/Qwen-Image`, `Qwen/Qwen-Image-2512` | ✅ | ✅ | ✅ | `img_mlp` |
-| Qwen-Image-Edit | `Qwen/Qwen-Image-Edit` | ✅ | ✅ | ✅ | — |
-| Qwen-Image-Edit-Plus | `Qwen/Qwen-Image-Layered` | ✅ | ✅ | ✅ | — |
-| Wan 2.2 | `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | ✅ | — | — | — |
+| Qwen-Image | `Qwen/Qwen-Image`, `Qwen/Qwen-Image-2512` | ✅ | Planned ([#1414](https://github.com/vllm-project/vllm-omni/pull/1414)) | Planned ([#1414](https://github.com/vllm-project/vllm-omni/pull/1414)) | `img_mlp` |
+| Qwen-Image-Edit | `Qwen/Qwen-Image-Edit` | Planned ([#1414](https://github.com/vllm-project/vllm-omni/pull/1414)) | Planned ([#1414](https://github.com/vllm-project/vllm-omni/pull/1414)) | Planned ([#1414](https://github.com/vllm-project/vllm-omni/pull/1414)) | — |
+| Qwen-Image-Edit-Plus | `Qwen/Qwen-Image-Layered` | Planned ([#1414](https://github.com/vllm-project/vllm-omni/pull/1414)) | Planned ([#1414](https://github.com/vllm-project/vllm-omni/pull/1414)) | Planned ([#1414](https://github.com/vllm-project/vllm-omni/pull/1414)) | — |
+| Wan 2.2 | `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | Planned ([#1412](https://github.com/vllm-project/vllm-omni/pull/1412)) | — | — | — |
 
 ## Combining with Other Features
 
