@@ -274,7 +274,10 @@ class QwenImagePipeline(nn.Module, QwenImageCFGParallelMixin):
         )
 
         # Apply FP8 weight quantization to VAE and text encoder
-        if od_config.quantization_config is not None:
+        if (
+            od_config.quantization_config is not None
+            and getattr(od_config.quantization_config, "quant_method", None) == "fp8"
+        ):
             from vllm_omni.diffusion.models.utils import apply_fp8_weight_storage
 
             apply_fp8_weight_storage(self.vae)

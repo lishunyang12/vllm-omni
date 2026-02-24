@@ -34,6 +34,10 @@ def apply_fp8_weight_storage(model: nn.Module) -> None:
         if not isinstance(module, _FP8_TARGET_LAYERS):
             continue
 
+        # P4: Idempotency guard -- skip if already quantized
+        if hasattr(module, "_fp8_weight"):
+            continue
+
         weight = module.weight.data
         compute_dtype = weight.dtype
 
@@ -49,16 +53,26 @@ def apply_fp8_weight_storage(model: nn.Module) -> None:
         module.register_buffer("_fp8_scale", scale.to(torch.float32))
         module._fp8_compute_dtype = compute_dtype
 
-        # Replace the parameter data with FP8 to save memory
-        module.weight.data = fp8_weight
+        # P1: Keep the parameter at the original compute dtype so that
+        # model.dtype (derived from parameters) stays correct.  We store
+        # the FP8 representation in the _fp8_weight buffer and only
+        # dequantize into module.weight.data inside the pre-hook.
+        # After forward, the post-hook swaps back to FP8 storage to
+        # free the BF16/FP16 memory.
+        module.weight.data = fp8_weight.to(compute_dtype)
 
         def _pre_hook(mod, args):
-            # Dequantize: restore BF16/FP16 weight for conv computation
-            mod.weight.data = mod._fp8_weight.to(mod._fp8_compute_dtype) * mod._fp8_scale
+            # Dequantize: restore BF16/FP16 weight for computation
+            # P2: Cast back to compute dtype to avoid float32 promotion
+            #     from the float32 scale tensor.
+            mod.weight.data = (
+                mod._fp8_weight.to(mod._fp8_compute_dtype) * mod._fp8_scale
+            ).to(mod._fp8_compute_dtype)
 
         def _post_hook(mod, args, output):
-            # Re-quantize: swap back to FP8 to free BF16 memory
-            mod.weight.data = mod._fp8_weight
+            # Re-quantize: swap back to FP8-dequantized placeholder to
+            # free full-precision memory while keeping dtype correct.
+            mod.weight.data = mod._fp8_weight.to(mod._fp8_compute_dtype)
 
         module.register_forward_pre_hook(_pre_hook)
         module.register_forward_hook(_post_hook)
