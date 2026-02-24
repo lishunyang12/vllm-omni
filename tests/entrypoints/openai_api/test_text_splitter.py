@@ -1,6 +1,10 @@
 """Tests for SentenceSplitter used in streaming TTS input."""
 
+import pytest
+
 from vllm_omni.entrypoints.openai.text_splitter import SentenceSplitter
+
+pytestmark = [pytest.mark.openai, pytest.mark.speech]
 
 
 class TestSentenceSplitterEnglish:
@@ -60,17 +64,19 @@ class TestSentenceSplitterChinese:
         assert len(result) == 1
         assert result[0] == "你是谁？"
 
-    def test_chinese_comma(self):
+    def test_chinese_comma_no_split(self):
+        """Chinese commas are clause-level and should not trigger a split."""
         splitter = SentenceSplitter()
         result = splitter.add_text("你好，世界")
-        assert len(result) == 1
-        assert result[0] == "你好，"
+        assert result == []
+        assert splitter.buffer == "你好，世界"
 
-    def test_chinese_semicolon(self):
+    def test_chinese_semicolon_no_split(self):
+        """Chinese semicolons are clause-level and should not trigger a split."""
         splitter = SentenceSplitter()
         result = splitter.add_text("第一点；第二点")
-        assert len(result) == 1
-        assert result[0] == "第一点；"
+        assert result == []
+        assert splitter.buffer == "第一点；第二点"
 
     def test_chinese_multiple(self):
         splitter = SentenceSplitter()
@@ -225,3 +231,17 @@ class TestSentenceSplitterEdgeCases:
         assert len(result) == 1
         assert result[0] == "Second session."
         assert splitter.buffer == "More text"
+
+
+class TestSentenceSplitterBufferLimit:
+    """Tests for buffer overflow protection."""
+
+    def test_buffer_overflow_raises(self):
+        from vllm_omni.entrypoints.openai.text_splitter import _MAX_BUFFER_SIZE
+
+        splitter = SentenceSplitter()
+        # Fill buffer just under the limit
+        splitter.add_text("x" * (_MAX_BUFFER_SIZE - 1))
+        # One more char should exceed the limit
+        with pytest.raises(ValueError, match="exceeded maximum size"):
+            splitter.add_text("xx")

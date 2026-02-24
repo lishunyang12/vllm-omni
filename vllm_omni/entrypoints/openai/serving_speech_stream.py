@@ -29,7 +29,11 @@ from vllm_omni.entrypoints.openai.protocol.audio import (
     StreamingSpeechSessionConfig,
 )
 from vllm_omni.entrypoints.openai.serving_speech import OmniOpenAIServingSpeech
-from vllm_omni.entrypoints.openai.text_splitter import SentenceSplitter
+from vllm_omni.entrypoints.openai.text_splitter import (
+    SPLIT_CLAUSE,
+    SPLIT_SENTENCE,
+    SentenceSplitter,
+)
 
 logger = init_logger(__name__)
 
@@ -70,6 +74,13 @@ class OmniStreamingSpeechHandler:
             config = await self._receive_config(websocket)
             if config is None:
                 return  # Error already sent, connection closing
+
+            # Validate model if specified
+            if config.model and hasattr(self._speech_service, "_check_model"):
+                error = self._speech_service._check_model(config.model)
+                if error is not None:
+                    await self._send_error(websocket, str(error))
+                    return
 
             splitter = SentenceSplitter()
             sentence_index = 0
@@ -129,7 +140,7 @@ class OmniStreamingSpeechHandler:
             try:
                 await self._send_error(websocket, f"Internal error: {e}")
             except Exception:
-                pass
+                logger.debug("Failed to send error to streaming speech client", exc_info=True)
 
     async def _receive_config(self, websocket: WebSocket) -> StreamingSpeechSessionConfig | None:
         """Wait for and validate the session.config message."""
@@ -231,4 +242,4 @@ class OmniStreamingSpeechHandler:
                 }
             )
         except Exception:
-            pass  # Connection may already be closed
+            pass  # Connection may already be closed; safe to ignore

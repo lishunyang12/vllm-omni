@@ -93,28 +93,28 @@ async def stream_tts(
         sender_task = asyncio.create_task(send_text())
 
         response_format = config.get("response_format", "wav")
-        sentence_count = 0
+        current_sentence_index = 0
 
         try:
             while True:
                 message = await ws.recv()
 
                 if isinstance(message, bytes):
-                    # Binary frame: audio data
+                    # Binary frame: audio data — use index from audio.start
                     filename = os.path.join(
                         output_dir,
-                        f"sentence_{sentence_count:03d}.{response_format}",
+                        f"sentence_{current_sentence_index:03d}.{response_format}",
                     )
                     with open(filename, "wb") as f:
                         f.write(message)
                     print(f"  Saved audio: {filename} ({len(message)} bytes)")
-                    sentence_count += 1
                 else:
                     # JSON frame
                     msg = json.loads(message)
                     msg_type = msg.get("type")
 
                     if msg_type == "audio.start":
+                        current_sentence_index = msg["sentence_index"]
                         print(f"  [sentence {msg['sentence_index']}] Generating: {msg['sentence_text']!r}")
                     elif msg_type == "audio.done":
                         print(f"  [sentence {msg['sentence_index']}] Done")
@@ -130,7 +130,7 @@ async def stream_tts(
             try:
                 await sender_task
             except asyncio.CancelledError:
-                pass
+                pass  # Task cancellation is expected during shutdown
 
     print(f"\nAudio files saved to: {output_dir}/")
 

@@ -1,6 +1,10 @@
 """Integration tests for the streaming speech WebSocket endpoint."""
 
+import pytest
+
 from unittest.mock import AsyncMock, MagicMock
+
+pytestmark = [pytest.mark.openai, pytest.mark.speech]
 
 from fastapi import FastAPI
 from starlette.testclient import TestClient

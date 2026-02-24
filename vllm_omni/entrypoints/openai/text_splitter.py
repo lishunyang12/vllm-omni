@@ -5,14 +5,25 @@ yielding complete sentences for audio generation.
 """
 
 import re
+from typing import Pattern
 
-# Sentence boundary pattern:
-# - English: .!? followed by whitespace or end of string
-# - CJK fullwidth: 。！？，；
-_SENTENCE_BOUNDARY_RE = re.compile(
-    r"(?<=[.!?])\s+"  # English punctuation followed by whitespace
-    r"|(?<=[。！？，；])"  # CJK fullwidth punctuation
+# Maximum buffer size (in characters) to prevent unbounded memory growth.
+_MAX_BUFFER_SIZE = 100_000  # ~100 KB of text
+
+# Sentence-level: .!? + CJK sentence-ending 。！？
+SPLIT_SENTENCE = re.compile(
+    r"(?<=[.!?])(?:\s+|$)"
+    r"|(?<=[。！？])"
 )
+
+# Clause-level: adds CJK commas ， and semicolons ；
+SPLIT_CLAUSE = re.compile(
+    r"(?<=[.!?])(?:\s+|$)"
+    r"|(?<=[。！？，；])"
+)
+
+# Default alias
+_SENTENCE_BOUNDARY_RE = SPLIT_SENTENCE
 
 
 class SentenceSplitter:
@@ -25,11 +36,20 @@ class SentenceSplitter:
         min_sentence_length: Minimum character length for a sentence.
             Sentences shorter than this are kept in the buffer to avoid
             splitting on abbreviations like "Dr." or "U.S.".
+        boundary_re: Custom compiled regex for sentence boundaries.
+            Use ``SPLIT_SENTENCE`` (default) for sentence-level splitting,
+            ``SPLIT_CLAUSE`` for finer-grained clause-level splitting,
+            or pass your own ``re.Pattern``.
     """
 
-    def __init__(self, min_sentence_length: int = 2) -> None:
+    def __init__(
+        self,
+        min_sentence_length: int = 2,
+        boundary_re: Pattern[str] | None = None,
+    ) -> None:
         self._buffer: str = ""
         self._min_sentence_length = min_sentence_length
+        self._boundary_re = boundary_re or _SENTENCE_BOUNDARY_RE
 
     @property
     def buffer(self) -> str:
@@ -45,11 +65,19 @@ class SentenceSplitter:
         Returns:
             List of complete sentences extracted from the buffer.
             May be empty if no sentence boundary was found.
+
+        Raises:
+            ValueError: If the buffer exceeds the maximum size.
         """
         if not text:
             return []
 
         self._buffer += text
+        if len(self._buffer) > _MAX_BUFFER_SIZE:
+            raise ValueError(
+                f"Text buffer exceeded maximum size ({_MAX_BUFFER_SIZE} chars). "
+                "Consider adding sentence-ending punctuation to your input."
+            )
         return self._extract_sentences()
 
     def flush(self) -> str | None:
@@ -64,7 +92,7 @@ class SentenceSplitter:
 
     def _extract_sentences(self) -> list[str]:
         """Split buffer at sentence boundaries, keeping incomplete text buffered."""
-        parts = _SENTENCE_BOUNDARY_RE.split(self._buffer)
+        parts = self._boundary_re.split(self._buffer)
 
         if len(parts) <= 1:
             # No boundary found — keep everything in buffer
