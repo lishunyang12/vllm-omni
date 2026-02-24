@@ -3,9 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-pytestmark = [pytest.mark.openai, pytest.mark.speech]
-
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 
@@ -16,6 +13,8 @@ from vllm_omni.entrypoints.openai.serving_speech import OmniOpenAIServingSpeech
 from vllm_omni.entrypoints.openai.serving_speech_stream import (
     OmniStreamingSpeechHandler,
 )
+
+pytestmark = [pytest.mark.openai, pytest.mark.speech]
 
 
 def _create_mock_speech_service():
