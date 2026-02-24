@@ -65,9 +65,7 @@ def apply_fp8_weight_storage(model: nn.Module) -> None:
             # Dequantize: restore BF16/FP16 weight for computation
             # P2: Cast back to compute dtype to avoid float32 promotion
             #     from the float32 scale tensor.
-            mod.weight.data = (
-                mod._fp8_weight.to(mod._fp8_compute_dtype) * mod._fp8_scale
-            ).to(mod._fp8_compute_dtype)
+            mod.weight.data = (mod._fp8_weight.to(mod._fp8_compute_dtype) * mod._fp8_scale).to(mod._fp8_compute_dtype)
 
         def _post_hook(mod, args, output):
             # Re-quantize: swap back to FP8-dequantized placeholder to
