@@ -10,7 +10,7 @@ When you open a PR against vLLM-Omni, several CI checks run automatically:
 | Check | Platform | What it does |
 | ----- | -------- | ------------ |
 | **pre-commit** | GitHub Actions | Runs linting (Ruff), formatting, spell-checking (typos), and YAML validation. |
-| **Build Wheel** | GitHub Actions | Builds Python wheels for Python 3.11 and 3.12 on Ubuntu. Skipped for docs-only or markdown-only changes (controlled by `paths-ignore` in the workflow). |
+| **Build Wheel** | GitHub Actions | Builds Python wheels for Python 3.11 and 3.12 on Ubuntu. Skipped for docs-only or Markdown-only changes (controlled by `paths-ignore` in the workflow). |
 | **DCO** | GitHub | Verifies every commit has a `Signed-off-by` line. |
 | **docs/readthedocs.org:vllm-omni** | Read the Docs | Builds the MkDocs documentation site. |
 | **buildkite/vllm-omni** | Buildkite | Runs GPU-based tests on NVIDIA (L4, H100) and AMD (MI325) hardware. |
@@ -24,7 +24,7 @@ Click the **Details** link next to the failing check on your PR to open the buil
 These are typically formatting or linting issues introduced by your PR. Fix them locally:
 
 ```bash
-pip install pre-commit
+uv pip install pre-commit
 pre-commit run --all-files
 ```
 
@@ -46,7 +46,7 @@ For multiple commits, use an interactive rebase to add the sign-off to each one.
 The documentation build uses MkDocs with `fail_on_warning: true`, so even a minor Markdown issue can break it. To reproduce locally:
 
 ```bash
-pip install -e ".[docs]"
+uv pip install -e ".[docs]"
 mkdocs build --strict
 ```
 
