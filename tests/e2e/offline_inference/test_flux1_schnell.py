@@ -304,7 +304,7 @@ def test_dtype_consistency(flux_pipeline):
 
     flux_pipeline.transformer.forward.side_effect = dtype_check_forward
 
-    output = flux_pipeline(req)
+    flux_pipeline(req)
 
     # All dtypes should be consistent
     assert all(dtype == torch.float32 for dtype in dtype_checks)
