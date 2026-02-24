@@ -5,7 +5,7 @@ yielding complete sentences for audio generation.
 """
 
 import re
-from typing import Pattern
+from re import Pattern
 
 # Maximum buffer size (in characters) to prevent unbounded memory growth.
 _MAX_BUFFER_SIZE = 100_000  # ~100 KB of text

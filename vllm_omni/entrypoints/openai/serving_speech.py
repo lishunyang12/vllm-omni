@@ -409,6 +409,11 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
             logger.error("Error with model %s", error_check_ret)
             return error_check_ret
 
+        if self.engine_client.errored:
+            raise self.engine_client.dead_error
+
+        request_id = f"speech-{random_uuid()}"
+
         try:
             if self._is_tts_model():
                 # Validate TTS parameters

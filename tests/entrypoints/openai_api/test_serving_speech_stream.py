@@ -1,8 +1,8 @@
 """Integration tests for the streaming speech WebSocket endpoint."""
 
-import pytest
-
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 pytestmark = [pytest.mark.openai, pytest.mark.speech]
 

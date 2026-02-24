@@ -30,8 +30,6 @@ from vllm_omni.entrypoints.openai.protocol.audio import (
 )
 from vllm_omni.entrypoints.openai.serving_speech import OmniOpenAIServingSpeech
 from vllm_omni.entrypoints.openai.text_splitter import (
-    SPLIT_CLAUSE,
-    SPLIT_SENTENCE,
     SentenceSplitter,
 )
 
