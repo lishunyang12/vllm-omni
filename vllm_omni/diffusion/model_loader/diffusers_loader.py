@@ -231,8 +231,9 @@ class DiffusersPipelineLoader:
             self.load_weights(model)
 
             # Process weights after loading for quantization (e.g., FP8 online quantization)
-            # Quantization kernels are CUDA-only, so use quantization_device (the
-            # real GPU) rather than target_device which may be CPU under offloading.
+            # Quantization kernels require an accelerator (CUDA, NPU, XPU, etc.),
+            # so use quantization_device rather than target_device which may be
+            # CPU under offloading.
             quant_device = quantization_device if quantization_device is not None else target_device
             self._process_weights_after_loading(model, quant_device)
 
@@ -244,10 +245,10 @@ class DiffusersPipelineLoader:
         This handles vLLM's quantization methods that need to process weights
         after loading (e.g., FP8 online quantization from BF16/FP16 weights).
 
-        Quantization kernels are typically CUDA-only, so ``quantization_device``
-        should be the real GPU even when the model was loaded on CPU for
-        offloading.  Modules are temporarily moved to the quantization device
-        and restored to their original device afterward.
+        Quantization kernels require an accelerator device (CUDA, NPU, XPU,
+        etc.), so ``quantization_device`` should be the real device even when
+        the model was loaded on CPU for offloading.  Modules are temporarily
+        moved to the quantization device and restored afterward.
         """
         for _, module in model.named_modules():
             quant_method = getattr(module, "quant_method", None)
