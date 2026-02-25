@@ -103,6 +103,8 @@ class OmniGenerationScheduler(VLLMScheduler):
                 break
             if self.log_stats:
                 request.record_event(EngineCoreEventType.SCHEDULED, scheduled_timestamp)
+            if request.num_cached_tokens < 0:
+                request.num_cached_tokens = num_computed_tokens
             req_to_new_blocks[request.request_id] = new_blocks
             num_scheduled_tokens[request.request_id] = num_new_tokens
             cached_prompt_token_ids[request.request_id] = request.prompt_token_ids
@@ -164,6 +166,8 @@ class OmniGenerationScheduler(VLLMScheduler):
             self.running.append(request)
             if self.log_stats:
                 request.record_event(EngineCoreEventType.SCHEDULED, scheduled_timestamp)
+            if request.num_cached_tokens < 0:
+                request.num_cached_tokens = request.num_computed_tokens
 
             req_to_new_blocks[request.request_id] = new_blocks
             num_scheduled_tokens[request.request_id] = num_new_tokens
