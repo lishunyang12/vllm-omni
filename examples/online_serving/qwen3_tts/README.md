@@ -236,7 +236,7 @@ python streaming_speech_client.py \
 
 ```jsonc
 // 1. Session config (sent once first)
-{"type": "session.config", "voice": "Vivian", "task_type": "CustomVoice", "language": "Auto"}
+{"type": "session.config", "voice": "Vivian", "task_type": "CustomVoice", "language": "Auto", "split_granularity": "sentence"}
 
 // 2. Text chunks (sent incrementally)
 {"type": "input.text", "text": "Hello, how are you? "}
@@ -278,12 +278,16 @@ All parameters from the REST API are supported:
 | `max_new_tokens` | int | None | Max tokens per sentence |
 | `ref_audio` | string | None | Reference audio (Base task) |
 | `ref_text` | string | None | Reference text (Base task) |
+| `split_granularity` | string | "sentence" | Text splitting granularity (see below) |
 
 ### Sentence Detection
 
-Text is automatically split at sentence boundaries:
-- **English:** `.` `!` `?` followed by whitespace
-- **CJK:** fullwidth punctuation `。` `！` `？` `，` `；`
+Text is automatically split at boundaries controlled by `split_granularity`:
+
+| Granularity | Boundaries | Use case |
+|-------------|-----------|----------|
+| `"sentence"` (default) | English `.!?` + whitespace, CJK `。！？` | Best prosody, recommended for most use cases |
+| `"clause"` | All of the above + CJK commas `，` and semicolons `；` | Lower latency, more frequent but shorter audio chunks |
 
 If text never forms a complete sentence, it is flushed when `input.done` is sent.
 
