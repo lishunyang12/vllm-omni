@@ -125,6 +125,97 @@ Lists available voices for the loaded model.
 }
 ```
 
+## Streaming Text Input (WebSocket)
+
+The `/v1/audio/speech/stream` WebSocket endpoint accepts text incrementally and generates audio per sentence as boundaries are detected. This is useful for real-time pipelines where text arrives progressively (e.g., LLM token streaming, STT output).
+
+> **Note:** This is streaming text *input* only. Each sentence produces a complete audio response.
+
+### Quick Example
+
+```python
+import asyncio
+import json
+import websockets
+
+async def stream_tts():
+    async with websockets.connect("ws://localhost:8091/v1/audio/speech/stream") as ws:
+        # 1. Session config
+        await ws.send(json.dumps({
+            "type": "session.config",
+            "voice": "Vivian",
+            "response_format": "wav",
+        }))
+
+        # 2. Send text incrementally
+        for word in ["Hello ", "world. ", "How ", "are ", "you? "]:
+            await ws.send(json.dumps({"type": "input.text", "text": word}))
+
+        # 3. Signal end of input
+        await ws.send(json.dumps({"type": "input.done"}))
+
+        # 4. Receive audio per sentence
+        while True:
+            msg = await ws.recv()
+            if isinstance(msg, bytes):
+                print(f"Audio: {len(msg)} bytes")
+            else:
+                data = json.loads(msg)
+                print(data)
+                if data.get("type") == "session.done":
+                    break
+
+asyncio.run(stream_tts())
+```
+
+### WebSocket Protocol
+
+**Client → Server:**
+
+| Message | Description |
+|---------|-------------|
+| `{"type": "session.config", ...}` | Session configuration (sent once, first message) |
+| `{"type": "input.text", "text": "..."}` | Text chunk (sent any number of times) |
+| `{"type": "input.done"}` | End of input, flushes remaining buffer |
+
+**Server → Client:**
+
+| Message | Description |
+|---------|-------------|
+| `{"type": "audio.start", "sentence_index": 0, "sentence_text": "...", "format": "wav"}` | Audio generation starting for a sentence |
+| Binary frame | Raw audio bytes |
+| `{"type": "audio.done", "sentence_index": 0}` | Audio complete for a sentence |
+| `{"type": "session.done", "total_sentences": N}` | Session complete |
+| `{"type": "error", "message": "..."}` | Non-fatal error (session continues) |
+
+### Session Config Parameters
+
+All REST API parameters are supported, plus:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `voice` | string | None | Speaker voice name |
+| `task_type` | string | None | CustomVoice, VoiceDesign, or Base |
+| `language` | string | None | Language code |
+| `instructions` | string | None | Voice style instructions |
+| `response_format` | string | "wav" | Audio format per sentence |
+| `speed` | float | 1.0 | Playback speed (0.25-4.0) |
+| `max_new_tokens` | int | None | Max tokens per sentence |
+| `ref_audio` | string | None | Reference audio (Base task) |
+| `ref_text` | string | None | Reference text (Base task) |
+| `split_granularity` | string | "sentence" | Text splitting granularity |
+
+### Split Granularity
+
+Controls how text is split into chunks for audio generation:
+
+| Granularity | Boundaries | Use case |
+|-------------|-----------|----------|
+| `"sentence"` (default) | English `.!?` + whitespace, CJK `。！？` | Best prosody, recommended for most use cases |
+| `"clause"` | All of the above + CJK commas `，` and semicolons `；` | Lower latency, more frequent but shorter audio chunks |
+
+Text without a sentence boundary is buffered until `input.done` triggers a flush.
+
 ## Examples
 
 ### CustomVoice with Style Instruction
