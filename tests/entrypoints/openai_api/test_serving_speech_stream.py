@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from starlette.testclient import TestClient
 
 from vllm_omni.entrypoints.openai.protocol.audio import (
@@ -49,7 +49,7 @@ def _build_test_app(
     app = FastAPI()
 
     @app.websocket("/v1/audio/speech/stream")
-    async def ws_endpoint(websocket):
+    async def ws_endpoint(websocket: WebSocket):
         await handler.handle_session(websocket)
 
     return app, handler, speech_service
