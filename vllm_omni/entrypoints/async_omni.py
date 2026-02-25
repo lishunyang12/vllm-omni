@@ -176,6 +176,7 @@ class AsyncOmni(OmniBase):
                     "enforce_eager": kwargs.get("enforce_eager", False),
                     "diffusion_load_format": kwargs.get("diffusion_load_format", "default"),
                     "custom_pipeline_args": kwargs.get("custom_pipeline_args", None),
+                    "quantization": kwargs.get("quantization", None),
                 },
                 "final_output": True,
                 "final_output_type": "image",

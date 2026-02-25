@@ -215,6 +215,7 @@ class DiffusersPipelineLoader:
         load_device: str,
         load_format: str = "default",
         custom_pipeline_name: str | None = None,
+        quantization_device: torch.device | None = None,
     ) -> nn.Module:
         """Load a model with the given configurations."""
         target_device = torch.device(load_device)
@@ -230,33 +231,42 @@ class DiffusersPipelineLoader:
             self.load_weights(model)
 
             # Process weights after loading for quantization (e.g., FP8 online quantization)
-            # This is needed for vLLM's quantization methods that need to transform weights
-            self._process_weights_after_loading(model, target_device)
+            # Quantization kernels are CUDA-only, so use quantization_device (the
+            # real GPU) rather than target_device which may be CPU under offloading.
+            quant_device = quantization_device if quantization_device is not None else target_device
+            self._process_weights_after_loading(model, quant_device)
 
         return model.eval()
 
-    def _process_weights_after_loading(self, model: nn.Module, target_device: torch.device) -> None:
+    def _process_weights_after_loading(self, model: nn.Module, quantization_device: torch.device) -> None:
         """Process weights after loading for quantization methods.
 
         This handles vLLM's quantization methods that need to process weights
         after loading (e.g., FP8 online quantization from BF16/FP16 weights).
+
+        Quantization kernels are typically CUDA-only, so ``quantization_device``
+        should be the real GPU even when the model was loaded on CPU for
+        offloading.  Modules are temporarily moved to the quantization device
+        and restored to their original device afterward.
         """
         for _, module in model.named_modules():
             quant_method = getattr(module, "quant_method", None)
             if isinstance(quant_method, QuantizeMethodBase):
-                # Move module to target device for processing if needed
-                module_device = next(module.parameters(), None)
-                if module_device is not None:
-                    module_device = module_device.device
-                needs_device_move = module_device != target_device
+                # Remember original device so we can restore after quantization
+                param = next(module.parameters(), None)
+                if param is None:
+                    continue
+                original_device = param.device
+                needs_device_move = original_device != quantization_device
 
                 if needs_device_move:
-                    module.to(target_device)
+                    module.to(quantization_device)
 
                 quant_method.process_weights_after_loading(module)
 
+                # Restore to original device (e.g. CPU for offloading)
                 if needs_device_move:
-                    module.to(module_device)
+                    module.to(original_device)
 
     def load_weights(self, model: nn.Module) -> None:
         weights_to_load = {name for name, _ in model.named_parameters()}

@@ -111,6 +111,7 @@ class DiffusionModelRunner:
                     load_device=load_device,
                     load_format=load_format,
                     custom_pipeline_name=custom_pipeline_name,
+                    quantization_device=self.device,
                 )
         time_after_load = time.perf_counter()
 
