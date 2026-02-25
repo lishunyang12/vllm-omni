@@ -30,6 +30,8 @@ from vllm_omni.entrypoints.openai.protocol.audio import (
 )
 from vllm_omni.entrypoints.openai.serving_speech import OmniOpenAIServingSpeech
 from vllm_omni.entrypoints.openai.text_splitter import (
+    SPLIT_CLAUSE,
+    SPLIT_SENTENCE,
     SentenceSplitter,
 )
 
@@ -80,7 +82,8 @@ class OmniStreamingSpeechHandler:
                     await self._send_error(websocket, str(error))
                     return
 
-            splitter = SentenceSplitter()
+            boundary_re = SPLIT_CLAUSE if config.split_granularity == "clause" else SPLIT_SENTENCE
+            splitter = SentenceSplitter(boundary_re=boundary_re)
             sentence_index = 0
 
             # 2. Receive text chunks until input.done
