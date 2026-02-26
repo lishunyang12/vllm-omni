@@ -63,6 +63,17 @@ _OMNI_MODELS = {
         "qwen3_tts_code2wav",
         "Qwen3TTSCode2Wav",
     ),
+    # Chatterbox TTS (Turbo)
+    "ChatterboxTurboT3ForGeneration": (
+        "chatterbox",
+        "chatterbox_t3",
+        "ChatterboxTurboT3ForGeneration",
+    ),
+    "ChatterboxS3Gen": (
+        "chatterbox",
+        "chatterbox_s3gen",
+        "ChatterboxS3Gen",
+    ),
 }
 
 
