@@ -140,6 +140,17 @@ _OMNI_MODELS = {
         "fish_speech_dac_decoder",
         "FishSpeechDACDecoder",
     ),
+    # Chatterbox TTS (Turbo)
+    "ChatterboxTurboT3ForGeneration": (
+        "chatterbox",
+        "chatterbox_t3",
+        "ChatterboxTurboT3ForGeneration",
+    ),
+    "ChatterboxS3Gen": (
+        "chatterbox",
+        "chatterbox_s3gen",
+        "ChatterboxS3Gen",
+    ),
 }
 
 
