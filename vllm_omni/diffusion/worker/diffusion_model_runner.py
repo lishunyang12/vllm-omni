@@ -139,6 +139,17 @@ class DiffusionModelRunner:
                     logger.info("Model runner: Model compiled with torch.compile.")
                 except Exception as e:
                     logger.warning(f"Model runner: torch.compile failed with error: {e}. Using eager mode.")
+                # Also compile transformer_2 (low noise model) if it exists
+                transformer_2 = getattr(self.pipeline, "transformer_2", None)
+                if transformer_2 is not None:
+                    try:
+                        self.pipeline.transformer_2 = regionally_compile(
+                            transformer_2,
+                            dynamic=True,
+                        )
+                        logger.info("Model runner: transformer_2 compiled with torch.compile.")
+                    except Exception as e:
+                        logger.warning(f"Model runner: torch.compile for transformer_2 failed: {e}. Using eager mode.")
             else:
                 logger.warning(
                     "Model runner: Platform %s does not support torch inductor, skipping torch.compile.",
