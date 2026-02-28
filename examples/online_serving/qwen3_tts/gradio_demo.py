@@ -3,7 +3,11 @@
 Supports all 3 task types:
   - CustomVoice: Predefined speaker with optional style instructions
   - VoiceDesign: Natural language voice description
-  - Base: Voice cloning from reference audio
+  - Base: Voice cloning from reference audio (upload or URL)
+
+Features:
+  - Streaming audio output (progressive playback via PCM chunks)
+  - Online voice cloning via reference audio URL
 
 Usage:
     # Start the server first (see run_server.sh), then:
@@ -36,6 +40,8 @@ SUPPORTED_LANGUAGES = [
 ]
 
 TASK_TYPES = ["CustomVoice", "VoiceDesign", "Base"]
+
+PCM_SAMPLE_RATE = 24000
 
 
 def fetch_voices(api_base: str) -> list[str]:
@@ -71,35 +77,36 @@ def encode_audio_to_base64(audio_data: tuple) -> str:
     return f"data:audio/wav;base64,{wav_b64}"
 
 
-def generate_speech(
-    api_base: str,
+def _build_payload(
     text: str,
     task_type: str,
     voice: str,
     language: str,
     instructions: str,
     ref_audio: tuple | None,
+    ref_audio_url: str,
     ref_text: str,
     response_format: str,
     speed: float,
-):
-    """Call /v1/audio/speech and return audio for Gradio."""
+    stream: bool,
+) -> dict:
+    """Build the /v1/audio/speech request payload."""
     if not text or not text.strip():
         raise gr.Error("Please enter text to synthesize.")
 
-    # Build request payload
     payload = {
         "input": text.strip(),
-        "response_format": response_format,
-        "speed": speed,
+        "response_format": "pcm" if stream else response_format,
+        "stream": stream,
     }
+    if not stream:
+        payload["speed"] = speed
 
     if task_type:
         payload["task_type"] = task_type
     if language:
         payload["language"] = language
 
-    # Task-specific parameters
     if task_type == "CustomVoice":
         if voice:
             payload["voice"] = voice
@@ -112,13 +119,47 @@ def generate_speech(
         payload["instructions"] = instructions.strip()
 
     elif task_type == "Base":
-        if ref_audio is None:
-            raise gr.Error("Base (voice clone) task requires reference audio.")
-        payload["ref_audio"] = encode_audio_to_base64(ref_audio)
+        ref_audio_url_stripped = ref_audio_url.strip() if ref_audio_url else ""
+        if ref_audio_url_stripped:
+            payload["ref_audio"] = ref_audio_url_stripped
+        elif ref_audio is not None:
+            payload["ref_audio"] = encode_audio_to_base64(ref_audio)
+        else:
+            raise gr.Error("Base (voice clone) task requires reference audio. Upload a file or provide a URL.")
         if ref_text and ref_text.strip():
             payload["ref_text"] = ref_text.strip()
 
-    # Call the API
+    return payload
+
+
+def generate_speech(
+    api_base: str,
+    text: str,
+    task_type: str,
+    voice: str,
+    language: str,
+    instructions: str,
+    ref_audio: tuple | None,
+    ref_audio_url: str,
+    ref_text: str,
+    response_format: str,
+    speed: float,
+):
+    """Non-streaming: call /v1/audio/speech and return audio."""
+    payload = _build_payload(
+        text,
+        task_type,
+        voice,
+        language,
+        instructions,
+        ref_audio,
+        ref_audio_url,
+        ref_text,
+        response_format,
+        speed,
+        stream=False,
+    )
+
     try:
         with httpx.Client(timeout=300.0) as client:
             resp = client.post(
@@ -137,7 +178,6 @@ def generate_speech(
     if resp.status_code != 200:
         raise gr.Error(f"Server error ({resp.status_code}): {resp.text}")
 
-    # Check for JSON error response
     content_type = resp.headers.get("content-type", "")
     if "application/json" in content_type:
         try:
@@ -146,14 +186,72 @@ def generate_speech(
         except ValueError:
             pass
 
-    # Decode audio response
     try:
+        if response_format == "pcm":
+            audio_np = np.frombuffer(resp.content, dtype=np.int16).astype(np.float32) / 32767.0
+            return (PCM_SAMPLE_RATE, audio_np)
         audio_np, sample_rate = sf.read(io.BytesIO(resp.content))
         if audio_np.ndim > 1:
             audio_np = audio_np[:, 0]
         return (sample_rate, audio_np.astype(np.float32))
     except Exception as e:
         raise gr.Error(f"Failed to decode audio response: {e}")
+
+
+def generate_speech_stream(
+    api_base: str,
+    text: str,
+    task_type: str,
+    voice: str,
+    language: str,
+    instructions: str,
+    ref_audio: tuple | None,
+    ref_audio_url: str,
+    ref_text: str,
+    response_format: str,
+    speed: float,
+):
+    """Streaming: yield progressive audio as PCM chunks arrive."""
+    payload = _build_payload(
+        text,
+        task_type,
+        voice,
+        language,
+        instructions,
+        ref_audio,
+        ref_audio_url,
+        ref_text,
+        response_format,
+        speed,
+        stream=True,
+    )
+
+    all_samples = []
+    try:
+        with httpx.Client(timeout=300.0) as client:
+            with client.stream(
+                "POST",
+                f"{api_base}/v1/audio/speech",
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer EMPTY",
+                },
+            ) as resp:
+                if resp.status_code != 200:
+                    resp.read()
+                    raise gr.Error(f"Server error ({resp.status_code}): {resp.text}")
+                for chunk in resp.iter_bytes():
+                    if not chunk:
+                        continue
+                    samples = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32767.0
+                    all_samples.append(samples)
+                    combined = np.concatenate(all_samples)
+                    yield (PCM_SAMPLE_RATE, combined)
+    except httpx.TimeoutException:
+        raise gr.Error("Request timed out. The server may be busy.")
+    except httpx.ConnectError:
+        raise gr.Error(f"Cannot connect to server at {api_base}. Make sure the vLLM server is running.")
 
 
 def on_task_type_change(task_type: str):
@@ -163,27 +261,44 @@ def on_task_type_change(task_type: str):
             gr.update(visible=True),  # voice dropdown
             gr.update(visible=True, info="Optional style/emotion instructions"),
             gr.update(visible=False),  # ref_audio
+            gr.update(visible=False),  # ref_audio_url
             gr.update(visible=False),  # ref_text
         )
     elif task_type == "VoiceDesign":
         return (
-            gr.update(visible=False),  # voice dropdown
+            gr.update(visible=False),
             gr.update(visible=True, info="Required: describe the voice style"),
-            gr.update(visible=False),  # ref_audio
-            gr.update(visible=False),  # ref_text
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False),
         )
     elif task_type == "Base":
         return (
-            gr.update(visible=False),  # voice dropdown
-            gr.update(visible=False),  # instructions
-            gr.update(visible=True),  # ref_audio
-            gr.update(visible=True),  # ref_text
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=True),
+            gr.update(visible=True),
+            gr.update(visible=True),
         )
     return (
         gr.update(visible=True),
         gr.update(visible=True),
         gr.update(visible=False),
         gr.update(visible=False),
+        gr.update(visible=False),
+    )
+
+
+def on_stream_change(stream: bool):
+    """When streaming is enabled, lock format to PCM and disable speed."""
+    if stream:
+        return (
+            gr.update(value="pcm", interactive=False),
+            gr.update(interactive=False),
+        )
+    return (
+        gr.update(value="wav", interactive=True),
+        gr.update(interactive=True),
     )
 
 
@@ -235,7 +350,7 @@ def build_interface(api_base: str):
                 # Instructions (CustomVoice optional, VoiceDesign required)
                 instructions = gr.Textbox(
                     label="Instructions",
-                    placeholder=("e.g., Speak with excitement / A warm, friendly female voice"),
+                    placeholder="e.g., Speak with excitement / A warm, friendly female voice",
                     lines=2,
                     visible=True,
                     info="Optional style/emotion instructions",
@@ -243,9 +358,15 @@ def build_interface(api_base: str):
 
                 # Base (voice clone) controls
                 ref_audio = gr.Audio(
-                    label="Reference Audio (for voice cloning)",
+                    label="Reference Audio (upload for voice cloning)",
                     type="numpy",
                     sources=["upload", "microphone"],
+                    visible=False,
+                )
+                ref_audio_url = gr.Textbox(
+                    label="Reference Audio URL",
+                    placeholder="https://example.com/reference.wav (alternative to uploading)",
+                    lines=1,
                     visible=False,
                 )
                 ref_text = gr.Textbox(
@@ -270,6 +391,12 @@ def build_interface(api_base: str):
                         label="Speed",
                         scale=1,
                     )
+                    stream_checkbox = gr.Checkbox(
+                        label="Stream output",
+                        value=False,
+                        info="Enable streaming (uses PCM format, speed control disabled)",
+                        scale=1,
+                    )
 
                 generate_btn = gr.Button(
                     "Generate Speech",
@@ -283,6 +410,7 @@ def build_interface(api_base: str):
                 audio_output = gr.Audio(
                     label="Generated Audio",
                     interactive=False,
+                    streaming=True,
                 )
                 gr.Markdown(
                     "### Task Types\n"
@@ -290,30 +418,45 @@ def build_interface(api_base: str):
                     "(Vivian, Ryan, etc.) with optional style instructions\n"
                     "- **VoiceDesign**: Describe the desired voice in natural "
                     "language (instructions required)\n"
-                    "- **Base**: Clone a voice from reference audio"
+                    "- **Base**: Clone a voice from reference audio "
+                    "(upload a file or provide a URL)"
                 )
 
         # Dynamic UI updates
         task_type.change(
             fn=on_task_type_change,
             inputs=[task_type],
-            outputs=[voice, instructions, ref_audio, ref_text],
+            outputs=[voice, instructions, ref_audio, ref_audio_url, ref_text],
         )
 
-        # Generate button
+        stream_checkbox.change(
+            fn=on_stream_change,
+            inputs=[stream_checkbox],
+            outputs=[response_format, speed],
+        )
+
+        all_inputs = [
+            text_input,
+            task_type,
+            voice,
+            language,
+            instructions,
+            ref_audio,
+            ref_audio_url,
+            ref_text,
+            response_format,
+            speed,
+        ]
+
+        def dispatch(stream_enabled, *args):
+            if stream_enabled:
+                yield from generate_speech_stream(api_base, *args)
+            else:
+                yield generate_speech(api_base, *args)
+
         generate_btn.click(
-            fn=lambda *args: generate_speech(api_base, *args),
-            inputs=[
-                text_input,
-                task_type,
-                voice,
-                language,
-                instructions,
-                ref_audio,
-                ref_text,
-                response_format,
-                speed,
-            ],
+            fn=dispatch,
+            inputs=[stream_checkbox] + all_inputs,
             outputs=[audio_output],
         )
 
