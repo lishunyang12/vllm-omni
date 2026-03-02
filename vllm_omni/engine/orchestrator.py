@@ -20,7 +20,7 @@ from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
-from vllm.tokenizers import TokenizerLike, cached_tokenizer_from_config
+from vllm.tokenizers import cached_tokenizer_from_config
 from vllm.v1.engine import EngineCoreOutputs
 from vllm.v1.engine.input_processor import InputProcessor
 
@@ -82,7 +82,6 @@ def _dtype_to_name(dtype: torch.dtype) -> str:
     return mapping.get(dtype, str(dtype).replace("torch.", ""))
 
 
-
 def build_engine_core_request_from_tokens(
     request_id: str,
     prompt: dict[str, Any],
@@ -108,9 +107,7 @@ def build_engine_core_request_from_tokens(
     if isinstance(params, SamplingParams):
         sampling_params = params.clone()
         if sampling_params.max_tokens is None and model_config is not None:
-            sampling_params.max_tokens = (
-                model_config.max_model_len - len(prompt_token_ids)
-            )
+            sampling_params.max_tokens = model_config.max_model_len - len(prompt_token_ids)
     else:
         pooling_params = params.clone()
 
@@ -143,9 +140,10 @@ def build_engine_core_request_from_tokens(
                 entries[key] = AdditionalInformationEntry(list_data=value)
             else:
                 logger.warning(
-                    "[build_engine_core_request_from_tokens] req=%s "
-                    "skipping unsupported type key=%s type=%s",
-                    request_id, key, type(value).__name__,
+                    "[build_engine_core_request_from_tokens] req=%s skipping unsupported type key=%s type=%s",
+                    request_id,
+                    key,
+                    type(value).__name__,
                 )
         additional_info_payload = AdditionalInformationPayload(entries=entries)
 
@@ -172,6 +170,7 @@ def build_engine_core_request_from_tokens(
 # ============================================================
 # Orchestrator internals (run inside the background thread)
 # ============================================================
+
 
 @dataclass
 class OrchestratorRequestState:
@@ -255,9 +254,7 @@ class Orchestrator:
             self.omni_transfer_config = omni_transfer_config
             self.connectors = connectors
             if connectors:
-                logger.info(
-                    f"[Orchestrator] Initialized {len(connectors)} connectors"
-                )
+                logger.info(f"[Orchestrator] Initialized {len(connectors)} connectors")
         except Exception as e:
             logger.warning(f"[Orchestrator] Failed to initialize connectors: {e}")
             self.omni_transfer_config = None
@@ -272,9 +269,8 @@ class Orchestrator:
 
             if metadata.stage_type == "diffusion":
                 from vllm_omni.diffusion.data import OmniDiffusionConfig
-                od_config = OmniDiffusionConfig.from_kwargs(
-                    model=self.model, **_to_dict(stage_cfg.engine_args)
-                )
+
+                od_config = OmniDiffusionConfig.from_kwargs(model=self.model, **_to_dict(stage_cfg.engine_args))
                 stage_client = StageDiffusionClient(self.model, od_config, metadata)
                 self.stage_clients.append(stage_client)
                 self.output_processors.append(None)
@@ -286,9 +282,7 @@ class Orchestrator:
 
             engine_args_dict = _to_dict(stage_cfg.engine_args)
             engine_args_dict["model"] = self.model
-            lock_fds = acquire_device_locks(
-                stage_id, engine_args_dict, self.stage_init_timeout
-            )
+            lock_fds = acquire_device_locks(stage_id, engine_args_dict, self.stage_init_timeout)
 
             try:
                 stage_client = StageAsyncCoreClient(
@@ -302,9 +296,7 @@ class Orchestrator:
             if vllm_config.model_config.skip_tokenizer_init:
                 tokenizer = None
             else:
-                tokenizer = cached_tokenizer_from_config(
-                    model_config=vllm_config.model_config
-                )
+                tokenizer = cached_tokenizer_from_config(model_config=vllm_config.model_config)
 
             if stage_id == 0:
                 self.input_processor = InputProcessor(
@@ -327,34 +319,32 @@ class Orchestrator:
     async def run(self) -> None:
         """Main entry point for the Orchestrator event loop."""
         # Collect metadata to send back to the main thread
-        default_sampling_params_list = [
-            sc.default_sampling_params for sc in self.stage_clients
-        ]
+        default_sampling_params_list = [sc.default_sampling_params for sc in self.stage_clients]
         stage_metadata = []
         for sc in self.stage_clients:
-            stage_metadata.append({
-                "final_output": sc.final_output,
-                "final_output_type": sc.final_output_type,
-                "stage_type": sc.stage_type,
-            })
+            stage_metadata.append(
+                {
+                    "final_output": sc.final_output,
+                    "final_output_type": sc.final_output_type,
+                    "stage_type": sc.stage_type,
+                }
+            )
 
-        await self.output_queue.put({
-            "type": "ready",
-            "num_stages": self.num_stages,
-            "default_sampling_params_list": default_sampling_params_list,
-            "stage_metadata": stage_metadata,
-            "input_processor": self.input_processor,
-            "output_processors": self.output_processors,
-        })
+        await self.output_queue.put(
+            {
+                "type": "ready",
+                "num_stages": self.num_stages,
+                "default_sampling_params_list": default_sampling_params_list,
+                "stage_metadata": stage_metadata,
+                "input_processor": self.input_processor,
+                "output_processors": self.output_processors,
+            }
+        )
 
         logger.info("[Orchestrator] Ready signal sent, starting event loop")
 
-        request_task = asyncio.create_task(
-            self._request_handler(), name="orchestrator-request-handler"
-        )
-        output_task = asyncio.create_task(
-            self._output_handler(), name="orchestrator-output-handler"
-        )
+        request_task = asyncio.create_task(self._request_handler(), name="orchestrator-request-handler")
+        output_task = asyncio.create_task(self._output_handler(), name="orchestrator-output-handler")
 
         try:
             # _request_handler exits on shutdown; once it's done, cancel
@@ -370,10 +360,7 @@ class Orchestrator:
             # Cancel any remaining tasks spawned by wait_for / gather so
             # the event loop can close cleanly without "pending task" errors.
             loop = asyncio.get_running_loop()
-            pending = [
-                t for t in asyncio.all_tasks(loop)
-                if t is not asyncio.current_task() and not t.done()
-            ]
+            pending = [t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task() and not t.done()]
             for t in pending:
                 t.cancel()
             if pending:
@@ -417,8 +404,8 @@ class Orchestrator:
                     return
 
                 # 1) Diffusion stage: poll non-blocking queue
-                # TODO (Peiqi): the output of diffusion stage is OmniRequestOutput, 
-                # which is different from EngineCoreOutputs (LLM stages). We may want to unify 
+                # TODO (Peiqi): the output of diffusion stage is OmniRequestOutput,
+                # which is different from EngineCoreOutputs (LLM stages). We may want to unify
                 # the output format in the future to simplify the processing logic in Orchestrator.
                 stage_client = self.stage_clients[stage_id]
                 if stage_client.stage_type == "diffusion":
@@ -427,17 +414,13 @@ class Orchestrator:
                         idle = False
                         req_state = self.request_states.get(output.request_id)
                         if req_state is not None:
-                            stage_metrics = self._build_stage_metrics(
-                                stage_id, output.request_id, [output], req_state
-                            )
+                            stage_metrics = self._build_stage_metrics(stage_id, output.request_id, [output], req_state)
                             await self._route_output(stage_id, output, req_state, stage_metrics)
                     continue
 
                 # 1) Poll raw outputs from the stage
                 try:
-                    raw_outputs = await asyncio.wait_for(
-                        self._poll_stage_raw(stage_id), timeout=0.001
-                    )
+                    raw_outputs = await asyncio.wait_for(self._poll_stage_raw(stage_id), timeout=0.001)
                 except asyncio.TimeoutError:
                     continue
                 except asyncio.CancelledError:
@@ -456,25 +439,26 @@ class Orchestrator:
                 idle = False
 
                 # 2) Process raw outputs through the output processor
-                request_outputs = await self._process_stage_outputs(
-                    stage_id, raw_outputs
-                )
+                request_outputs = await self._process_stage_outputs(stage_id, raw_outputs)
 
                 # 3) Route each processed output
                 for output in request_outputs:
                     req_state = self.request_states.get(output.request_id)
                     if req_state is None:
                         logger.warning(
-                            "[Orchestrator] Dropping output for unknown req %s "
-                            "at stage-%s (known reqs: %s)",
-                            output.request_id, stage_id,
+                            "[Orchestrator] Dropping output for unknown req %s at stage-%s (known reqs: %s)",
+                            output.request_id,
+                            stage_id,
                             list(self.request_states.keys()),
                         )
                         continue
                     stage_metrics = None
                     if output.finished:
                         stage_metrics = self._build_stage_metrics(
-                            stage_id, output.request_id, [output], req_state,
+                            stage_id,
+                            output.request_id,
+                            [output],
+                            req_state,
                         )
                     await self._route_output(stage_id, output, req_state, stage_metrics)
 
@@ -497,23 +481,27 @@ class Orchestrator:
         stage_client = self.stage_clients[stage_id]
 
         if stage_client.final_output:
-            await self.output_queue.put({
-                "type": "output",
-                "request_id": req_id,
-                "stage_id": stage_id,
-                "engine_outputs": [output],
-                "metrics": stage_metrics,
-                "finished": finished and stage_id == req_state.final_stage_id,
-                "stage_submit_ts": submit_ts,
-            })
+            await self.output_queue.put(
+                {
+                    "type": "output",
+                    "request_id": req_id,
+                    "stage_id": stage_id,
+                    "engine_outputs": [output],
+                    "metrics": stage_metrics,
+                    "finished": finished and stage_id == req_state.final_stage_id,
+                    "stage_submit_ts": submit_ts,
+                }
+            )
         elif stage_metrics is not None:
-            await self.output_queue.put({
-                "type": "stage_metrics",
-                "request_id": req_id,
-                "stage_id": stage_id,
-                "metrics": stage_metrics,
-                "stage_submit_ts": submit_ts,
-            })
+            await self.output_queue.put(
+                {
+                    "type": "stage_metrics",
+                    "request_id": req_id,
+                    "stage_id": stage_id,
+                    "metrics": stage_metrics,
+                    "stage_submit_ts": submit_ts,
+                }
+            )
 
         if finished and stage_id < req_state.final_stage_id:
             await self._forward_to_next_stage(req_id, stage_id, output, req_state)
@@ -614,9 +602,9 @@ class Orchestrator:
             )
         except Exception:
             logger.exception(
-                "[Orchestrator] req=%s process_engine_inputs FAILED "
-                "for stage-%s",
-                req_id, next_stage_id,
+                "[Orchestrator] req=%s process_engine_inputs FAILED for stage-%s",
+                req_id,
+                next_stage_id,
             )
             raise
 
@@ -630,7 +618,8 @@ class Orchestrator:
                 if connector:
                     logger.debug(
                         "[Orchestrator] Stage %s using connector from stage %s",
-                        next_stage_id, stage_id,
+                        next_stage_id,
+                        stage_id,
                     )
 
             request = build_engine_core_request_from_tokens(
@@ -667,9 +656,7 @@ class Orchestrator:
             return None
         return outputs
 
-    async def _process_stage_outputs(
-        self, stage_id: int, raw_outputs: EngineCoreOutputs
-    ) -> list[RequestOutput]:
+    async def _process_stage_outputs(self, stage_id: int, raw_outputs: EngineCoreOutputs) -> list[RequestOutput]:
         """Run the output processor on raw outputs, returning RequestOutputs.
 
         Also handles abort forwarding and scheduler stats updates.
@@ -683,13 +670,11 @@ class Orchestrator:
         )
 
         if processed.reqs_to_abort:
-            await self.stage_clients[stage_id].abort_requests_async(
-                processed.reqs_to_abort
-            )
+            await self.stage_clients[stage_id].abort_requests_async(processed.reqs_to_abort)
 
         if raw_outputs.scheduler_stats is not None:
             processor.update_scheduler_stats(raw_outputs.scheduler_stats)
-        
+
         return processed.request_outputs
 
     async def _handle_add_request(self, msg: dict[str, Any]) -> None:
@@ -706,9 +691,12 @@ class Orchestrator:
             "[Orchestrator] _handle_add_request: stage=%s req=%s "
             "prompt_type=%s original_prompt_type=%s final_stage=%s "
             "num_sampling_params=%d",
-            stage_id, request_id, type(prompt).__name__,
+            stage_id,
+            request_id,
+            type(prompt).__name__,
             type(original_prompt).__name__,
-            final_stage_id, len(sampling_params_list),
+            final_stage_id,
+            len(sampling_params_list),
         )
 
         # Track request state - use original_prompt so downstream stages
@@ -729,16 +717,18 @@ class Orchestrator:
         stage_client = self.stage_clients[stage_id]
         if stage_client.stage_type == "diffusion":
             logger.info(
-                "[Orchestrator] _handle_add_request: stage-%s req=%s "
-                "submitting diffusion request",
-                stage_id, request_id,
+                "[Orchestrator] _handle_add_request: stage-%s req=%s submitting diffusion request",
+                stage_id,
+                request_id,
             )
             await stage_client.add_request_async(request_id, prompt, params)
         else:
             logger.info(
                 "[Orchestrator] _handle_add_request: stage-%s req=%s "
                 "submitting pre-processed EngineCoreRequest (token_ids=%d)",
-                stage_id, request_id, len(request.prompt_token_ids),
+                stage_id,
+                request_id,
+                len(request.prompt_token_ids),
             )
             await stage_client.add_request_async(request)
 
@@ -759,9 +749,7 @@ class Orchestrator:
                 stage_client.shutdown()
                 logger.info(f"[Orchestrator] Stage {stage_id} shut down")
             except Exception as e:
-                logger.warning(
-                    f"[Orchestrator] Failed to shutdown stage {stage_id}: {e}"
-                )
+                logger.warning(f"[Orchestrator] Failed to shutdown stage {stage_id}: {e}")
 
 
 def run_orchestrator_in_thread(
@@ -799,9 +787,7 @@ def run_orchestrator_in_thread(
         logger.exception("[Orchestrator] Thread crashed")
         # Signal the main thread so it doesn't hang waiting for ready
         try:
-            loop.run_until_complete(
-                output_queue.put({"type": "error", "error": "Orchestrator thread crashed"})
-            )
+            loop.run_until_complete(output_queue.put({"type": "error", "error": "Orchestrator thread crashed"}))
         except Exception:
             pass
         raise

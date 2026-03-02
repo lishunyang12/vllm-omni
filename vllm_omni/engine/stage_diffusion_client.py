@@ -7,12 +7,12 @@ expects from any stage client.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from vllm.logger import init_logger
 
-from vllm_omni.entrypoints.async_omni_diffusion import AsyncOmniDiffusion
 from vllm_omni.engine.stage_init import StageMetadata
+from vllm_omni.entrypoints.async_omni_diffusion import AsyncOmniDiffusion
 from vllm_omni.outputs import OmniRequestOutput
 
 if TYPE_CHECKING:
@@ -35,7 +35,7 @@ class StageDiffusionClient:
     def __init__(
         self,
         model: str,
-        od_config: "OmniDiffusionConfig",
+        od_config: OmniDiffusionConfig,
         metadata: StageMetadata,
     ) -> None:
         self.stage_id = metadata.stage_id
@@ -53,8 +53,8 @@ class StageDiffusionClient:
     async def add_request_async(
         self,
         request_id: str,
-        prompt: "OmniPromptType",
-        sampling_params: "OmniDiffusionSamplingParams",
+        prompt: OmniPromptType,
+        sampling_params: OmniDiffusionSamplingParams,
     ) -> None:
         task = asyncio.create_task(
             self._run(request_id, prompt, sampling_params),
@@ -65,8 +65,8 @@ class StageDiffusionClient:
     async def _run(
         self,
         request_id: str,
-        prompt: "OmniPromptType",
-        sampling_params: "OmniDiffusionSamplingParams",
+        prompt: OmniPromptType,
+        sampling_params: OmniDiffusionSamplingParams,
     ) -> None:
         try:
             result = await self._engine.generate(prompt, sampling_params, request_id)
@@ -74,7 +74,9 @@ class StageDiffusionClient:
         except Exception as e:
             logger.exception(
                 "[StageDiffusionClient] Stage-%s req=%s failed: %s",
-                self.stage_id, request_id, e,
+                self.stage_id,
+                request_id,
+                e,
             )
         finally:
             self._tasks.pop(request_id, None)

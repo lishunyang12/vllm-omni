@@ -13,8 +13,9 @@ import importlib
 import multiprocessing as mp
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 from vllm.logger import init_logger
 from vllm.sampling_params import SamplingParams
@@ -50,9 +51,7 @@ class StageMetadata:
 def extract_stage_metadata(stage_config: Any) -> StageMetadata:
     """Pure data extraction from a stage_config object."""
     stage_id: int = stage_config.stage_id
-    stage_type: Literal["llm", "diffusion"] = getattr(
-        stage_config, "stage_type", "llm"
-    )
+    stage_type: Literal["llm", "diffusion"] = getattr(stage_config, "stage_type", "llm")
     engine_args = stage_config.engine_args
     runtime_cfg = getattr(stage_config, "runtime", {})
     engine_input_source: list[int] = getattr(stage_config, "engine_input_source", [])
@@ -66,9 +65,7 @@ def extract_stage_metadata(stage_config: Any) -> StageMetadata:
     custom_process_input_func: Callable | None = None
     if hasattr(stage_config, "custom_process_input_func"):
         mod_path, fn_name = stage_config.custom_process_input_func.rsplit(".", 1)
-        custom_process_input_func = getattr(
-            importlib.import_module(mod_path), fn_name
-        )
+        custom_process_input_func = getattr(importlib.import_module(mod_path), fn_name)
 
     if stage_type == "diffusion":
         return StageMetadata(
@@ -143,9 +140,7 @@ def setup_stage_devices(stage_id: int, runtime_cfg: Any) -> None:
         logger.warning("Device setup failed for stage %s: %s", stage_id, e)
 
 
-def build_vllm_config(
-    stage_config: Any, model: str
-) -> tuple[Any, type]:
+def build_vllm_config(stage_config: Any, model: str) -> tuple[Any, type]:
     """Build engine_args_dict, resolve worker class, create VllmConfig and executor_class.
 
     Returns:
@@ -161,14 +156,10 @@ def build_vllm_config(
     if stage_type != "diffusion":
         _resolve_worker_cls(engine_args_dict)
 
-    logger.info(
-        "[stage_init] Stage-%s engine_args_dict: %s", stage_id, engine_args_dict
-    )
+    logger.info("[stage_init] Stage-%s engine_args_dict: %s", stage_id, engine_args_dict)
 
     omni_engine_args = OmniEngineArgs(**engine_args_dict)
-    vllm_config = omni_engine_args.create_engine_config(
-        usage_context=UsageContext.LLM_CLASS
-    )
+    vllm_config = omni_engine_args.create_engine_config(usage_context=UsageContext.LLM_CLASS)
     executor_class = Executor.get_class(vllm_config)
 
     return vllm_config, executor_class
@@ -193,20 +184,14 @@ def acquire_device_locks(
             tensor_parallel_size = pc.get("tensor_parallel_size", 1)
             pipeline_parallel_size = pc.get("pipeline_parallel_size", 1)
             data_parallel_size = pc.get("data_parallel_size", 1)
-            prefill_context_parallel_size = pc.get(
-                "prefill_context_parallel_size", 1
-            )
+            prefill_context_parallel_size = pc.get("prefill_context_parallel_size", 1)
             sequence_parallel_size = pc.get("sequence_parallel_size", 1)
             cfg_parallel_size = pc.get("cfg_parallel_size", 1)
         else:
             tensor_parallel_size = engine_args_dict.get("tensor_parallel_size", 1)
-            pipeline_parallel_size = engine_args_dict.get(
-                "pipeline_parallel_size", 1
-            )
+            pipeline_parallel_size = engine_args_dict.get("pipeline_parallel_size", 1)
             data_parallel_size = engine_args_dict.get("data_parallel_size", 1)
-            prefill_context_parallel_size = engine_args_dict.get(
-                "prefill_context_parallel_size", 1
-            )
+            prefill_context_parallel_size = engine_args_dict.get("prefill_context_parallel_size", 1)
             sequence_parallel_size = 1
             cfg_parallel_size = 1
 
@@ -226,11 +211,7 @@ def acquire_device_locks(
 
         if visible_devices_str:
             try:
-                physical_devices = [
-                    int(x.strip())
-                    for x in visible_devices_str.split(",")
-                    if x.strip()
-                ]
+                physical_devices = [int(x.strip()) for x in visible_devices_str.split(",") if x.strip()]
             except (ValueError, IndexError):
                 pass
 
@@ -242,8 +223,7 @@ def acquire_device_locks(
         devices_to_lock = sorted(physical_devices[:num_devices_to_lock])
 
         logger.debug(
-            "Parallel config: TP=%d, PP=%d, DP=%d, PCP=%d, SP=%d, CFG=%d; "
-            "will lock %d devices: %s",
+            "Parallel config: TP=%d, PP=%d, DP=%d, PCP=%d, SP=%d, CFG=%d; will lock %d devices: %s",
             tensor_parallel_size,
             pipeline_parallel_size,
             data_parallel_size,
@@ -262,9 +242,7 @@ def acquire_device_locks(
 
             while not lock_acquired:
                 try:
-                    lock_fd = os.open(
-                        lock_file, os.O_CREAT | os.O_RDWR, 0o644
-                    )
+                    lock_fd = os.open(lock_file, os.O_CREAT | os.O_RDWR, 0o644)
                     try:
                         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                         os.ftruncate(lock_fd, 0)
@@ -272,23 +250,19 @@ def acquire_device_locks(
                         os.fsync(lock_fd)
                         lock_acquired = True
                         lock_fds.append(lock_fd)
-                        logger.debug(
-                            "Acquired exclusive lock for device %s", device_id
-                        )
+                        logger.debug("Acquired exclusive lock for device %s", device_id)
                     except BlockingIOError:
                         os.close(lock_fd)
                         if time.time() - wait_start > stage_init_timeout:
                             logger.warning(
-                                "Timeout waiting for device %s initialization "
-                                "lock, proceeding anyway",
+                                "Timeout waiting for device %s initialization lock, proceeding anyway",
                                 device_id,
                             )
                             break
                         time.sleep(0.1)
                 except OSError as e:
                     logger.debug(
-                        "Failed to acquire lock for device %s: %s, "
-                        "continuing anyway",
+                        "Failed to acquire lock for device %s: %s, continuing anyway",
                         device_id,
                         e,
                     )

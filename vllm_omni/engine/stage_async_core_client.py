@@ -17,6 +17,7 @@ from vllm_omni.engine.stage_init import StageMetadata
 if TYPE_CHECKING:
     from vllm.inputs import TextPrompt
     from vllm.v1.engine import EngineCoreOutput
+
     from vllm_omni.inputs.data import OmniTokensPrompt
 
 logger = init_logger(__name__)
@@ -74,33 +75,28 @@ class StageAsyncCoreClient(AsyncMPClient):
 
     # ==================== Overrides ====================
 
-    async def add_request_async(
-        self, request: EngineCoreRequest | dict[str, Any]
-    ) -> None:
+    async def add_request_async(self, request: EngineCoreRequest | dict[str, Any]) -> None:
         """Add request - supports both EngineCoreRequest and task dict."""
-        logger.info(
-            f"[StageAsyncCoreClient] Stage-{self.stage_id} adding request: {request.request_id if isinstance(request, EngineCoreRequest) else request.get('request_id', 'N/A')}"
-        )
+        req_id = request.request_id if isinstance(request, EngineCoreRequest) else request.get("request_id", "N/A")
+        logger.info(f"[StageAsyncCoreClient] Stage-{self.stage_id} adding request: {req_id}")
         await super().add_request_async(request)
 
     # ==================== Stage Methods ====================
 
-    def set_engine_outputs(self, engine_outputs: "EngineCoreOutput") -> None:
+    def set_engine_outputs(self, engine_outputs: EngineCoreOutput) -> None:
         """Set engine outputs (called by orchestrator)."""
         self.engine_outputs = engine_outputs
 
     def process_engine_inputs(
         self,
         stage_list: list[Any],
-        prompt: "OmniTokensPrompt | TextPrompt | None" = None,
-    ) -> list["OmniTokensPrompt | TextPrompt"]:
+        prompt: OmniTokensPrompt | TextPrompt | None = None,
+    ) -> list[OmniTokensPrompt | TextPrompt]:
         """Process inputs from upstream stages."""
         from vllm_omni.inputs.data import OmniTokensPrompt
 
         if self.custom_process_input_func is not None:
-            logger.info(
-                f"[StageAsyncCoreClient] Stage-{self.stage_id} using custom process input function"
-            )
+            logger.info(f"[StageAsyncCoreClient] Stage-{self.stage_id} using custom process input function")
             return self.custom_process_input_func(
                 stage_list,
                 self.engine_input_source,
@@ -117,10 +113,7 @@ class StageAsyncCoreClient(AsyncMPClient):
         if not isinstance(prompt, list):
             prompt = [prompt]
 
-        mm_data = {
-            so.request_id: p.get("multi_modal_data")
-            for so, p in zip(source_outputs, prompt)
-        }
+        mm_data = {so.request_id: p.get("multi_modal_data") for so, p in zip(source_outputs, prompt)}
 
         # logger.info(
         #     f"[StageAsyncCoreClient] Stage-{self.stage_id} processing engine inputs: {source_outputs}"
@@ -128,9 +121,7 @@ class StageAsyncCoreClient(AsyncMPClient):
         return [
             OmniTokensPrompt(
                 prompt_token_ids=so.outputs[0].token_ids,
-                multi_modal_data=(
-                    mm_data[so.request_id] if self.requires_multimodal_data else None
-                ),
+                multi_modal_data=(mm_data[so.request_id] if self.requires_multimodal_data else None),
             )
             for so in source_outputs
         ]

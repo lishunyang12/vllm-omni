@@ -7,8 +7,8 @@ StageAsyncCoreClient instances) instead of OmniStage with worker processes.
 
 from __future__ import annotations
 
-import os
 import asyncio
+import os
 import time
 import types
 from collections.abc import AsyncGenerator, Iterable, Sequence
@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from vllm.config import VllmConfig
     from vllm.inputs.preprocess import InputPreprocessor
     from vllm.tokenizers import TokenizerLike
+
     from vllm_omni.inputs.data import OmniPromptType, OmniSamplingParams
 
 logger = init_logger(__name__)
@@ -41,11 +42,13 @@ logger = init_logger(__name__)
 def _dummy_snapshot_download(model_id):
     return model_id
 
+
 def omni_snapshot_download(model_id) -> str:
     # TODO: this is just a workaround for quickly use modelscope, we should support
     # modelscope in weight loading feature instead of using `snapshot_download`
     if os.environ.get("VLLM_USE_MODELSCOPE", False):
         from modelscope.hub.snapshot_download import snapshot_download
+
         return snapshot_download(model_id)
     else:
         return _dummy_snapshot_download(model_id)
@@ -109,6 +112,7 @@ class AsyncOmniV1(EngineClient):
         logger.info(f"[AsyncOmniV1] kwargs: {kwargs}")
         # Initialize AsyncOmniEngine (launches Orchestrator child process)
         import time
+
         st = time.time()
         self.engine = AsyncOmniEngine(
             model=model,
@@ -132,9 +136,7 @@ class AsyncOmniV1(EngineClient):
         # Get default sampling params from the Orchestrator ready message
         self.default_sampling_params_list = self.engine.default_sampling_params_list
 
-        logger.info(
-            f"[AsyncOmniV1] Initialized with {self.engine.num_stages} stages for model {model}"
-        )
+        logger.info(f"[AsyncOmniV1] Initialized with {self.engine.num_stages} stages for model {model}")
 
     @property
     def num_stages(self) -> int:
@@ -195,9 +197,7 @@ class AsyncOmniV1(EngineClient):
                 sampling_params_list = self.default_sampling_params_list
 
             if len(sampling_params_list) != self.num_stages:
-                raise ValueError(
-                    f"Expected {self.num_stages} sampling params, got {len(sampling_params_list)}"
-                )
+                raise ValueError(f"Expected {self.num_stages} sampling params, got {len(sampling_params_list)}")
 
             # Track per-request metrics
             wall_start_ts = time.time()
@@ -207,8 +207,7 @@ class AsyncOmniV1(EngineClient):
             # Use stage_metadata from the Orchestrator instead of direct stage_client access
             # Wrap dicts in SimpleNamespace so getattr() works in get_final_stage_id_for_e2e
             stage_meta_list = [
-                types.SimpleNamespace(**self.engine.get_stage_metadata(i))
-                for i in range(self.num_stages)
+                types.SimpleNamespace(**self.engine.get_stage_metadata(i)) for i in range(self.num_stages)
             ]
             final_stage_id_for_e2e = get_final_stage_id_for_e2e(
                 output_modalities,
@@ -395,9 +394,7 @@ class AsyncOmniV1(EngineClient):
         submit_ts = result.get("stage_submit_ts")
         now = time.time()
         if metrics.stage_first_ts[stage_id] is None:
-            metrics.stage_first_ts[stage_id] = (
-                submit_ts if submit_ts is not None else now
-            )
+            metrics.stage_first_ts[stage_id] = submit_ts if submit_ts is not None else now
         metrics.stage_last_ts[stage_id] = max(metrics.stage_last_ts[stage_id] or 0.0, now)
 
         # Process metrics
@@ -471,9 +468,7 @@ class AsyncOmniV1(EngineClient):
                 while True:
                     # Blocking read with timeout (runs in executor to avoid
                     # blocking the event loop)
-                    msg = await loop.run_in_executor(
-                        None, engine.try_get_output_blocking
-                    )
+                    msg = await loop.run_in_executor(None, engine.try_get_output_blocking)
                     if msg is None:
                         continue
 
@@ -490,7 +485,9 @@ class AsyncOmniV1(EngineClient):
                                 if hasattr(_m, "__dict__"):
                                     _m = asdict(_m)
                                 req_state.metrics.on_stage_metrics(
-                                    stage_id, req_id, _m,
+                                    stage_id,
+                                    req_id,
+                                    _m,
                                 )
                                 # Use the Orchestrator's submit timestamp
                                 # for stage_first_ts (when the request was
@@ -673,10 +670,7 @@ class AsyncOmniV1(EngineClient):
     @property
     def errored(self) -> bool:
         """Check if the Orchestrator thread has died."""
-        return (
-            hasattr(self.engine, "orchestrator_thread")
-            and not self.engine.orchestrator_thread.is_alive()
-        )
+        return hasattr(self.engine, "orchestrator_thread") and not self.engine.orchestrator_thread.is_alive()
 
     @property
     def dead_error(self) -> BaseException:

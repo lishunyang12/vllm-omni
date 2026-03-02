@@ -5,8 +5,9 @@ This example shows how to use vLLM-Omni for running offline inference
 with the correct prompt format on Qwen2.5-Omni
 """
 
+import asyncio
 import os
-import time
+import uuid
 from typing import NamedTuple
 
 import librosa
@@ -20,7 +21,10 @@ from vllm.multimodal.image import convert_image_mode
 from vllm.sampling_params import SamplingParams
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
-from vllm_omni.entrypoints.omni import Omni
+if os.getenv("VLLM_OMNI_USE_V1") == "1":
+    from vllm_omni.entrypoints.async_omni_v1 import AsyncOmniV1 as AsyncOmni
+else:
+    from vllm_omni.entrypoints.async_omni import AsyncOmni
 
 SEED = 42
 
@@ -288,7 +292,7 @@ query_map = {
 }
 
 
-def main(args):
+async def main(args):
     model_name = "Qwen/Qwen2.5-Omni-3B"
 
     # Get paths from args
@@ -320,7 +324,7 @@ def main(args):
         query_result = query_func(audio_path=audio_path, sampling_rate=sampling_rate)
     else:
         query_result = query_func()
-    omni_llm = Omni(
+    omni_llm = AsyncOmni(
         model=model_name,
         log_stats=args.enable_stats,
         stage_init_timeout=args.stage_init_timeout,
@@ -377,55 +381,88 @@ def main(args):
         for i, prompt in enumerate(prompts):
             prompt["modalities"] = output_modalities
 
-    profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
-    if profiler_enabled:
-        omni_llm.start_profile(stages=[0])
-    omni_generator = omni_llm.generate(prompts, sampling_params_list, py_generator=args.py_generator)
-
     # Determine output directory: prefer --output-dir; fallback to --output-wav
     output_dir = args.output_dir if getattr(args, "output_dir", None) else args.output_wav
     os.makedirs(output_dir, exist_ok=True)
 
+    profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
+    if profiler_enabled:
+        await omni_llm.start_profile(stages=[0])
+
     total_requests = len(prompts)
     processed_count = 0
-    for stage_outputs in omni_generator:
-        if stage_outputs.final_output_type == "text":
-            for output in stage_outputs.request_output:
-                request_id = output.request_id
-                text_output = output.outputs[0].text
-                # Save aligned text file per request
-                prompt_text = output.prompt
-                out_txt = os.path.join(output_dir, f"{request_id}.txt")
-                lines = []
-                lines.append("Prompt:\n")
-                lines.append(str(prompt_text) + "\n")
-                lines.append("vllm_text_output:\n")
-                lines.append(str(text_output).strip() + "\n")
-                try:
-                    with open(out_txt, "w", encoding="utf-8") as f:
-                        f.writelines(lines)
-                except Exception as e:
-                    print(f"[Warn] Failed writing text file {out_txt}: {e}")
-                print(f"Request ID: {request_id}, Text saved to {out_txt}")
-        elif stage_outputs.final_output_type == "audio":
-            for output in stage_outputs.request_output:
-                request_id = output.request_id
-                audio_tensor = output.multimodal_output["audio"]
-                output_wav = os.path.join(output_dir, f"output_{request_id}.wav")
-                sf.write(output_wav, audio_tensor.detach().cpu().numpy(), samplerate=24000)
-                print(f"Request ID: {request_id}, Saved audio to {output_wav}")
+    profiler_stopped = False
+    profiler_stop_lock = asyncio.Lock()
 
-        processed_count += len(stage_outputs.request_output)
-        if profiler_enabled and processed_count >= total_requests:
-            print(f"[Info] Processed {processed_count}/{total_requests}. Stopping profiler inside active loop...")
-            # Stop the profiler while workers are still alive
-            omni_llm.stop_profile()
+    # Process each prompt asynchronously
+    async def process_single_prompt(prompt, request_id):
+        nonlocal processed_count, profiler_stopped
+        output_modalities_list = None
+        if args.modalities is not None:
+            output_modalities_list = args.modalities.split(",")
 
-            print("[Info] Waiting 30s for workers to write massive trace files to disk...")
-            time.sleep(30)
-            print("[Info] Trace export wait finished.")
+        async for stage_outputs in omni_llm.generate(
+            prompt=prompt,
+            request_id=request_id,
+            sampling_params_list=sampling_params_list,
+            output_modalities=output_modalities_list,
+        ):
+            if stage_outputs.final_output_type == "text":
+                output = stage_outputs.request_output
+                if not isinstance(output, list):
+                    output = [output]
+                for out in output:
+                    req_id = out.request_id
+                    text_output = out.outputs[0].text
+                    # Save aligned text file per request
+                    prompt_text = out.prompt
+                    out_txt = os.path.join(output_dir, f"{req_id}.txt")
+                    lines = []
+                    lines.append("Prompt:\n")
+                    lines.append(str(prompt_text) + "\n")
+                    lines.append("vllm_text_output:\n")
+                    lines.append(str(text_output).strip() + "\n")
+                    try:
+                        with open(out_txt, "w", encoding="utf-8") as f:
+                            f.writelines(lines)
+                    except Exception as e:
+                        print(f"[Warn] Failed writing text file {out_txt}: {e}")
+                    print(f"Request ID: {req_id}, Text saved to {out_txt}")
+            elif stage_outputs.final_output_type == "audio":
+                output = stage_outputs.request_output
+                if not isinstance(output, list):
+                    output = [output]
+                for out in output:
+                    req_id = out.request_id
+                    audio_tensor = out.outputs[0].multimodal_output["audio"]
+                    output_wav = os.path.join(output_dir, f"output_{req_id}.wav")
+                    sf.write(output_wav, audio_tensor.detach().cpu().numpy(), samplerate=24000)
+                    print(f"Request ID: {req_id}, Saved audio to {output_wav}")
 
-    omni_llm.close()
+            processed_count += 1
+            if profiler_enabled and not profiler_stopped and processed_count >= total_requests:
+                async with profiler_stop_lock:
+                    if not profiler_stopped:
+                        profiler_stopped = True
+                        print(
+                            f"[Info] Processed {processed_count}/{total_requests}. Stopping profiler inside active loop..."
+                        )
+                        # Stop the profiler while workers are still alive
+                        await omni_llm.stop_profile()
+                        print("[Info] Waiting 30s for workers to write massive trace files to disk...")
+                        await asyncio.sleep(30)
+                        print("[Info] Trace export wait finished.")
+
+    # Create tasks for all prompts
+    tasks = []
+    for i, prompt in enumerate(prompts):
+        request_id = f"{i}_{uuid.uuid4()}"
+        tasks.append(process_single_prompt(prompt, request_id))
+
+    # Run all tasks concurrently
+    await asyncio.gather(*tasks)
+
+    omni_llm.shutdown()
 
 
 def parse_args():
@@ -544,4 +581,4 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    main(args)
+    asyncio.run(main(args))
