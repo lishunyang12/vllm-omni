@@ -2,7 +2,7 @@
 Orchestrator for vLLM-Omni V1 architecture.
 
 Runs inside a background thread with its own asyncio event loop.
-Owns all StageAsyncCoreClient instances, input/output processors,
+Owns all StageEngineCoreClient instances, input/output processors,
 and handles stage-to-stage transfer logic.
 """
 
@@ -172,7 +172,7 @@ class OrchestratorRequestState:
 class Orchestrator:
     """Runs inside a background thread's asyncio event loop.
 
-    Owns all StageAsyncCoreClient instances, input/output processors,
+    Owns all StageEngineCoreClient instances, input/output processors,
     and handles stage-to-stage transfer logic.
     """
 

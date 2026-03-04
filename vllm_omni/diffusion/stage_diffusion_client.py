@@ -26,7 +26,7 @@ class StageDiffusionClient:
     """Wraps AsyncOmniDiffusion for use inside the Orchestrator.
 
     Exposes the same attributes and async methods the Orchestrator
-    uses on StageAsyncCoreClient, but routes execution through
+    uses on StageEngineCoreClient, but routes execution through
     DiffusionEngine instead of vLLM EngineCore.
     """
 

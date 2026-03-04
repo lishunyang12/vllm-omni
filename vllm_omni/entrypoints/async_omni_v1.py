@@ -2,7 +2,7 @@
 AsyncOmni V1 - Refactored async orchestrator using AsyncOmniEngine.
 
 This is the new implementation that uses AsyncOmniEngine (which manages
-StageAsyncCoreClient instances) instead of OmniStage with worker processes.
+StageEngineCoreClient instances) instead of OmniStage with worker processes.
 """
 
 from __future__ import annotations

@@ -66,8 +66,8 @@ class AsyncOmniEngine:
             get_stage_connector_config,
             load_omni_transfer_config,
         )
-        from vllm_omni.engine.stage_async_core_client import StageAsyncCoreClient
-        from vllm_omni.engine.stage_diffusion_client import StageDiffusionClient
+        from vllm_omni.diffusion.stage_diffusion_client import StageDiffusionClient
+        from vllm_omni.engine.stage_engine_core_client import StageEngineCoreClient
         from vllm_omni.engine.stage_init import (
             acquire_device_locks,
             build_vllm_config,
@@ -131,7 +131,7 @@ class AsyncOmniEngine:
             engine_args_dict["model"] = self.model
             lock_fds = acquire_device_locks(stage_id, engine_args_dict, stage_init_timeout)
             try:
-                stage_client = StageAsyncCoreClient(
+                stage_client = StageEngineCoreClient(
                     vllm_config=vllm_config,
                     executor_class=executor_class,
                     metadata=metadata,

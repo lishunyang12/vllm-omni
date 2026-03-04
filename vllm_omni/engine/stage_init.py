@@ -3,7 +3,7 @@ Stage initialization helpers for vLLM-Omni V1 architecture.
 
 Extracts orchestration-level init logic (config extraction, plugin loading,
 multiprocessing setup, device mapping, device locking, engine args building)
-out of StageAsyncCoreClient into reusable functions.
+out of StageEngineCoreClient into reusable functions.
 """
 
 from __future__ import annotations

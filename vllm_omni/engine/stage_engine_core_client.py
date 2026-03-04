@@ -1,5 +1,5 @@
 """
-Stage Async Engine Core Client for vLLM-Omni V1 architecture.
+Stage Engine Core Client for vLLM-Omni V1 architecture.
 
 Directly inherits from vLLM's AsyncMPClient to reuse EngineCore architecture.
 """
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 
-class StageAsyncCoreClient(AsyncMPClient):
+class StageEngineCoreClient(AsyncMPClient):
     """Stage async client that inherits from vLLM's AsyncMPClient.
 
     Fully reuses AsyncMPClient.__init__ for:
@@ -64,12 +64,12 @@ class StageAsyncCoreClient(AsyncMPClient):
         self.engine_outputs: Any = None
 
         logger.info(
-            "[StageAsyncCoreClient] Stage-%s initializing EngineCore",
+            "[StageEngineCoreClient] Stage-%s initializing EngineCore",
             self.stage_id,
         )
         super().__init__(vllm_config, executor_class, log_stats=False)
         logger.info(
-            "[StageAsyncCoreClient] Stage-%s EngineCore running",
+            "[StageEngineCoreClient] Stage-%s EngineCore running",
             self.stage_id,
         )
 
@@ -78,7 +78,7 @@ class StageAsyncCoreClient(AsyncMPClient):
     async def add_request_async(self, request: EngineCoreRequest | dict[str, Any]) -> None:
         """Add request - supports both EngineCoreRequest and task dict."""
         req_id = request.request_id if isinstance(request, EngineCoreRequest) else request.get("request_id", "N/A")
-        logger.info(f"[StageAsyncCoreClient] Stage-{self.stage_id} adding request: {req_id}")
+        logger.info(f"[StageEngineCoreClient] Stage-{self.stage_id} adding request: {req_id}")
         await super().add_request_async(request)
 
     # ==================== Stage Methods ====================
