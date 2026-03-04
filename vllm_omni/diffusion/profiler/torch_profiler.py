@@ -14,6 +14,32 @@ from .base import ProfilerBase
 logger = init_logger(__name__)
 
 
+def _get_profiler_activities() -> list[ProfilerActivity]:
+    """Return the appropriate profiler activities for the current platform."""
+    from vllm_omni.platforms import current_omni_platform
+
+    activities = [ProfilerActivity.CPU]
+    device_type = current_omni_platform.device_type
+    if device_type == "npu":
+        # torch_npu registers ProfilerActivity.NPU on import
+        try:
+            import torch_npu  # noqa: F401
+        except ImportError:
+            pass
+        if hasattr(ProfilerActivity, "NPU"):
+            activities.append(ProfilerActivity.NPU)
+        else:
+            logger.warning("ProfilerActivity.NPU not available. Make sure torch_npu is installed.")
+    elif device_type == "xpu":
+        if hasattr(ProfilerActivity, "XPU"):
+            activities.append(ProfilerActivity.XPU)
+        else:
+            logger.warning("ProfilerActivity.XPU not available. Make sure Intel XPU support is installed.")
+    else:
+        activities.append(ProfilerActivity.CUDA)
+    return activities
+
+
 class TorchProfiler(ProfilerBase):
     """
     Torch-based profiler configured for End-to-End continuous recording.
@@ -70,7 +96,7 @@ class TorchProfiler(ProfilerBase):
 
         # 4. Initialize profiler with long active period
         cls._profiler = profile(
-            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            activities=_get_profiler_activities(),
             schedule=torch.profiler.schedule(
                 wait=0,
                 warmup=0,
