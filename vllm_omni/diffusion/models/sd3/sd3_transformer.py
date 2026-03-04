@@ -299,6 +299,8 @@ class SD3TransformerBlock(nn.Module):
                 dim=dim,
                 num_heads=num_attention_heads,
                 head_dim=attention_head_dim,
+                added_kv_proj_dim=None,
+                context_pre_only=True,
                 out_dim=dim,
                 qk_norm=True if qk_norm == "rms_norm" else False,
                 eps=1e-6,
