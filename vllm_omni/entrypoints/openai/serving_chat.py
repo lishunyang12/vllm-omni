@@ -9,6 +9,7 @@ from io import BytesIO
 from typing import TYPE_CHECKING, Any, Final, Optional, cast
 
 import jinja2
+import numpy as np
 import torch
 from fastapi import Request
 from PIL import Image
@@ -1829,8 +1830,6 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                     if isinstance(image_data, Image.Image):
                         images.append(image_data)
                     elif hasattr(image_data, "cpu"):  # Tensor
-                        import numpy as np
-
                         # Convert tensor to PIL Image
                         img_array = image_data.float().detach().cpu().numpy()
                         # Handle different tensor formats (CHW -> HWC)
@@ -1857,6 +1856,8 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
         image_contents = []
         for img in images:
             with BytesIO() as buffer:
+                if isinstance(img, np.ndarray):
+                    img = Image.fromarray(img)
                 img.save(buffer, format="PNG")
                 img_bytes = buffer.getvalue()
             img_base64 = base64.b64encode(img_bytes).decode("utf-8")
@@ -2089,6 +2090,8 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
             image_contents: list[dict[str, Any]] = []
             for img in images:
                 with BytesIO() as buffer:
+                    if isinstance(img, np.ndarray):
+                        img = Image.fromarray(img)
                     img.save(buffer, format="PNG")
                     img_bytes = buffer.getvalue()
                 img_base64 = base64.b64encode(img_bytes).decode("utf-8")
