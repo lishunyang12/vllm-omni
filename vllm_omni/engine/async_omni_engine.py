@@ -21,7 +21,6 @@ from vllm.sampling_params import SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.input_processor import InputProcessor
 
-from vllm_omni.engine.orchestrator import run_orchestrator_in_thread
 from vllm_omni.engine.output_processor import MultimodalOutputProcessor
 from vllm_omni.entrypoints.utils import (
     load_stage_configs_from_model,
@@ -56,9 +55,169 @@ class AsyncOmniEngine:
         stage_configs: List of stage configurations. If None, loads from model.
         stage_configs_path: Path to YAML file with stage configs.
         stage_init_timeout: Timeout for stage initialization (seconds)
-        log_requests: Whether to log requests
         **kwargs: Additional arguments
     """
+
+    def _initialize_stages(self, stage_init_timeout: int) -> None:
+        """Initialize stage clients/processors in orchestrator thread and assign to self."""
+        from vllm.tokenizers import cached_tokenizer_from_config
+
+        from vllm_omni.distributed.omni_connectors import (
+            get_stage_connector_config,
+            load_omni_transfer_config,
+        )
+        from vllm_omni.engine.stage_async_core_client import StageAsyncCoreClient
+        from vllm_omni.engine.stage_diffusion_client import StageDiffusionClient
+        from vllm_omni.engine.stage_init import (
+            acquire_device_locks,
+            build_vllm_config,
+            extract_stage_metadata,
+            prepare_engine_environment,
+            release_device_locks,
+            setup_stage_devices,
+        )
+        from vllm_omni.entrypoints.stage_utils import _to_dict
+
+        stage_clients: list[Any] = []
+        output_processors: list[Any] = []
+        stage_vllm_configs: list[Any] = []
+        input_processor: InputProcessor | None = None
+
+        num_stages = len(self.stage_configs)
+        stage0_args = getattr(self.stage_configs[0], "engine_args", None) if num_stages > 0 else None
+        async_chunk = bool(getattr(stage0_args, "async_chunk", False))
+
+        prepare_engine_environment()
+
+        # TODO(AsyncOmniV1): orchestrator-side connector forwarding is disabled;
+        # we only load transfer config for stage_connector_spec extraction.
+        try:
+            config_path = self.config_path or resolve_model_config_path(self.model)
+            omni_transfer_config = load_omni_transfer_config(config_path)
+        except Exception as e:
+            logger.warning("[AsyncOmniEngine] Failed to load transfer config: %s", e)
+            omni_transfer_config = None
+
+        for stage_id, stage_cfg in enumerate(self.stage_configs):
+            logger.info("[AsyncOmniEngine] Initializing stage %s", stage_id)
+
+            metadata = extract_stage_metadata(stage_cfg)
+            setup_stage_devices(stage_id, metadata.runtime_cfg)
+            stage_connector_spec: dict[str, Any] = {}
+            if async_chunk:
+                stage_connectors_cfg = get_stage_connector_config(omni_transfer_config, stage_id)
+                for cfg in stage_connectors_cfg.values():
+                    stage_connector_spec = dict(cfg.get("spec", {}))
+                    break
+
+            if metadata.stage_type == "diffusion":
+                from vllm_omni.diffusion.data import OmniDiffusionConfig
+
+                od_config = OmniDiffusionConfig.from_kwargs(model=self.model, **_to_dict(stage_cfg.engine_args))
+                stage_client = StageDiffusionClient(self.model, od_config, metadata)
+                stage_clients.append(stage_client)
+                output_processors.append(None)
+                stage_vllm_configs.append(None)
+                logger.info("[AsyncOmniEngine] Stage %s initialized (diffusion)", stage_id)
+                continue
+
+            vllm_config, executor_class = build_vllm_config(
+                stage_cfg,
+                self.model,
+                stage_connector_spec=stage_connector_spec,
+            )
+
+            engine_args_dict = _to_dict(stage_cfg.engine_args)
+            engine_args_dict["model"] = self.model
+            lock_fds = acquire_device_locks(stage_id, engine_args_dict, stage_init_timeout)
+            try:
+                stage_client = StageAsyncCoreClient(
+                    vllm_config=vllm_config,
+                    executor_class=executor_class,
+                    metadata=metadata,
+                )
+            finally:
+                release_device_locks(lock_fds)
+
+            if vllm_config.model_config.skip_tokenizer_init:
+                tokenizer = None
+            else:
+                tokenizer = cached_tokenizer_from_config(model_config=vllm_config.model_config)
+
+            if stage_id == 0:
+                input_processor = InputProcessor(vllm_config=vllm_config)
+
+            stage_output_processor = MultimodalOutputProcessor(
+                tokenizer=tokenizer,
+                log_stats=False,
+                engine_core_output_type=metadata.engine_output_type,
+            )
+
+            stage_clients.append(stage_client)
+            output_processors.append(stage_output_processor)
+            stage_vllm_configs.append(vllm_config)
+            logger.info("[AsyncOmniEngine] Stage %s initialized", stage_id)
+
+        default_sampling_params_list = [sc.default_sampling_params for sc in stage_clients]
+        stage_metadata = [
+            {
+                "final_output": sc.final_output,
+                "final_output_type": sc.final_output_type,
+                "stage_type": sc.stage_type,
+            }
+            for sc in stage_clients
+        ]
+
+        if not isinstance(input_processor, InputProcessor):
+            has_llm_stage = any(m.get("stage_type") != "diffusion" for m in stage_metadata)
+            if has_llm_stage:
+                raise RuntimeError("Failed to initialize stage-0 InputProcessor for LLM pipeline")
+
+        # Assign initialized runtime directly on engine instance.
+        self.async_chunk = async_chunk
+        self.stage_clients = stage_clients
+        self.output_processors = output_processors
+        self.stage_vllm_configs = stage_vllm_configs
+        self.input_processor = input_processor
+        self.default_sampling_params_list = default_sampling_params_list
+        self.stage_metadata = stage_metadata
+        self.num_stages = len(stage_metadata)
+
+    def _bootstrap_orchestrator(
+        self,
+        stage_init_timeout: int,
+        startup_future: concurrent.futures.Future,
+    ) -> None:
+        """Create loop, initialize stages, then run Orchestrator."""
+        from vllm_omni.engine.orchestrator import Orchestrator
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            self._initialize_stages(stage_init_timeout)
+            orchestrator = Orchestrator(
+                request_queue=self.request_queue,
+                output_queue=self.output_queue,
+                async_chunk=self.async_chunk,
+                stage_clients=self.stage_clients,
+                output_processors=self.output_processors,
+                stage_vllm_configs=self.stage_vllm_configs,
+            )
+            if not startup_future.done():
+                startup_future.set_result(loop)
+            loop.run_until_complete(orchestrator.run())
+        except Exception as e:
+            if not startup_future.done():
+                startup_future.set_exception(RuntimeError(f"Orchestrator initialization failed: {e}"))
+            logger.exception("[AsyncOmniEngine] Orchestrator thread crashed")
+            try:
+                loop.run_until_complete(self.output_queue.put({"type": "error", "error": "Orchestrator thread crashed"}))
+            except Exception:
+                pass
+            raise
+        finally:
+            loop.close()
 
     def __init__(
         self,
@@ -66,12 +225,9 @@ class AsyncOmniEngine:
         stage_configs: list[Any] | None = None,
         stage_configs_path: str | None = None,
         stage_init_timeout: int = 300,
-        log_requests: bool = True,
         **kwargs: Any,
     ) -> None:
         self.model = model
-        self.stage_init_timeout = stage_init_timeout
-        self.log_requests = log_requests
 
         logger.info(f"[AsyncOmniEngine] Initializing with model {model}")
 
@@ -79,7 +235,13 @@ class AsyncOmniEngine:
         tokenizer = kwargs.get("tokenizer", None)
         base_engine_args = {"tokenizer": tokenizer} if tokenizer is not None else None
 
-        if stage_configs_path is None:
+        if stage_configs is not None:
+            self.config_path = stage_configs_path
+            # Keep caller-provided structured configs as-is.
+            resolved_configs = stage_configs
+            if isinstance(resolved_configs, list) and resolved_configs and isinstance(resolved_configs[0], dict):
+                resolved_configs = OmegaConf.create(resolved_configs)
+        elif stage_configs_path is None:
             self.config_path = resolve_model_config_path(model)
             resolved_configs = load_stage_configs_from_model(model, base_engine_args=base_engine_args)
             if not resolved_configs:
@@ -93,6 +255,12 @@ class AsyncOmniEngine:
         self.num_stages = len(self.stage_configs)
         stage0_args = getattr(self.stage_configs[0], "engine_args", None) if self.num_stages > 0 else None
         self.async_chunk = bool(getattr(stage0_args, "async_chunk", False))
+        self.stage_clients: list[Any] = []
+        self.stage_vllm_configs: list[Any] = []
+        self.output_processors: list[MultimodalOutputProcessor | None] = []
+        self.input_processor: InputProcessor | None = None
+        self.default_sampling_params_list: list[Any] = []
+        self.stage_metadata: list[dict[str, Any]] = []
 
         logger.info(f"[AsyncOmniEngine] Launching Orchestrator thread with {self.num_stages} stages")
 
@@ -101,45 +269,28 @@ class AsyncOmniEngine:
         self.output_queue: asyncio.Queue = asyncio.Queue()
 
         # Launch orchestrator background thread
-        loop_ready = threading.Event()
-        self._orch_loop_holder: list[asyncio.AbstractEventLoop] = []
+        startup_future: concurrent.futures.Future = concurrent.futures.Future()
 
         self.orchestrator_thread = threading.Thread(
-            target=run_orchestrator_in_thread,
+            target=self._bootstrap_orchestrator,
             args=(
-                model,
-                self.stage_configs,
-                self.request_queue,
-                self.output_queue,
                 stage_init_timeout,
-                log_requests,
-                loop_ready,
-                self._orch_loop_holder,
+                startup_future,
             ),
             daemon=True,
             name="orchestrator",
         )
         self.orchestrator_thread.start()
 
-        # Wait for the orchestrator's event loop to be available
-        loop_ready.wait()
-        self._orch_loop: asyncio.AbstractEventLoop = self._orch_loop_holder[0]
+        # Wait for stage/runtime initialization result from orchestrator thread.
+        self._orch_loop: asyncio.AbstractEventLoop
+        try:
+            self._orch_loop = startup_future.result(timeout=stage_init_timeout)
+        except concurrent.futures.TimeoutError as e:
+            raise TimeoutError(f"Orchestrator did not become ready within {stage_init_timeout}s") from e
 
-        # Wait for ready signal from orchestrator (blocking, runs in this thread)
-        ready_msg = self._blocking_get_output(timeout=stage_init_timeout)
-        if ready_msg is None:
-            raise TimeoutError(f"Orchestrator did not become ready within {stage_init_timeout}s")
-
-        if ready_msg.get("type") == "error":
-            raise RuntimeError(f"Orchestrator failed to start: {ready_msg.get('error')}")
-
-        assert ready_msg["type"] == "ready", f"Expected ready message, got {ready_msg['type']}"
-
-        self.num_stages = ready_msg["num_stages"]
-        self.default_sampling_params_list = ready_msg["default_sampling_params_list"]
-        self.stage_metadata = ready_msg["stage_metadata"]
-        self.input_processor: InputProcessor = ready_msg["input_processor"]
-        self.output_processors: list[MultimodalOutputProcessor] = ready_msg["output_processors"]
+        # Stage runtime fields are assigned directly on self by the bootstrap thread.
+        self.num_stages = len(self.stage_metadata)
 
         logger.info(f"[AsyncOmniEngine] Orchestrator ready with {self.num_stages} stages")
 
@@ -148,14 +299,6 @@ class AsyncOmniEngine:
     def _put_to_request_queue(self, msg: dict[str, Any]) -> None:
         """Thread-safe put onto the orchestrator's request_queue."""
         self._orch_loop.call_soon_threadsafe(self.request_queue.put_nowait, msg)
-
-    def _blocking_get_output(self, timeout: float) -> dict[str, Any] | None:
-        """Blocking get from the output_queue (used during init)."""
-        fut = asyncio.run_coroutine_threadsafe(self.output_queue.get(), self._orch_loop)
-        try:
-            return fut.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            return None
 
     @staticmethod
     def _create_default_diffusion_stage_cfg(kwargs: dict[str, Any]) -> list:

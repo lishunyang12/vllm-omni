@@ -118,7 +118,6 @@ class AsyncOmniV1(EngineClient):
             stage_configs=stage_configs,
             stage_configs_path=stage_configs_path,
             stage_init_timeout=stage_init_timeout,
-            log_requests=log_requests,
             **kwargs,
         )
         et = time.time()

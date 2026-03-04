@@ -10,44 +10,25 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import threading
 import time as _time
 from dataclasses import dataclass, field
 from typing import Any
 
 import torch
-from vllm.config import ModelConfig, VllmConfig
+from vllm.config import ModelConfig
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
-from vllm.tokenizers import cached_tokenizer_from_config
 from vllm.v1.engine import EngineCoreOutputs
-from vllm.v1.engine.input_processor import InputProcessor
 
 from vllm_omni.distributed.omni_connectors.adapter import compute_talker_prompt_ids_length
-from vllm_omni.distributed.omni_connectors import (
-    get_stage_connector_config,
-    initialize_orchestrator_connectors,
-)
 from vllm_omni.engine import (
     AdditionalInformationEntry,
     AdditionalInformationPayload,
     OmniEngineCoreRequest,
     PromptEmbedsPayload,
 )
-from vllm_omni.engine.output_processor import MultimodalOutputProcessor
-from vllm_omni.engine.stage_async_core_client import StageAsyncCoreClient
-from vllm_omni.engine.stage_diffusion_client import StageDiffusionClient
-from vllm_omni.engine.stage_init import (
-    acquire_device_locks,
-    build_vllm_config,
-    extract_stage_metadata,
-    prepare_engine_environment,
-    release_device_locks,
-    setup_stage_devices,
-)
-from vllm_omni.entrypoints.utils import resolve_model_config_path
 from vllm_omni.metrics.stats import StageRequestStats as StageRequestMetrics
 from vllm_omni.metrics.stats import StageStats
 from vllm_omni.metrics.utils import count_tokens_from_outputs
@@ -197,30 +178,23 @@ class Orchestrator:
 
     def __init__(
         self,
-        model: str,
-        stage_configs: Any,
         request_queue: asyncio.Queue,
         output_queue: asyncio.Queue,
-        stage_init_timeout: int = 300,
-        log_requests: bool = True,
+        stage_clients: list[Any],
+        output_processors: list[Any],
+        stage_vllm_configs: list[Any],
+        *,
+        async_chunk: bool = False,
     ) -> None:
-        self.model = model
-        self.stage_configs = stage_configs
         self.request_queue = request_queue
         self.output_queue = output_queue
-        self.stage_init_timeout = stage_init_timeout
-        self.log_requests = log_requests
 
-        self.num_stages = len(stage_configs)
-        stage0_args = getattr(stage_configs[0], "engine_args", None) if self.num_stages > 0 else None
-        self.async_chunk = bool(getattr(stage0_args, "async_chunk", False))
+        self.num_stages = len(stage_clients)
+        self.async_chunk = bool(async_chunk)
 
-        # Will be populated by _initialize_stages
-        self.stage_clients: list[StageAsyncCoreClient] = []
-        self.output_processors: list[MultimodalOutputProcessor] = []
-        self.stage_vllm_configs: list[VllmConfig] = []
-        self.connectors: dict[tuple[str, str], Any] = {}
-        self.input_processor: InputProcessor | None = None
+        self.stage_clients: list[Any] = stage_clients
+        self.output_processors: list[Any] = output_processors
+        self.stage_vllm_configs: list[Any] = stage_vllm_configs
 
         # Per-request state
         self.request_states: dict[str, OrchestratorRequestState] = {}
@@ -233,129 +207,9 @@ class Orchestrator:
         # Shutdown coordination
         self._shutdown_event = asyncio.Event()
 
-        self._initialize_stages()
-
-    def _initialize_stages(self) -> None:
-        """Initialize all stage clients and their processors sequentially.
-
-        Performs one-time environment setup, initializes connectors,
-        then for each stage: extracts metadata, sets up devices, builds
-        vllm config, acquires device locks, creates the client, and
-        builds tokenizer / input / output processors.
-        """
-        from vllm_omni.entrypoints.stage_utils import _to_dict
-
-        # One-time global setup
-        prepare_engine_environment()
-
-        # Initialize connectors once
-        try:
-            config_path = resolve_model_config_path(self.model)
-            omni_transfer_config, connectors = initialize_orchestrator_connectors(
-                config_path,
-                worker_backend="multi_process",
-                shm_threshold_bytes=65536,
-            )
-            self.omni_transfer_config = omni_transfer_config
-            self.connectors = connectors
-            if connectors:
-                logger.info(f"[Orchestrator] Initialized {len(connectors)} connectors")
-        except Exception as e:
-            logger.warning(f"[Orchestrator] Failed to initialize connectors: {e}")
-            self.omni_transfer_config = None
-            self.connectors = {}
-
-        # Per-stage initialization
-        for stage_id, stage_cfg in enumerate(self.stage_configs):
-            logger.info(f"[Orchestrator] Initializing stage {stage_id}")
-
-            metadata = extract_stage_metadata(stage_cfg)
-            setup_stage_devices(stage_id, metadata.runtime_cfg)
-            stage_connector_spec: dict[str, Any] = {}
-            if self.async_chunk:
-                stage_connectors_cfg = get_stage_connector_config(self.omni_transfer_config, stage_id)
-                for cfg in stage_connectors_cfg.values():
-                    stage_connector_spec = dict(cfg.get("spec", {}))
-                    break
-
-            if metadata.stage_type == "diffusion":
-                from vllm_omni.diffusion.data import OmniDiffusionConfig
-
-                od_config = OmniDiffusionConfig.from_kwargs(model=self.model, **_to_dict(stage_cfg.engine_args))
-                stage_client = StageDiffusionClient(self.model, od_config, metadata)
-                self.stage_clients.append(stage_client)
-                self.output_processors.append(None)
-                self.stage_vllm_configs.append(None)
-                logger.info(f"[Orchestrator] Stage {stage_id} initialized (diffusion)")
-                continue
-
-            vllm_config, executor_class = build_vllm_config(
-                stage_cfg,
-                self.model,
-                stage_connector_spec=stage_connector_spec,
-            )
-
-            engine_args_dict = _to_dict(stage_cfg.engine_args)
-            engine_args_dict["model"] = self.model
-            lock_fds = acquire_device_locks(stage_id, engine_args_dict, self.stage_init_timeout)
-
-            try:
-                stage_client = StageAsyncCoreClient(
-                    vllm_config=vllm_config,
-                    executor_class=executor_class,
-                    metadata=metadata,
-                )
-            finally:
-                release_device_locks(lock_fds)
-
-            if vllm_config.model_config.skip_tokenizer_init:
-                tokenizer = None
-            else:
-                tokenizer = cached_tokenizer_from_config(model_config=vllm_config.model_config)
-
-            if stage_id == 0:
-                self.input_processor = InputProcessor(
-                    vllm_config=vllm_config,
-                )
-
-            stage_output_processor = MultimodalOutputProcessor(
-                tokenizer=tokenizer,
-                log_stats=False,
-                engine_core_output_type=metadata.engine_output_type,
-            )
-
-            self.stage_clients.append(stage_client)
-            self.output_processors.append(stage_output_processor)
-            self.stage_vllm_configs.append(vllm_config)
-
-            logger.info(f"[Orchestrator] Stage {stage_id} initialized")
-
     async def run(self) -> None:
         """Main entry point for the Orchestrator event loop."""
-        # Collect metadata to send back to the main thread
-        default_sampling_params_list = [sc.default_sampling_params for sc in self.stage_clients]
-        stage_metadata = []
-        for sc in self.stage_clients:
-            stage_metadata.append(
-                {
-                    "final_output": sc.final_output,
-                    "final_output_type": sc.final_output_type,
-                    "stage_type": sc.stage_type,
-                }
-            )
-
-        await self.output_queue.put(
-            {
-                "type": "ready",
-                "num_stages": self.num_stages,
-                "default_sampling_params_list": default_sampling_params_list,
-                "stage_metadata": stage_metadata,
-                "input_processor": self.input_processor,
-                "output_processors": self.output_processors,
-            }
-        )
-
-        logger.info("[Orchestrator] Ready signal sent, starting event loop")
+        logger.info("[Orchestrator] Starting event loop")
 
         request_task = asyncio.create_task(self._request_handler(), name="orchestrator-request-handler")
         output_task = asyncio.create_task(self._output_handler(), name="orchestrator-output-handler")
@@ -635,18 +489,6 @@ class Orchestrator:
 
         # Build and submit requests for each input
         for next_input in next_inputs:
-            # Check connector
-            # TODO: connector is disabled in this implementation.
-            if self.connectors:
-                connector_key = (str(stage_id), str(next_stage_id))
-                connector = self.connectors.get(connector_key)
-                if connector:
-                    logger.debug(
-                        "[Orchestrator] Stage %s using connector from stage %s",
-                        next_stage_id,
-                        stage_id,
-                    )
-
             request = build_engine_core_request_from_tokens(
                 request_id=req_id,
                 prompt=next_input,
@@ -830,46 +672,3 @@ class Orchestrator:
                 logger.info(f"[Orchestrator] Stage {stage_id} shut down")
             except Exception as e:
                 logger.warning(f"[Orchestrator] Failed to shutdown stage {stage_id}: {e}")
-
-
-def run_orchestrator_in_thread(
-    model: str,
-    stage_configs: Any,
-    request_queue: asyncio.Queue,
-    output_queue: asyncio.Queue,
-    stage_init_timeout: int,
-    log_requests: bool,
-    loop_ready: threading.Event,
-    loop_holder: list,
-) -> None:
-    """Top-level entry point for the Orchestrator background thread.
-
-    Creates a fresh asyncio event loop and runs the Orchestrator.
-    Exposes the loop via *loop_holder* so the main thread can schedule
-    work on it (e.g. queue.put via call_soon_threadsafe).
-    """
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop_holder.append(loop)
-    loop_ready.set()
-
-    try:
-        orchestrator = Orchestrator(
-            model=model,
-            stage_configs=stage_configs,
-            request_queue=request_queue,
-            output_queue=output_queue,
-            stage_init_timeout=stage_init_timeout,
-            log_requests=log_requests,
-        )
-        loop.run_until_complete(orchestrator.run())
-    except Exception:
-        logger.exception("[Orchestrator] Thread crashed")
-        # Signal the main thread so it doesn't hang waiting for ready
-        try:
-            loop.run_until_complete(output_queue.put({"type": "error", "error": "Orchestrator thread crashed"}))
-        except Exception:
-            pass
-        raise
-    finally:
-        loop.close()
