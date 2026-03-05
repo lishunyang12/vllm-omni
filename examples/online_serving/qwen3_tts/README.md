@@ -16,19 +16,28 @@ Please refer to [README.md](https://github.com/vllm-project/vllm-omni/tree/main/
 
 ## Gradio Demo
 
-The interactive Gradio demo supports all 3 task types with a web UI.
+Two interactive Gradio demos are available, both supporting all 3 task types:
+
+| Demo | File | Transport | Streaming Quality |
+| ---- | ---- | --------- | ----------------- |
+| Standard | `gradio_demo.py` | HTTP chunked | May have small gaps between chunks |
+| FastRTC | `gradio_fastrtc_demo.py` | WebRTC | Gapless streaming (requires `pip install fastrtc`) |
 
 ```bash
-# Option 1: Launch server + Gradio together
+# Option 1: Launch server + Standard Gradio together
 ./run_gradio_demo.sh                                # CustomVoice (default)
 ./run_gradio_demo.sh --task-type VoiceDesign        # VoiceDesign
 ./run_gradio_demo.sh --task-type Base               # Voice cloning
 
 # Option 2: If server is already running
 python gradio_demo.py --api-base http://localhost:8000
+
+# Option 3: FastRTC demo (gapless streaming)
+pip install fastrtc
+python gradio_fastrtc_demo.py --api-base http://localhost:8000
 ```
 
-Then open http://127.0.0.1:7860 in your browser.
+Then open http://localhost:7860 in your browser.
 
 ## Run examples (Qwen3-TTS)
 

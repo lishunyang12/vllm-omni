@@ -1,13 +1,14 @@
 """Gradio demo for Qwen3-TTS online serving via /v1/audio/speech API.
 
+Uses Gradio's built-in audio component for playback. Supports streaming
+(progressive PCM chunks) and non-streaming (full audio download) modes.
+
+For gapless streaming playback, see gradio_fastrtc_demo.py which uses WebRTC.
+
 Supports all 3 task types:
   - CustomVoice: Predefined speaker with optional style instructions
   - VoiceDesign: Natural language voice description
   - Base: Voice cloning from reference audio (upload or URL)
-
-Features:
-  - Streaming audio output (progressive playback via PCM chunks)
-  - Online voice cloning via reference audio URL
 
 Usage:
     # Start the server first (see run_server.sh), then:
@@ -17,122 +18,22 @@ Usage:
 """
 
 import argparse
-import base64
 import io
 
 import gradio as gr
 import httpx
 import numpy as np
 import soundfile as sf
-
-SUPPORTED_LANGUAGES = [
-    "Auto",
-    "Chinese",
-    "English",
-    "Japanese",
-    "Korean",
-    "German",
-    "French",
-    "Russian",
-    "Portuguese",
-    "Spanish",
-    "Italian",
-]
-
-TASK_TYPES = ["CustomVoice", "VoiceDesign", "Base"]
-
-PCM_SAMPLE_RATE = 24000
-
-
-def fetch_voices(api_base: str) -> list[str]:
-    """Fetch available voices from the server."""
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            resp = client.get(
-                f"{api_base}/v1/audio/voices",
-                headers={"Authorization": "Bearer EMPTY"},
-            )
-        if resp.status_code == 200:
-            data = resp.json()
-            return data.get("voices", ["Vivian", "Ryan"])
-    except Exception:
-        pass
-    return ["Vivian", "Ryan"]
-
-
-def encode_audio_to_base64(audio_data: tuple) -> str:
-    """Encode Gradio audio input (sample_rate, numpy_array) to base64 data URL."""
-    sample_rate, audio_np = audio_data
-
-    if audio_np.dtype != np.int16:
-        if audio_np.dtype in (np.float32, np.float64):
-            audio_np = np.clip(audio_np, -1.0, 1.0)
-            audio_np = (audio_np * 32767).astype(np.int16)
-        else:
-            audio_np = audio_np.astype(np.int16)
-
-    buf = io.BytesIO()
-    sf.write(buf, audio_np, sample_rate, format="WAV")
-    wav_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-    return f"data:audio/wav;base64,{wav_b64}"
-
-
-def _build_payload(
-    text: str,
-    task_type: str,
-    voice: str,
-    language: str,
-    instructions: str,
-    ref_audio: tuple | None,
-    ref_audio_url: str,
-    ref_text: str,
-    x_vector_only: bool,
-    response_format: str,
-    speed: float,
-    stream: bool,
-) -> dict:
-    """Build the /v1/audio/speech request payload."""
-    if not text or not text.strip():
-        raise gr.Error("Please enter text to synthesize.")
-
-    payload = {
-        "input": text.strip(),
-        "response_format": "pcm" if stream else response_format,
-        "stream": stream,
-    }
-    if not stream:
-        payload["speed"] = speed
-
-    if task_type:
-        payload["task_type"] = task_type
-    if language:
-        payload["language"] = language
-
-    if task_type == "CustomVoice":
-        if voice:
-            payload["voice"] = voice
-        if instructions and instructions.strip():
-            payload["instructions"] = instructions.strip()
-
-    elif task_type == "VoiceDesign":
-        if not instructions or not instructions.strip():
-            raise gr.Error("VoiceDesign task requires voice style instructions.")
-        payload["instructions"] = instructions.strip()
-
-    elif task_type == "Base":
-        ref_audio_url_stripped = ref_audio_url.strip() if ref_audio_url else ""
-        if ref_audio_url_stripped:
-            payload["ref_audio"] = ref_audio_url_stripped
-        elif ref_audio is not None:
-            payload["ref_audio"] = encode_audio_to_base64(ref_audio)
-        else:
-            raise gr.Error("Base (voice clone) task requires reference audio. Upload a file or provide a URL.")
-        if ref_text and ref_text.strip():
-            payload["ref_text"] = ref_text.strip()
-        if x_vector_only:
-            payload["x_vector_only_mode"] = True
-
-    return payload
+from tts_common import (
+    PCM_SAMPLE_RATE,
+    SUPPORTED_LANGUAGES,
+    TASK_TYPES,
+    add_common_args,
+    build_payload,
+    fetch_voices,
+    on_task_type_change,
+    stream_pcm_chunks,
+)
 
 
 def generate_speech(
@@ -150,7 +51,7 @@ def generate_speech(
     speed: float,
 ):
     """Non-streaming: call /v1/audio/speech and return audio."""
-    payload = _build_payload(
+    payload = build_payload(
         text,
         task_type,
         voice,
@@ -219,7 +120,7 @@ def generate_speech_stream(
     chunk_seconds: float = 0.25,
 ):
     """Streaming: yield individual PCM chunks for progressive playback."""
-    payload = _build_payload(
+    payload = build_payload(
         text,
         task_type,
         voice,
@@ -234,56 +135,33 @@ def generate_speech_stream(
         stream=True,
     )
 
-    MIN_CHUNK_SAMPLES = int(PCM_SAMPLE_RATE * chunk_seconds)
+    min_chunk_samples = int(PCM_SAMPLE_RATE * chunk_seconds)
     # Pre-buffer 2 chunks before first playback to avoid the gap
     # between chunk 1 and chunk 2 during progressive streaming.
-    PREBUFFER_CHUNKS = 2
-    pending = []
+    prebuffer_chunks = 2
+    pending: list[np.ndarray] = []
     pending_len = 0
-    leftover = b""  # carry odd trailing byte between network chunks
     chunks_yielded = 0
-    prebuffer = []
+    prebuffer: list[np.ndarray] = []
 
     try:
-        with httpx.Client(timeout=300.0) as client:
-            with client.stream(
-                "POST",
-                f"{api_base}/v1/audio/speech",
-                json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": "Bearer EMPTY",
-                },
-            ) as resp:
-                if resp.status_code != 200:
-                    resp.read()
-                    raise gr.Error(f"Server error ({resp.status_code}): {resp.text}")
-                for chunk in resp.iter_bytes():
-                    if not chunk:
-                        continue
-                    raw = leftover + chunk
-                    # int16 = 2 bytes per sample; keep any trailing odd byte
-                    usable = len(raw) - (len(raw) % 2)
-                    leftover = raw[usable:]
-                    if usable == 0:
-                        continue
-                    samples = np.frombuffer(raw[:usable], dtype=np.int16).astype(np.float32) / 32767.0
-                    pending.append(samples)
-                    pending_len += len(samples)
-                    if pending_len >= MIN_CHUNK_SAMPLES:
-                        audio_chunk = np.concatenate(pending)
-                        pending.clear()
-                        pending_len = 0
+        for samples in stream_pcm_chunks(api_base, payload):
+            float_samples = samples.astype(np.float32) / 32767.0
+            pending.append(float_samples)
+            pending_len += len(float_samples)
+            if pending_len >= min_chunk_samples:
+                audio_chunk = np.concatenate(pending)
+                pending.clear()
+                pending_len = 0
 
-                        if chunks_yielded < PREBUFFER_CHUNKS:
-                            prebuffer.append(audio_chunk)
-                            chunks_yielded += 1
-                            if chunks_yielded == PREBUFFER_CHUNKS:
-                                # Yield both initial chunks as one block
-                                yield (PCM_SAMPLE_RATE, np.concatenate(prebuffer))
-                                prebuffer.clear()
-                        else:
-                            yield (PCM_SAMPLE_RATE, audio_chunk)
+                if chunks_yielded < prebuffer_chunks:
+                    prebuffer.append(audio_chunk)
+                    chunks_yielded += 1
+                    if chunks_yielded == prebuffer_chunks:
+                        yield (PCM_SAMPLE_RATE, np.concatenate(prebuffer))
+                        prebuffer.clear()
+                else:
+                    yield (PCM_SAMPLE_RATE, audio_chunk)
         # Flush: prebuffer (if stream was shorter than 2 chunks) + remaining pending
         remaining = prebuffer + pending
         if remaining:
@@ -292,45 +170,6 @@ def generate_speech_stream(
         raise gr.Error("Request timed out. The server may be busy.")
     except httpx.ConnectError:
         raise gr.Error(f"Cannot connect to server at {api_base}. Make sure the vLLM server is running.")
-
-
-def on_task_type_change(task_type: str):
-    """Update UI visibility based on selected task type."""
-    if task_type == "CustomVoice":
-        return (
-            gr.update(visible=True),  # voice dropdown
-            gr.update(visible=True, info="Optional style/emotion instructions"),
-            gr.update(visible=False),  # ref_audio
-            gr.update(visible=False),  # ref_audio_url
-            gr.update(visible=False),  # ref_text
-            gr.update(visible=False),  # x_vector_only
-        )
-    elif task_type == "VoiceDesign":
-        return (
-            gr.update(visible=False),
-            gr.update(visible=True, info="Required: describe the voice style"),
-            gr.update(visible=False),
-            gr.update(visible=False),
-            gr.update(visible=False),
-            gr.update(visible=False),
-        )
-    elif task_type == "Base":
-        return (
-            gr.update(visible=False),
-            gr.update(visible=False),
-            gr.update(visible=True),
-            gr.update(visible=True),
-            gr.update(visible=True),
-            gr.update(visible=True),
-        )
-    return (
-        gr.update(visible=True),
-        gr.update(visible=True),
-        gr.update(visible=False),
-        gr.update(visible=False),
-        gr.update(visible=False),
-        gr.update(visible=False),
-    )
 
 
 def on_stream_change(stream: bool):
@@ -383,7 +222,6 @@ def build_interface(api_base: str, stream_chunk_seconds: float = 0.25):
                         scale=1,
                     )
 
-                # CustomVoice controls
                 voice = gr.Dropdown(
                     choices=voices,
                     value=voices[0] if voices else None,
@@ -391,16 +229,14 @@ def build_interface(api_base: str, stream_chunk_seconds: float = 0.25):
                     visible=True,
                 )
 
-                # Instructions (CustomVoice optional, VoiceDesign required)
                 instructions = gr.Textbox(
                     label="Instructions",
-                    placeholder="e.g., Speak with excitement / A warm, friendly female voice",
+                    placeholder=("e.g., Speak with excitement / A warm, friendly female voice"),
                     lines=2,
                     visible=True,
                     info="Optional style/emotion instructions",
                 )
 
-                # Base (voice clone) controls
                 ref_audio = gr.Audio(
                     label="Reference Audio (upload for voice cloning)",
                     type="numpy",
@@ -409,13 +245,13 @@ def build_interface(api_base: str, stream_chunk_seconds: float = 0.25):
                 )
                 ref_audio_url = gr.Textbox(
                     label="Reference Audio URL",
-                    placeholder="https://example.com/reference.wav (alternative to uploading)",
+                    placeholder=("https://example.com/reference.wav (alternative to uploading)"),
                     lines=1,
                     visible=False,
                 )
                 ref_text = gr.Textbox(
                     label="Reference Audio Transcript",
-                    placeholder="Transcript of the reference audio (optional, improves quality)",
+                    placeholder=("Transcript of the reference audio (optional, improves quality)"),
                     lines=2,
                     visible=False,
                 )
@@ -423,7 +259,7 @@ def build_interface(api_base: str, stream_chunk_seconds: float = 0.25):
                     label="Use x-vector only",
                     value=False,
                     visible=False,
-                    info="Skip reference transcript, use speaker embedding only (lower quality)",
+                    info=("Skip reference transcript, use speaker embedding only (lower quality)"),
                 )
 
                 with gr.Row():
@@ -444,7 +280,10 @@ def build_interface(api_base: str, stream_chunk_seconds: float = 0.25):
                     stream_checkbox = gr.Checkbox(
                         label="Stream output",
                         value=False,
-                        info="Enable streaming (uses PCM format, speed control disabled)",
+                        info=(
+                            "Enable streaming (PCM format, speed disabled). "
+                            "For gapless streaming, use gradio_fastrtc_demo.py"
+                        ),
                         scale=1,
                     )
 
@@ -477,7 +316,14 @@ def build_interface(api_base: str, stream_chunk_seconds: float = 0.25):
         task_type.change(
             fn=on_task_type_change,
             inputs=[task_type],
-            outputs=[voice, instructions, ref_audio, ref_audio_url, ref_text, x_vector_only],
+            outputs=[
+                voice,
+                instructions,
+                ref_audio,
+                ref_audio_url,
+                ref_text,
+                x_vector_only,
+            ],
         )
 
         stream_checkbox.change(
@@ -502,7 +348,11 @@ def build_interface(api_base: str, stream_chunk_seconds: float = 0.25):
 
         def dispatch(stream_enabled, *args):
             if stream_enabled:
-                yield from generate_speech_stream(api_base, *args, chunk_seconds=stream_chunk_seconds)
+                yield from generate_speech_stream(
+                    api_base,
+                    *args,
+                    chunk_seconds=stream_chunk_seconds,
+                )
             else:
                 yield generate_speech(api_base, *args)
 
@@ -518,33 +368,15 @@ def build_interface(api_base: str, stream_chunk_seconds: float = 0.25):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Gradio demo for Qwen3-TTS online serving.")
-    parser.add_argument(
-        "--api-base",
-        default="http://localhost:8000",
-        help="Base URL for the vLLM API server (default: http://localhost:8000).",
-    )
-    parser.add_argument(
-        "--ip",
-        default="127.0.0.1",
-        help="Host/IP for Gradio server (default: 127.0.0.1).",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=7860,
-        help="Port for Gradio server (default: 7860).",
-    )
-    parser.add_argument(
-        "--share",
-        action="store_true",
-        help="Share the Gradio demo publicly.",
-    )
+    add_common_args(parser)
     parser.add_argument(
         "--stream-chunk-seconds",
         type=float,
         default=0.25,
-        help="Seconds of audio to buffer per streaming chunk (default: 0.25). "
-             "Lower = smoother but more overhead, higher = chunkier.",
+        help=(
+            "Seconds of audio to buffer per streaming chunk (default: 0.25). "
+            "Lower = smoother but more overhead, higher = chunkier."
+        ),
     )
     return parser.parse_args()
 
@@ -553,11 +385,14 @@ def main():
     args = parse_args()
 
     print(f"Connecting to vLLM server at: {args.api_base}")
-    demo = build_interface(args.api_base, stream_chunk_seconds=args.stream_chunk_seconds)
+    demo = build_interface(
+        args.api_base,
+        stream_chunk_seconds=args.stream_chunk_seconds,
+    )
 
     try:
         demo.launch(
-            server_name=args.ip,
+            server_name=args.host,
             server_port=args.port,
             share=args.share,
         )
