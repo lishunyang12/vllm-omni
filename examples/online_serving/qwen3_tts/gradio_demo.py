@@ -235,9 +235,14 @@ def generate_speech_stream(
     )
 
     MIN_CHUNK_SAMPLES = int(PCM_SAMPLE_RATE * chunk_seconds)
+    # Pre-buffer 2 chunks before first playback to avoid the gap
+    # between chunk 1 and chunk 2 during progressive streaming.
+    PREBUFFER_CHUNKS = 2
     pending = []
     pending_len = 0
     leftover = b""  # carry odd trailing byte between network chunks
+    chunks_yielded = 0
+    prebuffer = []
 
     try:
         with httpx.Client(timeout=300.0) as client:
@@ -266,12 +271,23 @@ def generate_speech_stream(
                     pending.append(samples)
                     pending_len += len(samples)
                     if pending_len >= MIN_CHUNK_SAMPLES:
-                        yield (PCM_SAMPLE_RATE, np.concatenate(pending))
+                        audio_chunk = np.concatenate(pending)
                         pending.clear()
                         pending_len = 0
-        # Flush remaining samples
-        if pending:
-            yield (PCM_SAMPLE_RATE, np.concatenate(pending))
+
+                        if chunks_yielded < PREBUFFER_CHUNKS:
+                            prebuffer.append(audio_chunk)
+                            chunks_yielded += 1
+                            if chunks_yielded == PREBUFFER_CHUNKS:
+                                # Yield both initial chunks as one block
+                                yield (PCM_SAMPLE_RATE, np.concatenate(prebuffer))
+                                prebuffer.clear()
+                        else:
+                            yield (PCM_SAMPLE_RATE, audio_chunk)
+        # Flush: prebuffer (if stream was shorter than 2 chunks) + remaining pending
+        remaining = prebuffer + pending
+        if remaining:
+            yield (PCM_SAMPLE_RATE, np.concatenate(remaining))
     except httpx.TimeoutException:
         raise gr.Error("Request timed out. The server may be busy.")
     except httpx.ConnectError:
