@@ -86,6 +86,7 @@ def _build_payload(
     ref_audio: tuple | None,
     ref_audio_url: str,
     ref_text: str,
+    x_vector_only: bool,
     response_format: str,
     speed: float,
     stream: bool,
@@ -128,6 +129,8 @@ def _build_payload(
             raise gr.Error("Base (voice clone) task requires reference audio. Upload a file or provide a URL.")
         if ref_text and ref_text.strip():
             payload["ref_text"] = ref_text.strip()
+        if x_vector_only:
+            payload["x_vector_only_mode"] = True
 
     return payload
 
@@ -142,6 +145,7 @@ def generate_speech(
     ref_audio: tuple | None,
     ref_audio_url: str,
     ref_text: str,
+    x_vector_only: bool,
     response_format: str,
     speed: float,
 ):
@@ -155,6 +159,7 @@ def generate_speech(
         ref_audio,
         ref_audio_url,
         ref_text,
+        x_vector_only,
         response_format,
         speed,
         stream=False,
@@ -208,10 +213,11 @@ def generate_speech_stream(
     ref_audio: tuple | None,
     ref_audio_url: str,
     ref_text: str,
+    x_vector_only: bool,
     response_format: str,
     speed: float,
 ):
-    """Streaming: yield progressive audio as PCM chunks arrive."""
+    """Streaming: yield individual PCM chunks for progressive playback."""
     payload = _build_payload(
         text,
         task_type,
@@ -221,12 +227,18 @@ def generate_speech_stream(
         ref_audio,
         ref_audio_url,
         ref_text,
+        x_vector_only,
         response_format,
         speed,
         stream=True,
     )
 
-    all_samples = []
+    # Buffer small network chunks into >= MIN_CHUNK_SAMPLES before yielding,
+    # so Gradio gets chunks long enough (~1 s) for smooth playback.
+    MIN_CHUNK_SAMPLES = PCM_SAMPLE_RATE  # 1 second at 24 kHz
+    pending = []
+    pending_len = 0
+
     try:
         with httpx.Client(timeout=300.0) as client:
             with client.stream(
@@ -245,9 +257,15 @@ def generate_speech_stream(
                     if not chunk:
                         continue
                     samples = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32767.0
-                    all_samples.append(samples)
-                    combined = np.concatenate(all_samples)
-                    yield (PCM_SAMPLE_RATE, combined)
+                    pending.append(samples)
+                    pending_len += len(samples)
+                    if pending_len >= MIN_CHUNK_SAMPLES:
+                        yield (PCM_SAMPLE_RATE, np.concatenate(pending))
+                        pending.clear()
+                        pending_len = 0
+        # Flush remaining samples
+        if pending:
+            yield (PCM_SAMPLE_RATE, np.concatenate(pending))
     except httpx.TimeoutException:
         raise gr.Error("Request timed out. The server may be busy.")
     except httpx.ConnectError:
@@ -263,11 +281,13 @@ def on_task_type_change(task_type: str):
             gr.update(visible=False),  # ref_audio
             gr.update(visible=False),  # ref_audio_url
             gr.update(visible=False),  # ref_text
+            gr.update(visible=False),  # x_vector_only
         )
     elif task_type == "VoiceDesign":
         return (
             gr.update(visible=False),
             gr.update(visible=True, info="Required: describe the voice style"),
+            gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=False),
@@ -279,10 +299,12 @@ def on_task_type_change(task_type: str):
             gr.update(visible=True),
             gr.update(visible=True),
             gr.update(visible=True),
+            gr.update(visible=True),
         )
     return (
         gr.update(visible=True),
         gr.update(visible=True),
+        gr.update(visible=False),
         gr.update(visible=False),
         gr.update(visible=False),
         gr.update(visible=False),
@@ -375,6 +397,12 @@ def build_interface(api_base: str):
                     lines=2,
                     visible=False,
                 )
+                x_vector_only = gr.Checkbox(
+                    label="Use x-vector only",
+                    value=False,
+                    visible=False,
+                    info="Skip reference transcript, use speaker embedding only (lower quality)",
+                )
 
                 with gr.Row():
                     response_format = gr.Dropdown(
@@ -411,6 +439,7 @@ def build_interface(api_base: str):
                     label="Generated Audio",
                     interactive=False,
                     streaming=True,
+                    autoplay=True,
                 )
                 gr.Markdown(
                     "### Task Types\n"
@@ -426,7 +455,7 @@ def build_interface(api_base: str):
         task_type.change(
             fn=on_task_type_change,
             inputs=[task_type],
-            outputs=[voice, instructions, ref_audio, ref_audio_url, ref_text],
+            outputs=[voice, instructions, ref_audio, ref_audio_url, ref_text, x_vector_only],
         )
 
         stream_checkbox.change(
@@ -444,6 +473,7 @@ def build_interface(api_base: str):
             ref_audio,
             ref_audio_url,
             ref_text,
+            x_vector_only,
             response_format,
             speed,
         ]

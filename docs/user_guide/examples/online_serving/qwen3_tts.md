@@ -17,6 +17,22 @@ Please refer to [README.md](https://github.com/vllm-project/vllm-omni/tree/main/
 | `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice` | CustomVoice | Smaller/faster variant                                |
 | `Qwen/Qwen3-TTS-12Hz-0.6B-Base`        | Base        | Smaller/faster variant for voice cloning              |
 
+## Gradio Demo
+
+The interactive Gradio demo supports all 3 task types with a web UI.
+
+```bash
+# Option 1: Launch server + Gradio together
+./run_gradio_demo.sh                                # CustomVoice (default)
+./run_gradio_demo.sh --task-type VoiceDesign        # VoiceDesign
+./run_gradio_demo.sh --task-type Base               # Voice cloning
+
+# Option 2: If server is already running
+python gradio_demo.py --api-base http://localhost:8000
+```
+
+Then open http://127.0.0.1:7860 in your browser.
+
 ## Run examples (Qwen3-TTS)
 
 ### Launch the Server
@@ -308,4 +324,12 @@ curl -X POST http://localhost:8091/v1/audio/speech \
 ??? abstract "run_server.sh"
     ``````sh
     --8<-- "examples/online_serving/qwen3_tts/run_server.sh"
+    ``````
+??? abstract "gradio_demo.py"
+    ``````py
+    --8<-- "examples/online_serving/qwen3_tts/gradio_demo.py"
+    ``````
+??? abstract "run_gradio_demo.sh"
+    ``````sh
+    --8<-- "examples/online_serving/qwen3_tts/run_gradio_demo.sh"
     ``````
