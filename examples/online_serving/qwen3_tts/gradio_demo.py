@@ -233,9 +233,10 @@ def generate_speech_stream(
         stream=True,
     )
 
-    # Buffer small network chunks into >= MIN_CHUNK_SAMPLES before yielding,
-    # so Gradio gets chunks long enough (~1 s) for smooth playback.
-    MIN_CHUNK_SAMPLES = PCM_SAMPLE_RATE  # 1 second at 24 kHz
+    # Buffer small network chunks before yielding. Too large = choppy gaps
+    # between chunks; too small = Gradio overhead per yield. 0.25s is a
+    # good balance for near-real-time feel.
+    MIN_CHUNK_SAMPLES = PCM_SAMPLE_RATE // 4  # 0.25 seconds at 24 kHz
     pending = []
     pending_len = 0
     leftover = b""  # carry odd trailing byte between network chunks
