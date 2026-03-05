@@ -216,6 +216,7 @@ def generate_speech_stream(
     x_vector_only: bool,
     response_format: str,
     speed: float,
+    chunk_seconds: float = 0.25,
 ):
     """Streaming: yield individual PCM chunks for progressive playback."""
     payload = _build_payload(
@@ -233,10 +234,7 @@ def generate_speech_stream(
         stream=True,
     )
 
-    # Buffer small network chunks before yielding. Too large = choppy gaps
-    # between chunks; too small = Gradio overhead per yield. 0.25s is a
-    # good balance for near-real-time feel.
-    MIN_CHUNK_SAMPLES = PCM_SAMPLE_RATE // 4  # 0.25 seconds at 24 kHz
+    MIN_CHUNK_SAMPLES = int(PCM_SAMPLE_RATE * chunk_seconds)
     pending = []
     pending_len = 0
     leftover = b""  # carry odd trailing byte between network chunks
@@ -332,7 +330,7 @@ def on_stream_change(stream: bool):
     )
 
 
-def build_interface(api_base: str):
+def build_interface(api_base: str, stream_chunk_seconds: float = 0.25):
     """Build the Gradio interface."""
     voices = fetch_voices(api_base)
 
@@ -488,7 +486,7 @@ def build_interface(api_base: str):
 
         def dispatch(stream_enabled, *args):
             if stream_enabled:
-                yield from generate_speech_stream(api_base, *args)
+                yield from generate_speech_stream(api_base, *args, chunk_seconds=stream_chunk_seconds)
             else:
                 yield generate_speech(api_base, *args)
 
@@ -525,6 +523,13 @@ def parse_args():
         action="store_true",
         help="Share the Gradio demo publicly.",
     )
+    parser.add_argument(
+        "--stream-chunk-seconds",
+        type=float,
+        default=0.25,
+        help="Seconds of audio to buffer per streaming chunk (default: 0.25). "
+             "Lower = smoother but more overhead, higher = chunkier.",
+    )
     return parser.parse_args()
 
 
@@ -532,7 +537,7 @@ def main():
     args = parse_args()
 
     print(f"Connecting to vLLM server at: {args.api_base}")
-    demo = build_interface(args.api_base)
+    demo = build_interface(args.api_base, stream_chunk_seconds=args.stream_chunk_seconds)
 
     try:
         demo.launch(
