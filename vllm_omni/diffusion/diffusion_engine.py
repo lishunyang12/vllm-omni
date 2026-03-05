@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 import PIL.Image
+import torch
 from vllm.logger import init_logger
 
 from vllm_omni.diffusion.data import OmniDiffusionConfig
@@ -106,8 +107,17 @@ class DiffusionEngine:
                 for i, prompt in enumerate(request.prompts)
             ]
 
+        # Move output tensor to CPU before post-processing to avoid CUDA OOM.
+        # After the forward pass the model weights (and VAE) may still reside
+        # on the GPU, leaving very little headroom.  Post-processing only needs
+        # CPU tensors (denormalize → numpy/PIL), so offloading here is both
+        # safe and necessary for memory-constrained setups.
+        output_data = output.output
+        if isinstance(output_data, torch.Tensor) and output_data.is_cuda:
+            output_data = output_data.cpu()
+
         postprocess_start_time = time.perf_counter()
-        outputs = self.post_process_func(output.output) if self.post_process_func is not None else output.output
+        outputs = self.post_process_func(output_data) if self.post_process_func is not None else output_data
         audio_payload = None
         if isinstance(outputs, dict):
             audio_payload = outputs.get("audio")
