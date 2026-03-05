@@ -238,6 +238,7 @@ def generate_speech_stream(
     MIN_CHUNK_SAMPLES = PCM_SAMPLE_RATE  # 1 second at 24 kHz
     pending = []
     pending_len = 0
+    leftover = b""  # carry odd trailing byte between network chunks
 
     try:
         with httpx.Client(timeout=300.0) as client:
@@ -256,7 +257,13 @@ def generate_speech_stream(
                 for chunk in resp.iter_bytes():
                     if not chunk:
                         continue
-                    samples = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32767.0
+                    raw = leftover + chunk
+                    # int16 = 2 bytes per sample; keep any trailing odd byte
+                    usable = len(raw) - (len(raw) % 2)
+                    leftover = raw[usable:]
+                    if usable == 0:
+                        continue
+                    samples = np.frombuffer(raw[:usable], dtype=np.int16).astype(np.float32) / 32767.0
                     pending.append(samples)
                     pending_len += len(samples)
                     if pending_len >= MIN_CHUNK_SAMPLES:
