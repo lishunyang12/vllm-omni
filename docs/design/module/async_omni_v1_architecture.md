@@ -8,17 +8,17 @@
   │  ┌─────────────────────────────────────┐  ┌──────────────────────────────────┐  │
   │  │ AsyncOmni (EngineClient)            │  │ Omni                             │  │
   │  │ • generate() / abort() / shutdown() │  │ • generate()                     │  │
-  │  │ • _final_output_handler()           │  │                                  │  │
+  │  │ • _final_output_handler()           │  │                                  |  │
   │  └─────────────────────────────────────┘  └──────────────────────────────────┘  │
   ├─────────────────────────────────────────────────────────────────────────────────┤
   │                              Engine Layer (Proxy)                               │
   │  ┌───────────────────────────────────────────────────────────────────────────┐  │
   │  │ AsyncOmniEngine                                                           │  │
-  │  │ • _bootstrap_orchestrator() / _initialize_stages()                        │  │
-  │  │ • add_request() -> input_processor.process_inputs()                       │  │
-  │  │ • try_get_output()                                                        │  │
+  │  │ • _bootstrap_orchestrator() & _initialize_stages()                        │  │
+  │  │ • add_request() / add_request_async() -> input_processor.process_inputs() │  │
+  │  │ • try_get_output() / try_get_output_async()                               │  │
   │  └───────────────────┬─────────────────────────────────▲─────────────────────┘  │
-  │         request_queue (asyncio.Queue)      output_queue (asyncio.Queue)         │
+  │         request_queue (janus.Queue)        output_queue (janus.Queue)           │
   ├──────────────────────┼─────────────────────────────────┼────────────────────────┤
   │                      ▼        Orchestration Layer      │                        │
   │  ┌───────────────────────────────────────────────────────────────────────────┐  │
