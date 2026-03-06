@@ -8,11 +8,8 @@ StageEngineCoreClient instances) instead of OmniStage with worker processes.
 from __future__ import annotations
 
 import asyncio
-import os
 import time
-import types
 from collections.abc import AsyncGenerator, Iterable, Sequence
-from pprint import pformat
 from typing import TYPE_CHECKING, Any
 
 from vllm.engine.protocol import EngineClient
@@ -20,11 +17,11 @@ from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.outputs import PoolingRequestOutput
 from vllm.pooling_params import PoolingParams
-from vllm.v1.engine.exceptions import EngineDeadError
 
-from vllm_omni.engine.async_omni_engine import AsyncOmniEngine
-from vllm_omni.entrypoints.client_request_state import ClientRequestState
-from vllm_omni.entrypoints.utils import get_final_stage_id_for_e2e
+from vllm_omni.entrypoints.omni_v1_base import (
+    OmniV1Base,
+    omni_snapshot_download as _omni_snapshot_download,
+)
 from vllm_omni.metrics.stats import OrchestratorAggregator as OrchestratorMetrics
 from vllm_omni.outputs import OmniRequestOutput
 
@@ -38,22 +35,12 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 
-def _dummy_snapshot_download(model_id):
-    return model_id
+def omni_snapshot_download(model_id: str) -> str:
+    """Backward-compatible import location for snapshot helper."""
+    return _omni_snapshot_download(model_id)
 
 
-def omni_snapshot_download(model_id) -> str:
-    # TODO: this is just a workaround for quickly use modelscope, we should support
-    # modelscope in weight loading feature instead of using `snapshot_download`
-    if os.environ.get("VLLM_USE_MODELSCOPE", False):
-        from modelscope.hub.snapshot_download import snapshot_download
-
-        return snapshot_download(model_id)
-    else:
-        return _dummy_snapshot_download(model_id)
-
-
-class AsyncOmniV1(EngineClient):
+class AsyncOmniV1(EngineClient, OmniV1Base):
     """Asynchronous unified entry point for multi-stage pipelines using AsyncOmniEngine.
 
     This is the V1 refactored version that uses AsyncOmniEngine instead of
@@ -65,8 +52,7 @@ class AsyncOmniV1(EngineClient):
         stage_configs: Optional list of stage configurations. If None, loads from model.
         stage_configs_path: Optional path to YAML file containing stage configurations.
         stage_init_timeout: Timeout for stage initialization (seconds).
-        log_requests: Whether to log requests.
-        enable_stats: Whether to enable statistics logging.
+        log_stats: Whether to enable statistics logging.
         async_chunk: Whether to use async chunk mode (parallel stage execution).
         output_modalities: List of output modalities.
         **kwargs: Additional keyword arguments.
@@ -87,72 +73,25 @@ class AsyncOmniV1(EngineClient):
         stage_configs: list[Any] | None = None,
         stage_configs_path: str | None = None,
         stage_init_timeout: int = 300,
-        log_requests: bool = True,
-        enable_stats: bool = False,
+        log_stats: bool = False,
         async_chunk: bool = False,
         output_modalities: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
-        model = omni_snapshot_download(model)
-        self.model = model
-        self.log_requests = log_requests
-        self.enable_stats = enable_stats
-        self.async_chunk = async_chunk
-        self.output_modalities = output_modalities or []
-
-        logger.info(f"[AsyncOmniV1] Initializing with model {model}")
-        logger.debug(
-            "[AsyncOmniV1] stage_configs=%s, stage_configs_path=%s, stage_init_timeout=%s, "
-            "log_requests=%s, enable_stats=%s, async_chunk=%s, output_modalities=%s, kwargs=%s",
-            stage_configs, stage_configs_path, stage_init_timeout,
-            log_requests, enable_stats, async_chunk, output_modalities, kwargs,
-        )
-        # Initialize AsyncOmniEngine (launches Orchestrator child process)
-        st = time.time()
-        self.engine = AsyncOmniEngine(
+        OmniV1Base.__init__(
+            self,
             model=model,
             stage_configs=stage_configs,
             stage_configs_path=stage_configs_path,
             stage_init_timeout=stage_init_timeout,
+            log_stats=log_stats,
+            async_chunk=async_chunk,
+            output_modalities=output_modalities,
             **kwargs,
         )
-        et = time.time()
-        logger.info(f"[AsyncOmniV1] AsyncOmniEngine initialized in {et - st:.2f} seconds")
-        # Keep compatibility with V0 behavior: async_chunk can be enabled
-        # from YAML stage config without passing the constructor flag.
-        self.async_chunk = bool(self.async_chunk or getattr(self.engine, "async_chunk", False))
-        logger.info(f"[AsyncOmniV1] effective async_chunk: {self.async_chunk}")
-
-        # Pause/resume control
         self._pause_cond: asyncio.Condition = asyncio.Condition()
         self._paused: bool = False
-
-        # Request state tracking
-        self.request_states: dict[str, ClientRequestState] = {}
         self.final_output_task: asyncio.Task | None = None
-
-        # Get default sampling params from the Orchestrator ready message
-        self.default_sampling_params_list = self.engine.default_sampling_params_list
-
-        # Build output_modalities from stage metadata (mirrors V0's omni.py:
-        # self.output_modalities = [st.final_output_type for st in self.stage_list])
-        # This is used as default_modalities in get_final_stage_id_for_e2e.
-        if not self.output_modalities:
-            self.output_modalities = [
-                self.engine.get_stage_metadata(i).get("final_output_type") for i in range(self.engine.num_stages)
-            ]
-
-        # Cache stage metadata as SimpleNamespace list for get_final_stage_id_for_e2e
-        self._stage_meta_list = [
-            types.SimpleNamespace(**self.engine.get_stage_metadata(i)) for i in range(self.engine.num_stages)
-        ]
-
-        logger.info(f"[AsyncOmniV1] Initialized with {self.engine.num_stages} stages for model {model}")
-
-    @property
-    def num_stages(self) -> int:
-        """Get the number of stages."""
-        return self.engine.num_stages
 
     @property
     def renderer(self):
@@ -203,49 +142,28 @@ class AsyncOmniV1(EngineClient):
             # Start final output dispatcher on the first call to generate()
             self._final_output_handler()
 
-            # Use default sampling params if not provided
-            if sampling_params_list is None:
-                sampling_params_list = self.default_sampling_params_list
-
-            if len(sampling_params_list) != self.num_stages:
-                raise ValueError(f"Expected {self.num_stages} sampling params, got {len(sampling_params_list)}")
+            sampling_params_list = self.resolve_sampling_params_list(sampling_params_list)
 
             # Track per-request metrics
             wall_start_ts = time.time()
             req_start_ts: dict[str, float] = {}
 
             # Determine the final stage for E2E stats
-            final_stage_id_for_e2e = get_final_stage_id_for_e2e(
-                output_modalities,
-                self.output_modalities,
-                self._stage_meta_list,
-            )
-
-            # Create metrics tracker
-            metrics = OrchestratorMetrics(
-                self.num_stages,
-                self.enable_stats,
-                wall_start_ts,
-                final_stage_id_for_e2e,
-            )
-
-            # Create request state
-            req_state = ClientRequestState(request_id)
-            req_state.metrics = metrics
-            self.request_states[request_id] = req_state
+            final_stage_id_for_e2e = self._compute_final_stage_id(output_modalities)
 
             # Add request to stage 0 (Orchestrator handles all stage transitions)
             logger.info("[AsyncOmniV1] submit request %s to stage-0", request_id)
-            await self.engine.add_request(
-                stage_id=0,
+            req_state, submit_ts = self.submit_request(
                 request_id=request_id,
                 prompt=prompt,
-                params=sampling_params_list[0],
-                sampling_params_list=list(sampling_params_list),
-                final_stage_id=final_stage_id_for_e2e,
+                sampling_params_list=sampling_params_list,
+                final_stage_id_for_e2e=final_stage_id_for_e2e,
+                wall_start_ts=wall_start_ts,
             )
-            metrics.stage_first_ts[0] = time.time()
-            req_start_ts[request_id] = time.time()
+            if req_state.metrics is None:
+                raise RuntimeError(f"Missing metrics for request {request_id}")
+            metrics = req_state.metrics
+            req_start_ts[request_id] = submit_ts
 
             # Process results based on mode
             # Both sequential and async_chunk modes read the same message stream
@@ -262,14 +180,7 @@ class AsyncOmniV1(EngineClient):
 
             logger.debug(f"[AsyncOmniV1] Request {request_id} completed")
 
-            # Log summary
-            try:
-                summary = metrics.build_and_log_summary()
-                logger.info("[Summary] %s", pformat(summary, sort_dicts=False))
-            except Exception as e:
-                logger.exception(f"[AsyncOmniV1] Failed to build/log summary: {e}")
-            finally:
-                self.request_states.pop(request_id, None)
+            self._log_summary_and_cleanup(request_id)
 
         except (asyncio.CancelledError, GeneratorExit):
             await self.abort(request_id)
@@ -350,68 +261,6 @@ class AsyncOmniV1(EngineClient):
             if result.get("finished"):
                 break
 
-    def _process_single_result(
-        self,
-        result: dict[str, Any],
-        stage_id: int,
-        metrics: OrchestratorMetrics,
-        req_start_ts: dict[str, float],
-        wall_start_ts: float,
-        final_stage_id_for_e2e: int,
-    ) -> OmniRequestOutput | None:
-        """Process a single result from a stage.
-
-        Returns:
-            output_to_yield: An OmniRequestOutput to yield, or None.
-        """
-        req_id = result.get("request_id")
-
-        # Get engine outputs
-        engine_outputs = result.get("engine_outputs")
-        finished = engine_outputs.finished
-
-        # Mark stage timestamps: use the Orchestrator's submit timestamp
-        # for stage_first_ts so it reflects when the request was actually
-        # submitted, not when the result arrived in the main thread.
-        submit_ts = result.get("stage_submit_ts")
-        now = time.time()
-        if metrics.stage_first_ts[stage_id] is None:
-            metrics.stage_first_ts[stage_id] = submit_ts if submit_ts is not None else now
-        metrics.stage_last_ts[stage_id] = max(metrics.stage_last_ts[stage_id] or 0.0, now)
-
-        # Process metrics
-        _m = result.get("metrics")
-        if finished and _m is not None:
-            metrics.on_stage_metrics(stage_id, req_id, _m)
-
-        # Determine if this is a final output stage (use cached metadata)
-        stage_meta = self.engine.get_stage_metadata(stage_id)
-        output_to_yield = None
-
-        if stage_meta["final_output"]:
-            # Finalize request metrics
-            try:
-                rid_key = str(req_id)
-                if stage_id == final_stage_id_for_e2e and rid_key not in metrics.e2e_done and finished:
-                    metrics.on_finalize_request(
-                        stage_id,
-                        req_id,
-                        req_start_ts.get(req_id, wall_start_ts),
-                    )
-            except Exception as e:
-                logger.exception(f"[AsyncOmniV1] Finalize request handling error: {e}")
-
-            # Construct output to yield
-            images = getattr(engine_outputs, "images", []) if stage_meta["final_output_type"] == "image" else []
-            output_to_yield = OmniRequestOutput(
-                stage_id=stage_id,
-                final_output_type=stage_meta["final_output_type"],
-                request_output=engine_outputs,
-                images=images,
-            )
-
-        return output_to_yield
-
     # ==================== Output Handler ====================
 
     def _final_output_handler(self) -> None:
@@ -423,7 +272,6 @@ class AsyncOmniV1(EngineClient):
         if self.final_output_task is not None:
             return
 
-        request_states = self.request_states
         engine = self.engine
 
         async def _final_output_loop():
@@ -434,64 +282,19 @@ class AsyncOmniV1(EngineClient):
                     # Blocking read with timeout (runs in executor to avoid
                     # blocking the event loop)
                     msg = await loop.run_in_executor(None, engine.try_get_output_blocking)
-                    if msg is None:
+
+                    should_continue, _, stage_id, req_state = self._handle_output_message(msg)
+                    if should_continue:
                         continue
 
-                    msg_type = msg.get("type")
-                    if msg_type == "stage_metrics":
-                        # Non-final stage metrics: aggregate directly
-                        # without routing through the per-request queue.
-                        req_id = msg.get("request_id")
-                        req_state = request_states.get(req_id)
-                        if req_state is not None and req_state.metrics is not None:
-                            _m = msg.get("metrics")
-                            if _m is not None:
-                                stage_id = msg.get("stage_id", 0)
-                                req_state.metrics.on_stage_metrics(
-                                    stage_id,
-                                    req_id,
-                                    _m,
-                                )
-                                # Use the Orchestrator's submit timestamp
-                                # for stage_first_ts (when the request was
-                                # actually submitted to this stage).
-                                submit_ts = msg.get("stage_submit_ts")
-                                now = time.time()
-                                if req_state.metrics.stage_first_ts[stage_id] is None:
-                                    req_state.metrics.stage_first_ts[stage_id] = (
-                                        submit_ts if submit_ts is not None else now
-                                    )
-                                req_state.metrics.stage_last_ts[stage_id] = max(
-                                    req_state.metrics.stage_last_ts[stage_id] or 0.0,
-                                    now,
-                                )
-                        continue
-                    if msg_type != "output":
-                        logger.warning(
-                            "[AsyncOmniV1] final_output_loop got unexpected msg type: %s",
-                            msg_type,
-                        )
-                        continue
-
-                    req_id = msg.get("request_id")
-                    req_state = request_states.get(req_id)
-
-                    if req_state is None:
-                        logger.debug(
-                            "[AsyncOmniV1] Dropping output for unknown req %s",
-                            req_id,
-                        )
-                        continue
-
-                    # Update stage_id on the request state
-                    req_state.stage_id = msg.get("stage_id", 0)
+                    req_state.stage_id = stage_id
 
                     # Route to the per-request queue
                     await req_state.queue.put(msg)
 
             except Exception as e:
                 logger.exception("[AsyncOmniV1] final_output_loop failed.")
-                for req_state in request_states.values():
+                for req_state in list(self.request_states.values()):
                     error_msg = {"request_id": req_state.request_id, "error": str(e)}
                     await req_state.queue.put(error_msg)
                 self.final_output_task = None
@@ -503,17 +306,7 @@ class AsyncOmniV1(EngineClient):
 
     async def abort(self, request_id: str | Iterable[str]) -> None:
         """Abort request(s) via the Orchestrator."""
-        request_ids = [request_id] if isinstance(request_id, str) else list(request_id)
-
-        # Send abort to Orchestrator (it will abort in all stages)
-        await self.engine.abort(request_ids)
-
-        # Remove from request states
-        for req_id in request_ids:
-            self.request_states.pop(req_id, None)
-
-        if self.log_requests:
-            logger.info(f"[AsyncOmniV1] Aborted request(s) {','.join(request_ids)}")
+        self._abort_requests(request_id)
 
     async def pause_generation(
         self,
@@ -625,21 +418,6 @@ class AsyncOmniV1(EngineClient):
         """Check if the engine is running."""
         return self.final_output_task is not None and not self.final_output_task.done()
 
-    @property
-    def is_stopped(self) -> bool:
-        """Check if the engine is stopped."""
-        return self.errored
-
-    @property
-    def errored(self) -> bool:
-        """Check if the Orchestrator thread has died."""
-        return hasattr(self.engine, "orchestrator_thread") and not self.engine.orchestrator_thread.is_alive()
-
-    @property
-    def dead_error(self) -> BaseException:
-        """Get the dead error."""
-        return EngineDeadError()
-
     # ==================== EngineClient Interface ====================
 
     async def get_vllm_config(self) -> VllmConfig:
@@ -680,17 +458,16 @@ class AsyncOmniV1(EngineClient):
 
     async def check_health(self) -> None:
         """Check engine health by verifying the Orchestrator process is alive."""
-        if self.errored:
-            raise EngineDeadError("Orchestrator process is not alive")
+        super().check_health()
 
     # ==================== Shutdown ====================
 
     def shutdown(self) -> None:
         """Shutdown the engine."""
-        logger.info("[AsyncOmniV1] Shutting down")
-        self.engine.shutdown()
         if self.final_output_task is not None:
             self.final_output_task.cancel()
+            self.final_output_task = None
+        OmniV1Base.shutdown(self)
 
     def __del__(self):
         """Cleanup on deletion."""

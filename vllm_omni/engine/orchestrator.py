@@ -544,12 +544,17 @@ class Orchestrator:
 
     async def _handle_add_request(self, msg: dict[str, Any]) -> None:
         """Handle an add_request message from the main thread."""
-        stage_id = msg["stage_id"]
+        stage_id = 0
         request_id = msg["request_id"]
         prompt = msg["prompt"]
         original_prompt = msg.get("original_prompt", prompt)
-        params = msg["params"]
         sampling_params_list = msg["sampling_params_list"]
+        if not sampling_params_list:
+            raise ValueError(
+                "Missing sampling params for stage 0. "
+                f"Got {len(sampling_params_list)} stage params."
+            )
+        params = sampling_params_list[0]
         final_stage_id = msg["final_stage_id"]
 
         logger.info(

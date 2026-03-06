@@ -326,7 +326,7 @@ async def main(args):
         query_result = query_func()
     omni_llm = AsyncOmni(
         model=model_name,
-        log_stats=args.enable_stats,
+        log_stats=args.log_stats,
         stage_init_timeout=args.stage_init_timeout,
         batch_timeout=args.batch_timeout,
         init_timeout=args.init_timeout,
@@ -475,12 +475,7 @@ def parse_args():
         choices=query_map.keys(),
         help="Query type.",
     )
-    parser.add_argument(
-        "--enable-stats",
-        action="store_true",
-        default=False,
-        help="Enable writing detailed statistics (default: disabled)",
-    )
+    parser.add_argument("--log-stats", action="store_true", default=False, help="Enable statistics logging.")
     parser.add_argument(
         "--stage-init-timeout",
         type=int,

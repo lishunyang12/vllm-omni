@@ -361,7 +361,7 @@ async def _run_single_engine(
             model=args.model,
             stage_configs_path=stage_configs_path,
             stage_init_timeout=args.stage_init_timeout,
-            enable_stats=args.enable_stats,
+            log_stats=args.log_stats,
             async_chunk=args.async_chunk,
         )
     else:
@@ -371,7 +371,7 @@ async def _run_single_engine(
             model=args.model,
             stage_configs_path=stage_configs_path,
             stage_init_timeout=args.stage_init_timeout,
-            log_stats=args.enable_stats,
+            log_stats=args.log_stats,
             batch_timeout=args.batch_timeout,
             init_timeout=args.init_timeout,
             shm_threshold_bytes=args.shm_threshold_bytes,
@@ -507,12 +507,7 @@ def parse_args():
         default=False,
         help="Enable async chunk mode. If --stage-configs-path is omitted, uses qwen3_omni_moe_async_chunk.yaml.",
     )
-    parser.add_argument(
-        "--enable-stats",
-        action="store_true",
-        default=False,
-        help="Enable statistics logging.",
-    )
+    parser.add_argument("--log-stats", action="store_true", default=False, help="Enable statistics logging.")
     parser.add_argument("--stage-init-timeout", type=int, default=300, help="Stage initialization timeout in seconds.")
     parser.add_argument("--batch-timeout", type=int, default=5, help="Batch timeout for V0 engine.")
     parser.add_argument("--init-timeout", type=int, default=300, help="Initialization timeout for V0 engine.")

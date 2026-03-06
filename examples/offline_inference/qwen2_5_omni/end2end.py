@@ -20,7 +20,11 @@ from vllm.multimodal.image import convert_image_mode
 from vllm.sampling_params import SamplingParams
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
-from vllm_omni.entrypoints.omni import Omni
+USE_V1 = os.getenv("VLLM_OMNI_USE_V1") == "1"
+if USE_V1:
+    from vllm_omni.entrypoints.omni_v1 import OmniV1 as Omni
+else:
+    from vllm_omni.entrypoints.omni import Omni
 
 SEED = 42
 
@@ -288,6 +292,13 @@ query_map = {
 }
 
 
+def _iter_request_outputs(stage_outputs):
+    request_output = stage_outputs.request_output
+    if isinstance(request_output, list):
+        return request_output
+    return [request_output]
+
+
 def main(args):
     model_name = "Qwen/Qwen2.5-Omni-7B"
 
@@ -378,8 +389,10 @@ def main(args):
             prompt["modalities"] = output_modalities
 
     profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
-    if profiler_enabled:
+    if profiler_enabled and hasattr(omni_llm, "start_profile"):
         omni_llm.start_profile(stages=[0])
+    elif profiler_enabled:
+        print("[Warn] VLLM_TORCH_PROFILER_DIR is set, but current engine does not support profiler controls.")
     omni_generator = omni_llm.generate(prompts, sampling_params_list, py_generator=args.py_generator)
 
     # Determine output directory: prefer --output-dir; fallback to --output-wav
@@ -389,8 +402,9 @@ def main(args):
     total_requests = len(prompts)
     processed_count = 0
     for stage_outputs in omni_generator:
+        request_outputs = _iter_request_outputs(stage_outputs)
         if stage_outputs.final_output_type == "text":
-            for output in stage_outputs.request_output:
+            for output in request_outputs:
                 request_id = output.request_id
                 text_output = output.outputs[0].text
                 # Save aligned text file per request
@@ -408,15 +422,15 @@ def main(args):
                     print(f"[Warn] Failed writing text file {out_txt}: {e}")
                 print(f"Request ID: {request_id}, Text saved to {out_txt}")
         elif stage_outputs.final_output_type == "audio":
-            for output in stage_outputs.request_output:
+            for output in request_outputs:
                 request_id = output.request_id
                 audio_tensor = output.outputs[0].multimodal_output["audio"]
                 output_wav = os.path.join(output_dir, f"output_{request_id}.wav")
                 sf.write(output_wav, audio_tensor.detach().cpu().numpy(), samplerate=24000)
                 print(f"Request ID: {request_id}, Saved audio to {output_wav}")
 
-        processed_count += len(stage_outputs.request_output)
-        if profiler_enabled and processed_count >= total_requests:
+        processed_count += len(request_outputs)
+        if profiler_enabled and hasattr(omni_llm, "stop_profile") and processed_count >= total_requests:
             print(f"[Info] Processed {processed_count}/{total_requests}. Stopping profiler inside active loop...")
             # Stop the profiler while workers are still alive
             omni_llm.stop_profile()

@@ -10,13 +10,12 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import threading
+from collections.abc import Sequence
 from typing import Any
 
 from omegaconf import OmegaConf
 from vllm.inputs import PromptType
 from vllm.logger import init_logger
-from vllm.pooling_params import PoolingParams
-from vllm.sampling_params import SamplingParams
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.input_processor import InputProcessor
 
@@ -314,29 +313,39 @@ class AsyncOmniEngine:
 
     # ==================== Public API ====================
 
-    async def add_request(
+    def add_request(
         self,
-        stage_id: int,
         request_id: str,
         prompt: EngineCoreRequest | PromptType,
-        params: SamplingParams | PoolingParams,
-        sampling_params_list: list[Any] | None = None,
+        sampling_params_list: Sequence[Any] | None = None,
         final_stage_id: int = 0,
         arrival_time: float | None = None,
     ) -> None:
-        """Process stage 0 input locally, then send to the Orchestrator.
+        """Process stage-0 input locally, then send to the Orchestrator.
 
-        For stage 0 requests (the common path), input processing and output
+        Input processing and output
         processor registration happen here in the caller's thread, avoiding
         a queue + coroutine-switch round-trip.  The Orchestrator receives a
         ready-to-submit OmniEngineCoreRequest.
         """
+        effective_sampling_params_list = (
+            list(sampling_params_list)
+            if sampling_params_list is not None
+            else list(self.default_sampling_params_list)
+        )
+        if not effective_sampling_params_list:
+            raise ValueError(
+                "Missing sampling params for stage 0. "
+                f"Got {len(effective_sampling_params_list)} stage params."
+            )
+        params = effective_sampling_params_list[0]
+
         # Keep the original prompt for downstream stages (they need the raw
         # dict, e.g. for multi_modal_data).
         original_prompt = prompt
 
-        stage_type = self.stage_metadata[stage_id].get("stage_type")
-        if stage_id == 0 and stage_type != "diffusion" and not isinstance(prompt, EngineCoreRequest):
+        stage_type = self.stage_metadata[0].get("stage_type")
+        if stage_type != "diffusion" and not isinstance(prompt, EngineCoreRequest):
             # Inject global_request_id into the raw prompt
             if isinstance(prompt, dict):
                 _inject_global_id(prompt, request_id)
@@ -373,12 +382,10 @@ class AsyncOmniEngine:
         self._put_to_request_queue(
             {
                 "type": "add_request",
-                "stage_id": stage_id,
                 "request_id": request_id,
                 "prompt": prompt,
                 "original_prompt": original_prompt,
-                "params": params,
-                "sampling_params_list": sampling_params_list or [],
+                "sampling_params_list": effective_sampling_params_list,
                 "final_stage_id": final_stage_id,
             }
         )
@@ -409,7 +416,7 @@ class AsyncOmniEngine:
         """Get cached metadata for a stage."""
         return self.stage_metadata[stage_id]
 
-    async def abort(self, request_ids: list[str]) -> None:
+    def abort(self, request_ids: list[str]) -> None:
         """Send abort message to the Orchestrator."""
         self._put_to_request_queue(
             {
