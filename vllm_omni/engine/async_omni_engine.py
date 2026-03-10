@@ -385,12 +385,14 @@ class AsyncOmniEngine:
         self.output_processors = output_processors
         self.stage_vllm_configs = stage_vllm_configs
         self.input_processor = input_processor
-        supported_tasks = ("generate",)
-        if initialized_stage_clients and hasattr(initialized_stage_clients[0], "get_supported_tasks"):
-            supported_tasks = tuple(initialized_stage_clients[0].get_supported_tasks())
-            if not supported_tasks:
-                supported_tasks = ("generate",)
-        self.supported_tasks = supported_tasks
+        # TODO(Peiqi): Hack here
+        supported_tasks: set[str] = set()
+        if any(getattr(stage_client, "is_comprehension", False) for stage_client in initialized_stage_clients):
+            supported_tasks.add("generate")
+        if any(metadata.get("final_output_type") == "audio" for metadata in stage_metadata):
+            supported_tasks.add("speech")
+        self.supported_tasks = tuple(supported_tasks) if supported_tasks else ("generate",)
+
         self.default_sampling_params_list = default_sampling_params_list
         self.stage_metadata = stage_metadata
         self.num_stages = len(stage_metadata)
