@@ -176,12 +176,12 @@ def main():
                 img.save(f"output_{i}_{j}.png")
 
         if hasattr(req_output, "request_output") and req_output.request_output:
-            for stage_out in req_output.request_output:
-                if hasattr(stage_out, "images") and stage_out.images:
-                    for k, img in enumerate(stage_out.images):
-                        save_path = f"output_{i}_stage_{getattr(stage_out, 'stage_id', '?')}_{k}.png"
-                        img.save(save_path)
-                        print(f"[Info] Saved stage output image to {save_path}")
+            stage_out = req_output.request_output
+            if hasattr(stage_out, "images") and stage_out.images:
+                for k, img in enumerate(stage_out.images):
+                    save_path = f"output_{i}_stage_{getattr(stage_out, 'stage_id', '?')}_{k}.png"
+                    img.save(save_path)
+                    print(f"[Info] Saved stage output image to {save_path}")
 
     print(omni_outputs)
 
