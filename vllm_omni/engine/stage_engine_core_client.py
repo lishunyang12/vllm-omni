@@ -39,6 +39,9 @@ class StageEngineCoreClient(AsyncMPClient):
         vllm_config: Any,
         executor_class: type,
         metadata: StageMetadata,
+        client_addresses: dict[str, str] | None = None,
+        engine_manager: Any = None,
+        coordinator: Any = None,
     ):
         """Create an async EngineCore client for a single stage.
 
@@ -67,7 +70,16 @@ class StageEngineCoreClient(AsyncMPClient):
             self.stage_id,
         )
         try:
-            super().__init__(vllm_config, executor_class, log_stats=False)
+            super().__init__(
+                vllm_config,
+                executor_class,
+                log_stats=False,
+                client_addresses=client_addresses,
+            )
+            if engine_manager is not None:
+                self.resources.engine_manager = engine_manager
+            if coordinator is not None:
+                self.resources.coordinator = coordinator
         except Exception:
             logger.exception(
                 "[StageEngineCoreClient] Stage-%s EngineCore init failed",
