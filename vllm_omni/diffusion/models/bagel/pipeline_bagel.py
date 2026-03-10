@@ -223,13 +223,16 @@ class BagelPipeline(nn.Module):
             int(required_max_id + 1),
         )
 
-        self.language_model = Qwen2MoTForCausalLM(llm_config)
+        quant_config = od_config.quantization_config
+        self.language_model = Qwen2MoTForCausalLM(llm_config, quant_config=quant_config, prefix="bagel.language_model")
         ae_params: AutoEncoderParams = default_ae_params()
         self.vae = AutoEncoder(ae_params)
 
         self.bagel = Bagel(
             language_model=self.language_model,
             vit_model=self.vit_model,
+            quant_config=quant_config,
+            prefix="bagel",
             config=BagelConfig(
                 llm_config=llm_config,
                 vae_config=vae_cfg,
@@ -254,7 +257,12 @@ class BagelPipeline(nn.Module):
             )
         ]
 
-        self.to(self.device)
+        # When quantization is enabled, vLLM linear layers live on meta
+        # device until the weight loader materializes them. Calling
+        # .to(device) would fail on those meta tensors, so we skip it
+        # entirely and let the weight loader handle device placement.
+        if quant_config is None:
+            self.to(self.device)
 
     @staticmethod
     def _decode_image_from_latent(
