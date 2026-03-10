@@ -1114,36 +1114,17 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         self.multimodal_config = multimodal_config
         self.quant_config = quant_config
 
-        # Pre-quantized checkpoints (modelopt NVFP4/FP8/MXFP8) quantize the
-        # entire thinker — audio tower, visual encoder, and language model
-        # all share the same quant method.  Dynamic quantization methods
-        # (e.g. --quantization fp8) should only target the language model.
-        _PRE_QUANTIZED_METHODS = {"modelopt", "modelopt_fp4", "modelopt_mxfp8"}
+        # Per-component quantization: resolve configs for visual vs language_model
+        visual_quant_config = quant_config
+        language_quant_config = quant_config
+        try:
+            from vllm_omni.quantization.component_config import ComponentQuantizationConfig
 
-        if isinstance(quant_config, ComponentQuantizationConfig):
-            audio_quant_config = quant_config.resolve("audio_tower")
-            visual_quant_config = quant_config.resolve("visual")
-            language_quant_config = quant_config.resolve("language_model")
-        elif quant_config is not None:
-            if quant_config.get_name() in _PRE_QUANTIZED_METHODS:
-                # Pre-quantized: pass quant_config to all subcomponents.
-                audio_quant_config = quant_config
-                visual_quant_config = quant_config
-                language_quant_config = quant_config
-            else:
-                # Dynamic quantization: scope to language_model only.
-                quant_config = ComponentQuantizationConfig(
-                    component_configs={"language_model": quant_config},
-                    default_config=None,
-                )
-                vllm_config = replace(vllm_config, quant_config=quant_config)
-                audio_quant_config = None
-                visual_quant_config = None
-                language_quant_config = quant_config.resolve("language_model")
-        else:
-            audio_quant_config = None
-            visual_quant_config = None
-            language_quant_config = None
+            if isinstance(quant_config, ComponentQuantizationConfig):
+                visual_quant_config = quant_config._resolve("visual")
+                language_quant_config = quant_config._resolve("language_model")
+        except ImportError:
+            pass
 
         with self._mark_tower_model(vllm_config, "audio"):
             self.audio_tower = Qwen3OmniMoeAudioEncoder(
@@ -1183,6 +1164,8 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
                 architectures=["Qwen3MoeForCausalLM"],
             )
             if language_quant_config is not quant_config:
+                from dataclasses import replace
+
                 lm_vllm_config = replace(lm_vllm_config, quant_config=language_quant_config)
             self.language_model = Qwen3MoeLLMForCausalLM(
                 vllm_config=lm_vllm_config,

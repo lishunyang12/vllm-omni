@@ -6,7 +6,7 @@ import os
 import random
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import torch
 from pydantic import model_validator
@@ -18,10 +18,7 @@ from vllm.model_executor.layers.quantization.base_config import (
 )
 
 from vllm_omni.diffusion.utils.network_utils import is_port_available
-from vllm_omni.quantization import build_quant_config
-
-if TYPE_CHECKING:
-    from vllm.config import ProfilerConfig
+from vllm_omni.quantization import build_quant_config, validate_quant_config
 
 # Import after TYPE_CHECKING to avoid circular imports at runtime
 # The actual import is deferred to __post_init__ to avoid import order issues
@@ -481,10 +478,12 @@ class OmniDiffusionConfig:
     # Model-specific function for collecting CFG KV caches (set at runtime)
     cfg_kv_collect_func: Any | None = None
 
-    # Quantization: str method name, dict config, QuantizationConfig, or None.
-    # str is resolved to {"method": <str>} internally.
-    # Per-component: {"transformer": {"method": "fp8"}, "vae": None}
-    quantization_config: str | QuantizationConfig | dict[str, Any] | None = None
+    # Quantization settings
+    # Supported methods: "fp8", "gguf" (more via vllm_omni.quantization)
+    # Can be a string ("fp8"), dict ({"method": "fp8", ...}), or per-component
+    # dict ({"transformer": "fp8", "vae": None}).
+    quantization: str | None = None
+    quantization_config: QuantizationConfig | dict[str, Any] | None = None
 
     # Diffusion pipeline Profiling config
     enable_diffusion_pipeline_profiler: bool = False
@@ -595,19 +594,32 @@ class OmniDiffusionConfig:
             # If it's neither dict nor DiffusionCacheConfig, convert to empty config
             self.cache_config = DiffusionCacheConfig()
 
-        # Resolve quantization_config: str/dict -> QuantizationConfig via build_quant_config.
-        if self.quantization_config is not None:
+        # Convert quantization config using the unified quantization framework.
+        # Accepts: str, dict, per-component dict, or QuantizationConfig instance.
+        if self.quantization is not None or self.quantization_config is not None:
             if isinstance(self.quantization_config, QuantizationConfig):
                 pass  # Already built
-            elif isinstance(self.quantization_config, str):
-                self.quantization_config = build_quant_config(self.quantization_config)
             elif isinstance(self.quantization_config, Mapping):
-                self.quantization_config = build_quant_config(dict(self.quantization_config))
+                config_dict = dict(self.quantization_config)
+                if "method" not in config_dict and self.quantization is not None:
+                    config_dict["method"] = self.quantization
+                self.quantization_config = build_quant_config(config_dict)
+            elif self.quantization_config is None and self.quantization is not None:
+                self.quantization_config = build_quant_config(self.quantization)
             else:
                 raise TypeError(
-                    f"quantization_config must be str, dict, QuantizationConfig, or None, "
+                    f"quantization_config must be a QuantizationConfig, dict, or None, "
                     f"got {type(self.quantization_config)!r}"
                 )
+
+            # Validate the built quantization config
+            if self.quantization_config is not None:
+                warnings = validate_quant_config(
+                    self.quantization_config,
+                    dtype=self.dtype if isinstance(self.dtype, torch.dtype) else torch.bfloat16,
+                )
+                for warning in warnings:
+                    logger.warning(warning)
 
         if self.max_cpu_loras is None:
             self.max_cpu_loras = 1

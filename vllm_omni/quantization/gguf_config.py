@@ -2,7 +2,10 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """GGUF quantization config for diffusion transformers.
 
-Uses dequant+GEMM instead of the fused kernel path (which expects 2D inputs).
+Provides DiffusionGGUFConfig — a proper GGUFConfig subclass that:
+  - Carries the gguf_model path for the loader
+  - Returns DiffusionGGUFLinearMethod (dequant+GEMM) instead of
+    the fused kernel path used by LLMs
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ from vllm.model_executor.layers.quantization.gguf import (
 
 
 def dequant_gemm_gguf(x: torch.Tensor, qweight: torch.Tensor, qweight_type: int) -> torch.Tensor:
+    """Dequantize GGUF weights and perform GEMM."""
     if qweight_type in UNQUANTIZED_TYPES:
         return x @ qweight.T
     block_size, type_size = gguf.GGML_QUANT_SIZES[qweight_type]
@@ -31,7 +35,12 @@ def dequant_gemm_gguf(x: torch.Tensor, qweight: torch.Tensor, qweight_type: int)
 
 
 class DiffusionGGUFLinearMethod(GGUFLinearMethod):
-    """GGUF linear method using dequant+GEMM for N-D diffusion tensors."""
+    """GGUF linear method for diffusion models using dequant+GEMM path.
+
+    Unlike the LLM GGUF path which uses fused kernels that expect 2D inputs,
+    this method supports arbitrary-dimensional inputs via torch.matmul
+    broadcasting.
+    """
 
     def apply(
         self,
@@ -61,7 +70,16 @@ class DiffusionGGUFLinearMethod(GGUFLinearMethod):
 
 
 class DiffusionGGUFConfig(GGUFConfig):
-    """GGUF config that carries gguf_model path and uses dequant+GEMM."""
+    """GGUF quantization config for diffusion transformers.
+
+    This is a GGUFConfig subclass that:
+    - Carries the gguf_model path for the GGUF weight loader
+    - Returns DiffusionGGUFLinearMethod for diffusion-compatible GEMM
+
+    Args:
+        gguf_model: GGUF model path or HF reference (repo/file or repo:quant_type)
+        unquantized_modules: Module name patterns to skip quantization.
+    """
 
     def __init__(
         self,
