@@ -24,7 +24,7 @@ from vllm.v1.engine.input_processor import InputProcessor
 from vllm.v1.executor import Executor
 
 from vllm_omni.engine.arg_utils import OmniEngineArgs
-from vllm_omni.entrypoints.omni_stage import _resolve_worker_cls
+from vllm_omni.engine.worker_cls_utils import resolve_worker_cls
 from vllm_omni.entrypoints.stage_utils import _to_dict, set_stage_devices
 from vllm_omni.entrypoints.utils import resolve_model_config_path
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniSamplingParams
@@ -172,7 +172,7 @@ def build_engine_args_dict(
         engine_args_dict["stage_connector_spec"] = dict(stage_connector_spec or {})
 
     if stage_type != "diffusion":
-        _resolve_worker_cls(engine_args_dict)
+        resolve_worker_cls(engine_args_dict)
 
     return engine_args_dict
 

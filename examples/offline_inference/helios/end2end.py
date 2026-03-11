@@ -52,7 +52,7 @@ import numpy as np
 import torch
 
 from vllm_omni.diffusion.data import DiffusionParallelConfig
-from vllm_omni.entrypoints.omni import Omni
+from vllm_omni.entrypoints import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 from vllm_omni.outputs import OmniRequestOutput
 from vllm_omni.platforms import current_omni_platform

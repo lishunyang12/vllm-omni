@@ -23,7 +23,7 @@ from message_convert import (
 from vllm import SamplingParams
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
-from vllm_omni.entrypoints.omni import Omni
+from vllm_omni.entrypoints import Omni
 from vllm_omni.inputs.data import OmniTokensPrompt
 
 SEED = 42

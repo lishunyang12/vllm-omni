@@ -6,7 +6,7 @@ import os
 
 from PIL import Image
 
-from vllm_omni.entrypoints.omni import Omni
+from vllm_omni.entrypoints import Omni
 
 """
 The tencent/HunyuanImage-3.0-Instruct base model is built on the Hunyuan v1 architecture, specifically the tencent/Hunyuan-A13B-Instruct model. It utilizes two tokenizer delimiter templates:

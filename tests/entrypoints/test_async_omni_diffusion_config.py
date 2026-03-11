@@ -4,7 +4,7 @@
 import pytest
 
 from vllm_omni.entrypoints import utils as utils_module
-from vllm_omni.entrypoints.async_omni import AsyncOmni
+from vllm_omni.entrypoints import AsyncOmni
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
 

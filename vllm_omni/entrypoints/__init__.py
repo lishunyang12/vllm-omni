@@ -3,33 +3,14 @@
 
 """
 vLLM-Omni entrypoints module.
-
-Provides high-level interfaces for running omni models including:
-- AsyncOmni: Async orchestrator for multi-stage LLM pipelines
-- AsyncOmniDiffusion: Async interface for diffusion model inference
-- Omni: Unified entrypoint that auto-selects between LLM and Diffusion
 """
-
-import os
 
 from vllm_omni.entrypoints.async_omni_diffusion import AsyncOmniDiffusion
 from vllm_omni.entrypoints.async_omni_v1 import AsyncOmniV1
 from vllm_omni.entrypoints.omni_v1 import OmniV1
 
-
-def _use_v1_entrypoints() -> bool:
-    value = os.environ.get("vllm_omni_use_v1")
-    if value is None:
-        value = os.environ.get("VLLM_OMNI_USE_V1", "")
-    return value.lower() in {"1", "true", "yes", "on"}
-
-
-if _use_v1_entrypoints():
-    AsyncOmni = AsyncOmniV1
-    Omni = OmniV1
-else:
-    from vllm_omni.entrypoints.async_omni import AsyncOmni
-    from vllm_omni.entrypoints.omni import Omni
+AsyncOmni = AsyncOmniV1
+Omni = OmniV1
 
 __all__ = [
     "AsyncOmni",
