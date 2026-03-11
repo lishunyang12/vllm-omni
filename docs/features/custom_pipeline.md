@@ -79,7 +79,7 @@ class CustomPipeline(QwenImageEditPipeline):
 Initialize the `Omni` engine with custom pipeline configuration:
 
 ```python
-from vllm_omni.entrypoints import Omni
+from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 # Initialize with custom pipeline

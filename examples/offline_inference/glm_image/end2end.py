@@ -44,7 +44,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from vllm_omni.entrypoints import Omni
+from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 # Default stage config path (relative to vllm_omni package)

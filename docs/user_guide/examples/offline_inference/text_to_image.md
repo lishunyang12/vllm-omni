@@ -13,7 +13,7 @@ Note that when you pass in multiple independent prompts, they will be processed 
 ## Basic Usage
 
 ```python
-from vllm_omni.entrypoints import Omni
+from vllm_omni.entrypoints.omni import Omni
 
 if __name__ == "__main__":
     omni = Omni(model="Qwen/Qwen-Image")
@@ -26,7 +26,7 @@ if __name__ == "__main__":
 Or put more than one prompt in a request.
 
 ```python
-from vllm_omni.entrypoints import Omni
+from vllm_omni.entrypoints.omni import Omni
 
 if __name__ == "__main__":
     omni = Omni(model="Qwen/Qwen-Image")
@@ -57,7 +57,7 @@ Apart from string prompt, vLLM-Omni also supports dictionary prompts in the same
 This is useful for models that support negative prompts.
 
 ```python
-from vllm_omni.entrypoints import Omni
+from vllm_omni.entrypoints.omni import Omni
 
 if __name__ == "__main__":
     omni = Omni(model="Qwen/Qwen-Image")

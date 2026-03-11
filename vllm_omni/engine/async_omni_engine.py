@@ -15,6 +15,7 @@ import queue
 import threading
 import time
 import uuid
+import weakref
 from collections.abc import Sequence
 from typing import Any
 
@@ -66,6 +67,34 @@ def _inject_global_id(target: Any, request_id: str) -> None:
             target["additional_information"] = {}
         if isinstance(target["additional_information"], dict):
             target["additional_information"]["global_request_id"] = [str(request_id)]
+
+
+def _weak_shutdown_async_omni_engine(
+    orchestrator_thread: threading.Thread | None,
+    request_queue: janus.Queue[dict[str, Any]] | None,
+    output_queue: janus.Queue[dict[str, Any]] | None,
+    rpc_output_queue: janus.Queue[dict[str, Any]] | None,
+) -> None:
+    """Best-effort orchestrator cleanup for GC finalization."""
+    try:
+        if request_queue is not None:
+            request_queue.sync_q.put_nowait({"type": "shutdown"})
+    except Exception:
+        pass
+
+    try:
+        if orchestrator_thread is not None and orchestrator_thread.is_alive():
+            orchestrator_thread.join(timeout=10)
+    except Exception:
+        pass
+
+    for q in (request_queue, output_queue, rpc_output_queue):
+        if q is None:
+            continue
+        try:
+            q.close()
+        except Exception:
+            pass
 
 
 class AsyncOmniEngine:
@@ -423,6 +452,8 @@ class AsyncOmniEngine:
         self.request_queue: janus.Queue[dict[str, Any]] | None = None
         self.output_queue: janus.Queue[dict[str, Any]] | None = None
         self.rpc_output_queue: janus.Queue[dict[str, Any]] | None = None
+        self._shutdown_called = False
+        self._weak_finalizer: weakref.finalize | None = None
         self._rpc_lock = threading.Lock()
         self._llm_stage_launch_lock = threading.Lock()
 
@@ -459,6 +490,14 @@ class AsyncOmniEngine:
             raise
 
         # Stage runtime fields are assigned directly on self by the bootstrap thread.
+        self._weak_finalizer = weakref.finalize(
+            self,
+            _weak_shutdown_async_omni_engine,
+            self.orchestrator_thread,
+            self.request_queue,
+            self.output_queue,
+            self.rpc_output_queue,
+        )
 
         logger.info(f"[AsyncOmniEngine] Orchestrator ready with {self.num_stages} stages")
 
@@ -804,6 +843,13 @@ class AsyncOmniEngine:
 
     def shutdown(self) -> None:
         """Send shutdown message and wait for the Orchestrator thread to exit."""
+        if getattr(self, "_shutdown_called", False):
+            return
+        self._shutdown_called = True
+        finalizer = getattr(self, "_weak_finalizer", None)
+        if finalizer is not None and finalizer.alive:
+            finalizer.detach()
+
         logger.info("[AsyncOmniEngine] Shutting down Orchestrator")
         try:
             if self.request_queue is not None:
@@ -822,9 +868,3 @@ class AsyncOmniEngine:
                 q.close()
             except Exception:
                 pass
-
-    def __del__(self) -> None:
-        try:
-            self.shutdown()
-        except Exception:
-            pass

@@ -603,10 +603,3 @@ class AsyncOmni(EngineClient, OmniBase):
             self.final_output_task.cancel()
             self.final_output_task = None
         OmniBase.shutdown(self)
-
-    def __del__(self):
-        """Cleanup on deletion."""
-        try:
-            self.shutdown()
-        except Exception:
-            pass

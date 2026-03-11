@@ -17,7 +17,7 @@ Cache-dit is a library that accelerates diffusion transformer models through int
 Enable cache-dit acceleration by simply setting `cache_backend="cache_dit"`. Cache-dit will use its recommended default parameters:
 
 ```python
-from vllm_omni.entrypoints import Omni
+from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 # Simplest way: just enable cache-dit with default parameters

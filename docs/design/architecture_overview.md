@@ -128,7 +128,7 @@ The **Omni** class provides a Python interface for offline batched inference. Us
 
 ```
 # Create an omni_lm with HF model name.
-from vllm_omni.entrypoints import Omni
+from vllm_omni.entrypoints.omni import Omni
 
 omni_lm = Omni(model="Qwen/Qwen3-Omni-30B-A3B-Instruct")
 

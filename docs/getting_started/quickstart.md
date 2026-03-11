@@ -36,7 +36,7 @@ For additional installation methods — please see the [installation guide](inst
 Text-to-image generation quickstart with vLLM-Omni:
 
 ```python
-from vllm_omni.entrypoints import Omni
+from vllm_omni.entrypoints.omni import Omni
 
 if __name__ == "__main__":
     omni = Omni(model="Tongyi-MAI/Z-Image-Turbo")
@@ -56,7 +56,7 @@ You can pass a list of prompts and wait for them to process altogether, shown be
     This feature is primarily for the sake of interface compatibility with vLLM and to allow for future improvements.
 
 ```python
-from vllm_omni.entrypoints import Omni
+from vllm_omni.entrypoints.omni import Omni
 
 if __name__ == "__main__":
     omni = Omni(

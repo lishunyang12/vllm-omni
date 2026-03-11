@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import time
 import types
+import weakref
 from collections.abc import Sequence
 from pprint import pformat
 from typing import Any, Literal
@@ -23,6 +24,14 @@ logger = init_logger(__name__)
 
 def _dummy_snapshot_download(model_id: str) -> str:
     return model_id
+
+
+def _weak_shutdown_engine(engine: AsyncOmniEngine) -> None:
+    """Best-effort engine cleanup for GC finalization."""
+    try:
+        engine.shutdown()
+    except Exception:
+        pass
 
 
 def omni_snapshot_download(model_id: str) -> str:
@@ -83,6 +92,8 @@ class OmniBase:
             stage_init_timeout=stage_init_timeout,
             **kwargs,
         )
+        self._shutdown_called = False
+        self._weak_finalizer = weakref.finalize(self, _weak_shutdown_engine, self.engine)
         et = time.time()
         logger.info("[%s] AsyncOmniEngine initialized in %.2f seconds", self.__class__.__name__, et - st)
         self.async_chunk = bool(self.async_chunk or getattr(self.engine, "async_chunk", False))
@@ -273,4 +284,7 @@ class OmniBase:
         if getattr(self, "_shutdown_called", False):
             return
         self._shutdown_called = True
+        finalizer = getattr(self, "_weak_finalizer", None)
+        if finalizer is not None and finalizer.alive:
+            finalizer.detach()
         self.engine.shutdown()

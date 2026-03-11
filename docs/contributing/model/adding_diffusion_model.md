@@ -606,7 +606,7 @@ mkdir -p examples/online_serving/your_model_name
 
 - Script: `examples/offline_inference/your_model_name/end2end.py`
   - Parse args like BAGEL (`--model`, `--modality`, optional `--image-path`, `--steps`, etc.)
-  - Use `from vllm_omni.entrypoints import Omni`
+  - Use `from vllm_omni.entrypoints.omni import Omni` (or `OmniDiffusion` if your model is diffusion-only)
   - Save outputs (images/audio/video/text) with deterministic filenames (e.g., `output_0_0.png`)
 - Doc: `examples/offline_inference/your_model_name/README.md`
   - Include at least one runnable command, e.g.:

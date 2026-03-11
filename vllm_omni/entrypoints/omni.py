@@ -185,9 +185,3 @@ class Omni(OmniBase):
             self.request_states.pop(req_id, None)
         if self.log_stats:
             logger.info("[Omni] Aborted request(s) %s", ",".join(request_ids))
-
-    def __del__(self):
-        try:
-            self.shutdown()
-        except Exception:
-            pass
