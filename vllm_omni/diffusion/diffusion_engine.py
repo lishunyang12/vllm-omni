@@ -107,13 +107,9 @@ class DiffusionEngine:
                 for i, prompt in enumerate(request.prompts)
             ]
 
-        # Move output tensor to CPU before post-processing to avoid CUDA OOM.
-        # After the forward pass the model weights (and VAE) may still reside
-        # on the GPU, leaving very little headroom.  Post-processing only needs
-        # CPU tensors (denormalize → numpy/PIL), so offloading here is both
-        # safe and necessary for memory-constrained setups.
+        # Move output to CPU before post-processing to avoid device OOM.
         output_data = output.output
-        if isinstance(output_data, torch.Tensor) and output_data.is_cuda:
+        if isinstance(output_data, torch.Tensor) and output_data.device.type != "cpu":
             output_data = output_data.cpu()
 
         postprocess_start_time = time.perf_counter()
