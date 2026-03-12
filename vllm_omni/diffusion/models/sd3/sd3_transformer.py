@@ -156,8 +156,12 @@ class SD3CrossAttention(nn.Module):
         else:
             self.to_out = None
 
-        self.norm_added_q = RMSNorm(head_dim, eps=eps) if qk_norm else nn.Identity()
-        self.norm_added_k = RMSNorm(head_dim, eps=eps) if qk_norm else nn.Identity()
+        if added_kv_proj_dim is not None and qk_norm:
+            self.norm_added_q = RMSNorm(head_dim, eps=eps)
+            self.norm_added_k = RMSNorm(head_dim, eps=eps)
+        else:
+            self.norm_added_q = nn.Identity()
+            self.norm_added_k = nn.Identity()
 
         self.attn = Attention(
             num_heads=self.to_qkv.num_heads,
