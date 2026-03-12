@@ -7,6 +7,7 @@ vLLM-Omni supports quantization of diffusion model components to reduce memory u
 | Method | Components | Guide |
 |--------|-----------|-------|
 | FP8 | DiT, Text Encoder, VAE | [FP8](fp8.md) |
+| GGUF | DiT | [GGUF](gguf.md) |
 
 ## Quantization Scope
 
