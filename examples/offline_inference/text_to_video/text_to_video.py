@@ -5,6 +5,7 @@ import argparse
 import os
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -132,6 +133,23 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable expert parallelism for MoE layers.",
     )
+    parser.add_argument(
+        "--quantization",
+        type=str,
+        default=None,
+        choices=["fp8"],
+        help="Quantization method for the transformer. "
+        "Options: 'fp8' (FP8 W8A8 on Ada/Hopper, weight-only on older GPUs). "
+        "Default: None (no quantization, uses BF16).",
+    )
+    parser.add_argument(
+        "--ignored-layers",
+        type=str,
+        default=None,
+        help="Comma-separated list of layer name patterns to skip quantization. "
+        "Only used when --quantization is set. "
+        "Example: --ignored-layers 'to_qkv,to_out'",
+    )
     return parser.parse_args()
 
 
@@ -171,6 +189,17 @@ def main():
     # Check if profiling is requested via environment variable
     profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
 
+    # Build quantization kwargs
+    quant_kwargs: dict[str, Any] = {}
+    ignored_layers = [s.strip() for s in args.ignored_layers.split(",") if s.strip()] if args.ignored_layers else None
+    if args.quantization and ignored_layers:
+        quant_kwargs["quantization_config"] = {
+            "method": args.quantization,
+            "ignored_layers": ignored_layers,
+        }
+    elif args.quantization:
+        quant_kwargs["quantization"] = args.quantization
+
     omni = Omni(
         model=args.model,
         enable_layerwise_offload=args.enable_layerwise_offload,
@@ -184,6 +213,7 @@ def main():
         enforce_eager=args.enforce_eager,
         cache_backend=args.cache_backend,
         cache_config=cache_config,
+        **quant_kwargs,
     )
 
     if profiler_enabled:
@@ -201,6 +231,9 @@ def main():
         f" cfg_parallel_size={args.cfg_parallel_size}, tensor_parallel_size={args.tensor_parallel_size},"
         f" vae_patch_parallel_size={args.vae_patch_parallel_size}, enable_expert_parallel={args.enable_expert_parallel}"
     )
+    print(f"  Quantization: {args.quantization if args.quantization else 'None (BF16)'}")
+    if ignored_layers:
+        print(f"  Ignored layers: {ignored_layers}")
     print(f"  Video size: {args.width}x{args.height}")
     print(f"{'=' * 60}\n")
 
