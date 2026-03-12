@@ -9,10 +9,12 @@ to DiffusionModelRunner.
 """
 
 import gc
+import json
 import multiprocessing as mp
 import os
 from collections.abc import Iterable
 from contextlib import AbstractContextManager, nullcontext
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -34,6 +36,7 @@ from vllm_omni.diffusion.distributed.parallel_state import (
     initialize_model_parallel,
 )
 from vllm_omni.diffusion.forward_context import set_forward_context
+from vllm_omni.diffusion.ipc import pack_diffusion_output_shm
 from vllm_omni.diffusion.lora.manager import DiffusionLoRAManager
 from vllm_omni.diffusion.profiler import CurrentProfiler
 from vllm_omni.diffusion.request import OmniDiffusionRequest
@@ -43,6 +46,16 @@ from vllm_omni.platforms import current_omni_platform
 from vllm_omni.worker.gpu_memory_utils import get_process_gpu_memory
 
 logger = init_logger(__name__)
+
+MODEL_PARAM_COUNTS = {
+    "bagel": 13.5e9,  # BAGEL-7B-MoT
+    "flux": 12.0e9,  # FLUX.1-dev
+    "default": 10.0e9,
+}
+
+# 2.5 GiB is the empirical peak activation footprint (intermediate tensors +
+# attention workspace) for models like Bagel-7B/Flux at 1024x1024 resolution.
+ACTIVATION_MEMORY_MULTIPLIER = 2.5
 
 
 class DiffusionWorker:
@@ -58,11 +71,66 @@ class DiffusionWorker:
     delegated to DiffusionModelRunner.
     """
 
+    @staticmethod
+    def predict_resource_usage(od_config: OmniDiffusionConfig) -> dict[str, float]:
+        from vllm.utils.mem_utils import GiB_bytes
+
+        total_params = 0
+        estimate_source = "fallback"
+        try:
+            model_path = Path(getattr(od_config, "model", ""))
+            index_file = model_path / "model.safetensors.index.json"
+            if index_file.exists():
+                with open(index_file) as f:
+                    data = json.load(f)
+                    # metadata.total_size
+                    total_params = int(data.get("metadata", {}).get("total_size", 0))
+                    if total_params > 0:
+                        estimate_source = "safetensors index"
+        except Exception as e:
+            logger.debug(f"Failed to parse safetensors metadata: {e}")
+        if total_params == 0:
+            m_name = str(getattr(od_config, "model", "")).lower()
+            if "bagel" in m_name:
+                total_params = MODEL_PARAM_COUNTS["bagel"]
+                estimate_source = "bagel"
+            elif "flux" in m_name:
+                total_params = MODEL_PARAM_COUNTS["flux"]
+                estimate_source = "flux"
+            else:
+                total_params = MODEL_PARAM_COUNTS["default"]
+                estimate_source = "default"
+        logger.info(f"VRAM Quota: Estimated {total_params / 1e9:.2f}B params using {estimate_source} logic")
+
+        dtype = getattr(od_config, "dtype", torch.bfloat16)
+        dtype_str = str(dtype).lower()
+        # Calculate the number of bytes per parameter
+        # based on different levels of precision.
+        if "int4" in dtype_str:
+            bytes_per_param = 0.5
+        elif any(kw in dtype_str for kw in ["float8", "int8"]):
+            bytes_per_param = 1
+        elif any(kw in dtype_str for kw in ["float16", "bfloat16", "half"]):
+            bytes_per_param = 2
+        elif any(kw in dtype_str for kw in ["float32", "int32"]):
+            bytes_per_param = 4
+        else:
+            bytes_per_param = 4
+        static_gb = (total_params * bytes_per_param) / GiB_bytes
+        h, w = getattr(od_config, "height", 1024), getattr(od_config, "width", 1024)
+        dynamic_gb = ACTIVATION_MEMORY_MULTIPLIER * (h * w / (1024 * 1024))
+        return {
+            "static_gb": round(static_gb, 2),
+            "dynamic_gb": round(dynamic_gb, 2),
+            "total_gb": round(static_gb + dynamic_gb, 2),
+        }
+
     def __init__(
         self,
         local_rank: int,
         rank: int,
         od_config: OmniDiffusionConfig,
+        skip_load_model: bool = False,
     ):
         self.local_rank = local_rank
         self.rank = rank
@@ -79,8 +147,9 @@ class DiffusionWorker:
             od_config=self.od_config,
             device=self.device,
         )
-        self.load_model(load_format=self.od_config.diffusion_load_format)
-        self.init_lora_manager()
+        if not skip_load_model:
+            self.load_model(load_format=self.od_config.diffusion_load_format)
+            self.init_lora_manager()
         logger.info(f"Worker {self.rank}: Initialization complete.")
 
     def init_device(self) -> None:
@@ -103,6 +172,7 @@ class DiffusionWorker:
         vllm_config = VllmConfig(compilation_config=CompilationConfig())
         vllm_config.parallel_config.tensor_parallel_size = self.od_config.parallel_config.tensor_parallel_size
         vllm_config.parallel_config.data_parallel_size = self.od_config.parallel_config.data_parallel_size
+        vllm_config.parallel_config.enable_expert_parallel = self.od_config.parallel_config.enable_expert_parallel
         self.vllm_config = vllm_config
 
         # Initialize distributed environment
@@ -123,6 +193,8 @@ class DiffusionWorker:
                 tensor_parallel_size=parallel_config.tensor_parallel_size,
                 pipeline_parallel_size=parallel_config.pipeline_parallel_size,
                 fully_shard_degree=parallel_config.hsdp_shard_size if parallel_config.use_hsdp else 1,
+                hsdp_replicate_size=parallel_config.hsdp_replicate_size if parallel_config.use_hsdp else 1,
+                enable_expert_parallel=parallel_config.enable_expert_parallel,
             )
             init_workspace_manager(self.device)
 
@@ -373,6 +445,10 @@ class WorkerProc:
     def return_result(self, output: DiffusionOutput):
         """Reply to client, only on rank 0."""
         if self.result_mq is not None:
+            try:
+                pack_diffusion_output_shm(output)
+            except Exception as e:
+                logger.warning("SHM pack failed, falling back to raw enqueue: %s", e)
             self.result_mq.enqueue(output)
 
     def recv_message(self):
@@ -524,10 +600,15 @@ class WorkerWrapperBase:
         worker_class = self._prepare_worker_class()
 
         # Create the actual worker instance
+        # When custom_pipeline_args is provided, skip initial model loading
+        # since re_init_pipeline will handle it. This avoids allocating memory
+        # through CuMemAllocator twice, which causes assertion failures in
+        # sleep mode.
         self.worker = worker_class(
             local_rank=gpu_id,
             rank=gpu_id,
             od_config=od_config,
+            skip_load_model=(self.custom_pipeline_args is not None),
         )
 
         # Re-initialize pipeline with custom pipeline if provided

@@ -60,6 +60,7 @@ class AsyncOmniDiffusion:
         # Capture stage info from kwargs before they might be filtered out
         stage_id = kwargs.get("stage_id")
         engine_input_source = kwargs.get("engine_input_source")
+        cfg_kv_collect_func = kwargs.pop("cfg_kv_collect_func", None)
 
         # Build config
         if od_config is None:
@@ -86,7 +87,8 @@ class AsyncOmniDiffusion:
         try:
             config_dict = get_hf_file_to_dict("model_index.json", od_config.model)
             if config_dict is not None:
-                od_config.model_class_name = config_dict.get("_class_name", None)
+                if od_config.model_class_name is None:
+                    od_config.model_class_name = config_dict.get("_class_name", None)
                 od_config.update_multimodal_support()
 
                 tf_config_dict = get_hf_file_to_dict("transformer/config.json", od_config.model)
@@ -98,6 +100,7 @@ class AsyncOmniDiffusion:
             if cfg is None:
                 raise ValueError(f"Could not find config.json or model_index.json for model {od_config.model}")
 
+            od_config.tf_model_config = TransformerConfig.from_dict(cfg)
             model_type = cfg.get("model_type")
             architectures = cfg.get("architectures") or []
             # Bagel/NextStep models don't have a model_index.json, so we set the pipeline class name manually
@@ -114,6 +117,9 @@ class AsyncOmniDiffusion:
                 od_config.model_class_name = architectures[0]
             else:
                 raise
+
+        if cfg_kv_collect_func is not None:
+            od_config.cfg_kv_collect_func = cfg_kv_collect_func
 
         # Initialize engine
         self.engine: DiffusionEngine = DiffusionEngine.make_engine(od_config)
