@@ -13,7 +13,8 @@ When you open a PR against vLLM-Omni, several CI checks run automatically:
 | **Build Wheel** | GitHub Actions | Builds Python wheels for Python 3.11 and 3.12 on Ubuntu. Skipped for docs-only or Markdown-only changes (controlled by `paths-ignore` in the workflow). |
 | **DCO** | GitHub | Verifies every commit has a `Signed-off-by` line. |
 | **docs/readthedocs.org:vllm-omni** | Read the Docs | Builds the MkDocs documentation site. |
-| **buildkite/vllm-omni** | Buildkite | Runs GPU-based tests on NVIDIA (L4, H100) and AMD (MI325) hardware. |
+| **buildkite/vllm-omni** | Buildkite | Runs GPU-based tests on NVIDIA CUDA hardware (L4, H100). |
+| **buildkite/vllm-omni-amd** | Buildkite | Runs GPU-based tests on AMD ROCm hardware (MI325). |
 
 ## Step 1: Identify the Failing Check
 
@@ -43,7 +44,7 @@ For multiple commits, use an interactive rebase to add the sign-off to each one.
 
 ### Read the Docs failures
 
-The documentation build uses MkDocs with `fail_on_warning: true`, so even a minor Markdown issue can break it. To reproduce locally:
+The documentation build uses MkDocs with `fail_on_warning: true`, so even a minor warning (not just errors) will cause the build to fail. To reproduce locally:
 
 ```bash
 uv pip install -e ".[docs]"
