@@ -1116,11 +1116,14 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
 
         visual_quant_config = quant_config
         language_quant_config = quant_config
-        from vllm_omni.quantization.component_config import ComponentQuantizationConfig
-
         if isinstance(quant_config, ComponentQuantizationConfig):
             visual_quant_config = quant_config._resolve("visual")
             language_quant_config = quant_config._resolve("language_model")
+            logger.debug(
+                "Per-component quant: visual=%s, language_model=%s",
+                visual_quant_config.get_name() if visual_quant_config else None,
+                language_quant_config.get_name() if language_quant_config else None,
+            )
 
         with self._mark_tower_model(vllm_config, "audio"):
             self.audio_tower = Qwen3OmniMoeAudioEncoder(
@@ -1160,8 +1163,6 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
                 architectures=["Qwen3MoeForCausalLM"],
             )
             if language_quant_config is not quant_config:
-                from dataclasses import replace
-
                 lm_vllm_config = replace(lm_vllm_config, quant_config=language_quant_config)
             self.language_model = Qwen3MoeLLMForCausalLM(
                 vllm_config=lm_vllm_config,
