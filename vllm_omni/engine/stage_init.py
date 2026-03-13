@@ -167,8 +167,10 @@ def build_engine_args_dict(
 
     engine_args_dict = _to_dict(engine_args)
     engine_args_dict["model"] = model
+    # Stage id must come from stage config instead of inherited CLI kwargs
+    # (e.g. `--stage-id` defaulting to None).
+    engine_args_dict["stage_id"] = stage_id
     if engine_args_dict.get("async_chunk", False):
-        engine_args_dict["stage_id"] = stage_id
         engine_args_dict["stage_connector_spec"] = dict(stage_connector_spec or {})
 
     if stage_type != "diffusion":
