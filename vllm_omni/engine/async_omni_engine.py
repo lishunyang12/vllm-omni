@@ -34,8 +34,12 @@ from vllm.v1.engine.input_processor import InputProcessor
 from vllm.v1.engine.utils import get_engine_zmq_addresses, launch_core_engines
 
 from vllm_omni.diffusion.data import DiffusionParallelConfig
+from vllm_omni.engine import (
+    OmniEngineCoreRequest,
+)
 from vllm_omni.engine.orchestrator import Orchestrator
 from vllm_omni.engine.output_processor import MultimodalOutputProcessor
+from vllm_omni.engine.serialization import serialize_additional_information
 from vllm_omni.engine.stage_engine_core_client import StageEngineCoreClient
 from vllm_omni.engine.stage_init import (
     StartedLlmStage,
@@ -69,6 +73,49 @@ def _inject_global_id(target: Any, request_id: str) -> None:
             target["additional_information"] = {}
         if isinstance(target["additional_information"], dict):
             target["additional_information"]["global_request_id"] = [str(request_id)]
+
+
+def _upgrade_to_omni_request(
+    request: EngineCoreRequest,
+    raw_prompt: Any,
+) -> EngineCoreRequest:
+    """Restore omni-only fields omitted by upstream InputProcessor."""
+    prompt_embeds = request.prompt_embeds
+    additional_information = None
+
+    if isinstance(raw_prompt, dict):
+        if prompt_embeds is None:
+            raw_prompt_embeds = raw_prompt.get("prompt_embeds")
+            if isinstance(raw_prompt_embeds, torch.Tensor):
+                prompt_embeds = raw_prompt_embeds
+        additional_information = serialize_additional_information(
+            raw_prompt.get("additional_information"),
+            log_prefix="AsyncOmniEngine",
+        )
+
+    if prompt_embeds is None and additional_information is None:
+        return request
+
+    return OmniEngineCoreRequest(
+        request_id=request.request_id,
+        prompt_token_ids=request.prompt_token_ids,
+        mm_features=request.mm_features,
+        sampling_params=request.sampling_params,
+        pooling_params=request.pooling_params,
+        arrival_time=request.arrival_time,
+        lora_request=request.lora_request,
+        cache_salt=request.cache_salt,
+        data_parallel_rank=request.data_parallel_rank,
+        prompt_embeds=prompt_embeds,
+        client_index=request.client_index,
+        current_wave=request.current_wave,
+        priority=request.priority,
+        trace_headers=request.trace_headers,
+        resumable=request.resumable,
+        external_req_id=request.external_req_id,
+        reasoning_ended=request.reasoning_ended,
+        additional_information=additional_information,
+    )
 
 
 def _weak_shutdown_async_omni_engine(
@@ -533,6 +580,10 @@ class AsyncOmniEngine:
                 supported_tasks=self.supported_tasks,
                 arrival_time=arrival_time,
             )
+            # TODO (Peiqi): add this for Qwen3-TTS only. Other models don't have
+            # additional_information field in the prompt.
+            request = _upgrade_to_omni_request(request, prompt)
+
             # Restore external_req_id to the original user-facing request_id.
             # InputProcessor.process_inputs() renames request_id to an internal
             # UUID (saving the original in external_req_id), but then overwrites

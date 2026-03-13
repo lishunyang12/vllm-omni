@@ -25,45 +25,14 @@ from vllm.v1.engine import EngineCoreOutputs
 
 from vllm_omni.distributed.omni_connectors.adapter import compute_talker_prompt_ids_length
 from vllm_omni.engine import (
-    AdditionalInformationEntry,
-    AdditionalInformationPayload,
     OmniEngineCoreRequest,
 )
 from vllm_omni.metrics.stats import StageRequestStats as StageRequestMetrics
 from vllm_omni.metrics.stats import StageStats
 from vllm_omni.metrics.utils import count_tokens_from_outputs
+from vllm_omni.engine.serialization import serialize_additional_information
 
 logger = init_logger(__name__)
-
-
-def _dtype_to_name(dtype: torch.dtype) -> str:
-    """Convert torch dtype to string representation.
-
-    Args:
-        dtype: PyTorch dtype to convert
-
-    Returns:
-        String representation of the dtype (e.g., "float32", "int64")
-    """
-    mapping = {
-        torch.float32: "float32",
-        torch.float: "float32",
-        torch.float16: "float16",
-        torch.half: "float16",
-        torch.bfloat16: "bfloat16",
-        torch.float64: "float64",
-        torch.double: "float64",
-        torch.int64: "int64",
-        torch.long: "int64",
-        torch.int32: "int32",
-        torch.int: "int32",
-        torch.int16: "int16",
-        torch.short: "int16",
-        torch.int8: "int8",
-        torch.uint8: "uint8",
-        torch.bool: "bool",
-    }
-    return mapping.get(dtype, str(dtype).replace("torch.", ""))
 
 
 def build_engine_core_request_from_tokens(
@@ -98,28 +67,10 @@ def build_engine_core_request_from_tokens(
     prompt_embeds: torch.Tensor | None = prompt.get("prompt_embeds")
 
     # Serialize additional_information if present
-    additional_info_payload: AdditionalInformationPayload | None = None
-    raw_info: dict[str, Any] | None = prompt.get("additional_information")
-    if raw_info is not None:
-        entries: dict[str, AdditionalInformationEntry] = {}
-        for key, value in raw_info.items():
-            if isinstance(value, torch.Tensor):
-                v_cpu = value.detach().to("cpu").contiguous()
-                entries[key] = AdditionalInformationEntry(
-                    tensor_data=v_cpu.numpy().tobytes(),
-                    tensor_shape=list(v_cpu.shape),
-                    tensor_dtype=_dtype_to_name(v_cpu.dtype),
-                )
-            elif isinstance(value, list):
-                entries[key] = AdditionalInformationEntry(list_data=value)
-            else:
-                logger.warning(
-                    "[build_engine_core_request_from_tokens] req=%s skipping unsupported type key=%s type=%s",
-                    request_id,
-                    key,
-                    type(value).__name__,
-                )
-        additional_info_payload = AdditionalInformationPayload(entries=entries)
+    additional_info_payload = serialize_additional_information(
+        prompt.get("additional_information"),
+        log_prefix=f"build_engine_core_request_from_tokens req={request_id}",
+    )
 
     return OmniEngineCoreRequest(
         request_id=request_id,
