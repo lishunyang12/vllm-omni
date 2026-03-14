@@ -80,8 +80,10 @@ def main():
         # vllm-omni may save (F, C, H, W) or (F, H, W, C)
         def normalize_layout(arr):
             """Ensure frames are (F, H, W, C) layout."""
+            # Squeeze leading batch dims: (1, 1, F, H, W, C) -> (F, H, W, C)
+            while arr.ndim > 4 and arr.shape[0] == 1:
+                arr = arr[0]
             if arr.ndim == 5:
-                # (B, F, ...) -> (F, ...)
                 arr = arr[0]
             if arr.ndim == 4:
                 # Check if channel-first: (F, C, H, W) where C is 3 or 4
