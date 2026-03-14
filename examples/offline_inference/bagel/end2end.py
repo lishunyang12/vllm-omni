@@ -58,6 +58,12 @@ def parse_args():
         help="CFG parallel size: 1=batched (single GPU), 2=parallel with 2 branches (text CFG only), 3=parallel (3 GPUs).",
     )
     parser.add_argument("--seed", type=int, default=None, help="Random seed for generation.")
+    parser.add_argument(
+        "--quantization",
+        type=str,
+        default=None,
+        help="Quantization method (e.g. 'fp8').",
+    )
 
     args = parser.parse_args()
     return args
@@ -105,6 +111,8 @@ def main():
             "ray_address": args.ray_address,
         }
     )
+    if args.quantization:
+        omni_kwargs["quantization"] = args.quantization
 
     omni = Omni(model=model_name, **omni_kwargs)
 
