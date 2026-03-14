@@ -48,7 +48,7 @@ EXPERIMENTS = [
         "height": 480, "width": 832, "frames": 33, "steps": 30,
         "guidance_scale": 6.0, "flow_shift": 5.0,
         "precision": "BF16", "quantization": None,
-        "vae_use_tiling": False,
+        "vae_use_tiling": True,
     },
     {
         "name": "T2V 480p full BF16",
@@ -84,7 +84,7 @@ EXPERIMENTS = [
         "height": 480, "width": 832, "frames": 33, "steps": 30,
         "guidance_scale": 6.0, "flow_shift": 5.0,
         "precision": "BF16", "quantization": None,
-        "vae_use_tiling": False,
+        "vae_use_tiling": True,
     },
 ]
 
@@ -232,7 +232,7 @@ def main():
                 print(f"SKIP: {exp['name']} (not in filter)")
                 continue
 
-        model_key = (exp["model"], exp.get("quantization"))
+        model_key = (exp["model"], exp.get("quantization"), exp.get("vae_use_tiling"))
         if model_key != prev_model_key:
             # Free previous model
             if omni is not None:
