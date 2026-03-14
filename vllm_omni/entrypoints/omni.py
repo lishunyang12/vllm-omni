@@ -291,7 +291,7 @@ class OmniBase:
                 if lora_scale is not None:
                     if not hasattr(cfg.engine_args, "lora_scale") or cfg.engine_args.lora_scale is None:
                         cfg.engine_args.lora_scale = lora_scale
-                quantization_config = kwargs.get("quantization_config")
+                quantization_config = kwargs.get("quantization_config") or kwargs.get("quantization")
                 if quantization_config is not None:
                     if (
                         not hasattr(cfg.engine_args, "quantization_config")
