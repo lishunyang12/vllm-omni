@@ -59,7 +59,7 @@ EXPERIMENTS = [
         "pipeline_cls": "HunyuanVideo15Pipeline",
         "height": 720, "width": 1280, "frames": 33, "steps": 30,
         "guidance_scale": 6.0, "flow_shift": 9.0,
-        "precision": "FP8+tiling",
+        "precision": "BF16",
     },
     {
         "name": "I2V 480p short BF16",
@@ -71,6 +71,30 @@ EXPERIMENTS = [
         "precision": "BF16",
     },
 ]
+
+
+def _get_test_image(image_path, width=832, height=480):
+    """Get or download a test image for I2V."""
+    import PIL.Image
+
+    if os.path.exists(image_path):
+        return PIL.Image.open(image_path).convert("RGB")
+
+    print(f"    Downloading test image to {image_path}...")
+    try:
+        from diffusers.utils import load_image
+        img = load_image(
+            "https://huggingface.co/datasets/YiYiXu/testing-images/resolve/main/wan_i2v_input.JPG"
+        )
+    except Exception:
+        arr = np.zeros((height, width, 3), dtype=np.uint8)
+        for i in range(height):
+            arr[i, :, 0] = int(255 * i / height)
+            arr[i, :, 2] = int(255 * (1 - i / height))
+        img = PIL.Image.fromarray(arr)
+
+    img.save(image_path)
+    return img
 
 
 def _save_frames(frames, path):
@@ -104,7 +128,6 @@ def load_pipeline(exp):
     pipe.vae.enable_tiling()
 
     # Set guidance_scale via guider (v1.5 uses guiders, not guidance_scale param)
-    # Default guider is ClassifierFreeGuidance with guidance_scale=6.0
     if exp.get("guidance_scale") is not None and hasattr(pipe, "guider"):
         pipe.guider = pipe.guider.new(guidance_scale=exp["guidance_scale"])
 
@@ -143,9 +166,7 @@ def run_t2v(exp, pipe):
 
 def run_i2v(exp, pipe, image_path):
     """Run I2V with diffusers HunyuanVideo15ImageToVideoPipeline."""
-    import PIL.Image
-
-    image = PIL.Image.open(image_path).convert("RGB")
+    image = _get_test_image(image_path, exp["width"], exp["height"])
 
     generator = torch.Generator("cuda").manual_seed(SEED)
 
