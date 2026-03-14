@@ -80,20 +80,21 @@ def _get_test_image(image_path, width=832, height=480):
     if os.path.exists(image_path):
         return PIL.Image.open(image_path).convert("RGB")
 
-    print(f"    Downloading test image to {image_path}...")
+    print(f"    Test image not found at {image_path}, downloading...")
+    url = "https://huggingface.co/datasets/YiYiXu/testing-images/resolve/main/wan_i2v_input.JPG"
     try:
-        from diffusers.utils import load_image
-        img = load_image(
-            "https://huggingface.co/datasets/YiYiXu/testing-images/resolve/main/wan_i2v_input.JPG"
-        )
-    except Exception:
+        import urllib.request
+        urllib.request.urlretrieve(url, image_path)
+        img = PIL.Image.open(image_path).convert("RGB")
+    except Exception as e:
+        print(f"    Download failed ({e}), creating gradient test image")
         arr = np.zeros((height, width, 3), dtype=np.uint8)
         for i in range(height):
             arr[i, :, 0] = int(255 * i / height)
             arr[i, :, 2] = int(255 * (1 - i / height))
         img = PIL.Image.fromarray(arr)
+        img.save(image_path)
 
-    img.save(image_path)
     return img
 
 
