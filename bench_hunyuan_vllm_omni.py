@@ -3,7 +3,6 @@
 Benchmark HunyuanVideo-1.5 on vLLM-OMNI.
 
 Records latency, peak VRAM, and saves raw frames (.pt) for accuracy comparison.
-Output videos are NOT saved — upload those manually.
 
 Usage:
     python bench_hunyuan_vllm_omni.py [--skip-i2v] [--i2v-image PATH]
@@ -40,7 +39,6 @@ SEED = 42
 OUTPUT_DIR = "bench_outputs"
 
 EXPERIMENTS = [
-    # (name, task, model_id, height, width, frames, steps, guidance, flow_shift, precision, extra_kwargs)
     {
         "name": "T2V 480p short BF16",
         "task": "t2v",
@@ -87,6 +85,32 @@ EXPERIMENTS = [
         "vae_use_tiling": True,
     },
 ]
+
+
+def _get_test_image(image_path, width=832, height=480):
+    """Get or download a test image for I2V."""
+    import PIL.Image
+
+    if os.path.exists(image_path):
+        return PIL.Image.open(image_path).convert("RGB")
+
+    print(f"    Downloading test image to {image_path}...")
+    try:
+        from diffusers.utils import load_image
+        img = load_image(
+            "https://huggingface.co/datasets/YiYiXu/testing-images/resolve/main/wan_i2v_input.JPG"
+        )
+    except Exception:
+        # Fallback: create a simple gradient image
+        arr = np.zeros((height, width, 3), dtype=np.uint8)
+        for i in range(height):
+            arr[i, :, 0] = int(255 * i / height)
+            arr[i, :, 2] = int(255 * (1 - i / height))
+        img = PIL.Image.fromarray(arr)
+
+    img = img.resize((width, height), PIL.Image.Resampling.LANCZOS)
+    img.save(image_path)
+    return img
 
 
 def _save_frames(frames, path):
@@ -156,10 +180,7 @@ def run_t2v(exp, omni):
 
 def run_i2v(exp, omni, image_path):
     """Run an I2V experiment."""
-    import PIL.Image
-
-    image = PIL.Image.open(image_path).convert("RGB")
-    image = image.resize((exp["width"], exp["height"]), PIL.Image.Resampling.LANCZOS)
+    image = _get_test_image(image_path, exp["width"], exp["height"])
 
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(SEED)
 
@@ -218,7 +239,6 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     results = []
 
-    # Group experiments by model to avoid reloading
     prev_model_key = None
     omni = None
 
