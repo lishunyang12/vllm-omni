@@ -139,15 +139,21 @@ def run_t2v(exp, pipe):
     torch.cuda.synchronize()
     start = time.perf_counter()
 
-    output = pipe(
+    pipe_kwargs = dict(
         prompt=T2V_PROMPT,
         height=exp["height"],
         width=exp["width"],
         num_frames=exp["frames"],
         num_inference_steps=exp["steps"],
-        guidance_scale=exp["guidance_scale"],
         generator=generator,
     )
+    # v1.5 pipeline uses guiders instead of guidance_scale
+    import inspect
+    sig = inspect.signature(pipe.__call__)
+    if "guidance_scale" in sig.parameters:
+        pipe_kwargs["guidance_scale"] = exp["guidance_scale"]
+
+    output = pipe(**pipe_kwargs)
 
     torch.cuda.synchronize()
     elapsed = time.perf_counter() - start
@@ -170,16 +176,21 @@ def run_i2v(exp, pipe, image_path):
     torch.cuda.synchronize()
     start = time.perf_counter()
 
-    output = pipe(
+    pipe_kwargs = dict(
         image=image,
         prompt=I2V_PROMPT,
         height=exp["height"],
         width=exp["width"],
         num_frames=exp["frames"],
         num_inference_steps=exp["steps"],
-        guidance_scale=exp["guidance_scale"],
         generator=generator,
     )
+    import inspect
+    sig = inspect.signature(pipe.__call__)
+    if "guidance_scale" in sig.parameters:
+        pipe_kwargs["guidance_scale"] = exp["guidance_scale"]
+
+    output = pipe(**pipe_kwargs)
 
     torch.cuda.synchronize()
     elapsed = time.perf_counter() - start
