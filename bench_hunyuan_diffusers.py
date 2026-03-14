@@ -105,7 +105,12 @@ def load_pipeline(exp):
     ).to("cuda")
 
     if exp["vae_use_tiling"]:
-        pipe.enable_vae_tiling()
+        if hasattr(pipe, "enable_vae_tiling"):
+            pipe.enable_vae_tiling()
+        elif hasattr(pipe, "vae") and hasattr(pipe.vae, "enable_tiling"):
+            pipe.vae.enable_tiling()
+        elif hasattr(pipe, "vae"):
+            pipe.vae.use_tiling = True
 
     if exp["use_fp8"]:
         try:
