@@ -51,7 +51,9 @@ def main():
         ("T2V_480p_short_BF16", "T2V 480p short BF16"),
         ("T2V_480p_full_BF16", "T2V 480p full BF16"),
         ("T2V_720p_short_FP8_tiling", "T2V 720p short FP8+tiling"),
+        ("T2V_480p_negprompt_BF16", "T2V 480p negprompt BF16"),
         ("I2V_480p_short_BF16", "I2V 480p short BF16"),
+        ("I2V_720p_short_FP8_tiling", "I2V 720p short FP8+tiling"),
     ]
 
     results = []
