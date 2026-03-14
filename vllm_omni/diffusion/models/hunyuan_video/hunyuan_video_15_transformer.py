@@ -438,12 +438,12 @@ class HunyuanVideo15Attention(nn.Module):
         if attention_mask is not None:
             batch_size, seq_len = query.shape[0], query.shape[1]
             # Pad mask to full sequence length (video + encoder tokens)
+            # Keep mask 2D (batch_size, seq_len) — each attention backend
+            # handles reshaping internally (flash_attn uses unpadding,
+            # SDPA expands to 4D via _maybe_reshape_attn_mask).
             attention_mask = F.pad(attention_mask, (seq_len - attention_mask.shape[1], 0), value=True)
             attention_mask = attention_mask.bool()
-            self_attn_mask_1 = attention_mask.view(batch_size, 1, 1, seq_len).expand(-1, -1, seq_len, -1)
-            self_attn_mask_2 = self_attn_mask_1.transpose(2, 3)
-            full_mask = self_attn_mask_1 & self_attn_mask_2
-            attn_metadata = AttentionMetadata(attn_mask=full_mask)
+            attn_metadata = AttentionMetadata(attn_mask=attention_mask)
 
         hidden_states = self.attn(query, key, value, attn_metadata)
         hidden_states = hidden_states.flatten(2, 3)
