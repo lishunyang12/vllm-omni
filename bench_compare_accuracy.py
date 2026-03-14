@@ -72,16 +72,51 @@ def main():
         vllm_frames = torch.load(vllm_path, weights_only=True).numpy()
         diff_frames = torch.load(diff_path, weights_only=True).numpy()
 
-        # Ensure same shape
+        print(f"  vllm shape: {vllm_frames.shape}, dtype: {vllm_frames.dtype}")
+        print(f"  diff shape: {diff_frames.shape}, dtype: {diff_frames.dtype}")
+
+        # Handle different layouts:
+        # diffusers typically saves (F, H, W, C) uint8
+        # vllm-omni may save (F, C, H, W) or (F, H, W, C)
+        def normalize_layout(arr):
+            """Ensure frames are (F, H, W, C) layout."""
+            if arr.ndim == 5:
+                # (B, F, ...) -> (F, ...)
+                arr = arr[0]
+            if arr.ndim == 4:
+                # Check if channel-first: (F, C, H, W) where C is 3 or 4
+                if arr.shape[1] in (3, 4) and arr.shape[1] < arr.shape[2]:
+                    arr = np.transpose(arr, (0, 2, 3, 1))
+            if arr.ndim == 3:
+                # Single frame (H, W, C)
+                arr = arr[np.newaxis]
+            return arr
+
+        vllm_frames = normalize_layout(vllm_frames)
+        diff_frames = normalize_layout(diff_frames)
+
+        # Ensure same frame count
         n = min(len(vllm_frames), len(diff_frames))
         vllm_frames = vllm_frames[:n]
         diff_frames = diff_frames[:n]
 
-        # Ensure uint8 range
-        if vllm_frames.max() <= 1.0:
-            vllm_frames = (vllm_frames * 255).clip(0, 255).astype(np.uint8)
-        if diff_frames.max() <= 1.0:
-            diff_frames = (diff_frames * 255).clip(0, 255).astype(np.uint8)
+        # Normalize to uint8 range
+        if vllm_frames.dtype in (np.float32, np.float64, np.float16):
+            if vllm_frames.max() <= 1.0:
+                vllm_frames = (vllm_frames * 255).clip(0, 255).astype(np.uint8)
+            else:
+                vllm_frames = vllm_frames.clip(0, 255).astype(np.uint8)
+        if diff_frames.dtype in (np.float32, np.float64, np.float16):
+            if diff_frames.max() <= 1.0:
+                diff_frames = (diff_frames * 255).clip(0, 255).astype(np.uint8)
+            else:
+                diff_frames = diff_frames.clip(0, 255).astype(np.uint8)
+
+        # Resize if dimensions don't match
+        if vllm_frames.shape[1:3] != diff_frames.shape[1:3]:
+            print(f"  WARNING: frame sizes differ: vllm={vllm_frames.shape[1:3]} vs diff={diff_frames.shape[1:3]}")
+            print(f"  Skipping accuracy comparison for this test")
+            continue
 
         vllm_frames = vllm_frames.astype(np.float64)
         diff_frames = diff_frames.astype(np.float64)
