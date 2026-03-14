@@ -2,7 +2,7 @@
 """
 Benchmark HunyuanVideo-1.5 on pure diffusers (baseline).
 
-Records latency, peak VRAM, and saves raw frames (.pt) for accuracy comparison.
+Based on: https://huggingface.co/docs/diffusers/api/pipelines/hunyuanvideo1_5
 
 Usage:
     python bench_hunyuan_diffusers.py [--skip-i2v] [--i2v-image PATH]
@@ -41,8 +41,7 @@ EXPERIMENTS = [
         "pipeline_cls": "HunyuanVideo15Pipeline",
         "height": 480, "width": 832, "frames": 33, "steps": 30,
         "guidance_scale": 6.0, "flow_shift": 5.0,
-        "precision": "BF16", "use_fp8": False,
-        "vae_use_tiling": True,
+        "precision": "BF16",
     },
     {
         "name": "T2V 480p full BF16",
@@ -51,8 +50,7 @@ EXPERIMENTS = [
         "pipeline_cls": "HunyuanVideo15Pipeline",
         "height": 480, "width": 832, "frames": 121, "steps": 50,
         "guidance_scale": 6.0, "flow_shift": 5.0,
-        "precision": "BF16", "use_fp8": False,
-        "vae_use_tiling": True,
+        "precision": "BF16",
     },
     {
         "name": "T2V 720p short FP8+tiling",
@@ -61,8 +59,7 @@ EXPERIMENTS = [
         "pipeline_cls": "HunyuanVideo15Pipeline",
         "height": 720, "width": 1280, "frames": 33, "steps": 30,
         "guidance_scale": 6.0, "flow_shift": 9.0,
-        "precision": "FP8+tiling", "use_fp8": True,
-        "vae_use_tiling": True,
+        "precision": "FP8+tiling",
     },
     {
         "name": "I2V 480p short BF16",
@@ -71,8 +68,7 @@ EXPERIMENTS = [
         "pipeline_cls": "HunyuanVideo15ImageToVideoPipeline",
         "height": 480, "width": 832, "frames": 33, "steps": 30,
         "guidance_scale": 6.0, "flow_shift": 5.0,
-        "precision": "BF16", "use_fp8": False,
-        "vae_use_tiling": True,
+        "precision": "BF16",
     },
 ]
 
@@ -95,7 +91,7 @@ def _save_frames(frames, path):
 
 
 def load_pipeline(exp):
-    """Load a diffusers pipeline."""
+    """Load a diffusers pipeline following official HunyuanVideo-1.5 docs."""
     import diffusers
 
     cls = getattr(diffusers, exp["pipeline_cls"])
@@ -104,42 +100,31 @@ def load_pipeline(exp):
         torch_dtype=torch.bfloat16,
     ).to("cuda")
 
-    if exp["vae_use_tiling"]:
-        if hasattr(pipe, "enable_vae_tiling"):
-            pipe.enable_vae_tiling()
-        elif hasattr(pipe, "vae") and hasattr(pipe.vae, "enable_tiling"):
-            pipe.vae.enable_tiling()
-        elif hasattr(pipe, "vae"):
-            pipe.vae.use_tiling = True
+    # Enable VAE tiling (official pattern: pipe.vae.enable_tiling())
+    pipe.vae.enable_tiling()
 
-    if exp["use_fp8"]:
-        try:
-            from torchao.float8 import convert_to_float8_training
-            # Try quantizing transformer to FP8
-            # This may vary depending on diffusers/torchao version
-            print("    Note: FP8 quantization for diffusers baseline may need manual setup")
-        except ImportError:
-            print("    WARNING: torchao not available, running BF16 instead of FP8")
+    # Set guidance_scale via guider (v1.5 uses guiders, not guidance_scale param)
+    # Default guider is ClassifierFreeGuidance with guidance_scale=6.0
+    if exp.get("guidance_scale") is not None and hasattr(pipe, "guider"):
+        pipe.guider = pipe.guider.new(guidance_scale=exp["guidance_scale"])
 
     # Set flow_shift on scheduler
-    if exp["flow_shift"] is not None and hasattr(pipe, "scheduler"):
+    if exp.get("flow_shift") is not None and hasattr(pipe, "scheduler"):
         if hasattr(pipe.scheduler, "_shift"):
             pipe.scheduler._shift = exp["flow_shift"]
-        elif hasattr(pipe.scheduler, "config") and hasattr(pipe.scheduler.config, "shift"):
-            pipe.scheduler.config.shift = exp["flow_shift"]
 
     return pipe
 
 
 def run_t2v(exp, pipe):
-    """Run T2V with diffusers."""
+    """Run T2V with diffusers HunyuanVideo15Pipeline."""
     generator = torch.Generator("cuda").manual_seed(SEED)
 
     torch.cuda.reset_peak_memory_stats()
     torch.cuda.synchronize()
     start = time.perf_counter()
 
-    pipe_kwargs = dict(
+    output = pipe(
         prompt=T2V_PROMPT,
         height=exp["height"],
         width=exp["width"],
@@ -147,13 +132,6 @@ def run_t2v(exp, pipe):
         num_inference_steps=exp["steps"],
         generator=generator,
     )
-    # v1.5 pipeline uses guiders instead of guidance_scale
-    import inspect
-    sig = inspect.signature(pipe.__call__)
-    if "guidance_scale" in sig.parameters:
-        pipe_kwargs["guidance_scale"] = exp["guidance_scale"]
-
-    output = pipe(**pipe_kwargs)
 
     torch.cuda.synchronize()
     elapsed = time.perf_counter() - start
@@ -164,11 +142,10 @@ def run_t2v(exp, pipe):
 
 
 def run_i2v(exp, pipe, image_path):
-    """Run I2V with diffusers."""
+    """Run I2V with diffusers HunyuanVideo15ImageToVideoPipeline."""
     import PIL.Image
 
     image = PIL.Image.open(image_path).convert("RGB")
-    image = image.resize((exp["width"], exp["height"]), PIL.Image.Resampling.LANCZOS)
 
     generator = torch.Generator("cuda").manual_seed(SEED)
 
@@ -176,21 +153,13 @@ def run_i2v(exp, pipe, image_path):
     torch.cuda.synchronize()
     start = time.perf_counter()
 
-    pipe_kwargs = dict(
+    output = pipe(
         image=image,
         prompt=I2V_PROMPT,
-        height=exp["height"],
-        width=exp["width"],
         num_frames=exp["frames"],
         num_inference_steps=exp["steps"],
         generator=generator,
     )
-    import inspect
-    sig = inspect.signature(pipe.__call__)
-    if "guidance_scale" in sig.parameters:
-        pipe_kwargs["guidance_scale"] = exp["guidance_scale"]
-
-    output = pipe(**pipe_kwargs)
 
     torch.cuda.synchronize()
     elapsed = time.perf_counter() - start
@@ -224,7 +193,7 @@ def main():
                 print(f"SKIP: {exp['name']} (not in filter)")
                 continue
 
-        model_key = (exp["model"], exp.get("use_fp8"))
+        model_key = exp["model"]
         if model_key != prev_model_key:
             if pipe is not None:
                 del pipe
