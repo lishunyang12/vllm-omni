@@ -52,7 +52,7 @@ EXPERIMENTS = [
         "height": 480, "width": 832, "frames": 121, "steps": 50,
         "guidance_scale": 6.0, "flow_shift": 5.0,
         "precision": "BF16", "use_fp8": False,
-        "vae_use_tiling": False,
+        "vae_use_tiling": True,
     },
     {
         "name": "T2V 720p short FP8+tiling",

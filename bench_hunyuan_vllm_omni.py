@@ -57,7 +57,7 @@ EXPERIMENTS = [
         "height": 480, "width": 832, "frames": 121, "steps": 50,
         "guidance_scale": 6.0, "flow_shift": 5.0,
         "precision": "BF16", "quantization": None,
-        "vae_use_tiling": False,
+        "vae_use_tiling": True,
     },
     {
         "name": "T2V 480p full FP8",
@@ -66,7 +66,7 @@ EXPERIMENTS = [
         "height": 480, "width": 832, "frames": 121, "steps": 50,
         "guidance_scale": 6.0, "flow_shift": 5.0,
         "precision": "FP8", "quantization": "fp8",
-        "vae_use_tiling": False,
+        "vae_use_tiling": True,
     },
     {
         "name": "T2V 720p short FP8+tiling",
