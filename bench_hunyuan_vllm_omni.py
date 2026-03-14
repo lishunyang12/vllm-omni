@@ -30,6 +30,11 @@ T2V_PROMPT = (
     "full of wildflowers. A wide shot is used, with the camera panning "
     "right to follow her."
 )
+T2V_NEG_PROMPT = (
+    "A delicate watercolor illustration depicts three young women "
+    "at a dining table celebrating by toasting with red wine glasses."
+)
+T2V_NEG_NEGATIVE = "blurry, low quality, distorted"
 I2V_PROMPT = (
     "The camera follows the puppy as it runs forward on the grass, "
     "its four legs alternating steps, its tail held high and wagging "
@@ -76,12 +81,30 @@ EXPERIMENTS = [
         "vae_use_tiling": True,
     },
     {
+        "name": "T2V 480p negprompt BF16",
+        "task": "t2v_neg",
+        "model": "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v",
+        "height": 480, "width": 832, "frames": 33, "steps": 30,
+        "guidance_scale": 6.0, "flow_shift": 5.0,
+        "precision": "BF16", "quantization": None,
+        "vae_use_tiling": True,
+    },
+    {
         "name": "I2V 480p short BF16",
         "task": "i2v",
         "model": "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v",
         "height": 480, "width": 832, "frames": 33, "steps": 30,
         "guidance_scale": 6.0, "flow_shift": 5.0,
         "precision": "BF16", "quantization": None,
+        "vae_use_tiling": True,
+    },
+    {
+        "name": "I2V 720p short FP8+tiling",
+        "task": "i2v",
+        "model": "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_i2v",
+        "height": 720, "width": 1280, "frames": 33, "steps": 30,
+        "guidance_scale": 6.0, "flow_shift": 7.0,
+        "precision": "FP8+tiling", "quantization": "fp8",
         "vae_use_tiling": True,
     },
 ]
@@ -150,11 +173,14 @@ def _extract_frames(result):
     return result
 
 
-def run_t2v(exp, omni):
+def run_t2v(exp, omni, use_negative=False):
     """Run a T2V experiment."""
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(SEED)
 
-    prompt_dict = {"prompt": T2V_PROMPT}
+    if use_negative:
+        prompt_dict = {"prompt": T2V_NEG_PROMPT, "negative_prompt": T2V_NEG_NEGATIVE}
+    else:
+        prompt_dict = {"prompt": T2V_PROMPT}
     sampling_params = OmniDiffusionSamplingParams(
         height=exp["height"],
         width=exp["width"],
@@ -273,6 +299,8 @@ def main():
         try:
             if exp["task"] == "t2v":
                 elapsed, peak_vram, frames = run_t2v(exp, omni)
+            elif exp["task"] == "t2v_neg":
+                elapsed, peak_vram, frames = run_t2v(exp, omni, use_negative=True)
             else:
                 elapsed, peak_vram, frames = run_i2v(exp, omni, args.i2v_image)
 

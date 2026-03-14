@@ -27,6 +27,11 @@ T2V_PROMPT = (
     "full of wildflowers. A wide shot is used, with the camera panning "
     "right to follow her."
 )
+T2V_NEG_PROMPT = (
+    "A delicate watercolor illustration depicts three young women "
+    "at a dining table celebrating by toasting with red wine glasses."
+)
+T2V_NEG_NEGATIVE = "blurry, low quality, distorted"
 I2V_PROMPT = (
     "The camera follows the puppy as it runs forward on the grass, "
     "its four legs alternating steps, its tail held high and wagging "
@@ -62,12 +67,30 @@ EXPERIMENTS = [
         "precision": "BF16",
     },
     {
+        "name": "T2V 480p negprompt BF16",
+        "task": "t2v_neg",
+        "model": "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v",
+        "pipeline_cls": "HunyuanVideo15Pipeline",
+        "height": 480, "width": 832, "frames": 33, "steps": 30,
+        "guidance_scale": 6.0, "flow_shift": 5.0,
+        "precision": "BF16",
+    },
+    {
         "name": "I2V 480p short BF16",
         "task": "i2v",
         "model": "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v",
         "pipeline_cls": "HunyuanVideo15ImageToVideoPipeline",
         "height": 480, "width": 832, "frames": 33, "steps": 30,
         "guidance_scale": 6.0, "flow_shift": 5.0,
+        "precision": "BF16",
+    },
+    {
+        "name": "I2V 720p short FP8+tiling",
+        "task": "i2v",
+        "model": "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_i2v",
+        "pipeline_cls": "HunyuanVideo15ImageToVideoPipeline",
+        "height": 720, "width": 1280, "frames": 33, "steps": 30,
+        "guidance_scale": 6.0, "flow_shift": 7.0,
         "precision": "BF16",
     },
 ]
@@ -140,7 +163,7 @@ def load_pipeline(exp):
     return pipe
 
 
-def run_t2v(exp, pipe):
+def run_t2v(exp, pipe, use_negative=False):
     """Run T2V with diffusers HunyuanVideo15Pipeline."""
     generator = torch.Generator("cuda").manual_seed(SEED)
 
@@ -148,14 +171,18 @@ def run_t2v(exp, pipe):
     torch.cuda.synchronize()
     start = time.perf_counter()
 
-    output = pipe(
-        prompt=T2V_PROMPT,
+    pipe_kwargs = dict(
+        prompt=T2V_NEG_PROMPT if use_negative else T2V_PROMPT,
         height=exp["height"],
         width=exp["width"],
         num_frames=exp["frames"],
         num_inference_steps=exp["steps"],
         generator=generator,
     )
+    if use_negative:
+        pipe_kwargs["negative_prompt"] = T2V_NEG_NEGATIVE
+
+    output = pipe(**pipe_kwargs)
 
     torch.cuda.synchronize()
     elapsed = time.perf_counter() - start
@@ -233,6 +260,8 @@ def main():
         try:
             if exp["task"] == "t2v":
                 elapsed, peak_vram, frames = run_t2v(exp, pipe)
+            elif exp["task"] == "t2v_neg":
+                elapsed, peak_vram, frames = run_t2v(exp, pipe, use_negative=True)
             else:
                 elapsed, peak_vram, frames = run_i2v(exp, pipe, args.i2v_image)
 
