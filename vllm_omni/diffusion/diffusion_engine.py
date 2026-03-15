@@ -106,6 +106,10 @@ class DiffusionEngine:
                 for i, prompt in enumerate(request.prompts)
             ]
 
+        from vllm_omni.diffusion.utils.memory_debug import log_tensor_memory
+
+        log_tensor_memory("before_postprocess", output.output)
+
         postprocess_start_time = time.perf_counter()
         outputs = self.post_process_func(output.output) if self.post_process_func is not None else output.output
         audio_payload = None

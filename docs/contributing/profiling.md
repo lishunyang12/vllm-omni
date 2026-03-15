@@ -131,7 +131,66 @@ python image_to_video.py \
 
 2. **Wan-AI/Wan2.2-I2V-A14B-Diffusers**:   [https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/image_to_video](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/image_to_video)
 
-### 4. Analyzing Omni Traces
+### 4. GPU Memory Debugging for Diffusion Models
+
+The memory debug tool provides per-stage GPU memory snapshots to help developers identify which pipeline stage consumes the most memory and diagnose OOM issues.
+
+**Enable:**
+```bash
+VLLM_DEBUG_MEMORY=1 python examples/offline_inference/text_to_video/text_to_video.py \
+    --model Wan-AI/Wan2.1-T2V-1.3B-Diffusers \
+    --height 480 --width 832 --num-frames 81 --num-inference-steps 40 \
+    --enforce-eager
+```
+
+**Sample output:**
+```
+================================================================================
+GPU MEMORY BY PIPELINE STAGE (device: cuda:0, total: 139.81 GiB)
+================================================================================
+Stage                |    Allocated |     Reserved |         Free |         Delta
+-------------------------------------------------------------------------------------
+before_forward       |     13.75 GiB |     24.32 GiB |    114.81 GiB |     +0.00 GiB
+after_forward        |     14.16 GiB |     26.10 GiB |    112.75 GiB |     +0.41 GiB
+================================================================================
+```
+
+The model runner level table (`before_forward` / `after_forward`) works for **all diffusion models** automatically. For Wan2.2, additional per-stage detail is available (encode, denoise, vae_decode).
+
+**What the columns mean:**
+
+| Column | Description |
+|---|---|
+| Allocated | GPU memory actively used by PyTorch tensors |
+| Reserved | GPU memory reserved by PyTorch's caching allocator (includes fragmentation) |
+| Free | Free GPU memory reported by the driver |
+| Delta | Change in Allocated since the first snapshot |
+
+**When to use:**
+- Diagnosing OOM errors — identify which stage hits the memory ceiling
+- Comparing memory usage across different resolutions, frame counts, or model configs
+- Validating that offloading/tiling configurations actually reduce peak memory
+
+**Adding memory debug to a new pipeline:**
+
+```python
+from vllm_omni.diffusion.utils.memory_debug import MemoryDebugTracker
+
+# In your pipeline's forward():
+_mem = MemoryDebugTracker(device=device)
+_mem.snapshot("before_encode")
+# ... encode ...
+_mem.snapshot("after_encode")
+# ... denoise ...
+_mem.snapshot("after_denoise")
+# ... vae decode ...
+_mem.snapshot("after_vae_decode")
+_mem.report()  # prints the table (no-op when VLLM_DEBUG_MEMORY is not set)
+```
+
+> **Note:** Zero overhead when `VLLM_DEBUG_MEMORY` is not set. All calls are gated by a flag checked once at import time.
+
+### 5. Analyzing Omni Traces
 
 Output files are saved to your configured ```VLLM_TORCH_PROFILER_DIR```.
 
@@ -143,4 +202,4 @@ Output files are saved to your configured ```VLLM_TORCH_PROFILER_DIR```.
 - [Perfetto](https://ui.perfetto.dev/)(recommended)
 - ```chrome://tracing```(Chrome only)
 
-**Note**: vLLM-Omni reuses the PyTorch Profiler infrastructure from vLLM. See the official vLLM profiler documentation:  [vLLM Profiling Guide](https://docs.vllm.ai/en/stable/contributing/profiling/)
+**Note**: vLLM-Omni reuses the PyTorch Profiler infrastructure from vLLM. See the official vLLM profiler documentation: [vLLM Profiling Guide](https://docs.vllm.ai/en/stable/contributing/profiling/)

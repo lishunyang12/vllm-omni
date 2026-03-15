@@ -224,9 +224,17 @@ class DiffusionModelRunner:
             ):
                 self.cache_backend.refresh(self.pipeline, req.sampling_params.num_inference_steps)
 
+            from vllm_omni.diffusion.utils.memory_debug import MemoryDebugTracker
+
+            _mem = MemoryDebugTracker(device=self.device)
+            _mem.snapshot("before_forward")
+
             with set_forward_context(vllm_config=self.vllm_config, omni_diffusion_config=self.od_config):
                 with record_function("pipeline_forward"):
                     output = self.pipeline.forward(req)
+
+            _mem.snapshot("after_forward")
+            _mem.report()
 
             # NOTE:
             if (

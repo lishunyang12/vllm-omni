@@ -26,6 +26,7 @@ from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin, _is_rank_z
 from vllm_omni.diffusion.models.schedulers import FlowUniPCMultistepScheduler
 from vllm_omni.diffusion.models.wan2_2.wan2_2_transformer import WanTransformer3DModel
 from vllm_omni.diffusion.request import OmniDiffusionRequest
+from vllm_omni.diffusion.utils.memory_debug import MemoryDebugTracker
 from vllm_omni.inputs.data import OmniTextPrompt
 from vllm_omni.platforms import current_omni_platform
 
@@ -426,6 +427,9 @@ class Wan22Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin):
         if generator is None and req.sampling_params.seed is not None:
             generator = torch.Generator(device=device).manual_seed(req.sampling_params.seed)
 
+        _mem = MemoryDebugTracker(device=device)
+        _mem.snapshot("before_encode")
+
         if DEBUG_PERF:
             # Sync GPU before timing to ensure accurate measurements
             current_omni_platform.synchronize()
@@ -452,6 +456,7 @@ class Wan22Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin):
         if DEBUG_PERF:
             current_omni_platform.synchronize()
             _t_text_enc_ms = (time.perf_counter() - _t_text_enc_start) * 1000
+        _mem.snapshot("after_encode")
 
         # Timesteps
         self.scheduler.set_timesteps(num_steps, device=device)
@@ -655,6 +660,7 @@ class Wan22Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin):
         if DEBUG_PERF:
             current_omni_platform.synchronize()
             _t_denoise_ms = (time.perf_counter() - _t_denoise_start) * 1000
+        _mem.snapshot("after_denoise")
 
         # For I2V mode: blend final latents with condition
         if self.expand_timesteps and latent_condition is not None:
@@ -698,6 +704,9 @@ class Wan22Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin):
                     _t_pipeline_wall_ms,
                     _t_pipeline_wall_ms - _t_stages_sum,
                 )
+
+        _mem.snapshot("after_vae_decode")
+        _mem.report()
 
         return DiffusionOutput(output=output)
 
