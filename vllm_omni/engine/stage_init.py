@@ -299,7 +299,7 @@ def acquire_device_locks(
                                 device_id,
                             )
                             break
-                        time.sleep(0.1)
+                        time.sleep(0.01)
                 except OSError as e:
                     logger.debug(
                         "Failed to acquire lock for device %s: %s, continuing anyway",
