@@ -284,6 +284,20 @@ def _stage_type(stage: Any) -> str | None:
     return getattr(stage, "stage_type", None)
 
 
+def _build_output_modalities(stage_configs: list[Any]) -> list[str]:
+    modalities: list[str] = []
+    for stage in stage_configs:
+        final_output = getattr(stage, "final_output", False)
+        final_output_type = getattr(stage, "final_output_type", None)
+        if final_output and isinstance(final_output_type, str):
+            modalities.append(final_output_type)
+    if modalities:
+        return modalities
+    if any(_stage_type(stage) == "diffusion" for stage in stage_configs):
+        return ["image"]
+    return ["text", "audio"]
+
+
 def _build_mock_outputs(outputs: Iterable[OmniRequestOutput], sampling_case: SamplingCase, server_case: ServerCase):
     async def _mock_generate(*args, **kwargs):
         received_sampling_params_list: Sequence[OmniSamplingParams] | None = (
@@ -394,6 +408,7 @@ def mock_async_omni(server_case: ServerCase, sampling_case: SamplingCase):
 
         mock_instance.stage_list = server_case.stage_list
         mock_instance.stage_configs = server_case.stage_configs
+        mock_instance.output_modalities = _build_output_modalities(server_case.stage_configs)
         mock_instance.default_sampling_params_list = [
             SamplingParams() if _stage_type(stage) != "diffusion" else MagicMock()
             for stage in server_case.stage_configs
@@ -401,6 +416,10 @@ def mock_async_omni(server_case: ServerCase, sampling_case: SamplingCase):
         mock_instance.errored = False
         mock_instance.dead_error = RuntimeError("Mock engine error")
         mock_instance.model_config = MagicMock(max_model_len=4096, io_processor_plugin=None)
+        # Mimic Qwen3-TTS talker speaker config so CustomVoice validation passes.
+        mock_instance.model_config.hf_config = MagicMock()
+        mock_instance.model_config.hf_config.talker_config = MagicMock()
+        mock_instance.model_config.hf_config.talker_config.speaker_id = {"Vivian": 0}
         mock_instance.io_processor = MagicMock()
         mock_instance.input_processor = MagicMock()
         mock_instance.shutdown = MagicMock()
