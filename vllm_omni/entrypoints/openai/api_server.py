@@ -561,7 +561,6 @@ async def omni_init_app_state(
             # Try to initialize processors if vllm_config is available
             try:
                 from vllm.plugins.io_processors import get_io_processor
-
                 from vllm.v1.engine.input_processor import InputProcessor
 
                 tokenizer = await engine_client.get_tokenizer()
@@ -1554,18 +1553,14 @@ async def _generate_with_async_omni(
         )
         if not isinstance(default_params_list, list):
             default_params_list = [
-                OmniDiffusionSamplingParams() if st == "diffusion" else SamplingParams()
-                for st in stage_types
+                OmniDiffusionSamplingParams() if st == "diffusion" else SamplingParams() for st in stage_types
             ]
         else:
             default_params_list = list(default_params_list)
         if len(default_params_list) != len(stage_types):
             default_params_list = (
                 default_params_list
-                + [
-                    OmniDiffusionSamplingParams() if st == "diffusion" else SamplingParams()
-                    for st in stage_types
-                ]
+                + [OmniDiffusionSamplingParams() if st == "diffusion" else SamplingParams() for st in stage_types]
             )[: len(stage_types)]
 
         sampling_params_list: list[OmniSamplingParams] = []
