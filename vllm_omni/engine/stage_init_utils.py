@@ -1,5 +1,5 @@
 """
-Stage initialization helpers for vLLM-Omni V1 architecture.
+Stage initialization helpers for vLLM-Omni multi-stage runtime.
 
 Extracts orchestration-level init logic (config extraction, plugin loading,
 multiprocessing setup, device mapping, device locking, engine args building)

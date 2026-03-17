@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from vllm.logger import init_logger
 
-from vllm_omni.engine.stage_init import StageMetadata
+from vllm_omni.engine.stage_init_utils import StageMetadata
 from vllm_omni.entrypoints.async_omni_diffusion import AsyncOmniDiffusion
 from vllm_omni.outputs import OmniRequestOutput
 

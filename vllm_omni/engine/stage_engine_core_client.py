@@ -12,7 +12,7 @@ from vllm.logger import init_logger
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.core_client import AsyncMPClient
 
-from vllm_omni.engine.stage_init import StageMetadata
+from vllm_omni.engine.stage_init_utils import StageMetadata
 
 if TYPE_CHECKING:
     from vllm.v1.engine import EngineCoreOutput
