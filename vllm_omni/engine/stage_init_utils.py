@@ -24,12 +24,31 @@ from vllm.v1.engine.input_processor import InputProcessor
 from vllm.v1.executor import Executor
 
 from vllm_omni.engine.arg_utils import OmniEngineArgs
-from vllm_omni.engine.worker_cls_utils import resolve_worker_cls
 from vllm_omni.entrypoints.stage_utils import _to_dict, set_stage_devices
 from vllm_omni.entrypoints.utils import filter_dataclass_kwargs, resolve_model_config_path
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniSamplingParams
 
 logger = init_logger(__name__)
+
+
+def resolve_worker_cls(engine_args: dict[str, Any]) -> None:
+    """Resolve worker_cls from worker_type for non-diffusion stages."""
+    worker_type = engine_args.get("worker_type", None)
+    if not worker_type:
+        return
+    worker_cls = engine_args.get("worker_cls")
+    if worker_cls is not None and worker_cls != "auto":
+        return
+
+    from vllm_omni.platforms import current_omni_platform
+
+    worker_type = str(worker_type).lower()
+    if worker_type == "ar":
+        engine_args["worker_cls"] = current_omni_platform.get_omni_ar_worker_cls()
+    elif worker_type == "generation":
+        engine_args["worker_cls"] = current_omni_platform.get_omni_generation_worker_cls()
+    else:
+        raise ValueError(f"Unknown worker_type: {worker_type}")
 
 
 @dataclass
@@ -315,7 +334,7 @@ def acquire_device_locks(
                                 device_id,
                             )
                             break
-                        time.sleep(0.1)
+                        time.sleep(0.01)
                 except OSError as e:
                     logger.debug(
                         "Failed to acquire lock for device %s: %s, continuing anyway",

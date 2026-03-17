@@ -13,7 +13,6 @@ Main entry points for vLLM-Omni inference and serving.
 - [vllm_omni.entrypoints.client_request_state.ClientRequestState][]
 - [vllm_omni.entrypoints.omni.Omni][]
 - [vllm_omni.entrypoints.omni_base.OmniBase][]
-- [vllm_omni.entrypoints.stage_utils.OmniStageTaskType][]
 
 ## Inputs
 
@@ -43,7 +42,6 @@ Engine classes for offline and online inference.
 - [vllm_omni.engine.OmniEngineCoreOutputs][]
 - [vllm_omni.engine.OmniEngineCoreRequest][]
 - [vllm_omni.engine.PromptEmbedsPayload][]
-- [vllm_omni.engine.arg_utils.AsyncOmniEngineArgs][]
 - [vllm_omni.engine.arg_utils.OmniEngineArgs][]
 - [vllm_omni.engine.output_processor.MultimodalOutputProcessor][]
 - [vllm_omni.engine.output_processor.OmniRequestState][]

@@ -78,7 +78,7 @@
     -> output_queue.put(output)
 
 [6] AsyncOmni._final_output_loop (background coroutine)
-    -> AsyncOmniEngine.try_get_output_blocking()
+    -> AsyncOmniEngine.try_get_output_async()
     -> route by request_id to ClientRequestState.queue
 
 [7] AsyncOmni._process_orchestrator_results
@@ -120,14 +120,15 @@ sequenceDiagram
         ORCH-->>ENG: output_queue.put
     end
 
-    AO->>ENG: try_get_output_blocking
+    AO->>ENG: try_get_output_async
     ENG-->>AO: message
     AO-->>APP: yield OmniRequestOutput
 ```
 
 ## 4. Comparison
 
-V0:
+Previous topology (reference):
+
 ```text
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ Main Process                                                               │
@@ -155,7 +156,7 @@ V0:
 └──────────────────────┘   └──────────────────────┘   └──────────────────────┘
 ```
 
-Current:
+Current topology:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -166,14 +167,14 @@ Current:
 │  │  │ generate()           │   │ final_output_handler()              │  │  │
 │  │  └──────────────────────┘   └─────────────────────────────────────┘  │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
-│         asyncio.Queue (request_queue) ▼  ▲ asyncio.Queue (output_queue)    │
+│         janus.Queue (request_queue) ▼  ▲ janus.Queue (output_queue)        │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │ Orchestrator Thread                                                  │  │
 │  │  ┌──────────────────────┐  ┌──────────────────────────────────────┐  │  │
 │  │  │ _request_handler()   │  │ _orchestration_output_handler()      │  │  │
 │  │  └──────────────────────┘  └──────────────────────────────────────┘  │  │
 │  │  ┌────────────────────────────────────────────────────────────────┐  │  │
-│  │  │ engine_core_output_handler()*3  (stage-0 / stage-1 / stage-2)  │  │  │
+│  │  │ _orchestration_loop(): poll/process/route outputs for all stages│  │  │
 │  │  └────────────────────────────────────────────────────────────────┘  │  │
 │  └───────┬─────────────────────────┬─────────────────────────┬──────────┘  │
 └──────────┬─────────────────────────┬─────────────────────────┬─────────────┘
@@ -188,30 +189,15 @@ Current:
 Test scripts:
 ```bash
 # enter offline inference folder.
-cd qwen2_5_omni
+cd examples/offline_inference/qwen2_5_omni
+python end2end.py --output-dir output_audio --query-type use_mixed_modalities
 
-# legacy impl:
-VLLM_OMNI_USE_V1=0 VLLM_LOGGING_LEVEL=INFO python end2end_v1.py --output-wav output_audio \
-                  --query-type use_mixed_modalities
-# current impl:
-VLLM_OMNI_USE_V1=1 VLLM_LOGGING_LEVEL=INFO python end2end_v1.py --output-wav output_audio \
-                  --query-type use_mixed_modalities
+cd ../qwen3_omni
+python end2end.py --output-dir output_audio --query-type text --async-chunk --enable-stats
 
-cd qwen3_omni
-# legacy impl:
-VLLM_OMNI_USE_V1=0 python end2end_v1.py --output-wav output_audio --query-type text --async-chunk --enable-stats
-# current impl:
-VLLM_OMNI_USE_V1=1 python end2end_v1.py --output-wav output_audio --query-type text --async-chunk --enable-stats
+cd ../bagel
+python end2end.py --prompts "A cute cat"
 
-cd bagel
-# legacy impl:
-VLLM_OMNI_USE_V1=0 python end2end_v1.py --prompts "A cute cat"
-# current impl:
-VLLM_OMNI_USE_V1=1 python end2end_v1.py --prompts "A cute cat"
-
-cd text_to_image
-# legacy impl:
-VLLM_OMNI_USE_V1=0 python text_to_image_async.py --prompt "a cup of coffee on the table" --output output.png
-# current impl:
-VLLM_OMNI_USE_V1=1 python text_to_image_async.py --prompt "a cup of coffee on the table" --output output.png
+cd ../text_to_image
+python text_to_image.py --prompt "a cup of coffee on the table" --output output.png
 ```

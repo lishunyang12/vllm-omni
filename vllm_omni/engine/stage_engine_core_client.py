@@ -1,5 +1,5 @@
 """
-Stage Engine Core Client for vLLM-Omni V1 architecture.
+Stage Engine Core Client for vLLM-Omni multi-stage runtime.
 
 Directly inherits from vLLM's AsyncMPClient to reuse EngineCore architecture.
 """
@@ -47,7 +47,7 @@ class StageEngineCoreClient(AsyncMPClient):
 
         All heavy init (config extraction, plugin loading, device setup,
         engine args building, device locking) is done by the Orchestrator
-        via helpers in stage_init.py.  This constructor just stores metadata
+        via helpers in stage_init_utils.py. This constructor just stores metadata
         and calls super().__init__().
         """
         # -------- Stage metadata (public fields used at runtime) --------

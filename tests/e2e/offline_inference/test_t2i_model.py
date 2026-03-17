@@ -28,7 +28,7 @@ if current_omni_platform.is_npu():
     models = ["Tongyi-MAI/Z-Image-Turbo", "Qwen/Qwen-Image"]
 elif current_omni_platform.is_rocm():
     # TODO: When ROCm support is ready, remove this branch.
-    # vLLM V0.11.0 has issues running riverclouds/qwen_image_random
+    # Current upstream vLLM has issues running riverclouds/qwen_image_random
     # on ROCm
     models = ["Tongyi-MAI/Z-Image-Turbo"]
 
