@@ -1,49 +1,13 @@
 from __future__ import annotations
 
-import enum
-import importlib
-import json
 import logging
 import os
-from collections.abc import Callable
 from multiprocessing import shared_memory as _shm
 from typing import Any
 
 from vllm_omni.config.yaml_util import to_dict as _omega_to_dict
 
 logger = logging.getLogger(__name__)
-
-
-def load_func_from_config(func_path: str | None) -> Callable[..., Any] | None:
-    """Dynamically import a callable from a fully-qualified dotted path.
-
-    Args:
-        func_path: Dotted path such as ``"pkg.module.func_name"``, or *None*.
-
-    Returns:
-        The imported callable, or *None* when *func_path* is falsy.
-    """
-    if not func_path:
-        return None
-    module_path, func_name = func_path.rsplit(".", 1)
-    module = importlib.import_module(module_path)
-    return getattr(module, func_name)
-
-
-class OmniStageTaskType(enum.Enum):
-    GENERATE = "generate"
-    ABORT = "abort"
-    SHUTDOWN = "shutdown"
-    PROFILER_START = "profiler_start"
-    PROFILER_STOP = "profiler_stop"
-    COLLECTIVE_RPC = "collective_rpc"
-
-
-SHUTDOWN_TASK = {"type": OmniStageTaskType.SHUTDOWN}
-
-
-def is_profiler_task(task_type: OmniStageTaskType) -> bool:
-    return task_type in (OmniStageTaskType.PROFILER_START, OmniStageTaskType.PROFILER_STOP)
 
 
 def set_stage_devices(
@@ -207,45 +171,6 @@ def shm_read_bytes(meta: dict[str, Any]) -> bytes:
     return data
 
 
-def _ensure_parent_dir(path: str) -> None:
-    """Ensure the parent directory for a file path exists (best-effort)."""
-    try:
-        parent = os.path.dirname(path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-    except Exception:
-        pass
-
-
-def append_jsonl(path: str, record: dict[str, Any]) -> None:
-    """Append a JSON record as one line to a JSONL file (best-effort).
-
-    This is safe to call from multiple processes when each process writes
-    to a distinct file. For concurrent writes to the same file, OS append
-    semantics typically suffice, but no additional locking is provided.
-    """
-    try:
-        _ensure_parent_dir(path)
-        line = json.dumps(record, ensure_ascii=False)
-        fd = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o644)
-        with os.fdopen(fd, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-    except Exception:
-        logger.exception("Failed to append JSONL to %s", path)
-
-
-def maybe_dump_to_shm(obj: Any, threshold: int) -> tuple[bool, Any]:
-    """Dump object to SHM if serialized size exceeds threshold.
-
-    Returns (True, meta) when dumped; otherwise (False, original_obj).
-    """
-    payload = serialize_obj(obj)
-    if len(payload) > threshold:
-        logger.debug(f"Dumping object to SHM with size: {len(payload)}")
-        return True, shm_write_bytes(payload, name=None)
-    return False, obj
-
-
 def maybe_load_from_ipc_with_metrics(
     container: dict[str, Any], obj_key: str, shm_key: str
 ) -> tuple[Any, dict[str, float]]:
@@ -280,21 +205,6 @@ def maybe_load_from_ipc_with_metrics(
         "rx_transfer_bytes": int(rx_bytes),
         "rx_decode_time_ms": float(rx_decode_ms),
     }
-
-
-def encode_for_ipc(obj: Any, threshold: int, obj_key: str, shm_key: str) -> dict[str, Any]:
-    """Return a dict payload for IPC: inline (obj_key) or SHM (shm_key).
-
-    When serialized size exceeds threshold, returns {shm_key: {name,size}};
-    otherwise returns {obj_key: obj}.
-    """
-    payload: dict[str, Any] = {}
-    use_shm, data = maybe_dump_to_shm(obj, threshold)
-    if use_shm:
-        payload[shm_key] = data
-    else:
-        payload[obj_key] = data
-    return payload
 
 
 # Convert OmegaConf/objects to plain dicts
