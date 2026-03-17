@@ -34,7 +34,6 @@ from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.input_processor import InputProcessor
 from vllm.v1.engine.utils import get_engine_zmq_addresses, launch_core_engines
 
-from vllm_omni.config.stage_config import StageConfigFactory
 from vllm_omni.diffusion.data import DiffusionParallelConfig
 from vllm_omni.distributed.omni_connectors.utils.initialization import (
     resolve_omni_kv_config_for_stage,
@@ -63,6 +62,7 @@ from vllm_omni.engine.stage_init_utils import (
     setup_stage_devices,
 )
 from vllm_omni.entrypoints.utils import (
+    load_and_resolve_stage_configs,
     load_stage_configs_from_yaml,
 )
 
@@ -866,25 +866,14 @@ class AsyncOmniEngine:
         # TTS-specific CLI overrides
         self.tts_max_instructions_length: int | None = kwargs.get("tts_max_instructions_length", None)
 
-        # Resolve stage configurations without implicit fallback.
-        # - Explicit stage_configs_path: trust user-provided YAML.
-        # - Otherwise: require StageConfigFactory model pipeline resolution.
-        if stage_configs_path is not None:
-            config_path = stage_configs_path
-            stage_configs = load_stage_configs_from_yaml(stage_configs_path, base_engine_args=kwargs)
-        else:
-            config_path = ""
-            factory_stage_configs = StageConfigFactory.create_from_model(model, cli_overrides=kwargs)
-            if factory_stage_configs is None:
-                logger.warning(
-                    "StageConfigFactory could not resolve a pipeline for model %r. "
-                    "Falling back to default single-stage diffusion config.",
-                    model,
-                )
-                default_stage_cfg = self._create_default_diffusion_stage_cfg(kwargs)
-                stage_configs = [types.SimpleNamespace(**cfg) for cfg in default_stage_cfg]
-            else:
-                stage_configs = [stage.to_omegaconf() for stage in factory_stage_configs]
+        # Use the legacy config loading path (load_and_resolve_stage_configs).
+        # StageConfigFactory wiring will be done in config refactor [2/N].
+        config_path, stage_configs = load_and_resolve_stage_configs(
+            model,
+            stage_configs_path,
+            kwargs,
+            default_stage_cfg_factory=lambda: self._create_default_diffusion_stage_cfg(kwargs),
+        )
 
         # Inject diffusion LoRA-related knobs from kwargs if not present in the stage config.
         for cfg in stage_configs:
