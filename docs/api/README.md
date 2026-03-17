@@ -42,7 +42,6 @@ Engine classes for offline and online inference.
 - [vllm_omni.engine.OmniEngineCoreOutputs][]
 - [vllm_omni.engine.OmniEngineCoreRequest][]
 - [vllm_omni.engine.PromptEmbedsPayload][]
-- [vllm_omni.engine.arg_utils.AsyncOmniEngineArgs][]
 - [vllm_omni.engine.arg_utils.OmniEngineArgs][]
 - [vllm_omni.engine.output_processor.MultimodalOutputProcessor][]
 - [vllm_omni.engine.output_processor.OmniRequestState][]
