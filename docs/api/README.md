@@ -13,7 +13,6 @@ Main entry points for vLLM-Omni inference and serving.
 - [vllm_omni.entrypoints.client_request_state.ClientRequestState][]
 - [vllm_omni.entrypoints.omni.Omni][]
 - [vllm_omni.entrypoints.omni_base.OmniBase][]
-- [vllm_omni.entrypoints.stage_utils.OmniStageTaskType][]
 
 ## Inputs
 
