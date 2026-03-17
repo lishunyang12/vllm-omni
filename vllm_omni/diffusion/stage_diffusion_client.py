@@ -1,4 +1,4 @@
-"""Stage Diffusion Client for vLLM-Omni V1 architecture.
+"""Stage Diffusion Client for vLLM-Omni multi-stage runtime.
 
 Wraps AsyncOmniDiffusion to expose the same interface the Orchestrator
 expects from any stage client.

@@ -1,5 +1,5 @@
 """
-Orchestrator for vLLM-Omni V1 architecture.
+Orchestrator for vLLM-Omni multi-stage runtime.
 
 Runs inside a background thread with its own asyncio event loop.
 Owns all StageEngineCoreClient instances, input/output processors,
@@ -137,7 +137,7 @@ class Orchestrator:
         # Per-request state
         self.request_states: dict[str, OrchestratorRequestState] = {}
 
-        # Per-stage metrics accumulators (mirrors V0's _batch_seq / _agg_*)
+        # Per-stage metrics accumulators.
         self._batch_seq: list[int] = [0] * self.num_stages
         self._agg_total_tokens: list[int] = [0] * self.num_stages
         self._agg_total_gen_time_ms: list[float] = [0.0] * self.num_stages
@@ -339,9 +339,8 @@ class Orchestrator:
     ) -> StageRequestMetrics:
         """Build StageRequestMetrics for a finished request at a stage.
 
-        Reuses the same StageRequestMetrics dataclass as V0 so that
-        OrchestratorMetrics / on_stage_metrics / on_finalize_request
-        work identically.
+        Reuses StageRequestMetrics so OrchestratorMetrics and downstream
+        metric handlers can consume a stable schema.
         """
         now = _time.time()
         submit_ts = req_state.stage_submit_ts.get(stage_id, now)
@@ -355,7 +354,7 @@ class Orchestrator:
                 if ptids is not None:
                     num_tokens_in += len(ptids)
 
-        # Monotonic batch counter per stage (mirrors V0's _batch_seq)
+        # Monotonic batch counter per stage.
         self._batch_seq[stage_id] += 1
         batch_id = self._batch_seq[stage_id]
 
@@ -557,7 +556,7 @@ class Orchestrator:
             )
             return
 
-        # Match V0 behavior: pre-arm stage-1+ with placeholder prompt IDs.
+        # Pre-arm stage-1+ with placeholder prompt IDs.
         try:
             next_prompt_len = max(1, compute_talker_prompt_ids_length(prompt_token_ids))
         except Exception:

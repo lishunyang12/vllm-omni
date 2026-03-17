@@ -34,7 +34,7 @@ def parse_args():
         help="Path to input image for img2img.",
     )
 
-    # OmniLLM init args
+    # Omni runtime init args
     parser.add_argument("--log-stats", action="store_true", default=False)
     parser.add_argument("--init-sleep-seconds", type=int, default=20)
     parser.add_argument("--batch-timeout", type=int, default=5)

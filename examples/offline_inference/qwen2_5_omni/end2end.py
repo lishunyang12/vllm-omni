@@ -320,7 +320,7 @@ def main(args):
         query_result = query_func(audio_path=audio_path, sampling_rate=sampling_rate)
     else:
         query_result = query_func()
-    omni_llm = Omni(
+    omni = Omni(
         model=model_name,
         log_stats=args.log_stats,
         stage_init_timeout=args.stage_init_timeout,
@@ -378,11 +378,11 @@ def main(args):
             prompt["modalities"] = output_modalities
 
     profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
-    if profiler_enabled and hasattr(omni_llm, "start_profile"):
-        omni_llm.start_profile(stages=[0])
+    if profiler_enabled and hasattr(omni, "start_profile"):
+        omni.start_profile(stages=[0])
     elif profiler_enabled:
         print("[Warn] VLLM_TORCH_PROFILER_DIR is set, but current engine does not support profiler controls.")
-    omni_generator = omni_llm.generate(prompts, sampling_params_list, py_generator=args.py_generator)
+    omni_generator = omni.generate(prompts, sampling_params_list, py_generator=args.py_generator)
 
     # Determine output directory: prefer --output-dir; fallback to --output-wav
     output_dir = args.output_dir if getattr(args, "output_dir", None) else args.output_wav
@@ -417,16 +417,16 @@ def main(args):
             print(f"Request ID: {request_id}, Saved audio to {output_wav}")
 
         processed_count += 1
-        if profiler_enabled and hasattr(omni_llm, "stop_profile") and processed_count >= total_requests:
+        if profiler_enabled and hasattr(omni, "stop_profile") and processed_count >= total_requests:
             print(f"[Info] Processed {processed_count}/{total_requests}. Stopping profiler inside active loop...")
             # Stop the profiler while workers are still alive
-            omni_llm.stop_profile()
+            omni.stop_profile()
 
             print("[Info] Waiting 30s for workers to write massive trace files to disk...")
             time.sleep(30)
             print("[Info] Trace export wait finished.")
 
-    omni_llm.close()
+    omni.close()
 
 
 def parse_args():

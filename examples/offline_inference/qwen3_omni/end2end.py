@@ -294,7 +294,7 @@ def main(args):
     else:
         query_result = query_func()
 
-    omni_llm = Omni(
+    omni = Omni(
         model=model_name,
         stage_configs_path=args.stage_configs_path,
         log_stats=args.log_stats,
@@ -354,8 +354,8 @@ def main(args):
 
     profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
     if profiler_enabled:
-        omni_llm.start_profile(stages=[0])
-    omni_generator = omni_llm.generate(prompts, sampling_params_list, py_generator=args.py_generator)
+        omni.start_profile(stages=[0])
+    omni_generator = omni.generate(prompts, sampling_params_list, py_generator=args.py_generator)
     # Determine output directory: prefer --output-dir; fallback to --output-wav
     output_dir = args.output_dir if getattr(args, "output_dir", None) else args.output_wav
     os.makedirs(output_dir, exist_ok=True)
@@ -404,12 +404,12 @@ def main(args):
         if profiler_enabled and processed_count >= total_requests:
             print(f"[Info] Processed {processed_count}/{total_requests}. Stopping profiler inside active loop...")
             # Stop the profiler while workers are still alive
-            omni_llm.stop_profile()
+            omni.stop_profile()
 
             print("[Info] Waiting 30s for workers to write trace files to disk...")
             time.sleep(30)
             print("[Info] Trace export wait time finished.")
-    omni_llm.close()
+    omni.close()
 
 
 def parse_args():

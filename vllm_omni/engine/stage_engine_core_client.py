@@ -1,5 +1,5 @@
 """
-Stage Engine Core Client for vLLM-Omni V1 architecture.
+Stage Engine Core Client for vLLM-Omni multi-stage runtime.
 
 Directly inherits from vLLM's AsyncMPClient to reuse EngineCore architecture.
 """

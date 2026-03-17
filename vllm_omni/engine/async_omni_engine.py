@@ -1,5 +1,5 @@
 """
-Async Omni Engine for vLLM-Omni V1 architecture.
+Async Omni Engine for vLLM-Omni multi-stage runtime.
 
 AsyncOmniEngine in the caller's thread is a thin proxy that communicates
 with the Orchestrator (running in a background thread) via janus queues.

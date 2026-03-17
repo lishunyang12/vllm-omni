@@ -369,7 +369,7 @@ async def build_async_omni(
     Args:
         args: Parsed command-line arguments containing model and configuration
         disable_frontend_multiprocessing: Optional flag to disable frontend
-            multiprocessing (deprecated in V1)
+            multiprocessing
         client_config: Optional client configuration dictionary
 
     Yields:
@@ -407,7 +407,7 @@ async def build_async_omni_from_stage_config(
     Args:
         args: Parsed command-line arguments containing model and stage configs
         disable_frontend_multiprocessing: Flag to disable frontend multiprocessing
-            (deprecated in V1)
+            for compatibility with existing CLI options
         client_config: Optional client configuration dictionary
 
     Yields:
@@ -418,9 +418,8 @@ async def build_async_omni_from_stage_config(
         otherwise from the model's default configuration.
     """
 
-    # V1 AsyncLLM.
     if disable_frontend_multiprocessing:
-        logger.warning("V1 is enabled, but got --disable-frontend-multiprocessing.")
+        logger.warning("Ignoring --disable-frontend-multiprocessing for AsyncOmni runtime.")
 
     async_omni: EngineClient | None = None
 
@@ -1198,7 +1197,7 @@ async def generate_images(request: ImageGenerationRequest, raw_request: Request)
         HTTPException: For validation errors, missing engine, or generation failures
     """
     # Get engine client (AsyncOmni) from app state
-    engine_client, model_name, stage_types = _get_engine_and_model(raw_request)
+    engine_client, model_name, stage_configs = _get_engine_and_model(raw_request)
 
     # Validate model field (warn if mismatch, don't error)
     if request.model is not None and request.model != model_name:
@@ -1250,7 +1249,7 @@ async def generate_images(request: ImageGenerationRequest, raw_request: Request)
         result = await _generate_with_async_omni(
             engine_client=engine_client,
             gen_params=gen_params,
-            stage_types=stage_types,
+            stage_configs=stage_configs,
             prompt=prompt,
             request_id=request_id,
         )
@@ -1325,7 +1324,7 @@ async def edit_images(
     OpenAI-compatible image edit endpoint.
     """
     # 1. get engine and model
-    engine_client, model_name, stage_types = _get_engine_and_model(raw_request)
+    engine_client, model_name, stage_configs = _get_engine_and_model(raw_request)
     if model is not None and model != model_name:
         logger.warning(
             f"Model mismatch: request specifies '{model}' but server is running '{model_name}'. Using server model."
@@ -1360,8 +1359,14 @@ async def edit_images(
         # 3.0 Init with system default values
         app_state_args = getattr(raw_request.app.state, "args", None)
         default_sample_param = getattr(app_state_args, "default_sampling_params", None)
-        # Currently only have one diffusion stage
-        diffusion_stage_id = [i for i, t in enumerate(stage_types) if t == "diffusion"][0]
+        # Currently only have one diffusion stage.
+        diffusion_stage_ids = [i for i, cfg in enumerate(stage_configs) if _get_stage_type(cfg) == "diffusion"]
+        if not diffusion_stage_ids:
+            raise HTTPException(
+                status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
+                detail="No diffusion stage found in multi-stage pipeline.",
+            )
+        diffusion_stage_id = diffusion_stage_ids[0]
         apply_stage_default_sampling_params(
             default_sample_param,
             gen_params,
@@ -1408,7 +1413,7 @@ async def edit_images(
         result = await _generate_with_async_omni(
             engine_client=engine_client,
             gen_params=gen_params,
-            stage_types=stage_types,
+            stage_configs=stage_configs,
             prompt=prompt,
             request_id=request_id,
         )
@@ -1455,23 +1460,20 @@ def _get_engine_and_model(raw_request: Request):
             detail="Multi-stage engine not initialized. Start server with a multi-stage omni model.",
         )
 
-    # Check if there's a diffusion stage
+    # Check if there's a diffusion stage.
+    # Prefer app state (compat layer populated at startup), then fall back to
+    # the engine client's stage configs for refactored AsyncOmni paths.
     stage_configs = getattr(raw_request.app.state, "stage_configs", None)
+    if not stage_configs:
+        stage_configs = getattr(engine_client, "stage_configs", None)
     if not stage_configs:
         raise HTTPException(
             status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
             detail="Stage configs not found. Start server with a multi-stage omni model.",
         )
 
-    # Check for diffusion stage and collect stage types
-    has_diffusion_stage = False
-    stage_types: list[str] = []
-    for stage in stage_configs:
-        stage_type = _get_stage_type(stage)
-
-        if stage_type == "diffusion":
-            has_diffusion_stage = True
-        stage_types.append(stage_type)
+    normalized_stage_configs = list(stage_configs)
+    has_diffusion_stage = any(_get_stage_type(stage_cfg) == "diffusion" for stage_cfg in normalized_stage_configs)
 
     if not has_diffusion_stage:
         raise HTTPException(
@@ -1487,7 +1489,7 @@ def _get_engine_and_model(raw_request: Request):
     else:
         model_name = "unknown"
 
-    return engine_client, model_name, stage_types
+    return engine_client, model_name, normalized_stage_configs
 
 
 def _get_lora_from_json_str(lora_body):
@@ -1540,35 +1542,41 @@ def _parse_lora_request(lora_body: dict[str, Any]):
 async def _generate_with_async_omni(
     engine_client: AsyncOmni | Any,
     gen_params: Any,
-    stage_types: list[str],
+    stage_configs: list[Any],
     **kwargs,
 ):
     engine_client = cast(AsyncOmni, engine_client)
     result = None
-    if stage_types:
-        default_params_list: list[OmniSamplingParams] | None = getattr(
-            engine_client,
-            "default_sampling_params_list",
-            None,
-        )
-        if not isinstance(default_params_list, list):
-            default_params_list = [
-                OmniDiffusionSamplingParams() if st == "diffusion" else SamplingParams() for st in stage_types
-            ]
-        else:
-            default_params_list = list(default_params_list)
-        if len(default_params_list) != len(stage_types):
-            default_params_list = (
-                default_params_list
-                + [OmniDiffusionSamplingParams() if st == "diffusion" else SamplingParams() for st in stage_types]
-            )[: len(stage_types)]
+    normalized_stage_configs = list(stage_configs or [])
+    default_params_list: list[OmniSamplingParams] | None = getattr(
+        engine_client,
+        "default_sampling_params_list",
+        None,
+    )
+    if not isinstance(default_params_list, list):
+        default_params_list = []
+    else:
+        default_params_list = list(default_params_list)
 
+    if normalized_stage_configs:
         sampling_params_list: list[OmniSamplingParams] = []
-        for idx, stage_type in enumerate(stage_types):
+        for idx, stage_cfg in enumerate(normalized_stage_configs):
+            stage_type = _get_stage_type(stage_cfg)
             if stage_type == "diffusion":
                 sampling_params_list.append(gen_params)
+                continue
+
+            if idx < len(default_params_list):
+                default_stage_params = default_params_list[idx]
             else:
-                sampling_params_list.append(default_params_list[idx])
+                default_stage_params = SamplingParams()
+
+            if hasattr(default_stage_params, "clone"):
+                try:
+                    default_stage_params = default_stage_params.clone()
+                except Exception:
+                    pass
+            sampling_params_list.append(default_stage_params)
     else:
         sampling_params_list = [gen_params]
 

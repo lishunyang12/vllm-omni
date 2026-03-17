@@ -180,11 +180,11 @@ def main(args):
     # Get the query function and call it with appropriate parameters
     query_func = query_map[args.query_type]
 
-    omni_llm = Omni(
+    omni = Omni(
         model=model_name,
         stage_configs_path=args.stage_configs_path,
         log_stats=args.enable_stats,
-        log_file=("omni_llm_pipeline.log" if args.enable_stats else None),
+        log_file=("omni_pipeline.log" if args.enable_stats else None),
         init_sleep_seconds=args.init_sleep_seconds,
         batch_timeout=args.batch_timeout,
         init_timeout=args.init_timeout,
@@ -290,7 +290,7 @@ def main(args):
     prompts = [copy.deepcopy(query_result) for _ in range(args.num_prompts)]
 
     print("prompts", prompts)
-    omni_outputs = omni_llm.generate(prompts, sampling_params_list)
+    omni_outputs = omni.generate(prompts, sampling_params_list)
 
     output_dir = args.output_dir if getattr(args, "output_dir", None) else args.output_wav
     if args.query_type is not None:

@@ -199,6 +199,28 @@ def async_omni_test_client():
     return TestClient(app)
 
 
+@pytest.fixture
+def async_omni_stage_configs_only_client():
+    """Create test client with refactored AsyncOmni compatibility surface only."""
+    from fastapi import FastAPI
+
+    from vllm_omni.entrypoints.openai.api_server import router
+
+    app = FastAPI()
+    app.include_router(router)
+
+    engine = FakeAsyncOmni()
+    assert not hasattr(engine, "stage_list")
+    app.state.engine_client = engine
+    # Intentionally do not populate app.state.stage_configs. Refactored
+    # AsyncOmni exposes stage_configs on the engine instance.
+    app.state.args = Namespace(
+        default_sampling_params='{"1": {"num_inference_steps":4, "guidance_scale":7.5}}',
+        max_generated_image_size=4096,  # 64*64
+    )
+    return TestClient(app)
+
+
 def test_health_endpoint(test_client):
     """Test health check endpoint for diffusion mode"""
     response = test_client.get("/health")
@@ -300,6 +322,45 @@ def test_generate_images_async_omni_sampling_params(async_omni_test_client):
     assert captured[1].height == 256
     assert captured[1].width == 256
     assert captured[1].seed == 7
+
+
+def test_generate_images_async_omni_stage_configs_only(async_omni_stage_configs_only_client):
+    """Regression: image generation accepts refactored AsyncOmni without stage_list."""
+    response = async_omni_stage_configs_only_client.post(
+        "/v1/images/generations",
+        json={
+            "prompt": "a castle",
+            "n": 1,
+            "size": "256x256",
+            "seed": 11,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["data"]) == 1
+    engine = async_omni_stage_configs_only_client.app.state.engine_client
+    captured = engine.captured_sampling_params_list
+    assert captured is not None
+    assert len(captured) == 2
+    assert captured[1].seed == 11
+
+
+def test_image_edits_async_omni_stage_configs_only(async_omni_stage_configs_only_client):
+    """Regression: image edits accepts refactored AsyncOmni without stage_list."""
+    img_bytes = make_test_image_bytes((16, 16))
+    response = async_omni_stage_configs_only_client.post(
+        "/v1/images/edits",
+        files=[("image", img_bytes)],
+        data={
+            "prompt": "edit me",
+            "size": "auto",
+        },
+    )
+    assert response.status_code == 200
+    engine = async_omni_stage_configs_only_client.app.state.engine_client
+    captured = engine.captured_sampling_params_list
+    assert captured is not None
+    assert len(captured) == 2
 
 
 def test_generate_multiple_images(test_client):

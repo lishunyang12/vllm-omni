@@ -357,7 +357,8 @@ class OmniServeCommand(CLISubcommand):
 def _create_default_diffusion_stage_cfg(args: argparse.Namespace) -> list[dict[str, Any]]:
     """Create default diffusion stage configuration.
 
-    Uses V1's implementation which doesn't have OmegaConf compatibility issues.
+    Uses AsyncOmniEngine's implementation which doesn't have OmegaConf
+    compatibility issues.
     """
     from vllm_omni.engine.async_omni_engine import AsyncOmniEngine
 
@@ -369,14 +370,14 @@ def run_headless(args: argparse.Namespace) -> None:
 
     .. deprecated:: 0.x.x
         Headless mode is deprecated and will be removed in a future version.
-        It is only compatible with V0 architecture (OmniStage-based).
-        V1 architecture (AsyncOmniEngine-based) does not support headless mode.
+        It is only compatible with the old OmniStage-based runtime.
+        The current AsyncOmniEngine-based runtime does not support headless mode.
 
     Raises:
         RuntimeError: Always raises an error indicating headless mode is deprecated.
     """
     raise RuntimeError(
-        "Headless mode is deprecated and not supported in V1 architecture. "
+        "Headless mode is deprecated and not supported in the current runtime. "
         "Please use the standard orchestrator mode (without --headless flag). "
         "If you need distributed deployment, consider using Ray backend or "
         "other distributed serving solutions."

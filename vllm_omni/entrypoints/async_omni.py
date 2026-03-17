@@ -377,7 +377,7 @@ class AsyncOmni(EngineClient, OmniBase):
     def _coerce_stage_bool(result: Any) -> bool:
         """Reduce a stage RPC result to a boolean.
 
-        V0-style stage RPCs may return worker-level lists like ``[True]``;
+        Some stage RPCs may return worker-level lists like ``[True]``;
         diffusion wrappers usually return a plain bool.
         """
         if isinstance(result, list):

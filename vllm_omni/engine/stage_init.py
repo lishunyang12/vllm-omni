@@ -1,5 +1,5 @@
 """
-Stage initialization helpers for vLLM-Omni V1 architecture.
+Stage initialization helpers for vLLM-Omni multi-stage runtime.
 
 Extracts orchestration-level init logic (config extraction, plugin loading,
 multiprocessing setup, device mapping, device locking, engine args building)
@@ -299,7 +299,7 @@ def acquire_device_locks(
                                 device_id,
                             )
                             break
-                        time.sleep(0.1)
+                        time.sleep(0.01)
                 except OSError as e:
                     logger.debug(
                         "Failed to acquire lock for device %s: %s, continuing anyway",
