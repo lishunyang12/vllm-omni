@@ -192,8 +192,6 @@ def main():
             setattr(args, key.replace("-", "_"), default_val)
 
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(args.seed)
-    frame_rate = args.frame_rate if args.frame_rate is not None else float(args.fps)
-
     # Cache-dit config (Wan2.2 only)
     cache_config = None
     if args.cache_backend == "cache_dit":

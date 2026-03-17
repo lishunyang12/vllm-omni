@@ -108,12 +108,8 @@ class TorchProfiler(ProfilerBase):
 
         # Print top CUDA ops table
         try:
-            table = cls._profiler.key_averages().table(
-                sort_by="cuda_time_total", row_limit=20
-            )
-            logger.info(
-                f"[Rank {rank}] Top 20 CUDA operations by total time:\n{table}"
-            )
+            table = cls._profiler.key_averages().table(sort_by="cuda_time_total", row_limit=20)
+            logger.info(f"[Rank {rank}] Top 20 CUDA operations by total time:\n{table}")
         except Exception as e:
             table = None
             logger.warning(f"[Rank {rank}] Failed to generate ops table: {e}")
