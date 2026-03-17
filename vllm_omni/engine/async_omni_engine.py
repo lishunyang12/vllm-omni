@@ -36,6 +36,9 @@ from vllm.v1.engine.utils import get_engine_zmq_addresses, launch_core_engines
 
 from vllm_omni.config.stage_config import StageConfigFactory
 from vllm_omni.diffusion.data import DiffusionParallelConfig
+from vllm_omni.distributed.omni_connectors.utils.initialization import (
+    resolve_omni_kv_config_for_stage,
+)
 from vllm_omni.engine import (
     OmniEngineCoreRequest,
 )
@@ -64,6 +67,39 @@ from vllm_omni.entrypoints.utils import (
 )
 
 logger = init_logger(__name__)
+
+
+def _inject_kv_stage_info(stage_cfg: Any, stage_id: int) -> None:
+    """Inject stage_id and engine_input_source into omni_kv_config.
+
+    OmniKVTransferManager needs stage_id to compute recv_stages for the
+    receiving side. In the old Omni architecture, OmniDiffusion.__init__
+    performed this injection; replicate it here for AsyncOmniEngine.
+    """
+    try:
+        engine_args = stage_cfg.engine_args
+        if hasattr(engine_args, "get"):
+            omni_kv = engine_args.get("omni_kv_config", None)
+        else:
+            omni_kv = getattr(engine_args, "omni_kv_config", None)
+
+        if omni_kv is None:
+            return
+
+        if hasattr(omni_kv, "setdefault"):
+            omni_kv.setdefault("stage_id", stage_id)
+        elif hasattr(omni_kv, "__setitem__"):
+            if "stage_id" not in omni_kv:
+                omni_kv["stage_id"] = stage_id
+
+        engine_input_source = getattr(stage_cfg, "engine_input_source", None)
+        if engine_input_source is not None:
+            if hasattr(omni_kv, "setdefault"):
+                omni_kv.setdefault("engine_input_source", list(engine_input_source))
+            elif hasattr(omni_kv, "__setitem__") and "engine_input_source" not in omni_kv:
+                omni_kv["engine_input_source"] = list(engine_input_source)
+    except Exception as e:
+        logger.debug("Failed to inject stage info into omni_kv_config: %s", e)
 
 
 def _inject_global_id(target: Any, request_id: str) -> None:
@@ -169,6 +205,7 @@ class AsyncOmniEngine:
         metadata: Any,
         stage_connector_spec: dict[str, Any],
         stage_init_timeout: int,
+        omni_kv_connector: tuple[dict[str, Any] | None, str | None, str | None] = (None, None, None),
     ) -> StartedLlmStage:
         """Launch one LLM stage to READY state in a helper thread."""
         from vllm_omni.platforms import current_omni_platform
@@ -187,6 +224,16 @@ class AsyncOmniEngine:
                         self.model,
                         stage_connector_spec=stage_connector_spec,
                     )
+                    omni_conn_cfg, omni_from, omni_to = omni_kv_connector
+                    if omni_conn_cfg:
+                        omni_kv = engine_args_dict.get("omni_kv_config") or {}
+                        if not isinstance(omni_kv, dict):
+                            omni_kv = dict(omni_kv)
+                        omni_kv["connector_config"] = omni_conn_cfg
+                        omni_kv["omni_from_stage"] = omni_from
+                        omni_kv["omni_to_stage"] = omni_to
+                        omni_kv.setdefault("stage_id", metadata.stage_id)
+                        engine_args_dict["omni_kv_config"] = omni_kv
                     vllm_config, executor_class = build_vllm_config(
                         stage_cfg,
                         self.model,
@@ -304,6 +351,7 @@ class AsyncOmniEngine:
         started_llm_stages: dict[int, StartedLlmStage] = {}
 
         async_chunk = self.async_chunk
+        prompt_expand_func = None
         llm_stage_count = sum(
             1 for stage_cfg in self.stage_configs if getattr(stage_cfg, "stage_type", "llm") != "diffusion"
         )
@@ -319,6 +367,8 @@ class AsyncOmniEngine:
                 for stage_id, stage_cfg in enumerate(self.stage_configs):
                     logger.info("[AsyncOmniEngine] Initializing stage %s", stage_id)
                     metadata = extract_stage_metadata(stage_cfg)
+                    if metadata.prompt_expand_func is not None:
+                        prompt_expand_func = metadata.prompt_expand_func
 
                     stage_connector_spec = get_stage_connector_spec(
                         omni_transfer_config=omni_transfer_config,
@@ -326,8 +376,16 @@ class AsyncOmniEngine:
                         async_chunk=async_chunk,
                     )
 
+                    omni_kv_connector = resolve_omni_kv_config_for_stage(omni_transfer_config, stage_id)
+
                     if metadata.stage_type == "diffusion":
                         setup_stage_devices(stage_id, metadata.runtime_cfg)
+                        omni_conn_cfg, omni_from, omni_to = omni_kv_connector
+                        if omni_conn_cfg:
+                            from vllm_omni.entrypoints.utils import inject_omni_kv_config
+
+                            inject_omni_kv_config(stage_cfg, omni_conn_cfg, omni_from, omni_to)
+                        _inject_kv_stage_info(stage_cfg, stage_id)
                         stage_clients[stage_id] = initialize_diffusion_stage(self.model, stage_cfg, metadata)
                         logger.info("[AsyncOmniEngine] Stage %s initialized (diffusion)", stage_id)
                         continue
@@ -339,6 +397,7 @@ class AsyncOmniEngine:
                         metadata,
                         stage_connector_spec,
                         stage_init_timeout,
+                        omni_kv_connector,
                     )
 
                 concurrent.futures.wait(list(llm_launch_futures.values()))
@@ -378,6 +437,7 @@ class AsyncOmniEngine:
         self.output_processors = output_processors
         self.stage_vllm_configs = stage_vllm_configs
         self.input_processor = input_processor
+        self.prompt_expand_func = prompt_expand_func
         # TODO(Peiqi): Hack here
         supported_tasks: set[str] = set()
         if any(getattr(stage_client, "is_comprehension", False) for stage_client in initialized_stage_clients):
@@ -613,6 +673,65 @@ class AsyncOmniEngine:
             "final_stage_id": final_stage_id,
         }
 
+    def _enqueue_cfg_companions(
+        self,
+        parent_id: str,
+        original_prompt: Any,
+        stage0_params: Any,
+        sampling_params_list: list[Any],
+    ) -> None:
+        """Expand prompt into CFG companions, process through InputProcessor, and enqueue."""
+        try:
+            expanded = self.prompt_expand_func(original_prompt, stage0_params)
+        except Exception:
+            logger.exception("[AsyncOmniEngine] prompt_expand_func failed for req %s", parent_id)
+            return
+
+        if not expanded:
+            return
+
+        for ep in expanded:
+            cid = f"{parent_id}{ep.request_id_suffix}"
+            companion_prompt = ep.prompt
+
+            # Run through same input processing as the main prompt
+            if isinstance(companion_prompt, dict):
+                _inject_global_id(companion_prompt, cid)
+
+            request = self.input_processor.process_inputs(
+                request_id=cid,
+                prompt=companion_prompt,
+                params=stage0_params,
+                supported_tasks=self.supported_tasks,
+            )
+            request = _upgrade_to_omni_request(request, companion_prompt)
+            request.external_req_id = cid
+
+            self.output_processors[0].add_request(
+                request=request,
+                prompt=companion_prompt,
+                parent_req=None,
+                request_index=0,
+                queue=None,
+            )
+
+            self.request_queue.sync_q.put_nowait(
+                {
+                    "type": "add_companion_request",
+                    "companion_id": cid,
+                    "parent_id": parent_id,
+                    "role": ep.role,
+                    "prompt": request,
+                    "sampling_params_list": sampling_params_list,
+                }
+            )
+
+        logger.info(
+            "[AsyncOmniEngine] CFG expansion for req %s: %d companions",
+            parent_id,
+            len(expanded),
+        )
+
     @staticmethod
     def _get_default_cache_config(cache_backend: str | None) -> dict[str, Any] | None:
         if cache_backend == "cache_dit":
@@ -823,6 +942,15 @@ class AsyncOmniEngine:
         if self.request_queue is None:
             raise RuntimeError("request_queue is not initialized")
         self.request_queue.sync_q.put_nowait(msg)
+
+        # CFG companion expansion: create and enqueue companion requests
+        # so the AR stage also generates their KV caches.
+        if self.prompt_expand_func is not None and final_stage_id > 0:
+            original_prompt = msg.get("original_prompt", prompt)
+            effective_spl = msg.get("sampling_params_list", [])
+            stage0_params = effective_spl[0] if effective_spl else None
+            if stage0_params is not None:
+                self._enqueue_cfg_companions(request_id, original_prompt, stage0_params, effective_spl)
 
     async def add_request_async(
         self,

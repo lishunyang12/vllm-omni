@@ -67,6 +67,8 @@ class StageMetadata:
     custom_process_input_func: Callable | None
     model_stage: str | None
     runtime_cfg: Any
+    prompt_expand_func: Callable | None = None
+    cfg_kv_collect_func: Callable | None = None
 
 
 @dataclass
@@ -101,6 +103,18 @@ def extract_stage_metadata(stage_config: Any) -> StageMetadata:
         mod_path, fn_name = stage_config.custom_process_input_func.rsplit(".", 1)
         custom_process_input_func = getattr(importlib.import_module(mod_path), fn_name)
 
+    prompt_expand_func: Callable | None = None
+    _pef_path = getattr(stage_config, "prompt_expand_func", None)
+    if _pef_path:
+        _mod, _fn = _pef_path.rsplit(".", 1)
+        prompt_expand_func = getattr(importlib.import_module(_mod), _fn)
+
+    cfg_kv_collect_func: Callable | None = None
+    _ckf_path = getattr(stage_config, "cfg_kv_collect_func", None)
+    if _ckf_path:
+        _mod, _fn = _ckf_path.rsplit(".", 1)
+        cfg_kv_collect_func = getattr(importlib.import_module(_mod), _fn)
+
     if stage_type == "diffusion":
         return StageMetadata(
             stage_id=stage_id,
@@ -115,6 +129,7 @@ def extract_stage_metadata(stage_config: Any) -> StageMetadata:
             custom_process_input_func=custom_process_input_func,
             model_stage=None,
             runtime_cfg=runtime_cfg,
+            cfg_kv_collect_func=cfg_kv_collect_func,
         )
 
     model_stage = getattr(engine_args, "model_stage", None)
@@ -135,6 +150,7 @@ def extract_stage_metadata(stage_config: Any) -> StageMetadata:
         custom_process_input_func=custom_process_input_func,
         model_stage=model_stage,
         runtime_cfg=runtime_cfg,
+        prompt_expand_func=prompt_expand_func,
     )
 
 
@@ -390,6 +406,8 @@ def initialize_diffusion_stage(model: str, stage_cfg: Any, metadata: StageMetada
         model=model,
         **_to_dict(stage_cfg.engine_args),
     )
+    if metadata.cfg_kv_collect_func is not None:
+        od_config.cfg_kv_collect_func = metadata.cfg_kv_collect_func
     return StageDiffusionClient(model, od_config, metadata)
 
 
