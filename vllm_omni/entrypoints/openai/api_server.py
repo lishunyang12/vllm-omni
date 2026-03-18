@@ -23,6 +23,7 @@ import vllm.envs as envs
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, WebSocket
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from PIL import Image
+from pydantic import BaseModel, Field
 from starlette.datastructures import State
 from starlette.routing import Route
 from vllm import SamplingParams
@@ -110,13 +111,36 @@ from vllm_omni.entrypoints.openai.serving_speech_stream import OmniStreamingSpee
 from vllm_omni.entrypoints.openai.serving_video import OmniOpenAIServingVideo, ReferenceImage
 from vllm_omni.entrypoints.openai.storage import STORAGE_MANAGER
 from vllm_omni.entrypoints.openai.stores import VIDEO_STORE, VIDEO_TASKS
+from vllm_omni.entrypoints.openai.utils import get_stage_type, parse_lora_request
 from vllm_omni.entrypoints.openai.video_api_utils import decode_input_reference
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniSamplingParams, OmniTextPrompt
-from vllm_omni.lora.request import LoRARequest
-from vllm_omni.lora.utils import stable_lora_int_id
 
 logger = init_logger(__name__)
 router = APIRouter()
+profiler_router = APIRouter()
+
+
+def _should_enable_profiler_endpoints(args: Namespace) -> bool:
+    # Check upstream vLLM's profiler_config
+    profiler_config = getattr(args, "profiler_config", None)
+    if profiler_config is not None:
+        # profiler_config exists, check if profiler is set
+        profiler = getattr(profiler_config, "profiler", None)
+        if profiler is not None:
+            return True
+
+    # TODO: remove this env after refactoring torch profiler to CLI args
+    env_value = os.environ.get("VLLM_TORCH_PROFILER_DIR")
+    return env_value is not None
+
+
+class ProfileRequest(BaseModel):
+    """Request model for profiling endpoints."""
+
+    stages: list[int] | None = Field(
+        default=None,
+        description="List of stage IDs to profile. If None, profiles all stages.",
+    )
 
 
 def _remove_route_from_router(
@@ -136,6 +160,12 @@ def _remove_route_from_router(
 
 
 ENDPOINT_LOAD_METRICS_FORMAT_HEADER_LABEL = "endpoint-load-metrics-format"
+
+
+async def _get_vllm_config(engine_client: EngineClient) -> Any:
+    if hasattr(engine_client, "get_vllm_config"):
+        return await engine_client.get_vllm_config()
+    return getattr(engine_client, "vllm_config", None)
 
 
 def _remove_route_from_app(app, path: str, methods: set[str] | None = None):
@@ -162,12 +192,30 @@ class _DiffusionServingModels:
     provide a lightweight fallback.
     """
 
+    class _NullModelConfig:
+        def __getattr__(self, name):
+            return None
+
+    class _Unsupported:
+        def __init__(self, name: str):
+            self.name = name
+
+        def __call__(self, *args, **kwargs):
+            raise NotImplementedError(f"{self.name} is not supported in diffusion mode")
+
+        def __getattr__(self, attr):
+            raise NotImplementedError(f"{self.name}.{attr} is not supported in diffusion mode")
+
     def __init__(self, base_model_paths: list[BaseModelPath]) -> None:
         self._base_model_paths = base_model_paths
+        self.model_config = self._NullModelConfig()
 
     @property
     def base_model_paths(self) -> list[BaseModelPath]:
         return self._base_model_paths
+
+    def __getattr__(self, name):
+        return self._Unsupported(name)
 
     async def show_available_models(self) -> ModelList:
         return ModelList(
@@ -246,7 +294,12 @@ async def omni_run_server_worker(listen_address, sock, args, client_config=None,
 
         await omni_init_app_state(engine_client, app.state, args)
 
-        vllm_config = await engine_client.get_vllm_config()
+        # Conditionally register profiler endpoints based on config or env var
+        if _should_enable_profiler_endpoints(args):
+            logger.warning("Profiler endpoints are enabled. This should ONLY be used for local development!")
+            app.include_router(profiler_router)
+
+        vllm_config = await _get_vllm_config(engine_client)
 
         # Check if pure diffusion mode (vllm_config will be None)
         is_pure_diffusion = vllm_config is None
@@ -304,7 +357,7 @@ async def build_async_omni(
     Args:
         args: Parsed command-line arguments containing model and configuration
         disable_frontend_multiprocessing: Optional flag to disable frontend
-            multiprocessing (deprecated in V1)
+            multiprocessing
         client_config: Optional client configuration dictionary
 
     Yields:
@@ -342,7 +395,7 @@ async def build_async_omni_from_stage_config(
     Args:
         args: Parsed command-line arguments containing model and stage configs
         disable_frontend_multiprocessing: Flag to disable frontend multiprocessing
-            (deprecated in V1)
+            for compatibility with existing CLI options
         client_config: Optional client configuration dictionary
 
     Yields:
@@ -353,16 +406,13 @@ async def build_async_omni_from_stage_config(
         otherwise from the model's default configuration.
     """
 
-    # V1 AsyncLLM.
     if disable_frontend_multiprocessing:
-        logger.warning("V1 is enabled, but got --disable-frontend-multiprocessing.")
+        logger.warning("Ignoring --disable-frontend-multiprocessing for AsyncOmni runtime.")
 
     async_omni: EngineClient | None = None
 
     try:
-        # Convert args Namespace to kwargs dict for AsyncOmni to use
         kwargs = vars(args).copy()
-        # Remove model as it will be passed separately
         kwargs.pop("model", None)
         async_omni = AsyncOmni(model=args.model, **kwargs)
 
@@ -393,14 +443,14 @@ async def omni_init_app_state(
         args: Parsed command-line arguments
     """
     # Get vllm_config from engine_client (following 0.14.0 pattern)
-    vllm_config = await engine_client.get_vllm_config()
+    vllm_config = await _get_vllm_config(engine_client)
 
     # Detect if it's pure Diffusion mode (single stage and is Diffusion)
     is_pure_diffusion = False
     if hasattr(engine_client, "stage_configs") and engine_client.stage_configs:
         stage_configs = engine_client.stage_configs
         if len(stage_configs) == 1:
-            stage_type = stage_configs[0].get("stage_type", "llm")
+            stage_type = get_stage_type(stage_configs[0])
             if stage_type == "diffusion":
                 is_pure_diffusion = True
                 logger.info("Detected pure diffusion mode (single diffusion stage)")
@@ -453,7 +503,7 @@ async def omni_init_app_state(
     # LLM or multi-stage mode: use standard initialization logic
     if vllm_config is None:
         # Try to get vllm_config from engine_client
-        vllm_config = await engine_client.get_vllm_config()
+        vllm_config = await _get_vllm_config(engine_client)
         if vllm_config is None:
             logger.warning("vllm_config is None, some features may not work correctly")
 
@@ -498,15 +548,13 @@ async def omni_init_app_state(
             # Try to initialize processors if vllm_config is available
             try:
                 from vllm.plugins.io_processors import get_io_processor
-
-                from vllm_omni.engine.input_processor import OmniInputProcessor
+                from vllm.v1.engine.input_processor import InputProcessor
 
                 tokenizer = await engine_client.get_tokenizer()
                 if tokenizer is not None:
                     # Initialize input_processor
-                    # OMNI: OmniInputProcessor creates tokenizer internally from vllm_config
                     if not hasattr(engine_client, "input_processor") or engine_client.input_processor is None:
-                        engine_client.input_processor = OmniInputProcessor(
+                        engine_client.input_processor = InputProcessor(
                             vllm_config=vllm_config,
                         )
                         logger.info("Initialized input_processor for AsyncOmni")
@@ -897,8 +945,113 @@ async def list_voices(raw_request: Request):
     if handler is None:
         return base(raw_request).create_error_response(message="The model does not support Speech API")
 
+    # Get all speakers (both model built-in and uploaded)
     speakers = sorted(handler.supported_speakers) if handler.supported_speakers else []
-    return JSONResponse(content={"voices": speakers})
+
+    # Get uploaded speakers details
+    uploaded_speakers = []
+    if hasattr(handler, "uploaded_speakers"):
+        for voice_name, info in handler.uploaded_speakers.items():
+            uploaded_speakers.append(
+                {
+                    "name": info.get("name", voice_name),
+                    "consent": info.get("consent", ""),
+                    "created_at": info.get("created_at", 0),
+                    "file_size": info.get("file_size", 0),
+                    "mime_type": info.get("mime_type", ""),
+                }
+            )
+
+    return JSONResponse(content={"voices": speakers, "uploaded_voices": uploaded_speakers})
+
+
+@router.post(
+    "/v1/audio/voices",
+    responses={
+        HTTPStatus.OK.value: {"model": dict},
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
+async def upload_voice(
+    raw_request: Request,
+    audio_sample: UploadFile = File(...),
+    consent: str = Form(...),
+    name: str = Form(...),
+):
+    """Upload a new voice sample for voice cloning.
+
+    Uploads an audio file that can be used as a reference for voice cloning
+    in Base task TTS requests. The voice can then be referenced by name
+    in subsequent TTS requests.
+
+    Args:
+        audio_sample: Audio file (max 10MB)
+        consent: Consent recording ID
+        name: Name for the new voice
+        raw_request: Raw FastAPI request
+
+    Returns:
+        JSON response with voice information
+    """
+    handler = Omnispeech(raw_request)
+    if handler is None:
+        return base(raw_request).create_error_response(message="The model does not support Speech API")
+
+    try:
+        # Upload the voice
+        result = await handler.upload_voice(audio_sample, consent, name)
+
+        return JSONResponse(content={"success": True, "voice": result})
+
+    except ValueError as e:
+        return base(raw_request).create_error_response(message=str(e))
+    except Exception as e:
+        logger.exception(f"Failed to upload voice: {e}")
+        return base(raw_request).create_error_response(message=f"Failed to upload voice: {str(e)}")
+
+
+@router.delete(
+    "/v1/audio/voices/{name}",
+    responses={
+        HTTPStatus.OK.value: {"model": dict},
+        HTTPStatus.NOT_FOUND.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
+async def delete_voice(name: str, raw_request: Request):
+    """Delete an uploaded voice.
+
+    Deletes the voice sample and associated metadata. Also removes any
+    cached voice clone prompts for this voice.
+
+    Args:
+        name: Name of the voice to delete
+        raw_request: Raw FastAPI request
+
+    Returns:
+        JSON response indicating success or failure
+    """
+    handler = Omnispeech(raw_request)
+    if handler is None:
+        return base(raw_request).create_error_response(message="The model does not support Speech API")
+
+    try:
+        # Delete the voice
+        success = await handler.delete_voice(name)
+        if not success:
+            return JSONResponse(
+                content={"success": False, "error": f"Voice '{name}' not found"},
+                status_code=HTTPStatus.NOT_FOUND.value,
+            )
+
+        return JSONResponse(content={"success": True, "message": f"Voice '{name}' deleted successfully"})
+
+    except ValueError as e:
+        return base(raw_request).create_error_response(message=str(e))
+    except Exception as e:
+        logger.exception(f"Failed to delete voice '{name}': {e}")
+        return base(raw_request).create_error_response(message=f"Failed to delete voice: {str(e)}")
 
 
 @router.websocket("/v1/audio/speech/stream")
@@ -1032,7 +1185,7 @@ async def generate_images(request: ImageGenerationRequest, raw_request: Request)
         HTTPException: For validation errors, missing engine, or generation failures
     """
     # Get engine client (AsyncOmni) from app state
-    engine_client, model_name, stage_types = _get_engine_and_model(raw_request)
+    engine_client, model_name, stage_configs = _get_engine_and_model(raw_request)
 
     # Validate model field (warn if mismatch, don't error)
     if request.model is not None and request.model != model_name:
@@ -1084,7 +1237,7 @@ async def generate_images(request: ImageGenerationRequest, raw_request: Request)
         result = await _generate_with_async_omni(
             engine_client=engine_client,
             gen_params=gen_params,
-            stage_types=stage_types,
+            stage_configs=stage_configs,
             prompt=prompt,
             request_id=request_id,
         )
@@ -1159,7 +1312,7 @@ async def edit_images(
     OpenAI-compatible image edit endpoint.
     """
     # 1. get engine and model
-    engine_client, model_name, stage_types = _get_engine_and_model(raw_request)
+    engine_client, model_name, stage_configs = _get_engine_and_model(raw_request)
     if model is not None and model != model_name:
         logger.warning(
             f"Model mismatch: request specifies '{model}' but server is running '{model_name}'. Using server model."
@@ -1194,8 +1347,14 @@ async def edit_images(
         # 3.0 Init with system default values
         app_state_args = getattr(raw_request.app.state, "args", None)
         default_sample_param = getattr(app_state_args, "default_sampling_params", None)
-        # Currently only have one diffusion stage
-        diffusion_stage_id = [i for i, t in enumerate(stage_types) if t == "diffusion"][0]
+        # Currently only have one diffusion stage.
+        diffusion_stage_ids = [i for i, cfg in enumerate(stage_configs) if get_stage_type(cfg) == "diffusion"]
+        if not diffusion_stage_ids:
+            raise HTTPException(
+                status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
+                detail="No diffusion stage found in multi-stage pipeline.",
+            )
+        diffusion_stage_id = diffusion_stage_ids[0]
         apply_stage_default_sampling_params(
             default_sample_param,
             gen_params,
@@ -1242,7 +1401,7 @@ async def edit_images(
         result = await _generate_with_async_omni(
             engine_client=engine_client,
             gen_params=gen_params,
-            stage_types=stage_types,
+            stage_configs=stage_configs,
             prompt=prompt,
             request_id=request_id,
         )
@@ -1283,42 +1442,26 @@ async def edit_images(
 def _get_engine_and_model(raw_request: Request):
     # Get engine client (AsyncOmni) from app state
     engine_client: EngineClient | AsyncOmni | None = getattr(raw_request.app.state, "engine_client", None)
-    if engine_client is None or not hasattr(engine_client, "stage_list"):
+    if engine_client is None:
         raise HTTPException(
             status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
             detail="Multi-stage engine not initialized. Start server with a multi-stage omni model.",
         )
 
-    # Check if there's a diffusion stage
+    # Check if there's a diffusion stage.
+    # Prefer app state (compat layer populated at startup), then fall back to
+    # the engine client's stage configs for refactored AsyncOmni paths.
     stage_configs = getattr(raw_request.app.state, "stage_configs", None)
+    if not stage_configs:
+        stage_configs = getattr(engine_client, "stage_configs", None)
     if not stage_configs:
         raise HTTPException(
             status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
             detail="Stage configs not found. Start server with a multi-stage omni model.",
         )
 
-    # Check for diffusion stage and collect stage types
-    has_diffusion_stage = False
-    stage_types: list[str] = []
-    for stage in stage_configs:
-        # Handle both dict and OmegaConf objects
-        stage_type = None
-        if isinstance(stage, dict):
-            stage_type = stage.get("stage_type", "llm")
-        elif hasattr(stage, "get"):
-            stage_type = stage.get("stage_type", "llm")
-        elif hasattr(stage, "stage_type"):
-            stage_type = stage.stage_type
-        else:
-            # Fallback: try to access as dict-like
-            try:
-                stage_type = stage["stage_type"] if "stage_type" in stage else "llm"
-            except (TypeError, KeyError):
-                stage_type = "llm"
-
-        if stage_type == "diffusion":
-            has_diffusion_stage = True
-        stage_types.append(stage_type)
+    normalized_stage_configs = list(stage_configs)
+    has_diffusion_stage = any(get_stage_type(stage_cfg) == "diffusion" for stage_cfg in normalized_stage_configs)
 
     if not has_diffusion_stage:
         raise HTTPException(
@@ -1328,12 +1471,13 @@ def _get_engine_and_model(raw_request: Request):
 
     # Get server's loaded model name
     serving_models = getattr(raw_request.app.state, "openai_serving_models", None)
-    if serving_models and hasattr(serving_models, "base_model_paths") and serving_models.base_model_paths:
-        model_name = serving_models.base_model_paths[0].name
+    base_model_paths = getattr(serving_models, "base_model_paths", None) if serving_models else None
+    if base_model_paths:
+        model_name = base_model_paths[0].name
     else:
         model_name = "unknown"
 
-    return engine_client, model_name, stage_types
+    return engine_client, model_name, normalized_stage_configs
 
 
 def _get_lora_from_json_str(lora_body):
@@ -1351,81 +1495,63 @@ def _get_lora_from_json_str(lora_body):
 
 
 def _parse_lora_request(lora_body: dict[str, Any]):
-    if lora_body is not None:
-        if not isinstance(lora_body, dict):
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST.value,
-                detail="Invalid lora field: expected an object.",
-            )
-        lora_name = lora_body.get("name") or lora_body.get("lora_name") or lora_body.get("adapter")
-        lora_path = (
-            lora_body.get("local_path")
-            or lora_body.get("path")
-            or lora_body.get("lora_path")
-            or lora_body.get("lora_local_path")
-        )
-        lora_scale = lora_body.get("scale")
-        if lora_scale is None:
-            lora_scale = lora_body.get("lora_scale")
-        lora_int_id = lora_body.get("int_id")
-        if lora_int_id is None:
-            lora_int_id = lora_body.get("lora_int_id")
-        if lora_int_id is None and lora_path:
-            lora_int_id = stable_lora_int_id(str(lora_path))
-
-        if not lora_name or not lora_path:
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST.value,
-                detail="Invalid lora object: both name and path are required.",
-            )
-
-        return LoRARequest(str(lora_name), int(lora_int_id), str(lora_path)), lora_scale
-    return None, None
+    try:
+        return parse_lora_request(lora_body)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST.value,
+            detail=str(e),
+        ) from e
 
 
 async def _generate_with_async_omni(
     engine_client: AsyncOmni | Any,
     gen_params: Any,
-    stage_types: list[str],
+    stage_configs: list[Any],
     **kwargs,
 ):
     engine_client = cast(AsyncOmni, engine_client)
     result = None
-    stage_list = getattr(engine_client, "stage_list", None)
-    if isinstance(stage_list, list):
-        default_params_list: list[OmniSamplingParams] | None = getattr(
-            engine_client, "default_sampling_params_list", None
+    normalized_stage_configs = list(stage_configs)
+    if not normalized_stage_configs:
+        raise HTTPException(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE.value,
+            detail="Stage configs not found. Start server with a multi-stage omni model.",
         )
-        if not isinstance(default_params_list, list):
-            default_params_list = [
-                OmniDiffusionSamplingParams() if st == "diffusion" else SamplingParams() for st in stage_types
-            ]
-        else:
-            default_params_list = list(default_params_list)
-        if len(default_params_list) != len(stage_types):
-            default_params_list = (
-                default_params_list
-                + [OmniDiffusionSamplingParams() if st == "diffusion" else SamplingParams() for st in stage_types]
-            )[: len(stage_types)]
-
-        sampling_params_list: list[OmniSamplingParams] = []
-        for idx, stage_type in enumerate(stage_types):
-            if stage_type == "diffusion":
-                sampling_params_list.append(gen_params)
-            else:
-                base_params = default_params_list[idx]
-                sampling_params_list.append(base_params)
-
-        async for output in engine_client.generate(
-            sampling_params_list=sampling_params_list,
-            **kwargs,
-        ):
-            result = output
+    default_params_list: list[OmniSamplingParams] | None = getattr(
+        engine_client,
+        "default_sampling_params_list",
+        None,
+    )
+    if not isinstance(default_params_list, list):
+        default_params_list = []
     else:
-        result = await engine_client.generate(
-            sampling_params_list=[gen_params],
-            **kwargs,
-        )
+        default_params_list = list(default_params_list)
+
+    sampling_params_list: list[OmniSamplingParams] = []
+    for idx, stage_cfg in enumerate(normalized_stage_configs):
+        stage_type = get_stage_type(stage_cfg)
+        if stage_type == "diffusion":
+            sampling_params_list.append(gen_params)
+            continue
+
+        if idx < len(default_params_list):
+            default_stage_params = default_params_list[idx]
+        else:
+            default_stage_params = SamplingParams()
+
+        if hasattr(default_stage_params, "clone"):
+            try:
+                default_stage_params = default_stage_params.clone()
+            except Exception:
+                pass
+        sampling_params_list.append(default_stage_params)
+
+    async for output in engine_client.generate(
+        sampling_params_list=sampling_params_list,
+        **kwargs,
+    ):
+        result = output
 
     if result is None:
         raise HTTPException(
@@ -1951,3 +2077,55 @@ async def download_video(video_id: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="Generated video file not found on disk")
 
     return FileResponse(path=full_path, media_type=job.media_type, filename=job.file_name)
+
+
+@profiler_router.post("/start_profile")
+async def start_profile(raw_request: Request, request: ProfileRequest | None = None):
+    """Start profiling for the engine.
+
+    Args:
+        request: Optional request body with stages to profile.
+            - stages: List of stage IDs to profile. If None, profiles all stages.
+
+    Example:
+        POST /start_profile
+        {"stages": [0, 1]}  # Profile only stages 0 and 1
+    """
+    try:
+        stages = request.stages if request else None
+        logger.info("Starting profiler for stages: %s", stages if stages else "all")
+        engine_client = raw_request.app.state.engine_client
+        result = await engine_client.start_profile(stages=stages)
+        logger.info("Profiler started.")
+        return JSONResponse(content=result)
+    except Exception as e:
+        logger.exception("Failed to start profiler: %s", e)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=f"Failed to start profiler: {str(e)}"
+        )
+
+
+@profiler_router.post("/stop_profile")
+async def stop_profile(raw_request: Request, request: ProfileRequest | None = None):
+    """Stop profiling for the engine.
+
+    Args:
+        request: Optional request body with stages to stop profiling.
+            - stages: List of stage IDs to stop profiling. If None, stops all stages.
+
+    Example:
+        POST /stop_profile
+        {"stages": [0, 1]}  # Stop profiling only stages 0 and 1
+    """
+    try:
+        stages = request.stages if request else None
+        logger.info("Stopping profiler for stages: %s", stages if stages else "all")
+        engine_client = raw_request.app.state.engine_client
+        result = await engine_client.stop_profile(stages=stages)
+        logger.info("Profiler stopped.")
+        return JSONResponse(content=result)
+    except Exception as e:
+        logger.exception("Failed to stop profiler: %s", e)
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=f"Failed to stop profiler: {str(e)}"
+        )
