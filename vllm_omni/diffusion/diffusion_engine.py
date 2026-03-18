@@ -107,9 +107,15 @@ class DiffusionEngine:
                 for i, prompt in enumerate(request.prompts)
             ]
 
-        # Move output to CPU before post-processing to avoid device OOM.
+        # When CPU offload is enabled, move output to CPU before
+        # post-processing to avoid device OOM — model weights may still
+        # reside on the device and leave no headroom for intermediates.
         output_data = output.output
-        if isinstance(output_data, torch.Tensor) and output_data.device.type != "cpu":
+        if (
+            self.od_config.enable_cpu_offload
+            and isinstance(output_data, torch.Tensor)
+            and output_data.device.type != "cpu"
+        ):
             output_data = output_data.cpu()
 
         postprocess_start_time = time.perf_counter()
