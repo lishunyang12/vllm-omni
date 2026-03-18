@@ -872,7 +872,7 @@ def run_attention_shapes(
     for shape in shapes:
         sid = shape["shape_id"]
         for dtype in dtypes:
-            ds = "bf16" if dtype == torch.bfloat16 else "fp16"
+            ds = "bf16"
             print(f"  [attention] {sid} ({ds})")
             try:
                 providers = build_attn_providers(
@@ -938,7 +938,7 @@ def run_norm_shapes(
         hs = input_shape[-1]
 
         for dtype in dtypes:
-            ds = "bf16" if dtype == torch.bfloat16 else "fp16"
+            ds = "bf16"
             print(f"  [{op}] {sid} ({ds})")
 
             latencies: dict[str, float] = {}
@@ -1013,7 +1013,7 @@ def check_attention_accuracy(shapes: list[dict[str, Any]], dtypes: list[torch.dt
     print("=" * 60)
     for shape in shapes[:5]:
         for dtype in dtypes:
-            ds = "bf16" if dtype == torch.bfloat16 else "fp16"
+            ds = "bf16"
             sl, nh, nkv, hd = shape["seq_len"], shape["num_heads"], shape["num_kv_heads"], shape["head_dim"]
             kv_sl = shape.get("kv_seq_len", sl)
             q = torch.randn(1, sl, nh, hd, device=DEFAULT_DEVICE, dtype=dtype)
@@ -1104,7 +1104,7 @@ def main():
     parser = argparse.ArgumentParser(description="Unified diffusion ops benchmark")
     parser.add_argument("--ops", nargs="+", default=ALL_OPS, choices=ALL_OPS)
     parser.add_argument("--models", nargs="+", default=None)
-    parser.add_argument("--dtypes", nargs="+", default=["bf16", "fp16"], choices=["bf16", "fp16"])
+    parser.add_argument("--dtypes", nargs="+", default=["bf16"], choices=["bf16"])
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--grid", action="store_true")
     parser.add_argument("--accuracy", action="store_true")
@@ -1115,7 +1115,7 @@ def main():
 
     _update_bench_config(args.warmup, args.iters)
 
-    dtype_map = {"bf16": torch.bfloat16, "fp16": torch.float16}
+    dtype_map = {"bf16": torch.bfloat16}
     dtypes = [dtype_map[d] for d in args.dtypes]
 
     if not torch.cuda.is_available():
