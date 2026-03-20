@@ -340,7 +340,7 @@ def main(args):
         code2wav_sampling_params,
     ]
     # Match sampling params to the number of configured stages
-    num_stages = len(omni.stage_list)
+    num_stages = omni.num_stages
     sampling_params_list = all_sampling_params[:num_stages]
 
     if args.txt_prompts is None:

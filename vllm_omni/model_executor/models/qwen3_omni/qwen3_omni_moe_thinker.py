@@ -1114,30 +1114,36 @@ class Qwen3OmniMoeThinkerForConditionalGeneration(
         self.multimodal_config = multimodal_config
         self.quant_config = quant_config
 
-        # For pre-quantized checkpoints (e.g. modelopt FP8), the quant config
-        # applies to the language model only — audio_tower and visual remain
-        # unquantized.  Auto-scope flat quant configs to language_model.
-        if quant_config is not None and not isinstance(quant_config, ComponentQuantizationConfig):
-            quant_config = ComponentQuantizationConfig(
-                component_configs={"language_model": quant_config},
-                default_config=None,
-            )
-            vllm_config = replace(vllm_config, quant_config=quant_config)
-            logger.debug(
-                "Auto-scoped %s quant to language_model only",
-                quant_config.resolve("language_model").get_name(),
-            )
+        # Pre-quantized checkpoints (modelopt NVFP4/FP8/MXFP8) quantize the
+        # entire thinker — audio tower, visual encoder, and language model
+        # all share the same quant method.  Dynamic quantization methods
+        # (e.g. --quantization fp8) should only target the language model.
+        _PRE_QUANTIZED_METHODS = {"modelopt", "modelopt_fp4", "modelopt_mxfp8"}
 
-        visual_quant_config = None
-        language_quant_config = quant_config
         if isinstance(quant_config, ComponentQuantizationConfig):
+            audio_quant_config = quant_config.resolve("audio_tower")
             visual_quant_config = quant_config.resolve("visual")
             language_quant_config = quant_config.resolve("language_model")
-            logger.debug(
-                "Per-component quant: visual=%s, language_model=%s",
-                visual_quant_config.get_name() if visual_quant_config else None,
-                language_quant_config.get_name() if language_quant_config else None,
-            )
+        elif quant_config is not None:
+            if quant_config.get_name() in _PRE_QUANTIZED_METHODS:
+                # Pre-quantized: pass quant_config to all subcomponents.
+                audio_quant_config = quant_config
+                visual_quant_config = quant_config
+                language_quant_config = quant_config
+            else:
+                # Dynamic quantization: scope to language_model only.
+                quant_config = ComponentQuantizationConfig(
+                    component_configs={"language_model": quant_config},
+                    default_config=None,
+                )
+                vllm_config = replace(vllm_config, quant_config=quant_config)
+                audio_quant_config = None
+                visual_quant_config = None
+                language_quant_config = quant_config.resolve("language_model")
+        else:
+            audio_quant_config = None
+            visual_quant_config = None
+            language_quant_config = None
 
         with self._mark_tower_model(vllm_config, "audio"):
             self.audio_tower = Qwen3OmniMoeAudioEncoder(
