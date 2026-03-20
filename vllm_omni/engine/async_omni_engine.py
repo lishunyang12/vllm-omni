@@ -350,9 +350,9 @@ class AsyncOmniEngine:
                     )
                 finally:
                     if previous_visible_devices is None:
-                        os.environ.pop(device_control_env, None)
+                        current_omni_platform.unset_device_control_env_var()
                     else:
-                        os.environ[device_control_env] = previous_visible_devices
+                        current_omni_platform.set_device_control_env_var(previous_visible_devices)
 
             logger.info("[AsyncOmniEngine] Stage %s engine launch started", metadata.stage_id)
             launch_cm.__exit__(None, None, None)
@@ -825,9 +825,9 @@ class AsyncOmniEngine:
                 "runtime": {
                     "process": True,
                     "devices": devices,
-                    "max_batch_size": 1,
                 },
                 "engine_args": {
+                    "max_num_seqs": 1,
                     "parallel_config": parallel_config,
                     "model_class_name": kwargs.get("model_class_name", None),
                     "vae_use_slicing": kwargs.get("vae_use_slicing", False),
@@ -844,6 +844,8 @@ class AsyncOmniEngine:
                     "enable_sleep_mode": kwargs.get("enable_sleep_mode", False),
                     "enable_multithread_weight_load": kwargs.get("enable_multithread_weight_load", True),
                     "num_weight_load_threads": kwargs.get("num_weight_load_threads", 4),
+                    "quantization": kwargs.get("quantization", None),
+                    "enable_diffusion_pipeline_profiler": kwargs.get("enable_diffusion_pipeline_profiler", False),
                 },
                 "final_output": True,
                 "final_output_type": "image",
