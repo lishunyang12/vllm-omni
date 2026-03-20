@@ -106,7 +106,9 @@ class HunyuanVideo15I2VPipeline(nn.Module, CFGParallelMixin, SupportImageInput):
         model = od_config.model
         local_files_only = os.path.exists(model)
 
-        from transformers import ByT5Tokenizer, Qwen2_5_VLTextModel, Qwen2Tokenizer, T5EncoderModel
+        from transformers import AutoConfig, ByT5Tokenizer, Qwen2_5_VLTextModel, Qwen2Tokenizer
+
+        from vllm_omni.diffusion.models.t5_encoder import T5EncoderModel
 
         self.tokenizer = Qwen2Tokenizer.from_pretrained(model, subfolder="tokenizer", local_files_only=local_files_only)
         self.text_encoder = Qwen2_5_VLTextModel.from_pretrained(
@@ -116,9 +118,8 @@ class HunyuanVideo15I2VPipeline(nn.Module, CFGParallelMixin, SupportImageInput):
         self.tokenizer_2 = ByT5Tokenizer.from_pretrained(
             model, subfolder="tokenizer_2", local_files_only=local_files_only
         )
-        self.text_encoder_2 = T5EncoderModel.from_pretrained(
-            model, subfolder="text_encoder_2", torch_dtype=dtype, local_files_only=local_files_only
-        ).to(self.device)
+        t5_config = AutoConfig.from_pretrained(model, subfolder="text_encoder_2", local_files_only=local_files_only)
+        self.text_encoder_2 = T5EncoderModel(t5_config, prefix="text_encoder_2").to(dtype=dtype, device=self.device)
 
         from transformers import SiglipImageProcessor, SiglipVisionModel
 
@@ -156,7 +157,14 @@ class HunyuanVideo15I2VPipeline(nn.Module, CFGParallelMixin, SupportImageInput):
                 revision=None,
                 prefix="transformer.",
                 fall_back_to_pt=True,
-            )
+            ),
+            DiffusersPipelineLoader.ComponentSource(
+                model_or_path=od_config.model,
+                subfolder="text_encoder_2",
+                revision=None,
+                prefix="text_encoder_2.",
+                fall_back_to_pt=True,
+            ),
         ]
 
         self.vae_scale_factor_temporal = (

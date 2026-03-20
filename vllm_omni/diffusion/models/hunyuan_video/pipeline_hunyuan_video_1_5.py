@@ -14,7 +14,7 @@ import torch
 from diffusers.schedulers.scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
 from diffusers.utils.torch_utils import randn_tensor
 from torch import nn
-from transformers import ByT5Tokenizer, Qwen2_5_VLTextModel, Qwen2Tokenizer, T5EncoderModel
+from transformers import AutoConfig, ByT5Tokenizer, Qwen2_5_VLTextModel, Qwen2Tokenizer
 from vllm.model_executor.models.utils import AutoWeightsLoader
 
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
@@ -99,9 +99,10 @@ class HunyuanVideo15Pipeline(nn.Module, CFGParallelMixin):
         self.tokenizer_2 = ByT5Tokenizer.from_pretrained(
             model, subfolder="tokenizer_2", local_files_only=local_files_only
         )
-        self.text_encoder_2 = T5EncoderModel.from_pretrained(
-            model, subfolder="text_encoder_2", torch_dtype=dtype, local_files_only=local_files_only
-        ).to(self.device)
+        from vllm_omni.diffusion.models.t5_encoder import T5EncoderModel
+
+        t5_config = AutoConfig.from_pretrained(model, subfolder="text_encoder_2", local_files_only=local_files_only)
+        self.text_encoder_2 = T5EncoderModel(t5_config, prefix="text_encoder_2").to(dtype=dtype, device=self.device)
 
         from diffusers import AutoencoderKLHunyuanVideo15
 
@@ -131,7 +132,14 @@ class HunyuanVideo15Pipeline(nn.Module, CFGParallelMixin):
                 revision=None,
                 prefix="transformer.",
                 fall_back_to_pt=True,
-            )
+            ),
+            DiffusersPipelineLoader.ComponentSource(
+                model_or_path=od_config.model,
+                subfolder="text_encoder_2",
+                revision=None,
+                prefix="text_encoder_2.",
+                fall_back_to_pt=True,
+            ),
         ]
 
         self.vae_scale_factor_temporal = (
