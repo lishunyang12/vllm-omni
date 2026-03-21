@@ -68,7 +68,7 @@ def extract_glyph_texts(prompt: str) -> str | None:
 def get_hunyuan_video_15_post_process_func(od_config: OmniDiffusionConfig):
     video_processor = VideoProcessor(vae_scale_factor=16)
 
-    def post_process_func(video: torch.Tensor, output_type: str = "np"):
+    def post_process_func(video: torch.Tensor, output_type: str = "pil"):
         if output_type == "latent":
             return video
         return video_processor.postprocess_video(video, output_type=output_type)
