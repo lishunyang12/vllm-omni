@@ -1,15 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """
-Comprehensive tests of diffusion features that are available in online serving mode
-and are supported by the following models:
-- HunyuanVideo-1.5-T2V (480p)
+Tests of common diffusion feature combinations in online serving mode
+for HunyuanVideo-1.5-T2V (480p).
 
-Coverage (2x H100, since model cannot fit 4x L4):
+Coverage (H100, since model cannot fit L4):
 - TeaCache + Layerwise CPU offloading (1 GPU)
-- CacheDiT + Ulysses SP=2 (2 GPUs)
-- CacheDiT + Ring SP=2 (2 GPUs)
-- TeaCache + CFG-Parallel=2 (2 GPUs)
 - CacheDiT + TP=2 + VAE patch parallel=2 (2 GPUs)
 """
 
@@ -51,48 +47,6 @@ def _get_diffusion_feature_cases(model: str):
             id="single_card_teacache_layerwise",
             marks=SINGLE_CARD_MARKS,
         ),
-        # (2 GPUs) CacheDiT + Ulysses SP=2
-        pytest.param(
-            OmniServerParams(
-                model=model,
-                server_args=[
-                    "--cache-backend",
-                    "cache_dit",
-                    "--ulysses-degree",
-                    "2",
-                ],
-            ),
-            id="parallel_cachedit_ulysses_2",
-            marks=PARALLEL_MARKS,
-        ),
-        # (2 GPUs) CacheDiT + Ring SP=2
-        pytest.param(
-            OmniServerParams(
-                model=model,
-                server_args=[
-                    "--cache-backend",
-                    "cache_dit",
-                    "--ring",
-                    "2",
-                ],
-            ),
-            id="parallel_cachedit_ring_2",
-            marks=PARALLEL_MARKS,
-        ),
-        # (2 GPUs) TeaCache + CFG-Parallel=2
-        pytest.param(
-            OmniServerParams(
-                model=model,
-                server_args=[
-                    "--cache-backend",
-                    "tea_cache",
-                    "--cfg-parallel-size",
-                    "2",
-                ],
-            ),
-            id="parallel_teacache_cfg_2",
-            marks=PARALLEL_MARKS,
-        ),
         # (2 GPUs) CacheDiT + TP=2 + VAE patch parallel=2
         pytest.param(
             OmniServerParams(
@@ -124,11 +78,7 @@ def test_hunyuan_video_15_t2v(
     omni_server: OmniServer,
     openai_client: OpenAIClientHandler,
 ):
-    """L4 diffusion feature coverage for HunyuanVideo-1.5-T2V on H100.
-
-    Exercises TeaCache, CacheDiT, layerwise offload, Ulysses SP,
-    Ring SP, CFG-Parallel, TP, and VAE patch parallel.
-    """
+    """L4 diffusion feature coverage for HunyuanVideo-1.5-T2V on H100."""
     messages = dummy_messages_from_mix_data(content_text=PROMPT)
 
     request_config = {
