@@ -23,7 +23,6 @@ from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
 from vllm_omni.diffusion.attention.layer import Attention
 from vllm_omni.diffusion.data import OmniDiffusionConfig
-from vllm_omni.diffusion.distributed.sp_plan import SequenceParallelInput, SequenceParallelOutput
 from vllm_omni.diffusion.layers.rope import RotaryEmbedding
 from vllm_omni.diffusion.models.flux.flux_transformer import FeedForward
 
@@ -550,22 +549,6 @@ class HunyuanVideo15Transformer3DModel(nn.Module):
         return "transformer_blocks" in name and name.split(".")[-1].isdigit()
 
     _hsdp_shard_conditions = [_is_transformer_block]
-
-    # Basic SP plan: shard video hidden_states only.
-    _sp_plan = {
-        "rope": {
-            0: SequenceParallelInput(
-                split_dim=0, expected_dims=2, split_output=True, auto_pad=True
-            ),  # freqs_cos [seq, dim]
-            1: SequenceParallelInput(
-                split_dim=0, expected_dims=2, split_output=True, auto_pad=True
-            ),  # freqs_sin [seq, dim]
-        },
-        "transformer_blocks.0": {
-            "hidden_states": SequenceParallelInput(split_dim=1, expected_dims=3, auto_pad=True),
-        },
-        "proj_out": SequenceParallelOutput(gather_dim=1, expected_dims=3),
-    }
 
     def __init__(
         self,

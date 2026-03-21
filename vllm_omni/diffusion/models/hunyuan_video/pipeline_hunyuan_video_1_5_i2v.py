@@ -11,9 +11,19 @@ from typing import Any, cast
 import numpy as np
 import PIL.Image
 import torch
+from diffusers import AutoencoderKLHunyuanVideo15
 from diffusers.schedulers.scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
 from diffusers.utils.torch_utils import randn_tensor
+from diffusers.video_processor import VideoProcessor
 from torch import nn
+from transformers import (
+    AutoConfig,
+    ByT5Tokenizer,
+    Qwen2_5_VLTextModel,
+    Qwen2Tokenizer,
+    SiglipImageProcessor,
+    SiglipVisionModel,
+)
 from vllm.model_executor.models.utils import AutoWeightsLoader
 
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
@@ -28,6 +38,7 @@ from vllm_omni.diffusion.models.hunyuan_video.pipeline_hunyuan_video_1_5 import 
     retrieve_latents,
 )
 from vllm_omni.diffusion.models.interface import SupportImageInput
+from vllm_omni.diffusion.models.t5_encoder import T5EncoderModel
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.utils.tf_utils import get_transformer_config_kwargs
 from vllm_omni.platforms import current_omni_platform
@@ -106,10 +117,6 @@ class HunyuanVideo15I2VPipeline(nn.Module, CFGParallelMixin, SupportImageInput):
         model = od_config.model
         local_files_only = os.path.exists(model)
 
-        from transformers import AutoConfig, ByT5Tokenizer, Qwen2_5_VLTextModel, Qwen2Tokenizer
-
-        from vllm_omni.diffusion.models.t5_encoder import T5EncoderModel
-
         self.tokenizer = Qwen2Tokenizer.from_pretrained(model, subfolder="tokenizer", local_files_only=local_files_only)
         self.text_encoder = Qwen2_5_VLTextModel.from_pretrained(
             model, subfolder="text_encoder", torch_dtype=dtype, local_files_only=local_files_only
@@ -121,16 +128,12 @@ class HunyuanVideo15I2VPipeline(nn.Module, CFGParallelMixin, SupportImageInput):
         t5_config = AutoConfig.from_pretrained(model, subfolder="text_encoder_2", local_files_only=local_files_only)
         self.text_encoder_2 = T5EncoderModel(t5_config, prefix="text_encoder_2").to(dtype=dtype, device=self.device)
 
-        from transformers import SiglipImageProcessor, SiglipVisionModel
-
         self.image_encoder = SiglipVisionModel.from_pretrained(
             model, subfolder="image_encoder", torch_dtype=dtype, local_files_only=local_files_only
         ).to(self.device)
         self.feature_extractor = SiglipImageProcessor.from_pretrained(
             model, subfolder="feature_extractor", local_files_only=local_files_only
         )
-
-        from diffusers import AutoencoderKLHunyuanVideo15
 
         self.vae = AutoencoderKLHunyuanVideo15.from_pretrained(
             model, subfolder="vae", torch_dtype=torch.float32, local_files_only=local_files_only
@@ -355,8 +358,6 @@ class HunyuanVideo15I2VPipeline(nn.Module, CFGParallelMixin, SupportImageInput):
         device: torch.device,
     ) -> torch.Tensor:
         """Encode image to VAE latents for first-frame conditioning."""
-        from diffusers.video_processor import VideoProcessor
-
         video_processor = VideoProcessor(vae_scale_factor=self.vae_scale_factor_spatial)
         image_tensor = video_processor.preprocess(image, height=height, width=width)
         image_tensor = image_tensor.unsqueeze(2).to(device=device, dtype=self.vae.dtype)  # [B, C, 1, H, W]

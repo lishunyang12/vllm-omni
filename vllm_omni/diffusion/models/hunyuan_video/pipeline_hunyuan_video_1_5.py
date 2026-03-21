@@ -11,8 +11,10 @@ from typing import Any
 
 import numpy as np
 import torch
+from diffusers import AutoencoderKLHunyuanVideo15
 from diffusers.schedulers.scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
 from diffusers.utils.torch_utils import randn_tensor
+from diffusers.video_processor import VideoProcessor
 from torch import nn
 from transformers import AutoConfig, ByT5Tokenizer, Qwen2_5_VLTextModel, Qwen2Tokenizer
 from vllm.model_executor.models.utils import AutoWeightsLoader
@@ -22,6 +24,7 @@ from vllm_omni.diffusion.distributed.cfg_parallel import CFGParallelMixin
 from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 from vllm_omni.diffusion.models.hunyuan_video.hunyuan_video_15_transformer import HunyuanVideo15Transformer3DModel
+from vllm_omni.diffusion.models.t5_encoder import T5EncoderModel
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.utils.tf_utils import get_transformer_config_kwargs
 from vllm_omni.platforms import current_omni_platform
@@ -63,8 +66,6 @@ def extract_glyph_texts(prompt: str) -> str | None:
 
 
 def get_hunyuan_video_15_post_process_func(od_config: OmniDiffusionConfig):
-    from diffusers.video_processor import VideoProcessor
-
     video_processor = VideoProcessor(vae_scale_factor=16)
 
     def post_process_func(video: torch.Tensor, output_type: str = "np"):
@@ -99,12 +100,8 @@ class HunyuanVideo15Pipeline(nn.Module, CFGParallelMixin):
         self.tokenizer_2 = ByT5Tokenizer.from_pretrained(
             model, subfolder="tokenizer_2", local_files_only=local_files_only
         )
-        from vllm_omni.diffusion.models.t5_encoder import T5EncoderModel
-
         t5_config = AutoConfig.from_pretrained(model, subfolder="text_encoder_2", local_files_only=local_files_only)
         self.text_encoder_2 = T5EncoderModel(t5_config, prefix="text_encoder_2").to(dtype=dtype, device=self.device)
-
-        from diffusers import AutoencoderKLHunyuanVideo15
 
         self.vae = AutoencoderKLHunyuanVideo15.from_pretrained(
             model, subfolder="vae", torch_dtype=torch.float32, local_files_only=local_files_only
