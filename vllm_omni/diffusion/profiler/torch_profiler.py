@@ -102,21 +102,15 @@ class TorchProfiler(ProfilerBase):
 
         try:
             # This triggers trace_handler synchronously
+            # Since we removed table generation and backgrounded compression, this returns fast.
             cls._profiler.stop()
         except Exception as e:
             logger.warning(f"[Rank {rank}] Profiler stop failed: {e}")
 
-        # Print top CUDA ops table
-        try:
-            table = cls._profiler.key_averages().table(sort_by="cuda_time_total", row_limit=20)
-            logger.info(f"[Rank {rank}] Top 20 CUDA operations by total time:\n{table}")
-        except Exception as e:
-            table = None
-            logger.warning(f"[Rank {rank}] Failed to generate ops table: {e}")
-
         cls._profiler = None
 
-        return {"trace": gz_path, "table": table}
+        # We return the .gz path assuming background compression will succeed.
+        return {"trace": gz_path, "table": None}
 
     @classmethod
     def step(cls):
