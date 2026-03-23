@@ -17,6 +17,7 @@ from vllm_omni.quantization.gguf_config import (
     DiffusionGGUFLinearMethod,
     dequant_gemm_gguf,
 )
+from vllm.model_executor.layers.quantization.gguf import UnquantizedLinearMethod
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
 
