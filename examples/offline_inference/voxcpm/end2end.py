@@ -1,7 +1,17 @@
-"""Offline split-stage VoxCPM inference example for vLLM Omni."""
+"""Offline VoxCPM inference example for vLLM Omni.
 
+Supports both:
+- sync one-shot (Omni.generate)
+- streaming (AsyncOmni.generate with async_chunk config)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
 import os
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -12,11 +22,13 @@ os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
-from vllm_omni import Omni
+from vllm_omni import AsyncOmni, Omni
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-# Sync ``Omni.generate`` uses sequential stage handoff; use non-async_chunk config by default.
-DEFAULT_STAGE_CONFIG = REPO_ROOT / "vllm_omni" / "model_executor" / "stage_configs" / "voxcpm_no_async_chunk.yaml"
+DEFAULT_STAGE_ASYNC = REPO_ROOT / "vllm_omni" / "model_executor" / "stage_configs" / "voxcpm.yaml"
+DEFAULT_STAGE_SYNC = REPO_ROOT / "vllm_omni" / "model_executor" / "stage_configs" / "voxcpm_no_async_chunk.yaml"
+
+logger = logging.getLogger(__name__)
 
 
 def _build_prompt(args) -> dict[str, Any]:
@@ -27,6 +39,8 @@ def _build_prompt(args) -> dict[str, Any]:
         "min_len": [args.min_len],
         "max_new_tokens": [args.max_new_tokens],
     }
+    if args.streaming_prefix_len is not None:
+        additional_information["streaming_prefix_len"] = [args.streaming_prefix_len]
 
     if args.ref_audio:
         additional_information["ref_audio"] = [args.ref_audio]
@@ -44,7 +58,8 @@ def _extract_audio_tensor(mm: dict[str, Any]) -> torch.Tensor:
     if audio is None:
         raise ValueError("No audio output found in multimodal output.")
     if isinstance(audio, list):
-        audio = torch.cat(audio, dim=-1)
+        parts = [torch.as_tensor(a).float().cpu().reshape(-1) for a in audio]
+        audio = torch.cat(parts, dim=-1) if parts else torch.zeros(0)
     if not isinstance(audio, torch.Tensor):
         audio = torch.as_tensor(audio)
     return audio.float().cpu().reshape(-1)
@@ -67,7 +82,9 @@ def _save_wav(mm: dict[str, Any], output_dir: Path, request_id: str) -> Path:
 
 
 def parse_args():
-    parser = FlexibleArgumentParser(description="Offline split-stage VoxCPM inference with vLLM Omni")
+    parser = FlexibleArgumentParser(
+        description="Offline split-stage VoxCPM inference with vLLM Omni (auto sync/streaming by stage config)"
+    )
     parser.add_argument(
         "--model",
         type=str,
@@ -95,8 +112,8 @@ def parse_args():
     parser.add_argument(
         "--stage-configs-path",
         type=str,
-        default=str(DEFAULT_STAGE_CONFIG),
-        help="Stage config YAML path. Defaults to the split-stage VoxCPM config.",
+        default=str(DEFAULT_STAGE_SYNC),
+        help="Stage config YAML path. Routing is selected only from this path.",
     )
     parser.add_argument(
         "--cfg-value",
@@ -123,9 +140,15 @@ def parse_args():
         help="Maximum generated token length.",
     )
     parser.add_argument(
+        "--streaming-prefix-len",
+        type=int,
+        default=None,
+        help="VoxCPM streaming window (optional, streaming mode only).",
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
-        default="output_audio",
+        default=None,
         help="Directory for output WAV files.",
     )
     parser.add_argument(
@@ -145,17 +168,87 @@ def parse_args():
         parser.error("--model is required unless $VOXCPM_MODEL is set")
     if (args.ref_audio is None) != (args.ref_text is None):
         parser.error("--ref-audio and --ref-text must be provided together")
+    if args.output_dir is None:
+        args.output_dir = "output_audio_streaming" if _is_streaming_stage_config(args.stage_configs_path) else "output_audio"
 
     return args
 
 
-def main(args) -> None:
+def _is_streaming_stage_config(stage_configs_path: str) -> bool:
+    cfg_name = Path(stage_configs_path).name.lower()
+    # Keep routing purely config-path based:
+    # - voxcpm_no_async_chunk.yaml => sync
+    # - others (e.g., voxcpm.yaml with async_chunk) => streaming
+    return "no_async_chunk" not in cfg_name
+
+
+async def _run_streaming(args) -> Path:
     prompt = _build_prompt(args)
     output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Model: {args.model}")
-    print(f"Stage config: {args.stage_configs_path}")
-    print(f"Voice cloning: {'enabled' if args.ref_audio else 'disabled'}")
+    omni = AsyncOmni(
+        model=args.model,
+        stage_configs_path=args.stage_configs_path,
+        log_stats=args.log_stats,
+        stage_init_timeout=args.stage_init_timeout,
+    )
+
+    request_id = f"stream_{uuid.uuid4().hex[:8]}"
+    delta_chunks: list[torch.Tensor] = []
+    sample_rate = 24000
+    chunk_i = 0
+    prev_total_samples = 0
+    t_start = time.perf_counter()
+
+    async for stage_output in omni.generate(prompt, request_id=request_id):
+        ro = stage_output.request_output
+        seq = ro.outputs[0] if hasattr(ro, "outputs") and ro.outputs else None
+        if seq is None:
+            continue
+        mm = seq.multimodal_output
+        if not isinstance(mm, dict):
+            continue
+        sample_rate = _extract_sample_rate(mm)
+        try:
+            w = _extract_audio_tensor(mm)
+            n = int(w.numel())
+            if n == 0:
+                continue
+            if n > prev_total_samples:
+                delta = w.reshape(-1)[prev_total_samples:]
+                prev_total_samples = n
+            else:
+                delta = w.reshape(-1)
+                prev_total_samples += int(delta.numel())
+            delta_chunks.append(delta)
+            logger.info(
+                "chunk=%d delta_samples=%d buf_len=%d finished=%s",
+                chunk_i,
+                int(delta.numel()),
+                n,
+                stage_output.finished,
+            )
+            chunk_i += 1
+        except ValueError:
+            if not stage_output.finished:
+                logger.debug("skip non-audio partial output chunk=%d", chunk_i)
+
+    if not delta_chunks:
+        raise RuntimeError("No audio chunks received; check stage config and logs.")
+
+    audio_cat = torch.cat([c.reshape(-1) for c in delta_chunks], dim=0)
+    output_path = output_dir / f"output_{request_id}.wav"
+    sf.write(output_path, audio_cat.numpy(), sample_rate, format="WAV")
+    elapsed = time.perf_counter() - t_start
+    print(f"Saved (streaming): {output_path}")
+    print(f"Generation finished in {elapsed:.2f}s")
+    return output_path
+
+
+def _run_sync(args) -> list[Path]:
+    prompt = _build_prompt(args)
+    output_dir = Path(args.output_dir)
 
     omni = Omni(
         model=args.model,
@@ -173,8 +266,24 @@ def main(args) -> None:
     elapsed = time.perf_counter() - t_start
 
     for path in saved_paths:
-        print(f"Saved audio to: {path}")
+        print(f"Saved (sync): {path}")
     print(f"Generation finished in {elapsed:.2f}s")
+    if not saved_paths:
+        raise RuntimeError("No output from Omni.generate")
+    return saved_paths
+
+
+def main(args) -> None:
+    logging.basicConfig(level=logging.INFO)
+    is_streaming = _is_streaming_stage_config(args.stage_configs_path)
+    print(f"Model: {args.model}")
+    print(f"Stage config: {args.stage_configs_path}")
+    print(f"Route: {'streaming' if is_streaming else 'sync'} (from stage-configs-path)")
+    print(f"Voice cloning: {'enabled' if args.ref_audio else 'disabled'}")
+    if is_streaming:
+        asyncio.run(_run_streaming(args))
+    else:
+        _run_sync(args)
 
 
 if __name__ == "__main__":
