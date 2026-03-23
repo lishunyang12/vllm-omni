@@ -10,13 +10,9 @@ from pytest_mock import MockerFixture
 from torch.nn import Module, Parameter
 from vllm.model_executor.layers.linear import LinearBase, UnquantizedLinearMethod
 
-from vllm_omni.quantization import build_quant_config
-from vllm_omni.quantization.factory import SUPPORTED_QUANTIZATION_METHODS
 from vllm_omni.platforms import current_omni_platform
 from vllm_omni.quantization import build_quant_config
 from vllm_omni.quantization.factory import SUPPORTED_QUANTIZATION_METHODS
-
-pytestmark = [pytest.mark.core_model, pytest.mark.diffusion]
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion]
 
