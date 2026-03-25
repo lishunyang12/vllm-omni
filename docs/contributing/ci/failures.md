@@ -12,7 +12,7 @@ When you open a PR against vLLM-Omni, several CI checks run automatically:
 | **docs/readthedocs.org:vllm-omni** | Read the Docs | Builds the MkDocs documentation site. |
 | **buildkite/vllm-omni** | Buildkite | Runs GPU-based tests on NVIDIA CUDA hardware (L4, H100). |
 | **buildkite/vllm-omni-amd** | Buildkite | Runs GPU-based tests on AMD ROCm hardware (MI325). |
-| **buildkite/vllm-omni-intel** | Buildkite | Runs GPU-based tests on Intel hardware. |
+| **buildkite/vllm-omni-intel** | Buildkite | Runs GPU-based tests on Intel XPU hardware (Intel Arc BMG). |
 
 ## Step 1: Identify the Failing Check
 
