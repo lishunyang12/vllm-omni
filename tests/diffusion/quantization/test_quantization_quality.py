@@ -88,6 +88,25 @@ QUALITY_CONFIGS = [
         seed=142,
         num_inference_steps=20,
     ),
+    # MXFP4 — 4-bit quantization (emulation mode, higher quality degradation expected)
+    QualityTestConfig(
+        id="mxfp4_z_image",
+        model="Tongyi-MAI/Z-Image-Turbo",
+        quantization="mxfp4",
+        task="t2i",
+        prompt="a cup of coffee on a wooden table, morning light",
+        max_lpips=0.25,
+        num_inference_steps=20,
+    ),
+    QualityTestConfig(
+        id="mxfp4_flux",
+        model="black-forest-labs/FLUX.1-dev",
+        quantization="mxfp4",
+        task="t2i",
+        prompt="a cup of coffee on a wooden table, morning light",
+        max_lpips=0.35,
+        num_inference_steps=10,
+    ),
 ]
 
 

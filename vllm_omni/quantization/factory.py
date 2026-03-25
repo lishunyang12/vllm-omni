@@ -41,9 +41,17 @@ def _build_int8(**kw: Any) -> QuantizationConfig:
     return DiffusionInt8Config(**kw)
 
 
+def _build_mxfp4(**kw: Any) -> QuantizationConfig:
+    """Lazy import for MXFP4 diffusion config (emulation on any GPU)."""
+    from .mxfp4_config import DiffusionMxfp4Config
+
+    return DiffusionMxfp4Config(**kw)
+
+
 _OVERRIDES: dict[str, Callable[..., QuantizationConfig]] = {
     "gguf": _build_gguf,
     "int8": _build_int8,
+    "mxfp4": _build_mxfp4,
 }
 
 SUPPORTED_QUANTIZATION_METHODS: list[str] = list(dict.fromkeys(QUANTIZATION_METHODS + list(_OVERRIDES.keys())))
