@@ -1,7 +1,6 @@
 # CI Failures
 
-What should I do when a CI job fails on my PR, but I don't think my PR caused
-the failure?
+What should I do when a CI job fails on my PR, but I don't think my PR caused the failure?
 
 ## Overview of CI Checks
 
@@ -15,6 +14,7 @@ When you open a PR against vLLM-Omni, several CI checks run automatically:
 | **docs/readthedocs.org:vllm-omni** | Read the Docs | Builds the MkDocs documentation site. |
 | **buildkite/vllm-omni** | Buildkite | Runs GPU-based tests on NVIDIA CUDA hardware (L4, H100). |
 | **buildkite/vllm-omni-amd** | Buildkite | Runs GPU-based tests on AMD ROCm hardware (MI325). |
+| **buildkite/vllm-omni-intel** | Buildkite | Runs GPU-based tests on Intel hardware. |
 
 ## Step 1: Identify the Failing Check
 
@@ -79,37 +79,13 @@ If the failure appears to be new, investigate whether your changes caused it.
 
 ### Running Tests Locally
 
-If you have access to GPU hardware, you can run the specific failing test locally:
+For instructions on running tests locally (including specific test files, functions, and markers), see the [Running Tests](https://docs.vllm.ai/projects/vllm-omni/en/latest/contributing/ci/test_guide/#running-tests) section in the Test Guide.
 
-```bash
-# Run a specific test file
-pytest tests/path/to/test_file.py -v
-
-# Run a specific test function
-pytest tests/path/to/test_file.py::test_function_name -v
-
-# Run tests with a specific marker
-pytest -m "diffusion" -v
-```
-
-See the [Markers for Tests](tests_markers.md) guide for available markers and the [Test File Structure](tests_style.md) guide for how tests are organized.
-
-### Checking for Flaky Tests
-
-Some tests may fail intermittently. To check if a test is flaky, run it multiple times:
-
-```bash
-for i in $(seq 1 5); do
-  echo "Run $i"
-  pytest tests/path/to/test_file.py::test_function_name -v
-done
-```
-
-## Step 4: File an Issue or Fix It
+## Step 4: Raise an Issue or Fix It
 
 ### If the failure is pre-existing (not caused by your PR)
 
-1. **File a new issue** if one doesn't already exist, using the title format:
+1. **Raise a new issue** if one doesn't already exist, using the title format:
    `[CI Failure]: [job-name] - [test-path]`
 2. Include the error message, relevant log excerpts, and the commit hash where the failure occurs (e.g., "Still failing on main as of commit `abc1234`").
 3. Leave a comment on your PR linking to the issue and noting that the failure is unrelated to your changes.
