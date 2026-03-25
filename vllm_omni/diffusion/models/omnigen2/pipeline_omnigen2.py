@@ -13,7 +13,6 @@ from typing import Any
 import numpy as np
 import PIL.Image
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.image_processor import (
@@ -32,6 +31,7 @@ from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
 from vllm_omni.diffusion.distributed.cfg_parallel import CFGParallelMixin
 from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
+from vllm_omni.diffusion.models.interface import VllmDiffusionPipeline
 from vllm_omni.diffusion.models.omnigen2.omnigen2_transformer import (
     OmniGen2RotaryPosEmbed,
     OmniGen2Transformer2DModel,
@@ -620,7 +620,11 @@ def retrieve_timesteps(
     return timesteps, num_inference_steps
 
 
+<<<<<<< HEAD
 class OmniGen2Pipeline(CFGParallelMixin, nn.Module):
+=======
+class OmniGen2Pipeline(VllmDiffusionPipeline):
+>>>>>>> 3957749e (first pass at protocol)
     """
     Pipeline for text-to-image generation using OmniGen2.
 

@@ -20,7 +20,6 @@ from diffusers.pipelines.ltx2.vocoder import LTX2Vocoder
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import rescale_noise_cfg, retrieve_timesteps
 from diffusers.utils.torch_utils import randn_tensor
 from diffusers.video_processor import VideoProcessor
-from torch import nn
 from transformers import AutoTokenizer, Gemma3ForConditionalGeneration
 from vllm.logger import init_logger
 from vllm.model_executor.models.utils import AutoWeightsLoader
@@ -33,7 +32,11 @@ from vllm_omni.diffusion.distributed.parallel_state import (
 from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.lora.manager import DiffusionLoRAManager
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
+<<<<<<< HEAD
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
+=======
+from vllm_omni.diffusion.models.interface import VllmDiffusionPipeline
+>>>>>>> 3957749e (first pass at protocol)
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.inputs.data import DiffusionParamOverrides
 from vllm_omni.lora.request import LoRARequest
@@ -121,6 +124,7 @@ def calculate_shift(
     return mu
 
 
+<<<<<<< HEAD
 class _VideoAudioScheduler:
     """Composite scheduler dispatching to video and audio schedulers."""
 
@@ -147,6 +151,9 @@ class _VideoAudioScheduler:
 
 
 class LTX2Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin):
+=======
+class LTX2Pipeline(VllmDiffusionPipeline, CFGParallelMixin):
+>>>>>>> 3957749e (first pass at protocol)
     @property
     def sampling_param_defaults(self):
         return DiffusionParamOverrides(

@@ -21,7 +21,11 @@ from vllm.transformers_utils.config import get_config
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
 from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
+<<<<<<< HEAD
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
+=======
+from vllm_omni.diffusion.models.interface import VllmDiffusionPipeline
+>>>>>>> 3957749e (first pass at protocol)
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.inputs.data import DiffusionParamOverrides
 
@@ -65,6 +69,7 @@ def to_device(data, device):
         return data
 
 
+<<<<<<< HEAD
 class HunyuanImage3Pipeline(HunyuanImage3PreTrainedModel, GenerationMixin, DiffusionPipelineProfilerMixin):
     _PROFILER_TARGETS = [
         "model.forward",
@@ -75,6 +80,9 @@ class HunyuanImage3Pipeline(HunyuanImage3PreTrainedModel, GenerationMixin, Diffu
         "vae.decode",
     ]
 
+=======
+class HunyuanImage3Pipeline(HunyuanImage3PreTrainedModel, VllmDiffusionPipeline, GenerationMixin):
+>>>>>>> 3957749e (first pass at protocol)
     @property
     def sampling_param_defaults(self):
         return DiffusionParamOverrides(

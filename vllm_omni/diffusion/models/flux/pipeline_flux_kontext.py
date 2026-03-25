@@ -14,7 +14,6 @@ from typing import Any, cast
 import numpy as np
 import PIL.Image
 import torch
-import torch.nn as nn
 from diffusers.image_processor import VaeImageProcessor
 from diffusers.loaders import TextualInversionLoaderMixin
 from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKL
@@ -30,9 +29,13 @@ from vllm_omni.diffusion.models.flux import (
     FluxKontextTransformer2DModel,
 )
 from vllm_omni.diffusion.models.flux.flux_pipeline_mixin import FluxPipelineMixin
+<<<<<<< HEAD
 from vllm_omni.diffusion.models.interface import SupportImageInput
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
+=======
+from vllm_omni.diffusion.models.interface import SupportImageInput, VllmDiffusionPipeline
+>>>>>>> 3957749e (first pass at protocol)
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.utils.tf_utils import get_transformer_config_kwargs
 from vllm_omni.inputs.data import DiffusionParamOverrides
@@ -70,11 +73,15 @@ def get_flux_kontext_post_process_func(od_config: OmniDiffusionConfig) -> Callab
     return post_process_func
 
 
+<<<<<<< HEAD
 class FluxKontextPipeline(
     nn.Module, FluxPipelineMixin, SupportImageInput, ProgressBarMixin, DiffusionPipelineProfilerMixin
 ):
     """FLUX.1-Kontext pipeline for image editing with text guidance."""
 
+=======
+class FluxKontextPipeline(VllmDiffusionPipeline, FluxPipelineMixin, SupportImageInput):
+>>>>>>> 3957749e (first pass at protocol)
     @property
     def sampling_param_defaults(self):
         return DiffusionParamOverrides(

@@ -9,15 +9,15 @@ import torch
 import torch.distributed
 from diffusers import FlowMatchEulerDiscreteScheduler
 from PIL import Image, ImageOps
-from torch import nn
 from torchvision.transforms import Compose, Normalize
 from tqdm import tqdm
 
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
 from vllm_omni.diffusion.distributed.cfg_parallel import CFGParallelMixin
 from vllm_omni.diffusion.distributed.utils import get_local_device
-from vllm_omni.diffusion.models.interface import SupportAudioInput, SupportImageInput
+from vllm_omni.diffusion.models.interface import SupportAudioInput, SupportImageInput, VllmDiffusionPipeline
 from vllm_omni.diffusion.request import OmniDiffusionRequest
+from vllm_omni.inputs.data import DiffusionParamOverrides
 
 try:
     from dreamid_omni.utils.divisible_crop import DivisibleCrop
@@ -74,8 +74,14 @@ VIDEO_CONFIG = {
 }
 
 
-class DreamIDOmniPipeline(nn.Module, CFGParallelMixin, SupportImageInput, SupportAudioInput):
+class DreamIDOmniPipeline(VllmDiffusionPipeline, CFGParallelMixin, SupportImageInput, SupportAudioInput):
     """DreamID-Omni pipeline for vLLM-Omni."""
+
+    @property
+    def sampling_param_defaults(self):
+        return DiffusionParamOverrides(
+            num_inference_steps=50,
+        )
 
     def __init__(
         self,

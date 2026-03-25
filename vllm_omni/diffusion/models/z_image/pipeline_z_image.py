@@ -23,8 +23,12 @@ from typing import Any
 
 import PIL.Image
 import torch
+<<<<<<< HEAD
 import torch.nn as nn
 from diffusers.image_processor import PipelineImageInput, VaeImageProcessor
+=======
+from diffusers.image_processor import VaeImageProcessor
+>>>>>>> 3957749e (first pass at protocol)
 from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
 from diffusers.utils import logging
 from diffusers.utils.torch_utils import randn_tensor
@@ -35,6 +39,7 @@ from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
 from vllm_omni.diffusion.distributed.autoencoders.autoencoder_kl import DistributedAutoencoderKL
 from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
+from vllm_omni.diffusion.models.interface import VllmDiffusionPipeline
 from vllm_omni.diffusion.models.z_image.z_image_transformer import (
     ZImageTransformer2DModel,
 )
@@ -159,7 +164,7 @@ def retrieve_timesteps(
     return timesteps, num_inference_steps
 
 
-class ZImagePipeline(nn.Module, DiffusionPipelineProfilerMixin):
+class ZImagePipeline(VllmDiffusionPipeline, DiffusionPipelineProfilerMixin):
     def __init__(
         self,
         *,
