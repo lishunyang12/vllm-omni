@@ -1,7 +1,5 @@
 # CI Failures
 
-What should I do when a CI job fails on my PR, but I don't think my PR caused the failure?
-
 ## Overview of CI Checks
 
 When you open a PR against vLLM-Omni, several CI checks run automatically:
