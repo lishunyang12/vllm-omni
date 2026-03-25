@@ -804,6 +804,14 @@ async def omni_init_app_state(
         speech_service=state.openai_serving_speech,
     )
 
+    from vllm_omni.entrypoints.openai.serving_video_stream import (
+        OmniStreamingVideoHandler,
+    )
+
+    state.openai_streaming_video = OmniStreamingVideoHandler(
+        chat_service=state.openai_serving_chat,
+    )
+
     state.openai_serving_video = OmniOpenAIServingVideo(
         engine_client,
         model_name=served_model_names[0] if served_model_names else None,
@@ -1153,6 +1161,28 @@ async def streaming_speech(websocket: WebSocket):
             {
                 "type": "error",
                 "message": "Streaming speech is not available",
+            }
+        )
+        await websocket.close()
+        return
+    await handler.handle_session(websocket)
+
+
+@router.websocket("/v1/video/chat/stream")
+async def streaming_video_chat(websocket: WebSocket):
+    """WebSocket endpoint for streaming video input understanding.
+
+    Accepts video frames incrementally, buffers them, and generates
+    text + audio responses via the Qwen3-Omni pipeline.
+    See serving_video_stream.py for protocol details.
+    """
+    handler = getattr(websocket.app.state, "openai_streaming_video", None)
+    if handler is None:
+        await websocket.accept()
+        await websocket.send_json(
+            {
+                "type": "error",
+                "message": "Streaming video chat is not available",
             }
         )
         await websocket.close()
