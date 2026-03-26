@@ -25,6 +25,11 @@ stage_args:
       max_num_batched_tokens: 32768
       hf_config_name: thinker_config
       tensor_parallel_size: 1
+      # TurboQuant KV cache compression (Phase 2 — requires vLLM core integration)
+      # Reduces KV cache by 4-5x with zero quality loss on needle-in-a-haystack.
+      # Supported bit_widths: 2, 2.5, 3, 3.5, 4
+      # See: https://arxiv.org/abs/2504.19874
+      # kv_bits: 3.5
     final_output: true
     final_output_type: text
     is_comprehension: true

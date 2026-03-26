@@ -17,8 +17,14 @@ from .factory import SUPPORTED_QUANTIZATION_METHODS, build_quant_config
 # DiffusionGGUFConfig is NOT imported here to avoid pulling in
 # GGUF -> fused_moe -> pynvml at module load time.
 
+# TurboQuant KV cache compression (not weight quantization).
+# Imported separately since it operates on KV tensors, not model weights.
+from .turboquant import TurboQuantConfig, TurboQuantState
+
 __all__ = [
     "build_quant_config",
     "ComponentQuantizationConfig",
     "SUPPORTED_QUANTIZATION_METHODS",
+    "TurboQuantConfig",
+    "TurboQuantState",
 ]
