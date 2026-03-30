@@ -8,7 +8,6 @@ response streaming, error handling, and session teardown.
 
 import base64
 import io
-import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -23,8 +22,7 @@ from vllm_omni.entrypoints.openai.serving_video_stream import (
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
 
 
-def _make_frame_b64(width: int = 64, height: int = 48,
-                    color: tuple = (255, 0, 0)) -> str:
+def _make_frame_b64(width: int = 64, height: int = 48, color: tuple = (255, 0, 0)) -> str:
     """Create a small JPEG frame encoded as base64."""
     img = Image.new("RGB", (width, height), color=color)
     buf = io.BytesIO()
@@ -42,18 +40,14 @@ def _build_test_app(chat_service=None, **handler_kwargs):
             chunks = [
                 'data: {"choices":[{"delta":{"content":"A person"}}]}\n\n',
                 'data: {"choices":[{"delta":{"content":" is walking."}}]}\n\n',
-                'data: [DONE]\n\n',
+                "data: [DONE]\n\n",
             ]
             for c in chunks:
                 yield c
 
-        chat_service.create_chat_completion = AsyncMock(
-            return_value=mock_streaming_response()
-        )
+        chat_service.create_chat_completion = AsyncMock(return_value=mock_streaming_response())
 
-    handler = OmniStreamingVideoHandler(
-        chat_service=chat_service, **handler_kwargs
-    )
+    handler = OmniStreamingVideoHandler(chat_service=chat_service, **handler_kwargs)
     app = FastAPI()
 
     @app.websocket("/v1/video/chat/stream")
@@ -180,10 +174,12 @@ class TestQueryAndResponse:
                     ws.send_json({"type": "video.frame", "data": frame})
 
                 # Submit query
-                ws.send_json({
-                    "type": "video.query",
-                    "text": "What do you see?",
-                })
+                ws.send_json(
+                    {
+                        "type": "video.query",
+                        "text": "What do you see?",
+                    }
+                )
 
                 # Collect responses
                 messages = []
@@ -202,9 +198,7 @@ class TestQueryAndResponse:
                 assert "response.text.done" in types
 
                 # Final text should contain the streamed content
-                done_msg = next(
-                    m for m in messages if m["type"] == "response.text.done"
-                )
+                done_msg = next(m for m in messages if m["type"] == "response.text.done")
                 assert "person" in done_msg["text"].lower() or len(done_msg["text"]) > 0
 
                 # Close session
@@ -224,7 +218,7 @@ class TestQueryAndResponse:
             call_count += 1
             chunks = [
                 f'data: {{"choices":[{{"delta":{{"content":"Response {call_count}"}}}}]}}\n\n',
-                'data: [DONE]\n\n',
+                "data: [DONE]\n\n",
             ]
             for c in chunks:
                 yield c
@@ -274,11 +268,13 @@ class TestSessionConfig:
 
         with TestClient(app) as client:
             with client.websocket_connect("/v1/video/chat/stream") as ws:
-                ws.send_json({
-                    "type": "session.config",
-                    "model": "test",
-                    "num_frames": 2,
-                })
+                ws.send_json(
+                    {
+                        "type": "session.config",
+                        "model": "test",
+                        "num_frames": 2,
+                    }
+                )
 
                 # Send 10 frames
                 for _ in range(10):
@@ -301,8 +297,7 @@ class TestSessionConfig:
         # Count image_url items in the first user message content
         user_msg = request.messages[-1]
         image_count = sum(
-            1 for item in user_msg["content"]
-            if isinstance(item, dict) and item.get("type") == "image_url"
+            1 for item in user_msg["content"] if isinstance(item, dict) and item.get("type") == "image_url"
         )
         assert image_count == 2  # num_frames=2
 
@@ -311,10 +306,12 @@ class TestSessionConfig:
         app, _ = _build_test_app()
         with TestClient(app) as client:
             with client.websocket_connect("/v1/video/chat/stream") as ws:
-                ws.send_json({
-                    "type": "session.config",
-                    "num_frames": 999,  # exceeds max 128
-                })
+                ws.send_json(
+                    {
+                        "type": "session.config",
+                        "num_frames": 999,  # exceeds max 128
+                    }
+                )
                 msg = ws.receive_json()
                 assert msg["type"] == "error"
                 assert "Invalid" in msg["message"]

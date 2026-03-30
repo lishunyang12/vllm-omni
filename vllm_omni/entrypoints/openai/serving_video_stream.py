@@ -114,9 +114,7 @@ class OmniStreamingVideoHandler:
                         timeout=self._idle_timeout,
                     )
                 except asyncio.TimeoutError:
-                    await self._send_error(
-                        websocket, "Idle timeout: no message received"
-                    )
+                    await self._send_error(websocket, "Idle timeout: no message received")
                     return
 
                 try:
@@ -126,9 +124,7 @@ class OmniStreamingVideoHandler:
                     continue
 
                 if not isinstance(msg, dict):
-                    await self._send_error(
-                        websocket, "Messages must be JSON objects"
-                    )
+                    await self._send_error(websocket, "Messages must be JSON objects")
                     continue
 
                 msg_type = msg.get("type")
@@ -136,16 +132,12 @@ class OmniStreamingVideoHandler:
                 if msg_type == "video.frame":
                     frame_data = msg.get("data", "")
                     if not frame_data:
-                        await self._send_error(
-                            websocket, "video.frame requires 'data' field"
-                        )
+                        await self._send_error(websocket, "video.frame requires 'data' field")
                         continue
 
                     # Validate frame size
                     if len(frame_data) > _MAX_FRAME_SIZE:
-                        await self._send_error(
-                            websocket, "Frame too large"
-                        )
+                        await self._send_error(websocket, "Frame too large")
                         continue
 
                     # Validate it's a decodable image
@@ -153,9 +145,7 @@ class OmniStreamingVideoHandler:
                         raw_bytes = base64.b64decode(frame_data)
                         Image.open(io.BytesIO(raw_bytes)).verify()
                     except Exception:
-                        await self._send_error(
-                            websocket, "Invalid image data"
-                        )
+                        await self._send_error(websocket, "Invalid image data")
                         continue
 
                     if len(frame_buffer) >= _MAX_BUFFER_FRAMES:
@@ -172,9 +162,7 @@ class OmniStreamingVideoHandler:
                         )
                         continue
 
-                    await self._process_query(
-                        websocket, config, frame_buffer, query_text
-                    )
+                    await self._process_query(websocket, config, frame_buffer, query_text)
                     # Keep frames for follow-up queries (user can send
                     # more frames + another query in the same session)
 
@@ -193,18 +181,14 @@ class OmniStreamingVideoHandler:
         except Exception as e:
             logger.exception("Streaming video session error: %s", e)
             try:
-                await self._send_error(
-                    websocket, f"Internal error: {e}"
-                )
+                await self._send_error(websocket, f"Internal error: {e}")
             except Exception:
                 logger.debug(
                     "Failed to send error to video client",
                     exc_info=True,
                 )
 
-    async def _receive_config(
-        self, websocket: WebSocket
-    ) -> StreamingVideoSessionConfig | None:
+    async def _receive_config(self, websocket: WebSocket) -> StreamingVideoSessionConfig | None:
         """Wait for and validate the session.config message."""
         try:
             raw = await asyncio.wait_for(
@@ -212,17 +196,13 @@ class OmniStreamingVideoHandler:
                 timeout=self._config_timeout,
             )
         except asyncio.TimeoutError:
-            await self._send_error(
-                websocket, "Timeout waiting for session.config"
-            )
+            await self._send_error(websocket, "Timeout waiting for session.config")
             return None
 
         try:
             msg = json.loads(raw)
         except json.JSONDecodeError:
-            await self._send_error(
-                websocket, "Invalid JSON in session.config"
-            )
+            await self._send_error(websocket, "Invalid JSON in session.config")
             return None
 
         if not isinstance(msg, dict) or msg.get("type") != "session.config":
@@ -233,13 +213,9 @@ class OmniStreamingVideoHandler:
             return None
 
         try:
-            config = StreamingVideoSessionConfig(
-                **{k: v for k, v in msg.items() if k != "type"}
-            )
+            config = StreamingVideoSessionConfig(**{k: v for k, v in msg.items() if k != "type"})
         except ValidationError as e:
-            await self._send_error(
-                websocket, f"Invalid session config: {e}"
-            )
+            await self._send_error(websocket, f"Invalid session config: {e}")
             return None
 
         return config
@@ -253,17 +229,14 @@ class OmniStreamingVideoHandler:
     ) -> None:
         """Build a chat completion request from buffered frames and stream response."""
         from vllm.entrypoints.chat_utils import ChatCompletionMessageParam
-
-        from vllm_omni.entrypoints.openai.protocol.chat_completion import (
+        from vllm.entrypoints.openai.chat_completion.protocol import (
             ChatCompletionRequest,
         )
 
         # Sample frames if buffer exceeds num_frames
         frames = frame_buffer
         if len(frames) > config.num_frames:
-            indices = np.linspace(
-                0, len(frames) - 1, config.num_frames, dtype=int
-            )
+            indices = np.linspace(0, len(frames) - 1, config.num_frames, dtype=int)
             frames = [frame_buffer[i] for i in indices]
 
         # Build video data URL from frames — encode as a video-like
@@ -288,9 +261,7 @@ class OmniStreamingVideoHandler:
         # Build messages
         messages: list[ChatCompletionMessageParam] = []
         if config.system_prompt:
-            messages.append(
-                {"role": "system", "content": config.system_prompt}
-            )
+            messages.append({"role": "system", "content": config.system_prompt})
         messages.append({"role": "user", "content": video_content})
 
         # Build request
@@ -304,25 +275,19 @@ class OmniStreamingVideoHandler:
             },
         }
         if config.sampling_params_list:
-            request_kwargs["sampling_params_list"] = (
-                config.sampling_params_list
-            )
+            request_kwargs["sampling_params_list"] = config.sampling_params_list
 
         try:
             request = ChatCompletionRequest(**request_kwargs)
         except Exception as e:
-            await self._send_error(
-                websocket, f"Failed to build request: {e}"
-            )
+            await self._send_error(websocket, f"Failed to build request: {e}")
             return
 
         await websocket.send_json({"type": "response.start"})
 
         full_text = ""
         try:
-            generator = await self._chat_service.create_chat_completion(
-                request, raw_request=None
-            )
+            generator = await self._chat_service.create_chat_completion(request, raw_request=None)
 
             if hasattr(generator, "__aiter__"):
                 # Streaming response
@@ -334,7 +299,7 @@ class OmniStreamingVideoHandler:
                         line = line.strip()
                         if not line.startswith("data: "):
                             continue
-                        data_str = line[len("data: "):]
+                        data_str = line[len("data: ") :]
                         if data_str == "[DONE]":
                             continue
                         try:
@@ -345,33 +310,34 @@ class OmniStreamingVideoHandler:
                         choices = data.get("choices", [])
                         if not choices:
                             continue
-                        delta = choices[0].get("delta", {})
+                        choice = choices[0]
+                        delta = choice.get("delta", {})
+                        finish_reason = choice.get("finish_reason")
                         content = delta.get("content")
-                        if content and isinstance(content, str):
-                            full_text += content
-                            await websocket.send_json(
-                                {
-                                    "type": "response.text.delta",
-                                    "delta": content,
-                                }
-                            )
 
-                        # Check for audio content
-                        audio = delta.get("audio")
-                        if audio and isinstance(audio, dict):
-                            audio_data = audio.get("data")
-                            if audio_data:
+                        if content and isinstance(content, str):
+                            # Audio is emitted as base64 in delta.content
+                            # on the final chunk (finish_reason="stop")
+                            # when audio modality is requested.
+                            if finish_reason == "stop" and "audio" in config.modalities:
                                 await websocket.send_json(
                                     {
                                         "type": "response.audio.start",
                                         "format": "wav",
                                     }
                                 )
-                                await websocket.send_bytes(
-                                    base64.b64decode(audio_data)
-                                )
+                                try:
+                                    await websocket.send_bytes(base64.b64decode(content))
+                                except Exception:
+                                    logger.warning("Failed to decode audio content")
+                                await websocket.send_json({"type": "response.audio.done"})
+                            else:
+                                full_text += content
                                 await websocket.send_json(
-                                    {"type": "response.audio.done"}
+                                    {
+                                        "type": "response.text.delta",
+                                        "delta": content,
+                                    }
                                 )
             else:
                 # Non-streaming response
@@ -389,14 +355,10 @@ class OmniStreamingVideoHandler:
 
         except Exception as e:
             logger.error("Video query generation failed: %s", e)
-            await self._send_error(
-                websocket, f"Generation failed: {e}"
-            )
+            await self._send_error(websocket, f"Generation failed: {e}")
             return
 
-        await websocket.send_json(
-            {"type": "response.text.done", "text": full_text}
-        )
+        await websocket.send_json({"type": "response.text.done", "text": full_text})
 
     @staticmethod
     async def _send_error(websocket: WebSocket, message: str) -> None:

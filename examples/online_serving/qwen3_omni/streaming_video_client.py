@@ -169,11 +169,14 @@ async def main(args):
             elif t == "error":
                 print(f"\nERROR: {event['message']}", file=sys.stderr)
                 break
-            elif t == "session.done":
-                break
 
-        # 5. Close
+        # 5. Close session — send video.done first, then wait for
+        #    server acknowledgement (session.done)
         await ws.send(json.dumps({"type": "video.done"}))
+        msg = await ws.recv()
+        event = json.loads(msg)
+        if event.get("type") == "session.done":
+            print("Session closed.")
 
 
 if __name__ == "__main__":
@@ -181,14 +184,11 @@ if __name__ == "__main__":
     p.add_argument("--host", default="localhost")
     p.add_argument("--port", type=int, default=8091)
     p.add_argument("--model", default="Qwen/Qwen3-Omni-30B-A3B-Instruct")
-    p.add_argument("--source", default="webcam",
-                    help="'webcam', video file, or image directory")
+    p.add_argument("--source", default="webcam", help="'webcam', video file, or image directory")
     p.add_argument("--fps", type=float, default=1.0)
     p.add_argument("--query", default="Describe what you see in the video.")
-    p.add_argument("--duration", type=float, default=10.0,
-                    help="Webcam capture duration (seconds)")
-    p.add_argument("--modalities", default="text",
-                    help="Comma-separated output modalities: text,audio")
+    p.add_argument("--duration", type=float, default=10.0, help="Webcam capture duration (seconds)")
+    p.add_argument("--modalities", default="text", help="Comma-separated output modalities: text,audio")
     p.add_argument("--num-frames", type=int, default=32)
     args = p.parse_args()
     asyncio.run(main(args))
