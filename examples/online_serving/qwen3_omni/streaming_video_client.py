@@ -39,8 +39,24 @@ def encode_frame(frame_rgb, quality: int = 85) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-async def stream_webcam(ws, fps: float, duration: float):
-    """Stream frames from webcam."""
+def frame_similarity(frame_a, frame_b) -> float:
+    """Compute normalized pixel-level similarity between two frames.
+    Returns a value between 0.0 (completely different) and 1.0 (identical).
+    """
+    import numpy as np
+
+    a = frame_a.astype(np.float32).ravel()
+    b = frame_b.astype(np.float32).ravel()
+    dot = np.dot(a, b)
+    norm = np.linalg.norm(a) * np.linalg.norm(b)
+    if norm == 0:
+        return 0.0
+    return float(dot / norm)
+
+
+async def stream_webcam(ws, fps: float, duration: float,
+                        similarity_threshold: float = 1.0):
+    """Stream frames from webcam with optional frame pruning."""
     import cv2
 
     cap = cv2.VideoCapture(0)
@@ -48,24 +64,46 @@ async def stream_webcam(ws, fps: float, duration: float):
         print("ERROR: Could not open webcam")
         return 0
 
-    interval = 1.0 / fps
+    send_interval = 1.0 / fps
     start = time.monotonic()
+    last_send = 0
+    last_frame_rgb = None
     count = 0
+    skipped = 0
 
     try:
         while time.monotonic() - start < duration:
             ret, frame_bgr = cap.read()
             if not ret:
                 break
-            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-            b64 = encode_frame(frame_rgb)
-            await ws.send(json.dumps({"type": "video.frame", "data": b64}))
-            count += 1
-            if count % max(1, int(fps)) == 0:
-                print(f"  Sent {count} frames ({time.monotonic() - start:.1f}s)")
-            await asyncio.sleep(interval)
+            cv2.imshow("Webcam - Streaming", frame_bgr)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+            now = time.monotonic()
+            if now - last_send >= send_interval:
+                frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                # Skip frames too similar to the last sent frame
+                if (last_frame_rgb is not None
+                        and similarity_threshold < 1.0
+                        and frame_similarity(frame_rgb, last_frame_rgb)
+                        > similarity_threshold):
+                    skipped += 1
+                    last_send = now
+                    continue
+                b64 = encode_frame(frame_rgb)
+                await ws.send(json.dumps({"type": "video.frame", "data": b64}))
+                last_frame_rgb = frame_rgb
+                count += 1
+                last_send = now
+                if count % max(1, int(fps)) == 0:
+                    print(f"  Sent {count} frames, "
+                          f"skipped {skipped} ({now - start:.1f}s)")
     finally:
         cap.release()
+        cv2.destroyAllWindows()
+    if skipped:
+        print(f"  Frame pruning: {skipped} similar frames skipped "
+              f"({skipped / max(1, count + skipped) * 100:.0f}% reduction)")
     return count
 
 
@@ -134,7 +172,8 @@ async def main(args):
         # 2. Stream frames
         source = args.source
         if source == "webcam":
-            count = await stream_webcam(ws, args.fps, args.duration)
+            count = await stream_webcam(ws, args.fps, args.duration,
+                                        args.similarity_threshold)
         elif Path(source).is_dir():
             count = await stream_image_dir(ws, source, args.fps)
         elif Path(source).is_file():
@@ -206,5 +245,7 @@ if __name__ == "__main__":
     p.add_argument("--duration", type=float, default=10.0, help="Webcam capture duration (seconds)")
     p.add_argument("--modalities", default="text", help="Comma-separated output modalities: text,audio")
     p.add_argument("--num-frames", type=int, default=32)
+    p.add_argument("--similarity-threshold", type=float, default=1.0,
+                   help="Drop frames with similarity above this (0.0-1.0, default 1.0=disabled)")
     args = p.parse_args()
     asyncio.run(main(args))
