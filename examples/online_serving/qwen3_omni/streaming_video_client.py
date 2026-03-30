@@ -146,9 +146,12 @@ async def main(args):
         print(f"\nBuffered {count} frames. Submitting query: {args.query!r}\n")
 
         # 3. Submit query
+        query_start = time.monotonic()
         await ws.send(json.dumps({"type": "video.query", "text": args.query}))
 
         # 4. Receive response
+        token_count = 0
+        first_token_time = None
         while True:
             msg = await ws.recv()
             if isinstance(msg, bytes):
@@ -159,9 +162,21 @@ async def main(args):
             if t == "response.start":
                 print("Response: ", end="", flush=True)
             elif t == "response.text.delta":
+                if first_token_time is None:
+                    first_token_time = time.monotonic()
+                token_count += 1
                 print(event["delta"], end="", flush=True)
             elif t == "response.text.done":
+                elapsed = time.monotonic() - query_start
+                ttft = (first_token_time - query_start) if first_token_time else 0
                 print(f"\n\n[Done] Full text: {event['text'][:100]}...")
+                print(f"  Frames sent: {count}")
+                print(f"  Time to first token: {ttft:.2f}s")
+                print(f"  Total inference time: {elapsed:.2f}s")
+                print(f"  Tokens generated: {token_count}")
+                if elapsed > 0:
+                    print(f"  Throughput: {count / elapsed:.2f} frames/s, "
+                          f"{token_count / elapsed:.1f} tokens/s")
                 break
             elif t == "response.audio.start":
                 print(f"\n  [Audio stream: {event.get('format', 'wav')}]")
