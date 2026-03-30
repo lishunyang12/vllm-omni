@@ -55,6 +55,19 @@ def frame_similarity(a, b) -> float:
     return float(dot / norm) if norm else 0.0
 
 
+def _text_changed(old: str, new: str, threshold: float = 0.8) -> bool:
+    """Return True if the new text is meaningfully different from the old."""
+    if not old or old == "Waiting for first response...":
+        return True
+    old_words = set(old.lower().split())
+    new_words = set(new.lower().split())
+    if not old_words or not new_words:
+        return True
+    overlap = len(old_words & new_words)
+    similarity = overlap / max(len(old_words), len(new_words))
+    return similarity < threshold
+
+
 def draw_overlay(frame, text, max_width=70):
     overlay = frame.copy()
     h, w = frame.shape[:2]
@@ -99,6 +112,15 @@ def webcam_loop(args):
         state["running"] = False
         return
 
+    # Set up video writer
+    writer = None
+    if args.save_video:
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(args.save_video, fourcc, 30.0, (w, h))
+        print(f"Recording to {args.save_video}...")
+
     send_interval = 1.0 / args.fps
     last_send = 0
     last_frame_rgb = None
@@ -140,12 +162,19 @@ def webcam_loop(args):
                   f"q=quit")
         cv2.putText(display, status, (8, 18), cv2.FONT_HERSHEY_SIMPLEX,
                     0.45, (0, 255, 0), 1, cv2.LINE_AA)
+
+        if writer is not None:
+            writer.write(display)
+
         cv2.imshow("vLLM-OMNI Realtime", display)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             state["running"] = False
 
+    if writer is not None:
+        writer.release()
+        print(f"Video saved to {args.save_video}")
     cap.release()
     cv2.destroyAllWindows()
 
@@ -184,7 +213,7 @@ async def run_session(ws, args):
             await ws.send(json.dumps({"type": "video.done"}))
             return "rotate"
 
-        # Auto-query at interval, only if scene changed
+        # Only query when scene has changed
         now = time.monotonic()
         with state["lock"]:
             scene_changed = state["scene_changed"]
@@ -198,11 +227,7 @@ async def run_session(ws, args):
                 state["streaming"] = ""
                 state["scene_changed"] = False
                 state["frames_since_query"] = 0
-            if first_query or not scene_changed:
-                query = args.query
-            else:
-                query = (f"Previously: {state['text'][:80]}. "
-                         f"What changed? Reply in one sentence.")
+            query = args.query
             await ws.send(json.dumps({
                 "type": "video.query", "text": query,
             }))
@@ -219,11 +244,17 @@ async def run_session(ws, args):
                     with state["lock"]:
                         state["streaming"] += event["delta"]
                 elif t == "response.text.done":
+                    new_text = event["text"].strip()
+                    old_text = state["text"]
                     with state["lock"]:
-                        state["text"] = event["text"]
+                        if _text_changed(old_text, new_text):
+                            # Replace, don't append
+                            state["text"] = new_text
+                            print(f"[New] {new_text[:100]}")
+                        else:
+                            print(f"[No change]")
                         state["streaming"] = ""
                     state["thinking"] = False
-                    print(f"[Response] {event['text'][:100]}...")
                     break
                 elif t in ("error",):
                     state["thinking"] = False
@@ -269,18 +300,23 @@ if __name__ == "__main__":
     p.add_argument("--host", default="localhost")
     p.add_argument("--port", type=int, default=8091)
     p.add_argument("--model", default="Qwen/Qwen3-Omni-30B-A3B-Instruct")
-    p.add_argument("--fps", type=float, default=2.0)
+    p.add_argument("--fps", type=float, default=5.0)
     p.add_argument("--query",
-                   default="In one sentence, describe what you see.")
+                   default="Describe only what is NEW or DIFFERENT in this frame. "
+                           "Do not repeat previous descriptions. "
+                           "Focus on specific actions, objects, or changes. "
+                           "Be detailed but concise, 1-2 sentences.")
     p.add_argument("--query-interval", type=float, default=3.0,
                    help="Seconds between queries (default: 3)")
     p.add_argument("--max-tokens", type=int, default=60,
                    help="Max response tokens (default: 60)")
     p.add_argument("--num-frames", type=int, default=32)
-    p.add_argument("--similarity-threshold", type=float, default=0.95)
+    p.add_argument("--similarity-threshold", type=float, default=0.99)
     p.add_argument("--max-session-frames", type=int, default=200,
                    help="Reconnect after N frames to prevent KV cache overflow "
                         "(default: 200)")
+    p.add_argument("--save-video", default=None,
+                   help="Save recording with overlay to file (e.g. demo.mp4)")
     args = p.parse_args()
 
     print("Press 'q' in the webcam window to quit")
