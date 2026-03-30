@@ -215,6 +215,95 @@ python openai_chat_completion_client_for_multimodal_generation.py \
     --stream
 ```
 
+## Streaming Video Input
+
+Stream video frames via WebSocket and receive real-time text (and optionally audio) responses from Qwen3-Omni.
+
+### Prerequisites
+
+```bash
+pip install websockets pillow opencv-python numpy
+```
+
+### 1. Launch the Server
+
+```bash
+# Standard (2x GPU recommended)
+vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091
+
+# With async chunking (2x GPU, lower latency)
+vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
+  --stage-configs-path vllm_omni/model_executor/stage_configs/qwen3_omni_moe_async_chunk.yaml
+```
+
+### 2. Stream a Video File
+
+```bash
+python streaming_video_client.py --source /path/to/video.mp4 --fps 2
+```
+
+### 3. Stream from Webcam
+
+```bash
+python streaming_video_client.py --source webcam --fps 2 --duration 10
+```
+
+With frame pruning (skips similar frames, reduces compute):
+
+```bash
+python streaming_video_client.py --source webcam --fps 2 --duration 10 \
+  --similarity-threshold 0.95
+```
+
+### 4. Real-time Webcam with Live Text Overlay
+
+Continuously streams webcam to the model and overlays the response on the video feed. Queries only when the scene changes.
+
+```bash
+python realtime_video_client.py
+```
+
+Save the session as a video file:
+
+```bash
+python realtime_video_client.py --save-video demo.mp4
+```
+
+#### Key options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--host` | `localhost` | Server host |
+| `--port` | `8091` | Server port |
+| `--fps` | `5.0` | Frame send rate |
+| `--query-interval` | `3.0` | Seconds between queries |
+| `--similarity-threshold` | `0.99` | Frame pruning (lower = more aggressive) |
+| `--max-tokens` | `60` | Max response length |
+| `--max-session-frames` | `200` | Auto-reconnect after N frames (prevents KV cache overflow) |
+| `--save-video` | None | Save recording with overlay to file |
+
+### 5. Remote Testing (e.g., RunPod)
+
+If the server runs on a remote GPU pod, connect from your local machine:
+
+```bash
+# Option A: Direct TCP (if port is exposed)
+python streaming_video_client.py --source webcam --fps 2 --duration 10 \
+  --host <POD_IP> --port <EXPOSED_PORT>
+
+# Option B: SSH tunnel
+ssh -L 8091:localhost:8091 root@<POD_IP> -p <SSH_PORT> -i ~/.ssh/id_ed25519
+# Then in another terminal:
+python streaming_video_client.py --source webcam --fps 2 --duration 10
+```
+
+### 6. Audio + Text Output
+
+```bash
+python streaming_video_client.py --source webcam --fps 2 --duration 10 \
+  --modalities text,audio --audio-output response.wav
+```
+
 ## Run Local Web UI Demo
 
 This Web UI demo allows users to interact with the model through a web browser.
