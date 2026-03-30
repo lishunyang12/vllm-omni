@@ -162,6 +162,7 @@ async def main(args):
                 print(event["delta"], end="", flush=True)
             elif t == "response.text.done":
                 print(f"\n\n[Done] Full text: {event['text'][:100]}...")
+                break
             elif t == "response.audio.start":
                 print(f"\n  [Audio stream: {event.get('format', 'wav')}]")
             elif t == "response.audio.done":
