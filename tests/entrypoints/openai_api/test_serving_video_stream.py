@@ -107,7 +107,13 @@ def _app(chat_service=None, **kw):
 def _drain(ws, stop_type: str) -> list[dict]:
     msgs = []
     while True:
-        m = ws.receive_json()
+        raw = ws.receive()
+        if "bytes" in raw and raw["bytes"]:
+            msgs.append({"type": "_binary", "data": raw["bytes"]})
+            continue
+        import json
+
+        m = json.loads(raw["text"])
         msgs.append(m)
         if m["type"] == stop_type:
             break
