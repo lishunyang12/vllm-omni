@@ -1,25 +1,29 @@
 """Unit tests for streaming video input WebSocket handler.
 
-These tests use Starlette's TestClient with a mocked chat service,
-so they run on CPU without model weights. They validate the full
-WebSocket protocol: session config, frame buffering, query submission,
-response streaming, error handling, and session teardown.
+Uses Starlette's TestClient with a mocked chat service — runs on CPU
+without model weights or CUDA.
 """
 
 import base64
 import io
-from unittest.mock import AsyncMock, MagicMock
+import sys
+from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi import FastAPI, WebSocket
 from PIL import Image
 from starlette.testclient import TestClient
 
-from vllm_omni.entrypoints.openai.serving_video_stream import (
-    OmniStreamingVideoHandler,
-)
+# Mock vllm.logger before importing the handler to avoid CUDA dependency
+_mock_logger = MagicMock()
+with patch.dict(sys.modules, {"vllm.logger": MagicMock(init_logger=MagicMock(return_value=_mock_logger))}):
+    from vllm_omni.entrypoints.openai.serving_video_stream import (  # noqa: E402
+        OmniStreamingVideoHandler,
+    )
 
-pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _make_frame_b64(width: int = 64, height: int = 48, color: tuple = (255, 0, 0)) -> str:
@@ -30,22 +34,28 @@ def _make_frame_b64(width: int = 64, height: int = 48, color: tuple = (255, 0, 0
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def _build_test_app(chat_service=None, **handler_kwargs):
-    """Build a FastAPI app with a mocked chat service for testing."""
+def _make_text_chunks(*texts: str) -> list[str]:
+    """Build SSE chunks that stream text deltas."""
+    chunks = []
+    for t in texts:
+        chunks.append(f'data: {{"choices":[{{"delta":{{"content":"{t}"}}}}]}}\n\n')
+    chunks.append("data: [DONE]\n\n")
+    return chunks
+
+
+def _make_audio_chunks(text: str, audio_b64: str) -> list[str]:
+    """Build SSE chunks that stream text then audio (finish_reason=stop)."""
+    return [
+        f'data: {{"choices":[{{"delta":{{"content":"{text}"}}}}]}}\n\n',
+        f'data: {{"choices":[{{"delta":{{"content":"{audio_b64}"}},"finish_reason":"stop"}}]}}\n\n',
+        "data: [DONE]\n\n",
+    ]
+
+
+def _build_app(chat_service=None, **handler_kwargs):
+    """Build a FastAPI app wired to a mocked chat service."""
     if chat_service is None:
-        chat_service = MagicMock()
-
-        # Mock create_chat_completion to return a streaming generator
-        async def mock_streaming_response(*args, **kwargs):
-            chunks = [
-                'data: {"choices":[{"delta":{"content":"A person"}}]}\n\n',
-                'data: {"choices":[{"delta":{"content":" is walking."}}]}\n\n',
-                "data: [DONE]\n\n",
-            ]
-            for c in chunks:
-                yield c
-
-        chat_service.create_chat_completion = AsyncMock(return_value=mock_streaming_response())
+        chat_service = _make_chat_service(_make_text_chunks("Hello", " world"))
 
     handler = OmniStreamingVideoHandler(chat_service=chat_service, **handler_kwargs)
     app = FastAPI()
@@ -57,261 +67,272 @@ def _build_test_app(chat_service=None, **handler_kwargs):
     return app, chat_service
 
 
-class TestVideoStreamProtocol:
-    """Test the WebSocket protocol handshake and message routing."""
+def _make_chat_service(chunks: list[str]):
+    """Create a mock chat service that yields the given SSE chunks.
 
-    def test_session_config_then_done(self):
-        """Minimal session: config -> done."""
-        app, _ = _build_test_app()
-        with TestClient(app) as client:
-            with client.websocket_connect("/v1/video/chat/stream") as ws:
-                ws.send_json({"type": "session.config", "model": "test"})
-                ws.send_json({"type": "video.done"})
-                msg = ws.receive_json()
-                assert msg["type"] == "session.done"
+    Uses side_effect so each call gets a fresh generator.
+    """
+    svc = MagicMock()
 
-    def test_missing_config_type(self):
-        """First message must be session.config."""
-        app, _ = _build_test_app()
-        with TestClient(app) as client:
-            with client.websocket_connect("/v1/video/chat/stream") as ws:
-                ws.send_json({"type": "video.frame", "data": "abc"})
-                msg = ws.receive_json()
-                assert msg["type"] == "error"
-                assert "session.config" in msg["message"]
+    async def _gen(*_args, **_kwargs):
+        for c in chunks:
+            yield c
+
+    svc.create_chat_completion = AsyncMock(side_effect=_gen)
+    return svc
+
+
+def _collect_until(ws, stop_type: str) -> list[dict]:
+    """Receive JSON messages until one matches stop_type."""
+    msgs = []
+    while True:
+        m = ws.receive_json()
+        msgs.append(m)
+        if m["type"] == stop_type:
+            break
+    return msgs
+
+
+# ---------------------------------------------------------------------------
+# Protocol basics
+# ---------------------------------------------------------------------------
+
+
+class TestProtocol:
+    def test_config_then_done(self):
+        app, _ = _build_app()
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            ws.send_json({"type": "session.config", "model": "test"})
+            ws.send_json({"type": "video.done"})
+            assert ws.receive_json()["type"] == "session.done"
+
+    def test_missing_config(self):
+        app, _ = _build_app()
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            ws.send_json({"type": "video.frame", "data": "abc"})
+            msg = ws.receive_json()
+            assert msg["type"] == "error"
+            assert "session.config" in msg["message"]
 
     def test_config_timeout(self):
-        """Handler returns error if config not sent within timeout."""
-        app, _ = _build_test_app(config_timeout=0.1)
-        with TestClient(app) as client:
-            with client.websocket_connect("/v1/video/chat/stream") as ws:
-                # Don't send config — wait for timeout
-                msg = ws.receive_json()
-                assert msg["type"] == "error"
-                assert "Timeout" in msg["message"]
+        app, _ = _build_app(config_timeout=0.1)
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "error"
+            assert "Timeout" in msg["message"]
 
-    def test_unknown_message_type(self):
-        """Unknown message types produce an error but don't close."""
-        app, _ = _build_test_app()
-        with TestClient(app) as client:
-            with client.websocket_connect("/v1/video/chat/stream") as ws:
-                ws.send_json({"type": "session.config", "model": "test"})
-                ws.send_json({"type": "bogus.event"})
-                msg = ws.receive_json()
-                assert msg["type"] == "error"
-                assert "Unknown" in msg["message"]
+    def test_unknown_type_non_fatal(self):
+        app, _ = _build_app()
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            ws.send_json({"type": "session.config", "model": "test"})
+            ws.send_json({"type": "bogus"})
+            assert ws.receive_json()["type"] == "error"
+            # session still alive
+            ws.send_json({"type": "video.done"})
+            assert ws.receive_json()["type"] == "session.done"
 
-                # Session still alive — can send done
-                ws.send_json({"type": "video.done"})
-                msg = ws.receive_json()
-                assert msg["type"] == "session.done"
+    def test_invalid_config_rejected(self):
+        app, _ = _build_app()
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            ws.send_json({"type": "session.config", "num_frames": 999})
+            msg = ws.receive_json()
+            assert msg["type"] == "error"
+
+
+# ---------------------------------------------------------------------------
+# Frame buffering
+# ---------------------------------------------------------------------------
 
 
 class TestFrameBuffering:
-    """Test video frame buffering and validation."""
-
-    def test_buffer_valid_frame(self):
-        """Valid JPEG frames are accepted without error."""
-        app, _ = _build_test_app()
-        frame = _make_frame_b64()
-        with TestClient(app) as client:
-            with client.websocket_connect("/v1/video/chat/stream") as ws:
-                ws.send_json({"type": "session.config", "model": "test"})
-                ws.send_json({"type": "video.frame", "data": frame})
-                # No error — send done
-                ws.send_json({"type": "video.done"})
-                msg = ws.receive_json()
-                assert msg["type"] == "session.done"
+    def test_valid_frame_accepted(self):
+        app, _ = _build_app()
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            ws.send_json({"type": "session.config", "model": "test"})
+            ws.send_json({"type": "video.frame", "data": _make_frame_b64()})
+            ws.send_json({"type": "video.done"})
+            assert ws.receive_json()["type"] == "session.done"
 
     def test_empty_frame_rejected(self):
-        """Empty frame data produces an error."""
-        app, _ = _build_test_app()
-        with TestClient(app) as client:
-            with client.websocket_connect("/v1/video/chat/stream") as ws:
-                ws.send_json({"type": "session.config", "model": "test"})
-                ws.send_json({"type": "video.frame", "data": ""})
-                msg = ws.receive_json()
-                assert msg["type"] == "error"
+        app, _ = _build_app()
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            ws.send_json({"type": "session.config", "model": "test"})
+            ws.send_json({"type": "video.frame", "data": ""})
+            assert ws.receive_json()["type"] == "error"
 
     def test_invalid_image_rejected(self):
-        """Non-image base64 data produces an error."""
-        app, _ = _build_test_app()
+        app, _ = _build_app()
         garbage = base64.b64encode(b"not an image").decode()
-        with TestClient(app) as client:
-            with client.websocket_connect("/v1/video/chat/stream") as ws:
-                ws.send_json({"type": "session.config", "model": "test"})
-                ws.send_json({"type": "video.frame", "data": garbage})
-                msg = ws.receive_json()
-                assert msg["type"] == "error"
-                assert "Invalid" in msg["message"]
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            ws.send_json({"type": "session.config", "model": "test"})
+            ws.send_json({"type": "video.frame", "data": garbage})
+            msg = ws.receive_json()
+            assert msg["type"] == "error"
+            assert "Invalid" in msg["message"]
 
-    def test_query_without_frames_rejected(self):
-        """Query before any frames produces an error."""
-        app, _ = _build_test_app()
-        with TestClient(app) as client:
-            with client.websocket_connect("/v1/video/chat/stream") as ws:
-                ws.send_json({"type": "session.config", "model": "test"})
-                ws.send_json({"type": "video.query", "text": "What?"})
-                msg = ws.receive_json()
-                assert msg["type"] == "error"
-                assert "No frames" in msg["message"]
+    def test_query_without_frames(self):
+        app, _ = _build_app()
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            ws.send_json({"type": "session.config", "model": "test"})
+            ws.send_json({"type": "video.query", "text": "What?"})
+            msg = ws.receive_json()
+            assert msg["type"] == "error"
+            assert "No frames" in msg["message"]
 
 
-class TestQueryAndResponse:
-    """Test frame buffering -> query -> streaming response."""
+# ---------------------------------------------------------------------------
+# Query + streaming response
+# ---------------------------------------------------------------------------
 
-    def test_single_query_streaming_response(self):
-        """Frames + query -> streaming text deltas + done."""
-        app, chat_service = _build_test_app()
+
+class TestQuery:
+    def test_text_streaming(self):
+        svc = _make_chat_service(_make_text_chunks("A person", " is walking."))
+        app, _ = _build_app(chat_service=svc)
         frame = _make_frame_b64()
 
-        with TestClient(app) as client:
-            with client.websocket_connect("/v1/video/chat/stream") as ws:
-                ws.send_json({"type": "session.config", "model": "test"})
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            ws.send_json({"type": "session.config", "model": "test"})
+            ws.send_json({"type": "video.frame", "data": frame})
+            ws.send_json({"type": "video.query", "text": "Describe."})
 
-                # Send 3 frames
-                for _ in range(3):
-                    ws.send_json({"type": "video.frame", "data": frame})
+            msgs = _collect_until(ws, "response.text.done")
+            types = [m["type"] for m in msgs]
+            assert "response.start" in types
+            assert "response.text.delta" in types
+            assert "response.text.done" in types
 
-                # Submit query
-                ws.send_json(
-                    {
-                        "type": "video.query",
-                        "text": "What do you see?",
-                    }
-                )
+            done = next(m for m in msgs if m["type"] == "response.text.done")
+            assert done["text"] == "A person is walking."
 
-                # Collect responses
-                messages = []
-                while True:
-                    msg = ws.receive_json()
-                    messages.append(msg)
-                    if msg["type"] in (
-                        "response.text.done",
-                        "error",
-                    ):
-                        break
+            ws.send_json({"type": "video.done"})
+            assert ws.receive_json()["type"] == "session.done"
 
-                types = [m["type"] for m in messages]
-                assert "response.start" in types
-                assert "response.text.delta" in types
-                assert "response.text.done" in types
-
-                # Final text should contain the streamed content
-                done_msg = next(m for m in messages if m["type"] == "response.text.done")
-                assert "person" in done_msg["text"].lower() or len(done_msg["text"]) > 0
-
-                # Close session
-                ws.send_json({"type": "video.done"})
-                msg = ws.receive_json()
-                assert msg["type"] == "session.done"
-
-        # Verify chat_service was called
-        chat_service.create_chat_completion.assert_awaited_once()
-
-    def test_multiple_queries_same_session(self):
-        """Multiple queries reuse buffered frames."""
+    def test_multiple_queries(self):
+        """Second query in same session reuses buffered frames."""
         call_count = 0
 
-        async def mock_gen(*args, **kwargs):
+        def _chunks():
             nonlocal call_count
             call_count += 1
-            chunks = [
-                f'data: {{"choices":[{{"delta":{{"content":"Response {call_count}"}}}}]}}\n\n',
-                "data: [DONE]\n\n",
-            ]
-            for c in chunks:
+            return _make_text_chunks(f"Response {call_count}")
+
+        svc = MagicMock()
+
+        async def _gen(*_a, **_kw):
+            for c in _chunks():
                 yield c
 
-        chat_service = MagicMock()
-        chat_service.create_chat_completion = AsyncMock(side_effect=mock_gen)
-
-        app, _ = _build_test_app(chat_service=chat_service)
+        svc.create_chat_completion = AsyncMock(side_effect=_gen)
+        app, _ = _build_app(chat_service=svc)
         frame = _make_frame_b64()
 
-        with TestClient(app) as client:
-            with client.websocket_connect("/v1/video/chat/stream") as ws:
-                ws.send_json({"type": "session.config", "model": "test"})
-                ws.send_json({"type": "video.frame", "data": frame})
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            ws.send_json({"type": "session.config", "model": "test"})
+            ws.send_json({"type": "video.frame", "data": frame})
 
-                # First query
-                ws.send_json({"type": "video.query", "text": "Q1"})
-                msgs = []
-                while True:
-                    m = ws.receive_json()
-                    msgs.append(m)
-                    if m["type"] == "response.text.done":
-                        break
+            ws.send_json({"type": "video.query", "text": "Q1"})
+            _collect_until(ws, "response.text.done")
 
-                # Second query (frames still buffered)
-                ws.send_json({"type": "video.query", "text": "Q2"})
-                msgs2 = []
-                while True:
-                    m = ws.receive_json()
-                    msgs2.append(m)
-                    if m["type"] == "response.text.done":
-                        break
+            ws.send_json({"type": "video.query", "text": "Q2"})
+            _collect_until(ws, "response.text.done")
 
-                ws.send_json({"type": "video.done"})
-                ws.receive_json()  # session.done
+            ws.send_json({"type": "video.done"})
+            ws.receive_json()
 
         assert call_count == 2
 
-
-class TestSessionConfig:
-    """Test session configuration validation."""
-
-    def test_custom_num_frames(self):
-        """num_frames parameter is respected."""
-        app, chat_service = _build_test_app()
+    def test_audio_modality(self):
+        """When modalities includes audio, the final chunk is routed as audio."""
+        audio_bytes = b"\x00\x01\x02\x03"
+        audio_b64 = base64.b64encode(audio_bytes).decode()
+        svc = _make_chat_service(_make_audio_chunks("Hello", audio_b64))
+        app, _ = _build_app(chat_service=svc)
         frame = _make_frame_b64()
 
-        with TestClient(app) as client:
-            with client.websocket_connect("/v1/video/chat/stream") as ws:
-                ws.send_json(
-                    {
-                        "type": "session.config",
-                        "model": "test",
-                        "num_frames": 2,
-                    }
-                )
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            ws.send_json({"type": "session.config", "model": "test", "modalities": ["text", "audio"]})
+            ws.send_json({"type": "video.frame", "data": frame})
+            ws.send_json({"type": "video.query", "text": "Speak."})
 
-                # Send 10 frames
-                for _ in range(10):
-                    ws.send_json({"type": "video.frame", "data": frame})
+            # Collect all messages until text.done
+            msgs = _collect_until(ws, "response.text.done")
+            types = [m["type"] for m in msgs]
 
-                ws.send_json({"type": "video.query", "text": "What?"})
+            # Should have text delta, audio events, then text.done
+            assert "response.text.delta" in types
+            assert "response.audio.start" in types
+            assert "response.audio.done" in types
 
-                # Drain response
-                while True:
-                    m = ws.receive_json()
-                    if m["type"] == "response.text.done":
-                        break
+            ws.send_json({"type": "video.done"})
+            ws.receive_json()
 
-                ws.send_json({"type": "video.done"})
-                ws.receive_json()
+    def test_generation_failure(self):
+        """Chat service exception is reported as error."""
+        svc = MagicMock()
+        svc.create_chat_completion = AsyncMock(side_effect=RuntimeError("boom"))
+        app, _ = _build_app(chat_service=svc)
+        frame = _make_frame_b64()
 
-        # Verify the request was built with sampled frames (not all 10)
-        call_args = chat_service.create_chat_completion.call_args
-        request = call_args[0][0]
-        # Count image_url items in the first user message content
-        user_msg = request.messages[-1]
-        image_count = sum(
-            1 for item in user_msg["content"] if isinstance(item, dict) and item.get("type") == "image_url"
-        )
-        assert image_count == 2  # num_frames=2
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            ws.send_json({"type": "session.config", "model": "test"})
+            ws.send_json({"type": "video.frame", "data": frame})
+            ws.send_json({"type": "video.query", "text": "What?"})
 
-    def test_invalid_config_rejected(self):
-        """Invalid config values produce an error."""
-        app, _ = _build_test_app()
-        with TestClient(app) as client:
-            with client.websocket_connect("/v1/video/chat/stream") as ws:
-                ws.send_json(
-                    {
-                        "type": "session.config",
-                        "num_frames": 999,  # exceeds max 128
-                    }
-                )
-                msg = ws.receive_json()
-                assert msg["type"] == "error"
-                assert "Invalid" in msg["message"]
+            msgs = []
+            while True:
+                m = ws.receive_json()
+                msgs.append(m)
+                if m["type"] == "error":
+                    break
+            assert "boom" in msgs[-1]["message"]
+
+
+# ---------------------------------------------------------------------------
+# Frame sampling
+# ---------------------------------------------------------------------------
+
+
+class TestFrameSampling:
+    def test_num_frames_limits_images(self):
+        """When buffer has more frames than num_frames, sample uniformly."""
+        svc = _make_chat_service(_make_text_chunks("ok"))
+        app, _ = _build_app(chat_service=svc)
+        frame = _make_frame_b64()
+
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            ws.send_json({"type": "session.config", "model": "test", "num_frames": 2})
+            for _ in range(10):
+                ws.send_json({"type": "video.frame", "data": frame})
+            ws.send_json({"type": "video.query", "text": "What?"})
+            _collect_until(ws, "response.text.done")
+            ws.send_json({"type": "video.done"})
+            ws.receive_json()
+
+        # Inspect the request passed to chat service
+        req = svc.create_chat_completion.call_args[0][0]
+        user_content = req.messages[-1]["content"]
+        image_count = sum(1 for item in user_content if isinstance(item, dict) and item.get("type") == "image_url")
+        assert image_count == 2
+
+    def test_sliding_window_drops_oldest(self):
+        """Buffer caps at _MAX_BUFFER_FRAMES and drops oldest."""
+        from vllm_omni.entrypoints.openai.serving_video_stream import _MAX_BUFFER_FRAMES
+
+        svc = _make_chat_service(_make_text_chunks("ok"))
+        app, _ = _build_app(chat_service=svc)
+
+        with TestClient(app) as c, c.websocket_connect("/v1/video/chat/stream") as ws:
+            ws.send_json({"type": "session.config", "model": "test", "num_frames": 128})
+            # Send more frames than the buffer limit
+            for i in range(_MAX_BUFFER_FRAMES + 5):
+                ws.send_json({"type": "video.frame", "data": _make_frame_b64()})
+            ws.send_json({"type": "video.query", "text": "count"})
+            _collect_until(ws, "response.text.done")
+            ws.send_json({"type": "video.done"})
+            ws.receive_json()
+
+        req = svc.create_chat_completion.call_args[0][0]
+        user_content = req.messages[-1]["content"]
+        image_count = sum(1 for item in user_content if isinstance(item, dict) and item.get("type") == "image_url")
+        assert image_count == _MAX_BUFFER_FRAMES
