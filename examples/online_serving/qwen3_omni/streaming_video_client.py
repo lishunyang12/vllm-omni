@@ -191,10 +191,14 @@ async def main(args):
         # 4. Receive response
         token_count = 0
         first_token_time = None
+        audio_chunks = []
+        text_done = False
         while True:
             msg = await ws.recv()
             if isinstance(msg, bytes):
-                print(f"  [audio: {len(msg)} bytes]")
+                audio_chunks.append(msg)
+                print(f"  [audio chunk: {len(msg)} bytes, "
+                      f"total: {len(audio_chunks)}]")
                 continue
             event = json.loads(msg)
             t = event.get("type")
@@ -216,14 +220,40 @@ async def main(args):
                 if elapsed > 0:
                     print(f"  Throughput: {count / elapsed:.2f} frames/s, "
                           f"{token_count / elapsed:.1f} tokens/s")
-                break
+                text_done = True
+                if "audio" not in args.modalities:
+                    break
             elif t == "response.audio.start":
                 print(f"\n  [Audio stream: {event.get('format', 'wav')}]")
             elif t == "response.audio.done":
                 print("  [Audio complete]")
+                if text_done:
+                    break
+            elif t == "response.done":
+                break
             elif t == "error":
                 print(f"\nERROR: {event['message']}", file=sys.stderr)
                 break
+
+        # Save audio if received
+        if audio_chunks:
+            audio_data = b"".join(audio_chunks)
+            out_path = args.audio_output
+            with open(out_path, "wb") as f:
+                f.write(audio_data)
+            print(f"  Audio saved to {out_path} "
+                  f"({len(audio_data)} bytes, {len(audio_chunks)} chunks)")
+            if args.play_audio:
+                try:
+                    import subprocess
+                    print("  Playing audio...")
+                    subprocess.Popen(
+                        ["ffplay", "-nodisp", "-autoexit", out_path],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except FileNotFoundError:
+                    print("  Install ffmpeg to auto-play audio")
 
         # 5. Close session — send video.done first, then wait for
         #    server acknowledgement (session.done)
@@ -247,5 +277,9 @@ if __name__ == "__main__":
     p.add_argument("--num-frames", type=int, default=32)
     p.add_argument("--similarity-threshold", type=float, default=1.0,
                    help="Drop frames with similarity above this (0.0-1.0, default 1.0=disabled)")
+    p.add_argument("--audio-output", default="response.wav",
+                   help="Path to save audio output (default: response.wav)")
+    p.add_argument("--play-audio", action="store_true",
+                   help="Auto-play audio response (requires ffmpeg)")
     args = p.parse_args()
     asyncio.run(main(args))
