@@ -43,7 +43,6 @@ _MOCK_MODULES = {
     "vllm.entrypoints.openai.chat_completion.protocol": MagicMock(ChatCompletionRequest=_FakeRequest),
 }
 
-_saved = {k: sys.modules.get(k) for k in _MOCK_MODULES}
 sys.modules.update(_MOCK_MODULES)
 
 _handler_path = Path(__file__).resolve().parents[3] / "vllm_omni" / "entrypoints" / "openai" / "serving_video_stream.py"
@@ -53,13 +52,6 @@ _spec.loader.exec_module(_mod)
 
 OmniStreamingVideoHandler = _mod.OmniStreamingVideoHandler
 _MAX_BUFFER_FRAMES = _mod._MAX_BUFFER_FRAMES
-
-# Restore original modules where they existed
-for k, v in _saved.items():
-    if v is None:
-        sys.modules.pop(k, None)
-    else:
-        sys.modules[k] = v
 
 
 # ---------------------------------------------------------------------------
