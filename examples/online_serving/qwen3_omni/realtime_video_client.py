@@ -24,8 +24,23 @@ import cv2
 import numpy as np
 
 
+DOWNSCALE_WIDTH = 480
+
+
+def downscale(frame_rgb):
+    """Downscale frame to DOWNSCALE_WIDTH, preserving aspect ratio."""
+    h, w = frame_rgb.shape[:2]
+    if w <= DOWNSCALE_WIDTH:
+        return frame_rgb
+    scale = DOWNSCALE_WIDTH / w
+    new_h = int(h * scale)
+    return cv2.resize(frame_rgb, (DOWNSCALE_WIDTH, new_h),
+                      interpolation=cv2.INTER_AREA)
+
+
 def encode_frame(frame_rgb, quality: int = 70) -> str:
     from PIL import Image
+    frame_rgb = downscale(frame_rgb)
     img = Image.fromarray(frame_rgb)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=quality)
@@ -145,6 +160,7 @@ async def run_session(ws, args):
         "model": args.model,
         "modalities": ["text"],
         "num_frames": args.num_frames,
+        "max_tokens": args.max_tokens,
     }))
 
     last_query = 0
@@ -185,8 +201,8 @@ async def run_session(ws, args):
             if first_query or not scene_changed:
                 query = args.query
             else:
-                query = (f"Previous scene: {state['text'][:100]}. "
-                         f"What changed? Describe only new activity.")
+                query = (f"Previously: {state['text'][:80]}. "
+                         f"What changed? Reply in one sentence.")
             await ws.send(json.dumps({
                 "type": "video.query", "text": query,
             }))
@@ -254,9 +270,12 @@ if __name__ == "__main__":
     p.add_argument("--port", type=int, default=8091)
     p.add_argument("--model", default="Qwen/Qwen3-Omni-30B-A3B-Instruct")
     p.add_argument("--fps", type=float, default=2.0)
-    p.add_argument("--query", default="Briefly describe what you see now.")
-    p.add_argument("--query-interval", type=float, default=5.0,
-                   help="Seconds between queries (default: 5)")
+    p.add_argument("--query",
+                   default="In one sentence, describe what you see.")
+    p.add_argument("--query-interval", type=float, default=3.0,
+                   help="Seconds between queries (default: 3)")
+    p.add_argument("--max-tokens", type=int, default=60,
+                   help="Max response tokens (default: 60)")
     p.add_argument("--num-frames", type=int, default=32)
     p.add_argument("--similarity-threshold", type=float, default=0.95)
     p.add_argument("--max-session-frames", type=int, default=200,
