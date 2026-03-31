@@ -337,6 +337,8 @@ def load_stage_configs_from_yaml(
 ) -> list:
     """Load stage configurations from a YAML file (legacy OmegaConf path).
 
+    TODO: remove once all models use PipelineConfig + DeployConfig.
+
     Args:
         config_path: Path to the YAML configuration file
         base_engine_args: Engine args supplied by the caller.

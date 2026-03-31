@@ -47,6 +47,7 @@ logger = init_logger(__name__)
 class StageType(str, Enum):
     """Type of processing stage in the Omni pipeline."""
 
+    # TODO: remove once all models migrate to StageExecutionType
     LLM = "llm"
     DIFFUSION = "diffusion"
 
@@ -457,7 +458,10 @@ def merge_pipeline_deploy(
 
 @dataclass
 class StageConfig:
-    """Per-stage config (legacy path). Used by both new and legacy loaders."""
+    """Per-stage config (legacy path). Used by both new and legacy loaders.
+
+    TODO: replace with ResolvedStageConfig once all models are migrated.
+    """
 
     # Identity
     stage_id: int
@@ -488,6 +492,8 @@ class StageConfig:
 
     def to_omegaconf(self) -> Any:
         """Convert to OmegaConf for backward compatibility with OmniStage.
+
+        TODO: remove once engine consumes ResolvedStageConfig directly.
 
         Returns:
             OmegaConf DictConfig with stage configuration in legacy format.
@@ -554,9 +560,9 @@ class StageConfig:
 
 @dataclass
 class ModelPipeline:
-    """Complete pipeline definition for a multi-stage model.
+    """Complete pipeline definition for a multi-stage model (legacy).
 
-    Defined by model developers, bundled with the model, not user-editable.
+    TODO: remove once all models migrate to PipelineConfig.
     """
 
     model_type: str
