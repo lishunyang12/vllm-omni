@@ -23,7 +23,7 @@ models = ["Qwen/Qwen3-Omni-30B-A3B-Instruct"]
 
 def get_cuda_graph_config():
     path = modify_stage_config(
-        str(Path(__file__).parent.parent / "stage_configs" / "qwen3_omni_ci.yaml"),
+        str(Path(__file__).parent.parent / "deploy" / "qwen3_omni_ci.yaml"),
         updates={
             "stage_args": {
                 0: {
@@ -39,9 +39,9 @@ def get_cuda_graph_config():
 # CI stage config for 2xH100-80G GPUs or AMD GPU MI325
 if current_omni_platform.is_rocm():
     # ROCm stage config optimized for MI325 GPU
-    stage_configs = [str(Path(__file__).parent.parent / "stage_configs" / "rocm" / "qwen3_omni_ci.yaml")]
+    stage_configs = [str(Path(__file__).parent.parent / "deploy" / "rocm" / "qwen3_omni_ci.yaml")]
 elif current_omni_platform.is_xpu():
-    stage_configs = [str(Path(__file__).parent.parent / "stage_configs" / "xpu" / "qwen3_omni_ci.yaml")]
+    stage_configs = [str(Path(__file__).parent.parent / "deploy" / "xpu" / "qwen3_omni_ci.yaml")]
 else:
     stage_configs = [get_cuda_graph_config()]
 

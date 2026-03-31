@@ -1,0 +1,52 @@
+# DFX stability testing deploy config for Qwen3-Omni-MoE.
+# Same as perf config with max_batch_size compat.
+
+stages:
+  - stage_id: 0
+    engine_args:
+      model_arch: Qwen3OmniMoeForConditionalGeneration
+      gpu_memory_utilization: 0.9
+      enforce_eager: false
+      trust_remote_code: true
+      engine_output_type: latent
+      distributed_executor_backend: "mp"
+      enable_prefix_caching: false
+      max_num_batched_tokens: 32768
+      hf_config_name: thinker_config
+      tensor_parallel_size: 1
+      max_num_seqs: 64
+      custom_process_next_stage_input_func: vllm_omni.model_executor.stage_input_processors.qwen3_omni.thinker2talker_async_chunk
+    runtime:
+      devices: "0"
+
+  - stage_id: 1
+    engine_args:
+      model_arch: Qwen3OmniMoeForConditionalGeneration
+      gpu_memory_utilization: 0.6
+      enforce_eager: false
+      trust_remote_code: true
+      engine_output_type: latent
+      enable_prefix_caching: false
+      max_num_batched_tokens: 32768
+      distributed_executor_backend: "mp"
+      hf_config_name: talker_config
+      max_num_seqs: 64
+      custom_process_next_stage_input_func: vllm_omni.model_executor.stage_input_processors.qwen3_omni.talker2code2wav_async_chunk
+    runtime:
+      devices: "1"
+
+  - stage_id: 2
+    engine_args:
+      model_arch: Qwen3OmniMoeForConditionalGeneration
+      gpu_memory_utilization: 0.1
+      enforce_eager: true
+      trust_remote_code: true
+      async_scheduling: false
+      enable_prefix_caching: false
+      engine_output_type: audio
+      distributed_executor_backend: "mp"
+      max_num_batched_tokens: 1000000
+      hf_config_name: thinker_config
+      max_num_seqs: 64
+    runtime:
+      devices: "1"

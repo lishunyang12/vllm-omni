@@ -14,7 +14,7 @@ actively processing while stage-0 is still generating.
 Usage
 -----
     python end2end_async_chunk.py --query-type use_audio \
-        --stage-configs-path <path-to-async-chunk-yaml>
+        --deploy-config <path-to-deploy-config-yaml>
 
 See ``--help`` for all options.
 """
@@ -179,20 +179,19 @@ def clone_prompt_for_request(template: dict) -> dict:
     return cloned
 
 
-def _default_async_chunk_stage_configs_path() -> str | None:
-    """Best-effort default stage config for running Qwen3-Omni with async_chunk.
+def _default_deploy_config_path() -> str | None:
+    """Best-effort default deploy config for running Qwen3-Omni with async_chunk.
 
     When this example is executed from within the repository, we resolve the
     default YAML path relative to this file. When installed elsewhere, the
-    file may not exist and callers should pass --stage-configs-path explicitly.
+    file may not exist and callers should pass --deploy-config explicitly.
     """
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
     candidate = os.path.join(
         repo_root,
         "vllm_omni",
-        "model_executor",
-        "stage_configs",
-        "qwen3_omni_moe_async_chunk.yaml",
+        "deploy",
+        "qwen3_omni_moe.yaml",
     )
     return candidate if os.path.exists(candidate) else None
 
@@ -374,12 +373,12 @@ async def run_all(args):
             prompt["modalities"] = output_modalities
 
     # Create AsyncOmni
-    print(f"[Info] Creating AsyncOmni with stage_configs_path={args.stage_configs_path}")
+    print(f"[Info] Creating AsyncOmni with deploy_config={args.deploy_config}")
     async_omni = None
     try:
         async_omni = AsyncOmni(
             model=args.model,
-            stage_configs_path=args.stage_configs_path,
+            stage_configs_path=args.deploy_config,
             log_stats=args.log_stats,
             stage_init_timeout=args.stage_init_timeout,
         )
@@ -470,11 +469,11 @@ def parse_args():
         help="Query type.",
     )
     parser.add_argument(
-        "--stage-configs-path",
+        "--deploy-config",
         type=str,
-        default=_default_async_chunk_stage_configs_path(),
+        default=_default_deploy_config_path(),
         help=(
-            "Path to an async_chunk stage config YAML. "
+            "Path to a deploy config YAML. "
             "If not set, uses the model's default config "
             "(make sure it has async_chunk: true)."
         ),

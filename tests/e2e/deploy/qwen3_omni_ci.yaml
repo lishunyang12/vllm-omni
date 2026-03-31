@@ -1,0 +1,65 @@
+# CI deploy config for Qwen3-Omni-MoE — minimal resources, dummy weights.
+# Overrides the main deploy config for CI testing.
+
+stages:
+  - stage_id: 0
+    engine_args:
+      model_arch: Qwen3OmniMoeForConditionalGeneration
+      max_num_seqs: 5
+      gpu_memory_utilization: 0.9
+      enforce_eager: false
+      trust_remote_code: true
+      engine_output_type: latent
+      distributed_executor_backend: "mp"
+      max_num_batched_tokens: 32768
+      max_model_len: 32768
+      enable_prefix_caching: false
+      mm_processor_cache_gb: 0
+      hf_config_name: thinker_config
+      tensor_parallel_size: 1
+      load_format: dummy
+      custom_process_next_stage_input_func: vllm_omni.model_executor.stage_input_processors.qwen3_omni.thinker2talker_async_chunk
+    runtime:
+      devices: "0"
+    sampling_params:
+      max_tokens: 150
+      ignore_eos: false
+
+  - stage_id: 1
+    engine_args:
+      model_arch: Qwen3OmniMoeForConditionalGeneration
+      max_num_seqs: 5
+      gpu_memory_utilization: 0.5
+      enforce_eager: false
+      trust_remote_code: true
+      engine_output_type: latent
+      enable_prefix_caching: false
+      max_num_batched_tokens: 32768
+      max_model_len: 32768
+      distributed_executor_backend: "mp"
+      hf_config_name: talker_config
+      load_format: dummy
+      custom_process_next_stage_input_func: vllm_omni.model_executor.stage_input_processors.qwen3_omni.talker2code2wav_async_chunk
+    runtime:
+      devices: "1"
+    sampling_params:
+      max_tokens: 1000
+
+  - stage_id: 2
+    engine_args:
+      model_arch: Qwen3OmniMoeForConditionalGeneration
+      max_num_seqs: 5
+      enforce_eager: true
+      trust_remote_code: true
+      enable_prefix_caching: false
+      engine_output_type: audio
+      gpu_memory_utilization: 0.1
+      distributed_executor_backend: "mp"
+      max_num_batched_tokens: 100000
+      hf_config_name: thinker_config
+      async_scheduling: false
+      load_format: dummy
+    runtime:
+      devices: "1"
+    sampling_params:
+      max_tokens: 2000

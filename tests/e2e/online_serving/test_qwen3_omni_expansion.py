@@ -60,10 +60,10 @@ def get_batch_token_config(default_path):
 
 
 # CI stage config for 2*H100-80G GPUs
-default_path = str(Path(__file__).parent.parent / "stage_configs" / "qwen3_omni_ci.yaml")
+default_path = str(Path(__file__).parent.parent / "deploy" / "qwen3_omni_ci.yaml")
 
 if current_omni_platform.is_xpu():
-    default_path = str(Path(__file__).parent.parent / "stage_configs" / "xpu" / "qwen3_omni_ci.yaml")
+    default_path = str(Path(__file__).parent.parent / "deploy" / "xpu" / "qwen3_omni_ci.yaml")
 
 # Create parameter combinations for model and stage config
 test_params = [
