@@ -201,7 +201,81 @@ Trace files are written to the `torch_profiler_dir` specified in your stage YAML
 
 > **Important:** Always stop the same stages you started. Stopping a stage that was never started will produce errors.
 
-### 5. Analyzing Traces
+### 5. Nsight Systems (nsys) Profiling
+
+vLLM-Omni supports NVIDIA Nsight Systems profiling via the `cuda` profiler backend. This uses `torch.cuda.profiler` to mark profiling ranges that nsys captures, and `torch.cuda.nvtx` for annotating trace regions.
+
+#### Configuration
+
+Set `profiler: cuda` in your profiler config. Unlike the `torch` profiler, no `torch_profiler_dir` is needed since nsys manages its own output files.
+
+**Stage YAML (for omni or diffusion stages):**
+```yaml
+stage_args:
+  - stage_id: 0
+    stage_type: llm
+    engine_args:
+      profiler_config:
+        profiler: cuda
+```
+
+**Diffusion CLI:**
+```bash
+python image_to_video.py \
+    --model Wan-AI/Wan2.2-I2V-A14B-Diffusers \
+    --profiler-config '{"profiler": "cuda"}' \
+    ...
+```
+
+#### Running with nsys
+
+Wrap your command with `nsys profile` using `--capture-range=cudaProfilerApi` so nsys only captures the region between `start_profile()` and `stop_profile()`:
+
+```bash
+nsys profile \
+  --capture-range=cudaProfilerApi \
+  --capture-range-end=repeat \
+  --trace-fork-before-exec=true \
+  --cuda-graph-trace=node \
+  -o my_trace \
+  python your_script.py ...
+```
+
+| Flag | Purpose |
+|---|---|
+| `--capture-range=cudaProfilerApi` | Only capture between CUDA profiler start/stop calls |
+| `--capture-range-end=repeat` | Allow multiple start/stop cycles |
+| `--trace-fork-before-exec=true` | Trace child processes (needed for multi-worker) |
+| `--cuda-graph-trace=node` | Trace individual kernels inside CUDA graphs |
+
+#### Online Serving with nsys
+
+1. Start the server under nsys with `profiler: cuda` in your stage YAML:
+```bash
+nsys profile \
+  --capture-range=cudaProfilerApi \
+  --capture-range-end=repeat \
+  --trace-fork-before-exec=true \
+  --cuda-graph-trace=node \
+  -o serving_trace \
+  vllm serve Qwen/Qwen2.5-Omni-7B \
+    --omni \
+    --stage-configs-path qwen2_5_omni.yaml \
+    --port 8091
+```
+
+2. Trigger profiling via HTTP endpoints:
+```bash
+curl -X POST http://localhost:8091/start_profile
+# ... send inference requests ...
+curl -X POST http://localhost:8091/stop_profile
+```
+
+#### Analyzing nsys Traces
+
+Open the `.nsys-rep` output file in NVIDIA Nsight Systems GUI for detailed kernel-level analysis, memory transfers, and NVTX annotations.
+
+### 6. Analyzing Traces
 
 Output files are saved to the `torch_profiler_dir` specified in your stage YAML config.
 

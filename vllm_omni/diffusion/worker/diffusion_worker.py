@@ -20,6 +20,7 @@ import zmq
 from vllm.config import CompilationConfig, VllmConfig, set_current_vllm_config
 from vllm.distributed.device_communicators.shm_broadcast import MessageQueue
 from vllm.logger import init_logger
+from vllm.profiler.wrapper import WorkerProfiler
 from vllm.utils.import_utils import resolve_obj_by_qualname
 from vllm.utils.mem_utils import GiB_bytes
 from vllm.v1.worker.workspace import init_workspace_manager
@@ -42,7 +43,7 @@ from vllm_omni.diffusion.worker.diffusion_model_runner import DiffusionModelRunn
 from vllm_omni.diffusion.worker.utils import RunnerOutput
 from vllm_omni.lora.request import LoRARequest
 from vllm_omni.platforms import current_omni_platform
-from vllm_omni.profiler import OmniTorchProfilerWrapper, create_omni_profiler
+from vllm_omni.profiler import create_omni_profiler
 from vllm_omni.worker.gpu_memory_utils import get_process_gpu_memory
 
 logger = init_logger(__name__)
@@ -84,7 +85,7 @@ class DiffusionWorker:
             device=self.device,
         )
         # Initialize profiler if configured
-        self.profiler: OmniTorchProfilerWrapper | None = None
+        self.profiler: WorkerProfiler | None = None
         profiler_config = self.od_config.profiler_config
         if profiler_config and profiler_config.profiler == "torch":
             self.profiler = create_omni_profiler(
@@ -92,6 +93,10 @@ class DiffusionWorker:
                 worker_name=f"diffusion_worker_{self.rank}",
                 local_rank=self.local_rank,
             )
+        elif profiler_config and profiler_config.profiler == "cuda":
+            from vllm.profiler.wrapper import CudaProfilerWrapper
+
+            self.profiler = CudaProfilerWrapper(profiler_config)
         if not skip_load_model:
             self.load_model(load_format=self.od_config.diffusion_load_format)
             self.init_lora_manager()
