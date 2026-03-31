@@ -685,13 +685,22 @@ class StageConfigFactory:
         else:
             deploy_cfg = load_deploy_config(deploy_path)
 
-        # Merge pipeline + deploy + CLI
         stages = merge_pipeline_deploy(pipeline_cfg, deploy_cfg, cli_overrides)
 
-        # Apply CLI overrides (same logic as legacy path)
+        # Filter out CLI values that match StageDeployConfig defaults —
+        # these are argparse defaults, not user-set overrides.
+        _defaults = {
+            f.name: f.default
+            for f in __import__("dataclasses").fields(StageDeployConfig)
+            if f.default is not __import__("dataclasses").MISSING
+        }
+        filtered = {
+            k: v for k, v in cli_overrides.items()
+            if k not in _defaults or v != _defaults[k]
+        }
         for stage in stages:
             stage.runtime_overrides = cls._merge_cli_overrides(
-                stage, cli_overrides
+                stage, filtered
             )
 
         return stages
