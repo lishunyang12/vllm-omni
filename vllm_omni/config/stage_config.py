@@ -324,31 +324,16 @@ def merge_pipeline_deploy(
                 ps.custom_process_next_stage_input_func
             )
 
+        _NON_ENGINE = {"stage_id", "devices", "output_connectors",
+                       "input_connectors", "default_sampling_params",
+                       "engine_extras"}
         if ds is not None:
-            yaml_engine_args["max_num_seqs"] = ds.max_num_seqs
-            yaml_engine_args["gpu_memory_utilization"] = ds.gpu_memory_utilization
-            yaml_engine_args["tensor_parallel_size"] = ds.tensor_parallel_size
-            yaml_engine_args["enforce_eager"] = ds.enforce_eager
-            yaml_engine_args["trust_remote_code"] = ds.trust_remote_code
-            yaml_engine_args["enable_prefix_caching"] = ds.enable_prefix_caching
-            yaml_engine_args["max_num_batched_tokens"] = ds.max_num_batched_tokens
-            yaml_engine_args["distributed_executor_backend"] = (
-                ds.distributed_executor_backend
-            )
-            if ds.enable_chunked_prefill is not None:
-                yaml_engine_args["enable_chunked_prefill"] = ds.enable_chunked_prefill
-            if ds.max_model_len is not None:
-                yaml_engine_args["max_model_len"] = ds.max_model_len
-            if ds.async_scheduling is not None:
-                yaml_engine_args["async_scheduling"] = ds.async_scheduling
-            if ds.quantization is not None:
-                yaml_engine_args["quantization"] = ds.quantization
-            if ds.dtype is not None:
-                yaml_engine_args["dtype"] = ds.dtype
-            if ds.data_parallel_size != 1:
-                yaml_engine_args["data_parallel_size"] = ds.data_parallel_size
-            if ds.pipeline_parallel_size != 1:
-                yaml_engine_args["pipeline_parallel_size"] = ds.pipeline_parallel_size
+            for k, v in asdict(ds).items():
+                if k in _NON_ENGINE:
+                    continue
+                if v is None:
+                    continue
+                yaml_engine_args[k] = v
             yaml_engine_args.update(ds.engine_extras)
 
         if deploy.async_chunk:
