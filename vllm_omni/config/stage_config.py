@@ -210,10 +210,48 @@ def _parse_stage_deploy(stage_data: dict[str, Any]) -> StageDeployConfig:
     return StageDeployConfig(**kwargs)
 
 
+def _deep_merge_stage(base: dict, overlay: dict) -> dict:
+    """Deep-merge overlay stage dict onto base, matching by stage_id."""
+    merged = dict(base)
+    for k, v in overlay.items():
+        if k == "default_sampling_params" and k in merged and isinstance(v, dict):
+            merged[k] = {**merged[k], **v}
+        else:
+            merged[k] = v
+    return merged
+
+
+def _resolve_deploy_yaml(path: str | Path) -> dict[str, Any]:
+    """Load a deploy YAML with optional ``base_config`` inheritance."""
+    raw_dict = to_dict(load_yaml_config(path))
+
+    base_path = raw_dict.pop("base_config", None)
+    if base_path is None:
+        return raw_dict
+
+    # Resolve relative to the overlay file's directory
+    base_path = Path(path).parent / base_path
+    base_dict = _resolve_deploy_yaml(base_path)
+
+    # Merge top-level scalars: overlay wins
+    merged = {**base_dict, **{k: v for k, v in raw_dict.items() if k != "stages"}}
+
+    # Merge stages by stage_id
+    base_stages = {s["stage_id"]: s for s in base_dict.get("stages", [])}
+    for overlay_stage in raw_dict.get("stages", []):
+        sid = overlay_stage["stage_id"]
+        if sid in base_stages:
+            base_stages[sid] = _deep_merge_stage(base_stages[sid], overlay_stage)
+        else:
+            base_stages[sid] = overlay_stage
+    merged["stages"] = list(base_stages.values())
+
+    return merged
+
+
 def load_deploy_config(path: str | Path) -> DeployConfig:
-    """Load a deploy YAML and return a DeployConfig dataclass."""
-    raw = load_yaml_config(path)
-    raw_dict = to_dict(raw)
+    """Load a deploy YAML (with optional base_config inheritance)."""
+    raw_dict = _resolve_deploy_yaml(path)
 
     stages = [_parse_stage_deploy(s) for s in raw_dict.get("stages", [])]
 

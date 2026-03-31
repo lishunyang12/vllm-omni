@@ -1,82 +1,27 @@
-# CI deploy config for Qwen3-Omni-MoE — minimal resources, dummy weights.
-
-async_chunk: true
-
-connectors:
-  connector_of_shared_memory:
-    name: SharedMemoryConnector
-    extra:
-      codec_chunk_frames: 25
-      codec_left_context_frames: 25
-
-edges:
-  - from: 0
-    to: 1
-    window_size: -1
-  - from: 1
-    to: 2
-    window_size: -1
+# CI deploy — minimal resources, dummy weights.
+base_config: ../../../vllm_omni/deploy/qwen3_omni_moe.yaml
 
 stages:
   - stage_id: 0
-    gpu_memory_utilization: 0.9
     max_num_seqs: 5
-    tensor_parallel_size: 1
-    enforce_eager: false
-    trust_remote_code: true
-    distributed_executor_backend: "mp"
-    enable_prefix_caching: false
-    max_num_batched_tokens: 32768
     max_model_len: 32768
     mm_processor_cache_gb: 0
     load_format: dummy
-    devices: "0"
-    output_connectors:
-      to_stage_1: connector_of_shared_memory
     default_sampling_params:
       max_tokens: 150
       ignore_eos: false
-      temperature: 0.4
-      top_p: 0.9
-      top_k: 1
-      seed: 42
-      repetition_penalty: 1.05
 
   - stage_id: 1
     gpu_memory_utilization: 0.5
     max_num_seqs: 5
-    enforce_eager: false
-    trust_remote_code: true
-    enable_prefix_caching: false
-    max_num_batched_tokens: 32768
     max_model_len: 32768
-    distributed_executor_backend: "mp"
     load_format: dummy
-    devices: "1"
-    input_connectors:
-      from_stage_0: connector_of_shared_memory
     default_sampling_params:
       max_tokens: 1000
-      temperature: 0.9
-      top_k: 50
-      seed: 42
-      repetition_penalty: 1.05
 
   - stage_id: 2
-    gpu_memory_utilization: 0.1
     max_num_seqs: 5
-    enforce_eager: true
-    trust_remote_code: true
-    enable_prefix_caching: false
-    distributed_executor_backend: "mp"
     max_num_batched_tokens: 100000
-    async_scheduling: false
     load_format: dummy
-    devices: "1"
     default_sampling_params:
       max_tokens: 2000
-      temperature: 0.0
-      top_p: 1.0
-      top_k: -1
-      seed: 42
-      repetition_penalty: 1.1

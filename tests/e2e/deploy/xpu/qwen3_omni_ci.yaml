@@ -1,21 +1,5 @@
-# XPU CI deploy config for Qwen3-Omni-MoE — verified on 8x Intel Arc Pro B60.
-
-async_chunk: true
-
-connectors:
-  connector_of_shared_memory:
-    name: SharedMemoryConnector
-    extra:
-      codec_chunk_frames: 25
-      codec_left_context_frames: 25
-
-edges:
-  - from: 0
-    to: 1
-    window_size: -1
-  - from: 1
-    to: 2
-    window_size: -1
+# XPU CI deploy — verified on 8x Intel Arc Pro B60.
+base_config: ../../../../vllm_omni/deploy/qwen3_omni_moe.yaml
 
 stages:
   - stage_id: 0
@@ -23,62 +7,31 @@ stages:
     max_num_seqs: 1
     tensor_parallel_size: 4
     enforce_eager: true
-    trust_remote_code: true
-    distributed_executor_backend: "mp"
-    enable_prefix_caching: false
     max_num_batched_tokens: 4096
     max_model_len: 4096
     max_cudagraph_capture_size: 0
     skip_mm_profiling: true
     devices: "0,1,2,3"
-    output_connectors:
-      to_stage_1: connector_of_shared_memory
     default_sampling_params:
       max_tokens: 100
       ignore_eos: false
-      temperature: 0.4
-      top_p: 0.9
-      top_k: 1
-      seed: 42
-      repetition_penalty: 1.05
 
   - stage_id: 1
     gpu_memory_utilization: 0.6
     max_num_seqs: 1
     enforce_eager: true
-    trust_remote_code: true
-    enable_prefix_caching: false
     max_num_batched_tokens: 4096
     max_model_len: 4096
-    distributed_executor_backend: "mp"
     max_cudagraph_capture_size: 0
     skip_mm_profiling: true
     devices: "4"
-    input_connectors:
-      from_stage_0: connector_of_shared_memory
-    default_sampling_params:
-      temperature: 0.9
-      top_k: 50
-      max_tokens: 4096
-      seed: 42
-      repetition_penalty: 1.05
 
   - stage_id: 2
     gpu_memory_utilization: 0.3
     max_num_seqs: 1
-    enforce_eager: true
-    trust_remote_code: true
-    enable_prefix_caching: false
-    distributed_executor_backend: "mp"
     max_num_batched_tokens: 100000
-    async_scheduling: false
     max_cudagraph_capture_size: 0
     skip_mm_profiling: true
     devices: "5"
     default_sampling_params:
       max_tokens: 2000
-      temperature: 0.0
-      top_p: 1.0
-      top_k: -1
-      seed: 42
-      repetition_penalty: 1.1
