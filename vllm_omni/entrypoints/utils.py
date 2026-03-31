@@ -299,14 +299,12 @@ def load_stage_configs_from_model(
     if base_engine_args is None:
         base_engine_args = {}
 
-    # Merge stage_overrides into cli_overrides as per-stage keys
-    cli_overrides = dict(base_engine_args)
+    cli_overrides = _convert_dataclasses_to_dict(dict(base_engine_args))
     if stage_overrides:
         for stage_id_str, overrides in stage_overrides.items():
             for key, val in overrides.items():
                 cli_overrides[f"stage_{stage_id_str}_{key}"] = val
 
-    # Try the new StageConfigFactory path (checks pipeline registry first)
     from vllm_omni.config.stage_config import StageConfigFactory
 
     stages = StageConfigFactory.create_from_model(
