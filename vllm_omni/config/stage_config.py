@@ -24,20 +24,10 @@ from vllm.logger import init_logger
 
 from vllm_omni.config.yaml_util import create_config, load_yaml_config, to_dict
 
-# Pipeline YAMLs live alongside model code in model_executor/models/<model>/
 _MODELS_DIR = Path(__file__).resolve().parent.parent / "model_executor" / "models"
 
 
 def get_pipeline_path(model_dir: str, filename: str) -> Path:
-    """Return the full path to a pipeline YAML file.
-
-    Args:
-        model_dir: Model subdirectory name (e.g., "qwen3_omni").
-        filename: Name of the YAML file (e.g., "pipeline.yaml").
-
-    Returns:
-        Absolute path to the file.
-    """
     return _MODELS_DIR / model_dir / filename
 
 
@@ -76,36 +66,21 @@ _EXECUTION_TYPE_TO_SCHEDULER: dict[StageExecutionType, str | None] = {
 class StagePipelineConfig:
     """Fixed topology for one stage (frozen, not user-configurable)."""
 
-    # Identity
     stage_id: int
     model_stage: str
-
-    # Execution
     execution_type: StageExecutionType = StageExecutionType.LLM_AR
-
-    # DAG topology
     input_sources: tuple[int, ...] = ()
-
-    # Output
     final_output: bool = False
     final_output_type: str | None = None
-
-    # Model-intrinsic properties
     is_comprehension: bool = False
     requires_multimodal_data: bool = False
     hf_config_name: str | None = None
     engine_output_type: str | None = None
-
-    # Sampling constraints (model-intrinsic, override deploy/CLI)
     sampling_constraints: dict[str, Any] = field(default_factory=dict)
-
-    # Processing hooks (both sync and async; engine selects via async_chunk)
     custom_process_input_func: str | None = None
     custom_process_next_stage_input_func: str | None = None
     prompt_expand_func: str | None = None
     cfg_kv_collect_func: str | None = None
-
-    # Model-specific
     omni_kv_config: dict[str, Any] | None = None
     extras: dict[str, Any] = field(default_factory=dict)
 
@@ -156,7 +131,6 @@ class PipelineConfig:
         return errors
 
 
-# Pipeline registry — model_type → PipelineConfig
 _PIPELINE_REGISTRY: dict[str, PipelineConfig] = {}
 
 
@@ -176,8 +150,6 @@ class StageDeployConfig:
     """Per-stage deployment knobs (all CLI-overridable)."""
 
     stage_id: int
-
-    # Engine args
     max_num_seqs: int = 64
     gpu_memory_utilization: float = 0.9
     tensor_parallel_size: int = 1
@@ -193,18 +165,10 @@ class StageDeployConfig:
     dtype: str | None = None
     data_parallel_size: int = 1
     pipeline_parallel_size: int = 1
-
-    # Runtime
     devices: str = "0"
-
-    # Connectors
     output_connectors: dict[str, str] | None = None
     input_connectors: dict[str, str] | None = None
-
-    # User-tunable sampling defaults
     default_sampling_params: dict[str, Any] | None = None
-
-    # Escape hatch for model-specific engine args
     engine_extras: dict[str, Any] = field(default_factory=dict)
 
 
@@ -228,12 +192,10 @@ def load_deploy_config(path: str | Path) -> DeployConfig:
     for stage_data in raw_dict.get("stages", []):
         stage_id = stage_data["stage_id"]
 
-        # Support both flat format (new) and nested engine_args/runtime (legacy)
         if "engine_args" in stage_data:
             engine_args = dict(stage_data.get("engine_args", {}))
             runtime = stage_data.get("runtime", {})
         else:
-            # Flat format: all keys at stage level
             engine_args = {
                 k: v
                 for k, v in stage_data.items()
@@ -244,7 +206,6 @@ def load_deploy_config(path: str | Path) -> DeployConfig:
             }
             runtime = {"devices": stage_data.get("devices", "0")}
 
-        # Pop known fields from engine_args
         sdc = StageDeployConfig(
             stage_id=stage_id,
             max_num_seqs=engine_args.pop("max_num_seqs", 64),
@@ -268,7 +229,6 @@ def load_deploy_config(path: str | Path) -> DeployConfig:
             output_connectors=stage_data.get("output_connectors", None),
             input_connectors=stage_data.get("input_connectors", None),
             default_sampling_params=stage_data.get("default_sampling_params", None),
-            # Remaining engine_args go into escape hatch
             engine_extras=engine_args,
         )
         stages.append(sdc)
@@ -371,8 +331,6 @@ def merge_pipeline_deploy(
         scheduler_cls = _EXECUTION_TYPE_TO_SCHEDULER.get(ps.execution_type)
 
         yaml_engine_args: dict[str, Any] = {}
-
-        # From pipeline (model-intrinsic)
         yaml_engine_args["model_arch"] = pipeline.model_arch
         if ps.engine_output_type:
             yaml_engine_args["engine_output_type"] = ps.engine_output_type
@@ -381,7 +339,6 @@ def merge_pipeline_deploy(
                 ps.custom_process_next_stage_input_func
             )
 
-        # From deploy (user-tunable)
         if ds is not None:
             yaml_engine_args["max_num_seqs"] = ds.max_num_seqs
             yaml_engine_args["gpu_memory_utilization"] = ds.gpu_memory_utilization
@@ -420,7 +377,6 @@ def merge_pipeline_deploy(
 
         yaml_extras: dict[str, Any] = {}
 
-        # Sampling: deploy defaults ← pipeline constraints (model-intrinsic wins)
         sampling: dict[str, Any] = {}
         if ds is not None and ds.default_sampling_params:
             sampling.update(ds.default_sampling_params)
@@ -463,41 +419,24 @@ class StageConfig:
     TODO(@lishunyang12): replace with ResolvedStageConfig once all models are migrated.
     """
 
-    # Identity
     stage_id: int
     model_stage: str
-
-    # Stage type
     stage_type: StageType = StageType.LLM
-
     input_sources: list[int] = field(default_factory=list)
     custom_process_input_func: str | None = None
     final_output: bool = False
-    final_output_type: str | None = None  # "text", "audio", "image"
-    worker_type: str | None = None  # "ar" or "generation"
+    final_output_type: str | None = None
+    worker_type: str | None = None
     scheduler_cls: str | None = None
     hf_config_name: str | None = None
     is_comprehension: bool = False
-
-    # Per-stage engine args from pipeline YAML (defaults)
     yaml_engine_args: dict[str, Any] = field(default_factory=dict)
-    # Per-stage runtime config from pipeline YAML (devices, etc.)
     yaml_runtime: dict[str, Any] = field(default_factory=dict)
-    # Pass-through fields from pipeline YAML (default_sampling_params,
-    # output_connectors, input_connectors, tts_args, etc.)
     yaml_extras: dict[str, Any] = field(default_factory=dict)
-
-    # Runtime overrides (populated from CLI, not from pipeline YAML)
     runtime_overrides: dict[str, Any] = field(default_factory=dict)
 
     def to_omegaconf(self) -> Any:
-        """Convert to OmegaConf for backward compatibility with OmniStage.
-
-        TODO(@lishunyang12): remove once engine consumes ResolvedStageConfig directly.
-
-        Returns:
-            OmegaConf DictConfig with stage configuration in legacy format.
-        """
+        """TODO(@lishunyang12): remove once engine consumes ResolvedStageConfig directly."""
         # Start with YAML engine_args defaults
         engine_args: dict[str, Any] = dict(self.yaml_engine_args)
 
