@@ -617,6 +617,14 @@ class StageConfigFactory:
         model_type, _ = cls._auto_detect_model_type(
             model, trust_remote_code=trust_remote_code
         )
+        if model_type and model_type in cls.PIPELINE_MODELS:
+            pipeline_dir = cls.PIPELINE_MODELS[model_type]
+            try:
+                __import__(
+                    f"vllm_omni.model_executor.models.{pipeline_dir}.pipeline"
+                )
+            except ImportError:
+                pass
         if model_type and model_type in _PIPELINE_REGISTRY:
             return cls._create_from_registry(
                 model_type, cli_overrides, deploy_config_path
@@ -658,15 +666,6 @@ class StageConfigFactory:
         deploy_config_path: str | None = None,
     ) -> list[StageConfig]:
         """Create StageConfigs from pipeline registry + deploy YAML."""
-        # Import pipeline module to ensure registration
-        pipeline_dir = cls.PIPELINE_MODELS.get(model_type, model_type)
-        try:
-            __import__(
-                f"vllm_omni.model_executor.models.{pipeline_dir}.pipeline"
-            )
-        except ImportError:
-            pass
-
         pipeline_cfg = _PIPELINE_REGISTRY[model_type]
 
         # Resolve deploy config path
