@@ -21,13 +21,6 @@ edges:
 stages:
   - stage_id: 0
     gpu_memory_utilization: 0.9
-    max_num_seqs: 64
-    tensor_parallel_size: 1
-    enforce_eager: false
-    trust_remote_code: true
-    distributed_executor_backend: "mp"
-    enable_prefix_caching: false
-    max_num_batched_tokens: 32768
     devices: "0"
     output_connectors:
       to_stage_1: connector_of_shared_memory
@@ -41,12 +34,6 @@ stages:
 
   - stage_id: 1
     gpu_memory_utilization: 0.6
-    max_num_seqs: 64
-    enforce_eager: false
-    trust_remote_code: true
-    enable_prefix_caching: false
-    max_num_batched_tokens: 32768
-    distributed_executor_backend: "mp"
     devices: "1"
     input_connectors:
       from_stage_0: connector_of_shared_memory
@@ -61,10 +48,7 @@ stages:
     gpu_memory_utilization: 0.1
     max_num_seqs: 1
     enforce_eager: true
-    trust_remote_code: true
     async_scheduling: false
-    enable_prefix_caching: false
-    distributed_executor_backend: "mp"
     max_num_batched_tokens: 51200
     devices: "1"
     default_sampling_params:
