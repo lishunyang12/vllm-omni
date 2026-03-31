@@ -1,104 +1,119 @@
 # Deploy config for Qwen3-Omni-MoE — CUDA defaults + platform overrides.
 # All fields here are overridable by CLI.
-#
-# Sampling defaults live in pipeline.py (default_sampling_params).
-# Only add sampling_params here to override those defaults.
+# Pipeline topology (model_arch, engine_output_type, hooks) lives in pipeline.py.
 #
 # Verified on 2x H100-80G GPUs.
 
+# async_chunk: true  → streaming chunks between stages (uses connectors)
+# async_chunk: false → sync full-batch handoff between stages
+# Override via CLI: --async-chunk / --no-async-chunk
+async_chunk: true
+
+connectors:
+  connector_of_shared_memory:
+    name: SharedMemoryConnector
+    extra:
+      codec_chunk_frames: 25
+      codec_left_context_frames: 25
+
+edges:
+  - from: 0
+    to: 1
+    window_size: -1
+  - from: 1
+    to: 2
+    window_size: -1
+
 stages:
   - stage_id: 0
-    engine_args:
-      model_arch: Qwen3OmniMoeForConditionalGeneration
-      max_num_seqs: 64
-      gpu_memory_utilization: 0.9
-      enforce_eager: false
-      trust_remote_code: true
-      engine_output_type: latent
-      distributed_executor_backend: "mp"
-      enable_prefix_caching: false
-      max_num_batched_tokens: 32768
-      tensor_parallel_size: 1
-      custom_process_next_stage_input_func: vllm_omni.model_executor.stage_input_processors.qwen3_omni.thinker2talker_async_chunk
-    runtime:
-      devices: "0"
+    gpu_memory_utilization: 0.9
+    max_num_seqs: 64
+    tensor_parallel_size: 1
+    enforce_eager: false
+    trust_remote_code: true
+    distributed_executor_backend: "mp"
+    enable_prefix_caching: false
+    max_num_batched_tokens: 32768
+    devices: "0"
+    output_connectors:
+      to_stage_1: connector_of_shared_memory
+    default_sampling_params:
+      temperature: 0.4
+      top_p: 0.9
+      top_k: 1
+      max_tokens: 2048
+      seed: 42
+      repetition_penalty: 1.05
 
   - stage_id: 1
-    engine_args:
-      model_arch: Qwen3OmniMoeForConditionalGeneration
-      max_num_seqs: 64
-      gpu_memory_utilization: 0.6
-      enforce_eager: false
-      trust_remote_code: true
-      engine_output_type: latent
-      enable_prefix_caching: false
-      max_num_batched_tokens: 32768
-      distributed_executor_backend: "mp"
-      custom_process_next_stage_input_func: vllm_omni.model_executor.stage_input_processors.qwen3_omni.talker2code2wav_async_chunk
-    runtime:
-      devices: "1"
+    gpu_memory_utilization: 0.6
+    max_num_seqs: 64
+    enforce_eager: false
+    trust_remote_code: true
+    enable_prefix_caching: false
+    max_num_batched_tokens: 32768
+    distributed_executor_backend: "mp"
+    devices: "1"
+    input_connectors:
+      from_stage_0: connector_of_shared_memory
+    default_sampling_params:
+      temperature: 0.9
+      top_k: 50
+      max_tokens: 4096
+      seed: 42
+      repetition_penalty: 1.05
 
   - stage_id: 2
-    engine_args:
-      model_arch: Qwen3OmniMoeForConditionalGeneration
-      max_num_seqs: 64
-      gpu_memory_utilization: 0.1
-      enforce_eager: true
-      trust_remote_code: true
-      async_scheduling: false
-      enable_prefix_caching: false
-      engine_output_type: audio
-      distributed_executor_backend: "mp"
-      max_num_batched_tokens: 51200
-    runtime:
-      devices: "1"
+    gpu_memory_utilization: 0.1
+    max_num_seqs: 1
+    enforce_eager: true
+    trust_remote_code: true
+    async_scheduling: false
+    enable_prefix_caching: false
+    distributed_executor_backend: "mp"
+    max_num_batched_tokens: 51200
+    devices: "1"
+    default_sampling_params:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: -1
+      max_tokens: 65536
+      seed: 42
+      repetition_penalty: 1.1
 
 # Platform overrides — only what differs from CUDA defaults above.
 platforms:
-  npu:  # verified on 5x A2/A3-64G NPUs
+  npu:
     stages:
       - stage_id: 0
-        engine_args:
-          gpu_memory_utilization: 0.6
-          tensor_parallel_size: 2
-        runtime:
-          devices: "0,1"
+        gpu_memory_utilization: 0.6
+        tensor_parallel_size: 2
+        devices: "0,1"
       - stage_id: 1
-        engine_args:
-          gpu_memory_utilization: 0.6
-          enforce_eager: true
-        runtime:
-          devices: "2"
+        gpu_memory_utilization: 0.6
+        enforce_eager: true
+        devices: "2"
       - stage_id: 2
-        engine_args:
-          gpu_memory_utilization: 0.3
-        runtime:
-          devices: "2"
+        gpu_memory_utilization: 0.3
+        devices: "2"
 
-  rocm:  # verified on 2x H100-80G ROCm
+  rocm:
     stages:
       - stage_id: 0
-        engine_args:
-          enforce_eager: true
+        enforce_eager: true
 
-  xpu:  # verified on 8x Arc Pro B60
+  xpu:
     stages:
       - stage_id: 0
-        engine_args:
-          tensor_parallel_size: 4
-          enforce_eager: true
-          max_cudagraph_capture_size: 0
-        runtime:
-          devices: "0,1,2,3"
+        tensor_parallel_size: 4
+        enforce_eager: true
+        max_cudagraph_capture_size: 0
+        devices: "0,1,2,3"
       - stage_id: 1
-        engine_args:
-          enforce_eager: true
-          max_cudagraph_capture_size: 0
-        runtime:
-          devices: "4"
+        enforce_eager: true
+        max_cudagraph_capture_size: 0
+        devices: "4"
       - stage_id: 2
-        engine_args:
-          gpu_memory_utilization: 0.3
-          max_cudagraph_capture_size: 0
-        runtime:
-          devices: "4"
+        gpu_memory_utilization: 0.3
+        max_cudagraph_capture_size: 0
+        devices: "4"

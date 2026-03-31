@@ -88,38 +88,6 @@ class StagePipelineConfig:
 
     Defined by model developers alongside model code. Changing any field
     requires a code change and review.
-
-    Attributes:
-        stage_id: Index of this stage in the pipeline.
-        model_stage: Logical name ("thinker", "talker", "code2wav", "dit").
-        execution_type: Merged stage + worker type (LLM_AR, LLM_GENERATION,
-            DIFFUSION). Determines scheduler via ``_EXECUTION_TYPE_TO_SCHEDULER``.
-        input_sources: Upstream stage IDs. Empty tuple = entry point.
-        final_output: Whether this stage emits user-visible output.
-        final_output_type: Output modality ("text", "audio", "image").
-        is_comprehension: Marks the understanding stage (tokenizer owner).
-        requires_multimodal_data: Whether this stage needs multimodal input.
-        hf_config_name: Sub-config key in HF config (e.g. "thinker_config").
-        default_sampling_params: Default sampling parameters for this stage.
-            Includes both model-intrinsic constraints (``detokenize``,
-            ``stop_token_ids``) and tunable defaults (``temperature``,
-            ``top_k``). Deploy/CLI values override the tunable ones.
-        output_connectors: Named output connector references
-            (e.g. ``{"to_stage_1": "connector_of_shared_memory"}``).
-        input_connectors: Named input connector references
-            (e.g. ``{"from_stage_0": "connector_of_shared_memory"}``).
-        custom_process_input_func: Sync input transform function path.
-            Part of fixed pipeline topology (not deployment-dependent).
-        prompt_expand_func: CFG prompt expansion (Bagel).
-        cfg_kv_collect_func: CFG KV cache collection (Bagel).
-        omni_kv_config: KV cache transfer config (Bagel, Hunyuan — fixed
-            per model, promoted from extras).
-        extras: Escape hatch for model-specific fields not yet promoted
-            to explicit attributes.
-
-    Note:
-        ``engine_output_type`` and ``custom_process_next_stage_input_func``
-        are deployment-dependent and live in ``StageDeployConfig``, not here.
     """
 
     # --- Identity ---
@@ -140,16 +108,17 @@ class StagePipelineConfig:
     is_comprehension: bool = False
     requires_multimodal_data: bool = False
     hf_config_name: str | None = None
+    engine_output_type: str | None = None
 
-    # --- Default sampling params (model defaults, overridable by deploy/CLI) ---
-    default_sampling_params: dict[str, Any] = field(default_factory=dict)
+    # --- Model-intrinsic sampling constraints (NOT user-tunable) ---
+    #     e.g. detokenize, stop_token_ids — override any deploy/CLI values.
+    sampling_constraints: dict[str, Any] = field(default_factory=dict)
 
-    # --- Connectors (per-stage references to named connector definitions) ---
-    output_connectors: dict[str, str] | None = None
-    input_connectors: dict[str, str] | None = None
-
-    # --- Processing hooks (dotted Python paths, sync/topology-fixed only) ---
+    # --- Processing hooks (dotted Python paths) ---
+    #     Both sync and async hooks defined; engine selects based on
+    #     deploy config's async_chunk flag.
     custom_process_input_func: str | None = None
+    custom_process_next_stage_input_func: str | None = None
     prompt_expand_func: str | None = None
     cfg_kv_collect_func: str | None = None
 
@@ -164,30 +133,14 @@ class PipelineConfig:
 
     Defined by model developers alongside model code.
     ``frozen=True`` — changing topology requires a code change and review.
-
-    Attributes:
-        model_type: HF model type identifier (e.g. "qwen3_omni_moe").
-        async_chunk: Whether async chunk streaming is enabled between stages.
-            When true, the engine uses ``custom_process_next_stage_input_func``
-            (from deploy config) and activates connectors.
-            When false, uses ``custom_process_input_func`` (sync path).
-        stages: Ordered tuple of stage configs defining the DAG.
-        connectors: Named connector definitions (backend + config).
-            Activated when ``async_chunk`` is enabled.
-        edges: Edge topology (from, to, window_size).
-
-    Note:
-        ``model_arch`` lives in ``StageDeployConfig.engine_args``, not here,
-        because it is an engine-level setting overridable by CLI.
     """
 
+    # --- Identity ---
     model_type: str
-    async_chunk: bool = False
-    stages: tuple[StagePipelineConfig, ...] = ()
+    model_arch: str = ""
 
-    # --- Distributed configuration (activated when async_chunk is enabled) ---
-    connectors: dict[str, Any] | None = None
-    edges: list[dict[str, Any]] | None = None
+    # --- Stages ---
+    stages: tuple[StagePipelineConfig, ...] = ()
 
     def get_stage(self, stage_id: int) -> StagePipelineConfig | None:
         """Look up a stage by its ID."""
@@ -259,46 +212,11 @@ _DEPLOY_DIR = Path(__file__).resolve().parent.parent / "deploy"
 
 @dataclass
 class StageDeployConfig:
-    """Per-stage deployment knobs. All overridable by CLI.
-
-    Maps to the ``engine_args:`` + ``runtime:`` sections in deploy YAML.
-
-    Attributes:
-        stage_id: Stage index (must match PipelineConfig stage_id).
-        model_arch: HF architecture class name.
-        engine_output_type: Engine output type ("latent", "text", "audio",
-            "image"). Deployment-dependent because the same pipeline stage
-            may produce different output types depending on deploy mode.
-        custom_process_next_stage_input_func: Async chunk input transform
-            function path. Lives in deploy (not pipeline) because it is
-            only used when ``async_chunk`` is enabled.
-        max_num_seqs: Max concurrent sequences.
-        gpu_memory_utilization: GPU memory fraction.
-        tensor_parallel_size: TP degree.
-        enforce_eager: Disable CUDA graphs.
-        trust_remote_code: Allow HF remote code.
-        enable_prefix_caching: KV cache reuse.
-        enable_chunked_prefill: Chunked prefill.
-        max_num_batched_tokens: Token budget per iteration.
-        max_model_len: Max context length.
-        distributed_executor_backend: "mp" or "ray".
-        async_scheduling: Async scheduling.
-        quantization: Quantization method.
-        dtype: Model precision.
-        data_parallel_size: DP degree.
-        pipeline_parallel_size: PP degree.
-        devices: GPU device assignment.
-        sampling_params: User-tunable sampling overrides (merged on top of
-            ``StagePipelineConfig.default_sampling_params``).
-        engine_extras: Escape hatch for model-specific engine args.
-    """
+    """Per-stage deployment knobs. All overridable by CLI."""
 
     stage_id: int
 
     # --- Engine args ---
-    model_arch: str | None = None
-    engine_output_type: str | None = None
-    custom_process_next_stage_input_func: str | None = None
     max_num_seqs: int = 64
     gpu_memory_utilization: float = 0.9
     tensor_parallel_size: int = 1
@@ -318,10 +236,15 @@ class StageDeployConfig:
     # --- Runtime ---
     devices: str = "0"
 
-    # --- User-tunable sampling overrides ---
-    sampling_params: dict[str, Any] | None = None
+    # --- Connectors (deployment concern, per fake0fan) ---
+    output_connectors: dict[str, str] | None = None
+    input_connectors: dict[str, str] | None = None
+
+    # --- User-tunable sampling defaults (temperature, top_k, etc.) ---
+    default_sampling_params: dict[str, Any] | None = None
 
     # --- Escape hatch for model-specific engine args ---
+    #     e.g. mm_processor_cache_gb, skip_mm_profiling, cache_backend
     engine_extras: dict[str, Any] = field(default_factory=dict)
 
 
@@ -329,15 +252,13 @@ class StageDeployConfig:
 class DeployConfig:
     """Loaded from ``deploy/<model>.yaml``. The only YAML file users edit.
 
-    Contains per-stage engine args and platform overrides. Connector
-    definitions and edges live in PipelineConfig (topology, not deployment).
-    ``async_chunk`` lives in PipelineConfig (topology, not deployment).
-
-    Attributes:
-        stages: Per-stage deployment knobs.
-        platforms: Platform delta overrides (npu, rocm, xpu) — NOT full copies.
+    Contains per-stage engine args, connector definitions, and platform
+    overrides. ``async_chunk`` is CLI-tunable (not topology).
     """
 
+    async_chunk: bool = True
+    connectors: dict[str, Any] | None = None
+    edges: list[dict[str, Any]] | None = None
     stages: list[StageDeployConfig] = field(default_factory=list)
     platforms: dict[str, Any] | None = None
 
@@ -361,18 +282,25 @@ def load_deploy_config(path: str | Path) -> DeployConfig:
     for stage_data in raw_dict.get("stages", []):
         stage_id = stage_data["stage_id"]
 
-        # Flatten engine_args + runtime into StageDeployConfig fields
-        engine_args = stage_data.get("engine_args", {})
-        runtime = stage_data.get("runtime", {})
+        # Support both flat format (new) and nested engine_args/runtime (legacy)
+        if "engine_args" in stage_data:
+            engine_args = dict(stage_data.get("engine_args", {}))
+            runtime = stage_data.get("runtime", {})
+        else:
+            # Flat format: all keys at stage level
+            engine_args = {
+                k: v
+                for k, v in stage_data.items()
+                if k not in (
+                    "stage_id", "devices", "output_connectors",
+                    "input_connectors", "default_sampling_params",
+                )
+            }
+            runtime = {"devices": stage_data.get("devices", "0")}
 
         # Pop known fields from engine_args
         sdc = StageDeployConfig(
             stage_id=stage_id,
-            model_arch=engine_args.pop("model_arch", None),
-            engine_output_type=engine_args.pop("engine_output_type", None),
-            custom_process_next_stage_input_func=engine_args.pop(
-                "custom_process_next_stage_input_func", None
-            ),
             max_num_seqs=engine_args.pop("max_num_seqs", 64),
             gpu_memory_utilization=engine_args.pop("gpu_memory_utilization", 0.9),
             tensor_parallel_size=engine_args.pop("tensor_parallel_size", 1),
@@ -390,14 +318,19 @@ def load_deploy_config(path: str | Path) -> DeployConfig:
             dtype=engine_args.pop("dtype", None),
             data_parallel_size=engine_args.pop("data_parallel_size", 1),
             pipeline_parallel_size=engine_args.pop("pipeline_parallel_size", 1),
-            devices=runtime.pop("devices", "0"),
-            sampling_params=stage_data.get("sampling_params", None),
+            devices=runtime.get("devices", "0"),
+            output_connectors=stage_data.get("output_connectors", None),
+            input_connectors=stage_data.get("input_connectors", None),
+            default_sampling_params=stage_data.get("default_sampling_params", None),
             # Remaining engine_args go into escape hatch
             engine_extras=engine_args,
         )
         stages.append(sdc)
 
     return DeployConfig(
+        async_chunk=raw_dict.get("async_chunk", True),
+        connectors=raw_dict.get("connectors", None),
+        edges=raw_dict.get("edges", None),
         stages=stages,
         platforms=raw_dict.get("platforms", None),
     )
@@ -521,13 +454,22 @@ def merge_pipeline_deploy(
 
         scheduler_cls = _EXECUTION_TYPE_TO_SCHEDULER.get(ps.execution_type)
 
-        # --- Build engine_args from deploy config ---
+        # --- Build engine_args from pipeline + deploy ---
         yaml_engine_args: dict[str, Any] = {}
+
+        # Pipeline-level fields
+        yaml_engine_args["model_arch"] = pipeline.model_arch
+        if ps.engine_output_type:
+            yaml_engine_args["engine_output_type"] = ps.engine_output_type
+
+        # Async hook from pipeline (engine selects based on deploy.async_chunk)
+        if ps.custom_process_next_stage_input_func:
+            yaml_engine_args["custom_process_next_stage_input_func"] = (
+                ps.custom_process_next_stage_input_func
+            )
+
+        # Deploy knobs
         if ds is not None:
-            if ds.model_arch:
-                yaml_engine_args["model_arch"] = ds.model_arch
-            if ds.engine_output_type:
-                yaml_engine_args["engine_output_type"] = ds.engine_output_type
             yaml_engine_args["max_num_seqs"] = ds.max_num_seqs
             yaml_engine_args["gpu_memory_utilization"] = ds.gpu_memory_utilization
             yaml_engine_args["tensor_parallel_size"] = ds.tensor_parallel_size
@@ -552,16 +494,11 @@ def merge_pipeline_deploy(
                 yaml_engine_args["data_parallel_size"] = ds.data_parallel_size
             if ds.pipeline_parallel_size != 1:
                 yaml_engine_args["pipeline_parallel_size"] = ds.pipeline_parallel_size
-            # Async chunk hook from deploy
-            if ds.custom_process_next_stage_input_func:
-                yaml_engine_args["custom_process_next_stage_input_func"] = (
-                    ds.custom_process_next_stage_input_func
-                )
             # Engine extras (escape hatch)
             yaml_engine_args.update(ds.engine_extras)
 
         # Inject async_chunk into engine_args (legacy compat)
-        if pipeline.async_chunk:
+        if deploy.async_chunk:
             yaml_engine_args["async_chunk"] = True
 
         # --- Build runtime from deploy ---
@@ -570,25 +507,25 @@ def merge_pipeline_deploy(
             yaml_runtime["devices"] = ds.devices
 
         # --- Determine custom_process_input_func ---
-        # Async mode: use custom_process_next_stage_input_func from deploy
-        # Sync mode: use custom_process_input_func from pipeline
         custom_process_input_func = ps.custom_process_input_func
 
-        # --- Build yaml_extras (default_sampling_params, connectors, etc.) ---
+        # --- Build yaml_extras ---
         yaml_extras: dict[str, Any] = {}
 
-        # Merge sampling params: pipeline defaults ← deploy overrides
-        sampling = dict(ps.default_sampling_params)
-        if ds is not None and ds.sampling_params:
-            sampling.update(ds.sampling_params)
+        # Merge sampling: pipeline constraints + deploy defaults
+        sampling: dict[str, Any] = {}
+        if ds is not None and ds.default_sampling_params:
+            sampling.update(ds.default_sampling_params)
+        # Pipeline constraints override deploy defaults (model-intrinsic)
+        sampling.update(ps.sampling_constraints)
         if sampling:
             yaml_extras["default_sampling_params"] = sampling
 
-        # Connectors
-        if ps.output_connectors:
-            yaml_extras["output_connectors"] = dict(ps.output_connectors)
-        if ps.input_connectors:
-            yaml_extras["input_connectors"] = dict(ps.input_connectors)
+        # Connectors from deploy
+        if ds is not None and ds.output_connectors:
+            yaml_extras["output_connectors"] = dict(ds.output_connectors)
+        if ds is not None and ds.input_connectors:
+            yaml_extras["input_connectors"] = dict(ds.input_connectors)
 
         # Model-specific extras from pipeline
         if ps.extras:
