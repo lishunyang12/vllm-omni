@@ -190,7 +190,9 @@ def _parse_stage_deploy(stage_data: dict[str, Any]) -> StageDeployConfig:
     """Parse a single stage entry from deploy YAML into StageDeployConfig."""
     if "engine_args" in stage_data:
         engine_args = dict(stage_data["engine_args"])
-        devices = stage_data.get("runtime", {}).get("devices", "0")
+        devices = stage_data.get("runtime", {}).get(
+            "devices", stage_data.get("devices", "0")
+        )
     else:
         engine_args = {
             k: v for k, v in stage_data.items()

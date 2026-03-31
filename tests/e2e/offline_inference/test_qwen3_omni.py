@@ -26,10 +26,8 @@ def get_cuda_graph_config():
         str(Path(__file__).parent.parent / "deploy" / "qwen3_omni_ci.yaml"),
         updates={
             "stages": {
-                0: {
-                    "engine_args.enforce_eager": "true",
-                },
-                1: {"engine_args.enforce_eager": "true"},
+                0: {"enforce_eager": True},
+                1: {"enforce_eager": True},
             },
         },
     )
