@@ -236,7 +236,7 @@ models = ["Qwen/Qwen3-Omni-30B-A3B-Instruct"]
 
 #If you use the default configuration file, you can directly use the following address.
 def get_default_config():
-    return str(Path(__file__).parent.parent / "stage_configs" / "qwen3_omni_ci.yaml")
+    return str(Path(__file__).parent.parent / "deploy" / "qwen3_omni_ci.yaml")
 
 #If you need to modify the configuration file, you can use modify_stage_config.
 def get_chunk_config():
