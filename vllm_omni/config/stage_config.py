@@ -48,6 +48,264 @@ class StageType(str, Enum):
     DIFFUSION = "diffusion"
 
 
+class StageExecutionType(str, Enum):
+    """Merged StageType + WorkerType (per gcanlin).
+
+    Today there are exactly 3 combinations. Using a single enum
+    simplifies scheduler inference and stage-type validation.
+    """
+
+    LLM_AR = "llm_ar"  # thinker, talker
+    LLM_GENERATION = "llm_generation"  # code2wav
+    DIFFUSION = "diffusion"  # dit
+
+
+# Scheduler inferred from execution type — no config needed.
+_EXECUTION_TYPE_TO_SCHEDULER: dict[StageExecutionType, str | None] = {
+    StageExecutionType.LLM_AR: (
+        "vllm_omni.core.sched.omni_ar_scheduler.OmniARScheduler"
+    ),
+    StageExecutionType.LLM_GENERATION: (
+        "vllm_omni.core.sched.omni_generation_scheduler"
+        ".OmniGenerationScheduler"
+    ),
+    StageExecutionType.DIFFUSION: None,
+}
+
+
+# ---------------------------------------------------------------------------
+# Pipeline Configuration (Layer 1 — immutable, Python-defined)
+#
+# Immutable topology lives in Python code, not YAML (per alex-jw-brooks,
+# wuhang2014). frozen=True — changing topology requires a code change.
+# Fields organized into logical groups with comments (per wuhang2014).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StagePipelineConfig:
+    """Fixed topology for one stage. Not user-configurable.
+
+    Defined by model developers alongside model code. Changing any field
+    requires a code change and review.
+
+    Attributes:
+        stage_id: Index of this stage in the pipeline.
+        model_stage: Logical name ("thinker", "talker", "code2wav", "dit").
+        execution_type: Merged stage + worker type (LLM_AR, LLM_GENERATION,
+            DIFFUSION). Determines scheduler via ``_EXECUTION_TYPE_TO_SCHEDULER``.
+        input_sources: Upstream stage IDs. Empty tuple = entry point.
+        final_output: Whether this stage emits user-visible output.
+        final_output_type: Output modality ("text", "audio", "image").
+        is_comprehension: Marks the understanding stage (tokenizer owner).
+        hf_config_name: Sub-config key in HF config (e.g. "thinker_config").
+        engine_output_type: Engine output type ("latent", "audio", "image").
+        sampling_constraints: Model-intrinsic sampling params that are NOT
+            user-tunable (e.g. ``detokenize``, ``stop_token_ids``). These
+            override any deploy/CLI values.
+        custom_process_input_func: Sync input transform function path.
+        custom_process_next_stage_input_func: Async chunk input transform.
+        prompt_expand_func: CFG prompt expansion (Bagel).
+        cfg_kv_collect_func: CFG KV cache collection (Bagel).
+        omni_kv_config: KV cache transfer config (Bagel, Hunyuan — fixed
+            per model, promoted from extras).
+        extras: Escape hatch for model-specific fields not yet promoted
+            to explicit attributes.
+    """
+
+    # --- Identity ---
+    stage_id: int
+    model_stage: str
+
+    # --- Execution ---
+    execution_type: StageExecutionType = StageExecutionType.LLM_AR
+
+    # --- DAG topology ---
+    input_sources: tuple[int, ...] = ()
+
+    # --- Output ---
+    final_output: bool = False
+    final_output_type: str | None = None
+
+    # --- Model-intrinsic properties ---
+    is_comprehension: bool = False
+    hf_config_name: str | None = None
+    engine_output_type: str | None = None
+
+    # --- Model-intrinsic sampling constraints (NOT user-tunable) ---
+    sampling_constraints: dict[str, Any] = field(default_factory=dict)
+
+    # --- Processing hooks (dotted Python paths) ---
+    custom_process_input_func: str | None = None
+    custom_process_next_stage_input_func: str | None = None
+    prompt_expand_func: str | None = None
+    cfg_kv_collect_func: str | None = None
+
+    # --- Model-specific ---
+    omni_kv_config: dict[str, Any] | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PipelineConfig:
+    """Complete pipeline topology for a model. One per model type.
+
+    Defined by model developers alongside model code.
+    ``frozen=True`` — changing topology requires a code change and review.
+
+    Attributes:
+        model_type: HF model type identifier (e.g. "qwen3_omni_moe").
+        model_arch: HF architecture class name.
+        stages: Ordered tuple of stage configs defining the DAG.
+    """
+
+    model_type: str
+    model_arch: str
+    stages: tuple[StagePipelineConfig, ...] = ()
+
+    def get_stage(self, stage_id: int) -> StagePipelineConfig | None:
+        """Look up a stage by its ID."""
+        for stage in self.stages:
+            if stage.stage_id == stage_id:
+                return stage
+        return None
+
+    def get_scheduler_cls(self, stage_id: int) -> str | None:
+        """Return the inferred scheduler class path for a stage."""
+        stage = self.get_stage(stage_id)
+        if stage is None:
+            return None
+        return _EXECUTION_TYPE_TO_SCHEDULER.get(stage.execution_type)
+
+    def validate(self) -> list[str]:
+        """Validate pipeline topology.
+
+        Returns:
+            List of error messages. Empty if valid.
+        """
+        errors: list[str] = []
+        if not self.stages:
+            errors.append("Pipeline has no stages defined")
+            return errors
+        stage_ids = [s.stage_id for s in self.stages]
+        if len(stage_ids) != len(set(stage_ids)):
+            errors.append("Duplicate stage IDs found")
+        stage_id_set = set(stage_ids)
+        for stage in self.stages:
+            for src in stage.input_sources:
+                if src not in stage_id_set:
+                    errors.append(
+                        f"Stage {stage.stage_id} references "
+                        f"non-existent input source {src}"
+                    )
+                if src == stage.stage_id:
+                    errors.append(f"Stage {stage.stage_id} references itself")
+        if not any(not s.input_sources for s in self.stages):
+            errors.append("No entry point (stage with empty input_sources)")
+        return errors
+
+
+# Pipeline registry — model_type → PipelineConfig
+_PIPELINE_REGISTRY: dict[str, PipelineConfig] = {}
+
+
+def register_pipeline(pipeline: PipelineConfig) -> None:
+    """Register a pipeline config for a model type.
+
+    Called at import time by pipeline.py modules under each model directory.
+    """
+    errors = pipeline.validate()
+    if errors:
+        logger.warning("Pipeline %s has issues: %s", pipeline.model_type, errors)
+    _PIPELINE_REGISTRY[pipeline.model_type] = pipeline
+
+
+# ---------------------------------------------------------------------------
+# Deploy Configuration (Layer 2 — user-tunable, YAML)
+#
+# The only config file users edit. Loaded from deploy/<model>.yaml.
+# All fields overridable by CLI.
+# ---------------------------------------------------------------------------
+
+# Deploy YAMLs live in vllm_omni/deploy/
+_DEPLOY_DIR = Path(__file__).resolve().parent.parent / "deploy"
+
+
+@dataclass
+class StageDeployConfig:
+    """Per-stage deployment knobs. All overridable by CLI.
+
+    Attributes:
+        stage_id: Stage index (must match PipelineConfig stage_id).
+        max_num_seqs: Max concurrent sequences.
+        gpu_memory_utilization: GPU memory fraction.
+        tensor_parallel_size: TP degree.
+        enforce_eager: Disable CUDA graphs.
+        trust_remote_code: Allow HF remote code.
+        enable_prefix_caching: KV cache reuse.
+        max_num_batched_tokens: Token budget per iteration.
+        max_model_len: Max context length.
+        distributed_executor_backend: "mp" or "ray".
+        async_scheduling: Async scheduling.
+        quantization: Quantization method.
+        dtype: Model precision.
+        devices: GPU device assignment.
+        connectors: Connector config (deployment concern, per fake0fan).
+        sampling_params: User-tunable sampling defaults.
+        engine_extras: Escape hatch for model-specific engine args.
+    """
+
+    stage_id: int
+
+    # --- Engine args ---
+    max_num_seqs: int = 64
+    gpu_memory_utilization: float = 0.9
+    tensor_parallel_size: int = 1
+    enforce_eager: bool = False
+    trust_remote_code: bool = True
+    enable_prefix_caching: bool = False
+    max_num_batched_tokens: int = 32768
+    max_model_len: int | None = None
+    distributed_executor_backend: str = "mp"
+    async_scheduling: bool | None = None
+    quantization: str | None = None
+    dtype: str | None = None
+
+    # --- Runtime ---
+    devices: str = "0"
+
+    # --- Connectors (deployment concern, not topology) ---
+    connectors: dict[str, Any] | None = None
+
+    # --- User-tunable sampling defaults ---
+    sampling_params: dict[str, Any] | None = None
+
+    # --- Escape hatch for model-specific engine args ---
+    engine_extras: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class DeployConfig:
+    """Loaded from ``deploy/<model>.yaml``. The only YAML file users edit.
+
+    Attributes:
+        stages: Per-stage deployment knobs.
+        connector_defs: Named connector definitions (backend + config).
+        edges: Edge topology with from, to, window_size.
+        platforms: Platform delta overrides (npu, rocm, xpu) — NOT full copies.
+    """
+
+    stages: list[StageDeployConfig] = field(default_factory=list)
+    connector_defs: dict[str, Any] | None = None
+    edges: list[dict[str, Any]] | None = None
+    platforms: dict[str, Any] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Stage Config (mutable, parsed from pipeline YAML — legacy path)
+# ---------------------------------------------------------------------------
+
+
 @dataclass
 class StageConfig:
     """Per-stage configuration from pipeline YAML.
