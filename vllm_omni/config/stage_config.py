@@ -174,55 +174,48 @@ class DeployConfig:
     platforms: dict[str, Any] | None = None
 
 
+_STAGE_NON_ENGINE_KEYS = frozenset({
+    "stage_id", "devices", "output_connectors",
+    "input_connectors", "default_sampling_params", "engine_extras",
+})
+
+# Fields on StageDeployConfig that are populated from engine_args dict
+_STAGE_DEPLOY_FIELDS = {
+    f.name: f for f in __import__("dataclasses").fields(StageDeployConfig)
+    if f.name not in _STAGE_NON_ENGINE_KEYS
+}
+
+
+def _parse_stage_deploy(stage_data: dict[str, Any]) -> StageDeployConfig:
+    """Parse a single stage entry from deploy YAML into StageDeployConfig."""
+    if "engine_args" in stage_data:
+        engine_args = dict(stage_data["engine_args"])
+        devices = stage_data.get("runtime", {}).get("devices", "0")
+    else:
+        engine_args = {
+            k: v for k, v in stage_data.items()
+            if k not in _STAGE_NON_ENGINE_KEYS and k != "stage_id"
+        }
+        devices = stage_data.get("devices", "0")
+
+    kwargs: dict[str, Any] = {"stage_id": stage_data["stage_id"], "devices": devices}
+    for name, f in _STAGE_DEPLOY_FIELDS.items():
+        if name in engine_args:
+            kwargs[name] = engine_args.pop(name)
+
+    kwargs["output_connectors"] = stage_data.get("output_connectors")
+    kwargs["input_connectors"] = stage_data.get("input_connectors")
+    kwargs["default_sampling_params"] = stage_data.get("default_sampling_params")
+    kwargs["engine_extras"] = engine_args
+    return StageDeployConfig(**kwargs)
+
+
 def load_deploy_config(path: str | Path) -> DeployConfig:
     """Load a deploy YAML and return a DeployConfig dataclass."""
     raw = load_yaml_config(path)
     raw_dict = to_dict(raw)
 
-    stages: list[StageDeployConfig] = []
-    for stage_data in raw_dict.get("stages", []):
-        stage_id = stage_data["stage_id"]
-
-        if "engine_args" in stage_data:
-            engine_args = dict(stage_data.get("engine_args", {}))
-            runtime = stage_data.get("runtime", {})
-        else:
-            engine_args = {
-                k: v
-                for k, v in stage_data.items()
-                if k not in (
-                    "stage_id", "devices", "output_connectors",
-                    "input_connectors", "default_sampling_params",
-                )
-            }
-            runtime = {"devices": stage_data.get("devices", "0")}
-
-        sdc = StageDeployConfig(
-            stage_id=stage_id,
-            max_num_seqs=engine_args.pop("max_num_seqs", 64),
-            gpu_memory_utilization=engine_args.pop("gpu_memory_utilization", 0.9),
-            tensor_parallel_size=engine_args.pop("tensor_parallel_size", 1),
-            enforce_eager=engine_args.pop("enforce_eager", False),
-            trust_remote_code=engine_args.pop("trust_remote_code", True),
-            enable_prefix_caching=engine_args.pop("enable_prefix_caching", False),
-            enable_chunked_prefill=engine_args.pop("enable_chunked_prefill", None),
-            max_num_batched_tokens=engine_args.pop("max_num_batched_tokens", 32768),
-            max_model_len=engine_args.pop("max_model_len", None),
-            distributed_executor_backend=engine_args.pop(
-                "distributed_executor_backend", "mp"
-            ),
-            async_scheduling=engine_args.pop("async_scheduling", None),
-            quantization=engine_args.pop("quantization", None),
-            dtype=engine_args.pop("dtype", None),
-            data_parallel_size=engine_args.pop("data_parallel_size", 1),
-            pipeline_parallel_size=engine_args.pop("pipeline_parallel_size", 1),
-            devices=runtime.get("devices", "0"),
-            output_connectors=stage_data.get("output_connectors", None),
-            input_connectors=stage_data.get("input_connectors", None),
-            default_sampling_params=stage_data.get("default_sampling_params", None),
-            engine_extras=engine_args,
-        )
-        stages.append(sdc)
+    stages = [_parse_stage_deploy(s) for s in raw_dict.get("stages", [])]
 
     return DeployConfig(
         async_chunk=raw_dict.get("async_chunk", True),
@@ -267,19 +260,25 @@ def _apply_platform_overrides(
     base_by_id = {s.stage_id: s for s in deploy.stages}
 
     for ps in platform_stages:
-        sid = ps["stage_id"]
-        base = base_by_id.get(sid)
+        base = base_by_id.get(ps["stage_id"])
         if base is None:
             continue
-        ea = ps.get("engine_args", {})
-        rt = ps.get("runtime", {})
-        for key, val in ea.items():
+        if "engine_args" in ps:
+            overrides = dict(ps["engine_args"])
+            if "devices" in ps.get("runtime", {}):
+                object.__setattr__(base, "devices", ps["runtime"]["devices"])
+        else:
+            overrides = {
+                k: v for k, v in ps.items()
+                if k not in ("stage_id", "devices")
+            }
+            if "devices" in ps:
+                object.__setattr__(base, "devices", ps["devices"])
+        for key, val in overrides.items():
             if hasattr(base, key):
                 object.__setattr__(base, key, val)
             else:
                 base.engine_extras[key] = val
-        if "devices" in rt:
-            object.__setattr__(base, "devices", rt["devices"])
 
     return deploy
 
@@ -324,14 +323,9 @@ def merge_pipeline_deploy(
                 ps.custom_process_next_stage_input_func
             )
 
-        _NON_ENGINE = {"stage_id", "devices", "output_connectors",
-                       "input_connectors", "default_sampling_params",
-                       "engine_extras"}
         if ds is not None:
             for k, v in asdict(ds).items():
-                if k in _NON_ENGINE:
-                    continue
-                if v is None:
+                if k in _STAGE_NON_ENGINE_KEYS or v is None:
                     continue
                 yaml_engine_args[k] = v
             yaml_engine_args.update(ds.engine_extras)
