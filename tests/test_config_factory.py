@@ -632,9 +632,8 @@ class TestArchitectureFallback:
         assert "mimo_audio" in StageConfigFactory.PIPELINE_MODELS
 
 
-# ---------------------------------------------------------------------------
-# New config system: PipelineConfig + DeployConfig (RFC #2072 2/N)
-# ---------------------------------------------------------------------------
+
+# PipelineConfig + DeployConfig tests
 
 
 class TestStagePipelineConfig:

@@ -1,6 +1,4 @@
 # DFX performance testing deploy config for Qwen3-Omni-MoE.
-# Model-intrinsic fields (model_arch, engine_output_type, hf_config_name,
-# custom_process_next_stage_input_func) live in pipeline.py.
 
 async_chunk: true
 

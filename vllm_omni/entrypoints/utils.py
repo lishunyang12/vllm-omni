@@ -335,10 +335,7 @@ def load_stage_configs_from_yaml(
     base_engine_args: dict | None = None,
     prefer_stage_engine_args: bool = True,
 ) -> list:
-    """Load stage configurations from a YAML file.
-
-    .. deprecated::
-        Legacy OmegaConf-based loader. Will be removed in PR series [2/N].
+    """Load stage configurations from a YAML file (legacy OmegaConf path).
 
     Args:
         config_path: Path to the YAML configuration file
