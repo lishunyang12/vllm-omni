@@ -4,6 +4,8 @@
 Unit tests for StageConfigFactory and related classes.
 """
 
+from dataclasses import dataclass
+
 import pytest
 
 from vllm_omni.config.stage_config import (
@@ -249,8 +251,9 @@ class TestStageConfigFactory:
     def test_default_diffusion_with_parallel_config(self):
         """Test diffusion config calculates devices from parallel_config."""
 
+        @dataclass
         class MockParallelConfig:
-            world_size = 4
+            world_size: int = 4
 
         kwargs = {
             "parallel_config": MockParallelConfig(),
