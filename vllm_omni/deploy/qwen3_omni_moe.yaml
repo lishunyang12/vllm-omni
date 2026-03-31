@@ -1,12 +1,6 @@
 # Deploy config for Qwen3-Omni-MoE — CUDA defaults + platform overrides.
-# All fields here are overridable by CLI.
-# Pipeline topology (model_arch, engine_output_type, hooks) lives in pipeline.py.
-#
 # Verified on 2x H100-80G GPUs.
 
-# async_chunk: true  → streaming chunks between stages (uses connectors)
-# async_chunk: false → sync full-batch handoff between stages
-# Override via CLI: --async-chunk / --no-async-chunk
 async_chunk: true
 
 connectors:

@@ -3,9 +3,12 @@
 """
 Stage Configuration System for vLLM-Omni.
 
-Pipeline structure (stages, types, data-flow) is defined in per-model YAML
-files and is set by model developers at integration time.
-Runtime parameters (gpu_memory_utilization, tp_size, etc.) come from CLI.
+Two-layer config design:
+  Layer 1 — PipelineConfig (frozen Python, model-intrinsic topology)
+  Layer 2 — DeployConfig (YAML, user-tunable deployment knobs)
+
+Models registered in _PIPELINE_REGISTRY use the new path.
+Other models fall back to legacy YAML loading via StageConfigFactory.
 """
 
 from __future__ import annotations
@@ -49,18 +52,13 @@ class StageType(str, Enum):
 
 
 class StageExecutionType(str, Enum):
-    """Merged StageType + WorkerType (per gcanlin).
+    """Merged StageType + WorkerType — 3 combinations today."""
 
-    Today there are exactly 3 combinations. Using a single enum
-    simplifies scheduler inference and stage-type validation.
-    """
-
-    LLM_AR = "llm_ar"  # thinker, talker
-    LLM_GENERATION = "llm_generation"  # code2wav
-    DIFFUSION = "diffusion"  # dit
+    LLM_AR = "llm_ar"
+    LLM_GENERATION = "llm_generation"
+    DIFFUSION = "diffusion"
 
 
-# Scheduler inferred from execution type — no config needed.
 _EXECUTION_TYPE_TO_SCHEDULER: dict[StageExecutionType, str | None] = {
     StageExecutionType.LLM_AR: (
         "vllm_omni.core.sched.omni_ar_scheduler.OmniARScheduler"
@@ -73,73 +71,50 @@ _EXECUTION_TYPE_TO_SCHEDULER: dict[StageExecutionType, str | None] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Pipeline Configuration (Layer 1 — immutable, Python-defined)
-#
-# Immutable topology lives in Python code, not YAML (per alex-jw-brooks,
-# wuhang2014). frozen=True — changing topology requires a code change.
-# Fields organized into logical groups with comments (per wuhang2014).
-# ---------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class StagePipelineConfig:
-    """Fixed topology for one stage. Not user-configurable.
+    """Fixed topology for one stage (frozen, not user-configurable)."""
 
-    Defined by model developers alongside model code. Changing any field
-    requires a code change and review.
-    """
-
-    # --- Identity ---
+    # Identity
     stage_id: int
     model_stage: str
 
-    # --- Execution ---
+    # Execution
     execution_type: StageExecutionType = StageExecutionType.LLM_AR
 
-    # --- DAG topology ---
+    # DAG topology
     input_sources: tuple[int, ...] = ()
 
-    # --- Output ---
+    # Output
     final_output: bool = False
     final_output_type: str | None = None
 
-    # --- Model-intrinsic properties ---
+    # Model-intrinsic properties
     is_comprehension: bool = False
     requires_multimodal_data: bool = False
     hf_config_name: str | None = None
     engine_output_type: str | None = None
 
-    # --- Model-intrinsic sampling constraints (NOT user-tunable) ---
-    #     e.g. detokenize, stop_token_ids — override any deploy/CLI values.
+    # Sampling constraints (model-intrinsic, override deploy/CLI)
     sampling_constraints: dict[str, Any] = field(default_factory=dict)
 
-    # --- Processing hooks (dotted Python paths) ---
-    #     Both sync and async hooks defined; engine selects based on
-    #     deploy config's async_chunk flag.
+    # Processing hooks (both sync and async; engine selects via async_chunk)
     custom_process_input_func: str | None = None
     custom_process_next_stage_input_func: str | None = None
     prompt_expand_func: str | None = None
     cfg_kv_collect_func: str | None = None
 
-    # --- Model-specific ---
+    # Model-specific
     omni_kv_config: dict[str, Any] | None = None
     extras: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    """Complete pipeline topology for a model. One per model type.
+    """Complete pipeline topology for a model (frozen)."""
 
-    Defined by model developers alongside model code.
-    ``frozen=True`` — changing topology requires a code change and review.
-    """
-
-    # --- Identity ---
     model_type: str
     model_arch: str = ""
-
-    # --- Stages ---
     stages: tuple[StagePipelineConfig, ...] = ()
 
     def get_stage(self, stage_id: int) -> StagePipelineConfig | None:
@@ -157,11 +132,7 @@ class PipelineConfig:
         return _EXECUTION_TYPE_TO_SCHEDULER.get(stage.execution_type)
 
     def validate(self) -> list[str]:
-        """Validate pipeline topology.
-
-        Returns:
-            List of error messages. Empty if valid.
-        """
+        """Return list of topology errors (empty if valid)."""
         errors: list[str] = []
         if not self.stages:
             errors.append("Pipeline has no stages defined")
@@ -189,34 +160,23 @@ _PIPELINE_REGISTRY: dict[str, PipelineConfig] = {}
 
 
 def register_pipeline(pipeline: PipelineConfig) -> None:
-    """Register a pipeline config for a model type.
-
-    Called at import time by pipeline.py modules under each model directory.
-    """
+    """Register a pipeline config (called at import time by pipeline.py modules)."""
     errors = pipeline.validate()
     if errors:
         logger.warning("Pipeline %s has issues: %s", pipeline.model_type, errors)
     _PIPELINE_REGISTRY[pipeline.model_type] = pipeline
 
 
-# ---------------------------------------------------------------------------
-# Deploy Configuration (Layer 2 — user-tunable, YAML)
-#
-# The only config file users edit. Loaded from deploy/<model>.yaml.
-# All fields overridable by CLI.
-# ---------------------------------------------------------------------------
-
-# Deploy YAMLs live in vllm_omni/deploy/
 _DEPLOY_DIR = Path(__file__).resolve().parent.parent / "deploy"
 
 
 @dataclass
 class StageDeployConfig:
-    """Per-stage deployment knobs. All overridable by CLI."""
+    """Per-stage deployment knobs (all CLI-overridable)."""
 
     stage_id: int
 
-    # --- Engine args ---
+    # Engine args
     max_num_seqs: int = 64
     gpu_memory_utilization: float = 0.9
     tensor_parallel_size: int = 1
@@ -233,28 +193,23 @@ class StageDeployConfig:
     data_parallel_size: int = 1
     pipeline_parallel_size: int = 1
 
-    # --- Runtime ---
+    # Runtime
     devices: str = "0"
 
-    # --- Connectors (deployment concern, per fake0fan) ---
+    # Connectors
     output_connectors: dict[str, str] | None = None
     input_connectors: dict[str, str] | None = None
 
-    # --- User-tunable sampling defaults (temperature, top_k, etc.) ---
+    # User-tunable sampling defaults
     default_sampling_params: dict[str, Any] | None = None
 
-    # --- Escape hatch for model-specific engine args ---
-    #     e.g. mm_processor_cache_gb, skip_mm_profiling, cache_backend
+    # Escape hatch for model-specific engine args
     engine_extras: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class DeployConfig:
-    """Loaded from ``deploy/<model>.yaml``. The only YAML file users edit.
-
-    Contains per-stage engine args, connector definitions, and platform
-    overrides. ``async_chunk`` is CLI-tunable (not topology).
-    """
+    """Loaded from deploy/<model>.yaml — the only config file users edit."""
 
     async_chunk: bool = True
     connectors: dict[str, Any] | None = None
@@ -264,17 +219,7 @@ class DeployConfig:
 
 
 def load_deploy_config(path: str | Path) -> DeployConfig:
-    """Load a deploy YAML file and return a DeployConfig dataclass.
-
-    Handles the ``engine_args:`` / ``runtime:`` nesting per stage,
-    flattening into ``StageDeployConfig`` fields.
-
-    Args:
-        path: Path to the deploy YAML file.
-
-    Returns:
-        DeployConfig with parsed stages and platform overrides.
-    """
+    """Load a deploy YAML and return a DeployConfig dataclass."""
     raw = load_yaml_config(path)
     raw_dict = to_dict(raw)
 
@@ -337,11 +282,7 @@ def load_deploy_config(path: str | Path) -> DeployConfig:
 
 
 def _detect_platform() -> str | None:
-    """Detect the current hardware platform.
-
-    Returns:
-        Platform name ("npu", "rocm", "xpu") or None for CUDA default.
-    """
+    """Return "npu", "rocm", "xpu", or None (CUDA default)."""
     try:
         from vllm.platforms import current_platform
 
@@ -361,17 +302,7 @@ def _apply_platform_overrides(
     deploy: DeployConfig,
     platform: str | None = None,
 ) -> DeployConfig:
-    """Merge platform-specific overrides into the deploy config.
-
-    Only overrides fields that the platform section explicitly sets.
-
-    Args:
-        deploy: Base deploy config (CUDA defaults).
-        platform: Platform name, or None to auto-detect.
-
-    Returns:
-        DeployConfig with platform overrides applied.
-    """
+    """Merge platform-specific stage overrides into deploy config."""
     if platform is None:
         platform = _detect_platform()
     if platform is None or deploy.platforms is None:
@@ -408,23 +339,7 @@ def merge_pipeline_deploy(
     deploy: DeployConfig,
     cli_overrides: dict[str, Any] | None = None,
 ) -> list[StageConfig]:
-    """Merge PipelineConfig + DeployConfig + CLI overrides into StageConfigs.
-
-    This is the core wiring function that replaces legacy YAML loading
-    for models registered in ``_PIPELINE_REGISTRY``.
-
-    Override precedence:
-        pipeline (fixed topology) → deploy (CUDA defaults) →
-        platform overrides (auto-detected) → CLI args
-
-    Args:
-        pipeline: Frozen pipeline topology from registry.
-        deploy: Deploy config loaded from YAML.
-        cli_overrides: CLI arguments from VllmConfig.
-
-    Returns:
-        List of StageConfig objects ready for the engine.
-    """
+    """Merge pipeline + deploy + platform overrides → list[StageConfig]."""
     if cli_overrides is None:
         cli_overrides = {}
 
@@ -454,21 +369,18 @@ def merge_pipeline_deploy(
 
         scheduler_cls = _EXECUTION_TYPE_TO_SCHEDULER.get(ps.execution_type)
 
-        # --- Build engine_args from pipeline + deploy ---
         yaml_engine_args: dict[str, Any] = {}
 
-        # Pipeline-level fields
+        # From pipeline (model-intrinsic)
         yaml_engine_args["model_arch"] = pipeline.model_arch
         if ps.engine_output_type:
             yaml_engine_args["engine_output_type"] = ps.engine_output_type
-
-        # Async hook from pipeline (engine selects based on deploy.async_chunk)
         if ps.custom_process_next_stage_input_func:
             yaml_engine_args["custom_process_next_stage_input_func"] = (
                 ps.custom_process_next_stage_input_func
             )
 
-        # Deploy knobs
+        # From deploy (user-tunable)
         if ds is not None:
             yaml_engine_args["max_num_seqs"] = ds.max_num_seqs
             yaml_engine_args["gpu_memory_utilization"] = ds.gpu_memory_utilization
@@ -494,40 +406,31 @@ def merge_pipeline_deploy(
                 yaml_engine_args["data_parallel_size"] = ds.data_parallel_size
             if ds.pipeline_parallel_size != 1:
                 yaml_engine_args["pipeline_parallel_size"] = ds.pipeline_parallel_size
-            # Engine extras (escape hatch)
             yaml_engine_args.update(ds.engine_extras)
 
-        # Inject async_chunk into engine_args (legacy compat)
         if deploy.async_chunk:
             yaml_engine_args["async_chunk"] = True
 
-        # --- Build runtime from deploy ---
         yaml_runtime: dict[str, Any] = {"process": True}
         if ds is not None:
             yaml_runtime["devices"] = ds.devices
 
-        # --- Determine custom_process_input_func ---
         custom_process_input_func = ps.custom_process_input_func
 
-        # --- Build yaml_extras ---
         yaml_extras: dict[str, Any] = {}
 
-        # Merge sampling: pipeline constraints + deploy defaults
+        # Sampling: deploy defaults ← pipeline constraints (model-intrinsic wins)
         sampling: dict[str, Any] = {}
         if ds is not None and ds.default_sampling_params:
             sampling.update(ds.default_sampling_params)
-        # Pipeline constraints override deploy defaults (model-intrinsic)
         sampling.update(ps.sampling_constraints)
         if sampling:
             yaml_extras["default_sampling_params"] = sampling
 
-        # Connectors from deploy
         if ds is not None and ds.output_connectors:
             yaml_extras["output_connectors"] = dict(ds.output_connectors)
         if ds is not None and ds.input_connectors:
             yaml_extras["input_connectors"] = dict(ds.input_connectors)
-
-        # Model-specific extras from pipeline
         if ps.extras:
             yaml_extras.update(ps.extras)
 
@@ -552,19 +455,9 @@ def merge_pipeline_deploy(
     return result
 
 
-# ---------------------------------------------------------------------------
-# Stage Config (mutable, parsed from pipeline YAML — legacy path)
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class StageConfig:
-    """Per-stage configuration from pipeline YAML.
-
-    Topology fields (stage_id, input_sources, etc.) define the DAG.
-    Engine and runtime defaults come from the YAML; CLI overrides take
-    precedence via ``runtime_overrides``.
-    """
+    """Per-stage config (legacy path). Used by both new and legacy loaders."""
 
     # Identity
     stage_id: int
@@ -764,24 +657,9 @@ class StageConfigFactory:
         cli_overrides: dict[str, Any] | None = None,
         deploy_config_path: str | None = None,
     ) -> list[StageConfig] | None:
-        """Load pipeline config, merge with deploy + CLI overrides.
+        """Load pipeline + deploy config, merge with CLI overrides.
 
-        For models registered in ``_PIPELINE_REGISTRY`` (new path):
-        reads PipelineConfig from registry + DeployConfig from YAML,
-        merges them via ``merge_pipeline_deploy()``.
-
-        For other models (legacy path): loads pipeline YAML from
-        ``model_executor/models/<model>/pipeline.yaml``.
-
-        Args:
-            model: Model name or path.
-            cli_overrides: CLI overrides from VllmConfig/OmniDiffusionConfig.
-            deploy_config_path: Optional path to a deploy YAML file.
-                If None, auto-resolved from ``deploy/<model_type>.yaml``.
-
-        Returns:
-            List of StageConfig objects with CLI overrides applied,
-            or None if no pipeline definition was found for this model.
+        Checks _PIPELINE_REGISTRY first (new path), falls back to legacy YAML.
         """
         if cli_overrides is None:
             cli_overrides = {}
@@ -832,16 +710,7 @@ class StageConfigFactory:
         cli_overrides: dict[str, Any],
         deploy_config_path: str | None = None,
     ) -> list[StageConfig]:
-        """Create StageConfigs from pipeline registry + deploy YAML.
-
-        Args:
-            model_type: Registered model type (e.g. "qwen3_omni_moe").
-            cli_overrides: CLI arguments from VllmConfig.
-            deploy_config_path: Optional explicit deploy config path.
-
-        Returns:
-            List of StageConfig objects.
-        """
+        """Create StageConfigs from pipeline registry + deploy YAML."""
         # Import pipeline module to ensure registration
         pipeline_dir = cls.PIPELINE_MODELS.get(model_type, model_type)
         try:
