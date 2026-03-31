@@ -1322,7 +1322,6 @@ def modify_stage_config(
         else:
             print(f"Path {path} does not exist")
 
-    # Detect YAML format: "stages" (new deploy) or "stage_args" (legacy)
     _stage_key = "stages" if "stages" in config else "stage_args"
 
     # Apply deletions first
@@ -1765,12 +1764,10 @@ def omni_server(request: pytest.FixtureRequest, run_level: str, model_prefix: st
         if run_level == "advanced_model" and stage_config_path is not None:
             with open(stage_config_path, encoding="utf-8") as f:
                 cfg = yaml.safe_load(f) or {}
-            # Detect YAML format: "stages" (new deploy) or "stage_args" (legacy)
-            _sk = "stages" if "stages" in cfg else "stage_args"
-            stage_ids = [stage["stage_id"] for stage in cfg.get(_sk, []) if "stage_id" in stage]
+            stage_ids = [stage["stage_id"] for stage in cfg.get("stage_args", []) if "stage_id" in stage]
             stage_config_path = modify_stage_config(
                 stage_config_path,
-                deletes={_sk: {stage_id: ["engine_args.load_format"] for stage_id in stage_ids}},
+                deletes={"stage_args": {stage_id: ["engine_args.load_format"] for stage_id in stage_ids}},
             )
 
         server_args = params.server_args or []
@@ -1787,13 +1784,7 @@ def omni_server(request: pytest.FixtureRequest, run_level: str, model_prefix: st
                 raise ValueError("omni_server with use_stage_cli=True requires use_omni=True")
             if stage_config_path is None:
                 raise ValueError("omni_server with use_stage_cli=True requires a stage_config_path")
-            # Detect format: new deploy configs use "stages", legacy uses "stage_args"
-            with open(stage_config_path, encoding="utf-8") as f:
-                _cfg = yaml.safe_load(f) or {}
-            if "stages" in _cfg:
-                server_args += ["--deploy-config", stage_config_path]
-            else:
-                server_args += ["--stage-configs-path", stage_config_path]
+            server_args += ["--stage-configs-path", stage_config_path]
 
             with OmniServerStageCli(
                 model,
@@ -3274,16 +3265,7 @@ def omni_runner(request, model_prefix):
     with _omni_server_lock:
         model, stage_config_path = request.param
         model = model_prefix + model
-        # Detect format: new deploy configs use "stages" key
-        runner_kwargs = {"seed": 42, "stage_init_timeout": 300}
-        if stage_config_path is not None:
-            with open(stage_config_path, encoding="utf-8") as f:
-                _cfg = yaml.safe_load(f) or {}
-            if "stages" in _cfg:
-                runner_kwargs["deploy_config"] = stage_config_path
-            else:
-                runner_kwargs["stage_configs_path"] = stage_config_path
-        with OmniRunner(model, **runner_kwargs) as runner:
+        with OmniRunner(model, seed=42, stage_configs_path=stage_config_path, stage_init_timeout=300) as runner:
             print("OmniRunner started successfully")
             yield runner
             print("OmniRunner stopping...")

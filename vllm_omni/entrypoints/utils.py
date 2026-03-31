@@ -490,8 +490,18 @@ def load_and_resolve_stage_configs(
     Returns:
         Tuple of (config_path, stage_configs)
     """
+    # Auto-detect: if --stage-configs-path points to a new-format deploy YAML,
+    # treat it as --deploy-config.
+    if stage_configs_path is not None and deploy_config_path is None:
+        import yaml
+
+        with open(stage_configs_path, encoding="utf-8") as f:
+            _peek = yaml.safe_load(f) or {}
+        if "stages" in _peek and "stage_args" not in _peek:
+            deploy_config_path = stage_configs_path
+            stage_configs_path = None
+
     if deploy_config_path is not None:
-        # New path: deploy config + pipeline registry
         config_path = deploy_config_path
         stage_configs = load_stage_configs_from_model(
             model,
