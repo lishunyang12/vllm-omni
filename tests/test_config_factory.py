@@ -633,8 +633,6 @@ class TestArchitectureFallback:
 
 
 
-# PipelineConfig + DeployConfig tests
-
 
 class TestStagePipelineConfig:
     def test_frozen(self):

@@ -75,7 +75,6 @@ stages:
       seed: 42
       repetition_penalty: 1.1
 
-# Platform overrides — only what differs from CUDA defaults above.
 platforms:
   npu:
     stages:

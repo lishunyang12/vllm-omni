@@ -1,15 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""
-Stage Configuration System for vLLM-Omni.
-
-Two-layer config design:
-  Layer 1 — PipelineConfig (frozen Python, model-intrinsic topology)
-  Layer 2 — DeployConfig (YAML, user-tunable deployment knobs)
-
-Models registered in _PIPELINE_REGISTRY use the new path.
-Other models fall back to legacy YAML loading via StageConfigFactory.
-"""
+"""Stage configuration system for vLLM-Omni."""
 
 from __future__ import annotations
 
@@ -273,7 +264,6 @@ def _apply_platform_overrides(
         return deploy
 
     platform_stages = platform_section.get("stages", [])
-    # Index base stages by stage_id for O(1) lookup
     base_by_id = {s.stage_id: s for s in deploy.stages}
 
     for ps in platform_stages:
@@ -283,7 +273,6 @@ def _apply_platform_overrides(
             continue
         ea = ps.get("engine_args", {})
         rt = ps.get("runtime", {})
-        # Override matching fields
         for key, val in ea.items():
             if hasattr(base, key):
                 object.__setattr__(base, key, val)
@@ -304,17 +293,13 @@ def merge_pipeline_deploy(
     if cli_overrides is None:
         cli_overrides = {}
 
-    # Apply platform overrides
     deploy = _apply_platform_overrides(deploy)
-
-    # Index deploy stages by stage_id
     deploy_by_id = {s.stage_id: s for s in deploy.stages}
 
     result: list[StageConfig] = []
     for ps in pipeline.stages:
         ds = deploy_by_id.get(ps.stage_id)
 
-        # --- Derive legacy fields from execution_type ---
         if ps.execution_type == StageExecutionType.LLM_AR:
             stage_type = StageType.LLM
             worker_type = "ar"
