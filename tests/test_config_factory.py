@@ -780,3 +780,205 @@ class TestQwen3OmniPipeline:
         assert s.execution_type == StageExecutionType.LLM_GENERATION
         assert s.final_output_type == "audio"
         assert s.custom_process_input_func is not None
+
+
+class TestBaseConfigInheritance:
+    """Test deploy YAML base_config inheritance."""
+
+    def test_ci_inherits_from_main(self):
+        from pathlib import Path
+
+        from vllm_omni.config.stage_config import load_deploy_config
+
+        ci_path = Path(__file__).parent / "e2e" / "deploy" / "qwen3_omni_ci.yaml"
+        if not ci_path.exists():
+            pytest.skip("CI deploy config not found")
+
+        deploy = load_deploy_config(ci_path)
+        assert len(deploy.stages) == 3
+        # CI overrides
+        assert deploy.stages[0].engine_extras.get("load_format") == "dummy"
+        assert deploy.stages[0].max_num_seqs == 5
+        # Inherited from base
+        assert deploy.stages[0].gpu_memory_utilization == 0.9
+        assert deploy.connectors is not None
+        assert "connector_of_shared_memory" in deploy.connectors
+        assert deploy.async_chunk is True
+
+    def test_ci_sampling_merge(self):
+        from pathlib import Path
+
+        from vllm_omni.config.stage_config import load_deploy_config
+
+        ci_path = Path(__file__).parent / "e2e" / "deploy" / "qwen3_omni_ci.yaml"
+        if not ci_path.exists():
+            pytest.skip("CI deploy config not found")
+
+        deploy = load_deploy_config(ci_path)
+        s0 = deploy.stages[0].default_sampling_params
+        # CI overrides max_tokens
+        assert s0["max_tokens"] == 150
+        # Inherited from base
+        assert s0["temperature"] == 0.4
+        assert s0["seed"] == 42
+
+    def test_perf_inherits_everything(self):
+        from pathlib import Path
+
+        from vllm_omni.config.stage_config import load_deploy_config
+
+        perf_path = Path(__file__).parent / "dfx" / "perf" / "deploy" / "qwen3_omni.yaml"
+        if not perf_path.exists():
+            pytest.skip("Perf deploy config not found")
+
+        deploy = load_deploy_config(perf_path)
+        # Pure inheritance, no overrides
+        assert len(deploy.stages) == 3
+        assert deploy.stages[0].gpu_memory_utilization == 0.9
+
+    def test_stability_overrides_one_field(self):
+        from pathlib import Path
+
+        from vllm_omni.config.stage_config import load_deploy_config
+
+        stab_path = Path(__file__).parent / "dfx" / "stability" / "deploy" / "qwen3_omni.yaml"
+        if not stab_path.exists():
+            pytest.skip("Stability deploy config not found")
+
+        deploy = load_deploy_config(stab_path)
+        assert deploy.stages[2].max_num_batched_tokens == 1000000
+        # Rest inherited
+        assert deploy.stages[0].gpu_memory_utilization == 0.9
+
+
+class TestPlatformOverrides:
+    """Test platform-specific deploy config overrides."""
+
+    def test_npu_overrides(self):
+        from pathlib import Path
+
+        from vllm_omni.config.stage_config import _apply_platform_overrides, load_deploy_config
+
+        deploy_path = (
+            Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        )
+        if not deploy_path.exists():
+            pytest.skip("Deploy config not found")
+
+        deploy = load_deploy_config(deploy_path)
+        deploy = _apply_platform_overrides(deploy, platform="npu")
+
+        assert deploy.stages[0].gpu_memory_utilization == 0.6
+        assert deploy.stages[0].tensor_parallel_size == 2
+        assert deploy.stages[0].devices == "0,1"
+        # Stage 2 unaffected fields stay at base
+        assert deploy.stages[2].enforce_eager is True
+
+    def test_xpu_overrides(self):
+        from pathlib import Path
+
+        from vllm_omni.config.stage_config import _apply_platform_overrides, load_deploy_config
+
+        deploy_path = (
+            Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        )
+        if not deploy_path.exists():
+            pytest.skip("Deploy config not found")
+
+        deploy = load_deploy_config(deploy_path)
+        deploy = _apply_platform_overrides(deploy, platform="xpu")
+
+        assert deploy.stages[0].tensor_parallel_size == 4
+        assert deploy.stages[0].devices == "0,1,2,3"
+        assert deploy.stages[0].engine_extras.get("max_cudagraph_capture_size") == 0
+
+    def test_unknown_platform_noop(self):
+        from pathlib import Path
+
+        from vllm_omni.config.stage_config import _apply_platform_overrides, load_deploy_config
+
+        deploy_path = (
+            Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        )
+        if not deploy_path.exists():
+            pytest.skip("Deploy config not found")
+
+        deploy = load_deploy_config(deploy_path)
+        original_mem = deploy.stages[0].gpu_memory_utilization
+        deploy = _apply_platform_overrides(deploy, platform="unknown_hw")
+        assert deploy.stages[0].gpu_memory_utilization == original_mem
+
+
+class TestCLIOverrideFlow:
+    """Test --stage-overrides JSON merge into StageConfig."""
+
+    def test_stage_overrides_merge(self):
+        import vllm_omni.model_executor.models.qwen3_omni.pipeline  # noqa: F401
+        from pathlib import Path
+
+        from vllm_omni.config.stage_config import load_deploy_config, merge_pipeline_deploy
+
+        pipeline = _PIPELINE_REGISTRY["qwen3_omni_moe"]
+        deploy_path = (
+            Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        )
+        if not deploy_path.exists():
+            pytest.skip("Deploy config not found")
+
+        deploy = load_deploy_config(deploy_path)
+        stages = merge_pipeline_deploy(pipeline, deploy)
+
+        # Simulate --stage-overrides '{"0": {"gpu_memory_utilization": 0.5}}'
+        overrides = {"stage_0_gpu_memory_utilization": 0.5}
+        stages[0].runtime_overrides = StageConfigFactory._merge_cli_overrides(
+            stages[0], overrides
+        )
+        assert stages[0].runtime_overrides["gpu_memory_utilization"] == 0.5
+
+    def test_global_override_applies_to_all(self):
+        import vllm_omni.model_executor.models.qwen3_omni.pipeline  # noqa: F401
+        from pathlib import Path
+
+        from vllm_omni.config.stage_config import load_deploy_config, merge_pipeline_deploy
+
+        pipeline = _PIPELINE_REGISTRY["qwen3_omni_moe"]
+        deploy_path = (
+            Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        )
+        if not deploy_path.exists():
+            pytest.skip("Deploy config not found")
+
+        deploy = load_deploy_config(deploy_path)
+        stages = merge_pipeline_deploy(pipeline, deploy)
+
+        overrides = {"enforce_eager": True}
+        for s in stages:
+            s.runtime_overrides = StageConfigFactory._merge_cli_overrides(s, overrides)
+            assert s.runtime_overrides["enforce_eager"] is True
+
+
+class TestSamplingConstraintsPrecedence:
+    """Test that pipeline sampling_constraints override deploy defaults."""
+
+    def test_constraints_win(self):
+        import vllm_omni.model_executor.models.qwen3_omni.pipeline  # noqa: F401
+        from pathlib import Path
+
+        from vllm_omni.config.stage_config import load_deploy_config, merge_pipeline_deploy
+
+        pipeline = _PIPELINE_REGISTRY["qwen3_omni_moe"]
+        deploy_path = (
+            Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        )
+        if not deploy_path.exists():
+            pytest.skip("Deploy config not found")
+
+        deploy = load_deploy_config(deploy_path)
+        stages = merge_pipeline_deploy(pipeline, deploy)
+
+        # Pipeline says detokenize=True for thinker, deploy can't override
+        assert stages[0].yaml_extras["default_sampling_params"]["detokenize"] is True
+        # Pipeline says stop_token_ids=[2150] for talker
+        assert stages[1].yaml_extras["default_sampling_params"]["stop_token_ids"] == [2150]
+        # Deploy temperature still flows through
+        assert stages[0].yaml_extras["default_sampling_params"]["temperature"] == 0.4
