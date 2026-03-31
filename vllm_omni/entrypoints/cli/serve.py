@@ -142,7 +142,22 @@ class OmniServeCommand(CLISubcommand):
             "--stage-configs-path",
             type=str,
             default=None,
-            help="Path to the stage configs file. If not specified, the stage configs will be loaded from the model.",
+            help="Path to a legacy stage configs YAML (stage_args format). "
+            "Prefer --deploy-config for new-format deploy YAMLs.",
+        )
+        omni_config_group.add_argument(
+            "--deploy-config",
+            type=str,
+            default=None,
+            help="Path to a deploy config YAML (new format with stages/engine_args). "
+            "Overrides --stage-configs-path when both are set.",
+        )
+        omni_config_group.add_argument(
+            "--stage-overrides",
+            type=str,
+            default=None,
+            help='Per-stage JSON overrides. Example: '
+            '\'{"0": {"gpu_memory_utilization": 0.8}, "2": {"enforce_eager": true}}\'',
         )
         omni_config_group.add_argument(
             "--stage-id",

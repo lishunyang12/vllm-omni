@@ -273,29 +273,52 @@ def resolve_model_config_path(model: str) -> str:
     return str(stage_config_path)
 
 
-def load_stage_configs_from_model(model: str, base_engine_args: dict | None = None) -> list:
+def load_stage_configs_from_model(
+    model: str,
+    base_engine_args: dict | None = None,
+    deploy_config_path: str | None = None,
+    stage_overrides: dict[str, dict[str, Any]] | None = None,
+) -> list:
     """Load stage configurations from model's default config file.
 
-    .. deprecated::
-        This is the legacy OmegaConf-based loading path. New code should use
-        ``StageConfigFactory.create_from_model()`` instead. This function will
-        be removed once all callers are migrated (see PR series [2/N]).
+    For models registered in the pipeline registry (new path), uses
+    ``StageConfigFactory.create_from_model()`` which merges
+    PipelineConfig + DeployConfig + CLI overrides.
 
-    Loads stage configurations based on the model type and device type.
-    First tries to load a device-specific YAML file from stage_configs/{device_type}/
-    directory. If not found, falls back to the default config file.
+    For other models (legacy path), loads stage configs from YAML.
 
     Args:
         model: Model name or path (used to determine model_type)
+        base_engine_args: Base engine args to merge as CLI overrides.
+        deploy_config_path: Optional explicit deploy config path.
+        stage_overrides: Per-stage overrides from --stage-overrides.
 
     Returns:
         List of stage configuration dictionaries
-
-    Raises:
-        FileNotFoundError: If no stage config file exists for the model type
     """
     if base_engine_args is None:
         base_engine_args = {}
+
+    # Merge stage_overrides into cli_overrides as per-stage keys
+    cli_overrides = dict(base_engine_args)
+    if stage_overrides:
+        for stage_id_str, overrides in stage_overrides.items():
+            for key, val in overrides.items():
+                cli_overrides[f"stage_{stage_id_str}_{key}"] = val
+
+    # Try the new StageConfigFactory path (checks pipeline registry first)
+    from vllm_omni.config.stage_config import StageConfigFactory
+
+    stages = StageConfigFactory.create_from_model(
+        model,
+        cli_overrides=cli_overrides,
+        deploy_config_path=deploy_config_path,
+    )
+    if stages is not None:
+        # Convert StageConfig objects to OmegaConf for backward compat
+        return [stage.to_omegaconf() for stage in stages]
+
+    # Legacy fallback: load from YAML
     stage_config_path = resolve_model_config_path(model)
     if stage_config_path is None:
         return []
@@ -449,22 +472,47 @@ def load_and_resolve_stage_configs(
     stage_configs_path: str | None,
     kwargs: dict | None,
     default_stage_cfg_factory: Any = None,
+    deploy_config_path: str | None = None,
+    stage_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[str, list]:
     """Load stage configurations from model or YAML file with fallback to defaults.
 
     Args:
         model: Model name or path
-        stage_configs_path: Optional path to YAML file containing stage configurations
+        stage_configs_path: Optional path to legacy YAML (stage_args format)
         kwargs: Engine arguments to merge with stage configs
         default_stage_cfg_factory: Optional callable that takes no args and returns
             default stage config list when no configs are found
+        deploy_config_path: Optional path to deploy YAML (new format).
+            Takes precedence over stage_configs_path.
+        stage_overrides: Per-stage overrides from ``--stage-overrides`` JSON.
+            Keys are stage_id strings, values are dicts of overrides.
 
     Returns:
         Tuple of (config_path, stage_configs)
     """
-    if stage_configs_path is None:
+    if deploy_config_path is not None:
+        # New path: deploy config + pipeline registry
+        config_path = deploy_config_path
+        stage_configs = load_stage_configs_from_model(
+            model,
+            base_engine_args=kwargs,
+            deploy_config_path=deploy_config_path,
+            stage_overrides=stage_overrides,
+        )
+        if not stage_configs:
+            if default_stage_cfg_factory is not None:
+                default_stage_cfg = default_stage_cfg_factory()
+                stage_configs = create_config(default_stage_cfg)
+            else:
+                stage_configs = []
+    elif stage_configs_path is None:
         config_path = resolve_model_config_path(model)
-        stage_configs = load_stage_configs_from_model(model, base_engine_args=kwargs)
+        stage_configs = load_stage_configs_from_model(
+            model,
+            base_engine_args=kwargs,
+            stage_overrides=stage_overrides,
+        )
         if not stage_configs:
             if default_stage_cfg_factory is not None:
                 default_stage_cfg = default_stage_cfg_factory()

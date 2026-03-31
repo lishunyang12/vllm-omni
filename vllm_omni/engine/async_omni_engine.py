@@ -1297,6 +1297,8 @@ class AsyncOmniEngine:
         """Resolve stage configs and inject defaults shared by orchestrator/headless."""
 
         stage_configs_path = kwargs.get("stage_configs_path", None)
+        deploy_config_path = kwargs.pop("deploy_config", None)
+        stage_overrides_json = kwargs.pop("stage_overrides", None)
         explicit_stage_configs = kwargs.pop("stage_configs", None)
         if explicit_stage_configs is not None:
             logger.warning(
@@ -1309,13 +1311,24 @@ class AsyncOmniEngine:
         else:
             base_kwargs = kwargs
 
-        # Use the legacy config loading path (load_and_resolve_stage_configs).
-        # StageConfigFactory wiring will be done in config refactor [2/N].
+        # Parse --stage-overrides JSON string if provided
+        stage_overrides = None
+        if stage_overrides_json:
+            import json
+
+            if isinstance(stage_overrides_json, str):
+                stage_overrides = json.loads(stage_overrides_json)
+            else:
+                stage_overrides = stage_overrides_json
+
+
         config_path, stage_configs = load_and_resolve_stage_configs(
             model,
             stage_configs_path,
             base_kwargs,
             default_stage_cfg_factory=lambda: self._create_default_diffusion_stage_cfg(kwargs),
+            deploy_config_path=deploy_config_path,
+            stage_overrides=stage_overrides,
         )
 
         # Inject diffusion LoRA-related knobs from kwargs if not present in the stage config.
