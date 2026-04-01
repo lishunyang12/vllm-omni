@@ -1,5 +1,6 @@
 """Unit tests for vllm_omni.entrypoints.utils module."""
 
+import os
 from collections import Counter
 from dataclasses import dataclass
 import json
@@ -274,7 +275,6 @@ class TestFilterDataclassKwargs:
         assert result["cache_config"]["rel_l1_thresh"] == 0.3
         assert "extra_param" not in result["cache_config"]
 
-
 def _build_native_voxcpm_config() -> dict:
     return {
         "lm_config": {
@@ -372,3 +372,32 @@ class TestResolveModelConfigPath:
 
         assert config_path is not None
         assert config_path.endswith("vllm_omni/platforms/npu/stage_configs/voxcpm.yaml")
+
+    def test_glm_image_diffusers_format_resolution(self, mocker: MockerFixture):
+        """Test GlmImagePipeline diffusers class resolves to glm_image config."""
+        mocker.patch(
+            "vllm_omni.entrypoints.utils.file_or_path_exists",
+            return_value=True,
+        )
+        mocker.patch(
+            "vllm_omni.entrypoints.utils._try_get_class_name_from_diffusers_config",
+            return_value="GlmImagePipeline",
+        )
+        mocker.patch(
+            "vllm_omni.entrypoints.utils.current_omni_platform.get_default_stage_config_path",
+            return_value="vllm_omni/model_executor/stage_configs",
+        )
+
+        original_exists = os.path.exists
+
+        def mock_exists(path):
+            if "glm_image.yaml" in str(path):
+                return True
+            return original_exists(path)
+
+        mocker.patch("os.path.exists", side_effect=mock_exists)
+
+        result = resolve_model_config_path("zai-org/GLM-Image")
+
+        assert result is not None
+        assert "glm_image.yaml" in result

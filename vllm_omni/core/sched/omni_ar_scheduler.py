@@ -22,6 +22,7 @@ from vllm_omni.core.sched.output import OmniSchedulerOutput
 from vllm_omni.distributed.omni_connectors.transfer_adapter.chunk_transfer_adapter import (
     OmniChunkTransferAdapter,
 )
+from vllm_omni.engine.serialization import deserialize_additional_information
 
 logger = init_logger(__name__)
 
@@ -94,8 +95,19 @@ class OmniARScheduler(VLLMScheduler):
             return False
 
         criteria_type = self.kv_transfer_criteria.get("type")
+        if (
+            self.kv_transfer_criteria.get("stop_after_transfer", True)
+            and request.request_id in self.transfer_triggered_requests
+        ):
+            # For split pipelines that only need the transferred KV
+            # snapshot, stop AR decode once KV extraction has completed.
+            # This frees stage-0 resources without requiring an
+            # orchestrator-side abort.
+            if request.request_id not in self.active_kv_transfers:
+                request.status = RequestStatus.FINISHED_STOPPED
+                return True
+            return False
 
-        # Universal duplicate check for once semantics
         if request.request_id in self.transfer_triggered_requests:
             return False
 
@@ -301,6 +313,10 @@ class OmniARScheduler(VLLMScheduler):
                 finished = self._handle_stopped_request(request)
                 if finished:
                     kv_transfer_params = self._free_request(request)
+                    if self.chunk_transfer_adapter is not None:
+                        self.chunk_transfer_adapter.cleanup_receiver(
+                            request.request_id,
+                        )
                 if status_before_stop == RequestStatus.RUNNING:
                     stopped_running_reqs.add(request)
                 elif status_before_stop == RequestStatus.WAITING_FOR_CHUNK:
@@ -364,6 +380,7 @@ class OmniARScheduler(VLLMScheduler):
         if stopped_preempted_reqs:
             # This is a rare case and unlikely to impact performance.
             self.waiting.remove_requests(stopped_preempted_reqs)
+            self.skipped_waiting.remove_requests(stopped_preempted_reqs)
 
         # [Main] Handle failed KV load requests
         if failed_kv_load_req_ids and not self.recompute_kv_load_failures:
@@ -381,9 +398,8 @@ class OmniARScheduler(VLLMScheduler):
                     )
                 )
                 if self.chunk_transfer_adapter is not None:
-                    self.chunk_transfer_adapter.cleanup(
+                    self.chunk_transfer_adapter.cleanup_receiver(
                         request.request_id,
-                        getattr(request, "external_req_id", None),
                     )
 
         # [Omni] Cleanup state for finished requests
@@ -451,6 +467,23 @@ class OmniARScheduler(VLLMScheduler):
             kv_extracted_ids = getattr(model_runner_output, "kv_extracted_req_ids", None)
             if kv_extracted_ids:
                 for req_id in kv_extracted_ids:
+                    # Emit a kv_ready signal so the orchestrator can forward
+                    # the request to the DiT stage immediately after KV
+                    # extraction, without waiting for AR decode to finish.
+                    req = self.requests.get(req_id)
+                    if req is not None and not req.is_finished():
+                        eco = engine_core_outputs.get(req.client_index)
+                        if eco is None:
+                            eco = EngineCoreOutputs()
+                            engine_core_outputs[req.client_index] = eco
+                        eco.outputs.append(
+                            EngineCoreOutput(
+                                request_id=req_id,
+                                new_token_ids=[],
+                                kv_transfer_params={"kv_ready": True},
+                            )
+                        )
+
                     # Mark transfer as finished
                     if req_id in self.active_kv_transfers:
                         self.active_kv_transfers.remove(req_id)
@@ -520,17 +553,13 @@ class OmniARScheduler(VLLMScheduler):
                     # Also update request.additional_information for good measure
                     add_info = getattr(request, "additional_information", None)
                     # If additional_information is an AdditionalInformationPayload-like object,
-                    # unpack list_data into a plain dict.
+                    # unpack it into a plain dict.
                     if (
                         add_info is not None
                         and hasattr(add_info, "entries")
                         and isinstance(getattr(add_info, "entries"), dict)
                     ):
-                        request.additional_information = {
-                            k: getattr(v, "list_data")
-                            for k, v in getattr(add_info, "entries").items()
-                            if getattr(v, "list_data", None) is not None
-                        }
+                        request.additional_information = deserialize_additional_information(add_info)
                         add_info = request.additional_information
                     if add_info is None:
                         request.additional_information = {}

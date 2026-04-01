@@ -145,6 +145,18 @@ _OMNI_MODELS = {
         "voxcpm",
         "VoxCPMForConditionalGeneration",
     ),
+    ## Voxtral TTS
+    "VoxtralTTSForConditionalGeneration": (
+        "voxtral_tts",
+        "voxtral_tts",
+        "VoxtralTTSForConditionalGeneration",
+    ),
+    "VoxtralTTSAudioGeneration": (
+        "voxtral_tts",
+        "voxtral_tts_audio_generation",
+        "VoxtralTTSAudioGenerationForConditionalGeneration",
+    ),
+    "VoxtralTTSAudioTokenizer": ("voxtral_tts", "voxtral_tts_audio_tokenizer", "VoxtralTTSAudioTokenizer"),
 }
 
 
