@@ -700,6 +700,16 @@ class VoxCPMForConditionalGeneration(nn.Module):
         self.inject_omni_request_id_into_runtime_info = True
         self._pipeline = None
         self._latent_stream_gens: dict[str, Any] = {}
+        # When True, AR sampling should emit EOS so vLLM ends the request; when False, emit a
+        # non-EOS placeholder so streaming latent/VAE steps can continue (see compute_logits).
+        self._ar_emit_stop_token: bool = True
+
+    def _runner_hidden_device_dtype(self) -> tuple[torch.device, torch.dtype]:
+        """Device/dtype for tensors consumed by NPU/GPU AR runner (must match logits_indices)."""
+        device = _resolve_runtime_device(self.vllm_config)
+        mc = getattr(self.vllm_config, "model_config", None)
+        dtype = getattr(mc, "dtype", torch.float32) if mc is not None else torch.float32
+        return device, dtype
 
     def _ensure_model_loaded(self):
         if self._pipeline is not None:
@@ -821,8 +831,50 @@ class VoxCPMForConditionalGeneration(nn.Module):
             return torch.empty((0, 1), device=input_ids.device, dtype=torch.float32)
         return torch.zeros((input_ids.shape[0], 1), device=input_ids.device, dtype=torch.float32)
 
-    def compute_logits(self, hidden_states: torch.Tensor | OmniOutput, sampling_metadata: Any = None) -> None:
-        return None
+    def _get_vocab_size(self) -> int:
+        model_cfg = getattr(self.vllm_config, "model_config", None)
+        if model_cfg is not None:
+            getter = getattr(model_cfg, "get_vocab_size", None)
+            if callable(getter):
+                try:
+                    return int(getter())
+                except Exception:
+                    pass
+            hf_cfg = getattr(model_cfg, "hf_text_config", None)
+            if hf_cfg is not None and hasattr(hf_cfg, "vocab_size"):
+                return int(hf_cfg.vocab_size)
+        return 32000
+
+    def compute_logits(self, hidden_states: torch.Tensor | OmniOutput, sampling_metadata: Any = None) -> torch.Tensor:
+        del sampling_metadata
+        if isinstance(hidden_states, OmniOutput):
+            hidden_states = hidden_states.text_hidden_states
+
+        if hidden_states is None:
+            dev, dt = self._runner_hidden_device_dtype()
+            hidden_states = torch.zeros((0, 1), device=dev, dtype=dt)
+        if hidden_states.ndim == 1:
+            hidden_states = hidden_states.unsqueeze(-1)
+        elif hidden_states.ndim > 2:
+            hidden_states = hidden_states.reshape(-1, hidden_states.shape[-1])
+
+        vocab_size = self._get_vocab_size()
+        num_rows = int(hidden_states.shape[0])
+        logits = torch.zeros(
+            (num_rows, vocab_size),
+            dtype=torch.float32,
+            device=hidden_states.device,
+        )
+        eos_id = 2 if vocab_size > 2 else 0
+        safe_id = 1 if vocab_size > 1 and 1 != eos_id else 0
+        emit_stop = getattr(self, "_ar_emit_stop_token", True)
+        if num_rows > 0:
+            if emit_stop:
+                logits[:, eos_id] = 1.0e6
+            else:
+                logits[:, eos_id] = -1.0e9
+                logits[:, safe_id] = 1.0e6
+        return logits
 
     @torch.no_grad()
     def forward(
@@ -834,16 +886,21 @@ class VoxCPMForConditionalGeneration(nn.Module):
         runtime_additional_information: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> OmniOutput:
-        del input_ids, positions, intermediate_tensors, inputs_embeds, kwargs
+        del positions, intermediate_tensors, inputs_embeds, kwargs
         self._ensure_model_loaded()
+        out_dev, out_dtype = self._runner_hidden_device_dtype()
+        if input_ids is not None and input_ids.device.type == out_dev.type:
+            out_dev = input_ids.device
 
         infos = runtime_additional_information or [{}]
+        
         sample_rate = int(getattr(self._pipeline, "sample_rate", 24000))
         async_chunk = bool(getattr(self.vllm_config.model_config, "async_chunk", False))
         if self.model_stage in self._VAE_STAGES:
             if all(self._extract_val(info, "latent_audio_feat", None) is None for info in infos):
+                self._ar_emit_stop_token = True
                 return OmniOutput(
-                    text_hidden_states=None,
+                    text_hidden_states=torch.zeros((0, 1), device=out_dev, dtype=out_dtype),
                     multimodal_outputs={
                         "model_outputs": [torch.zeros((0,), dtype=torch.float32) for _ in infos],
                         "sr": [torch.tensor(sample_rate, dtype=torch.int32) for _ in infos],
@@ -863,8 +920,9 @@ class VoxCPMForConditionalGeneration(nn.Module):
                     mm_empty["latent_stream_continue"] = z_cont
                     mm_empty["omni_stream_gen_exhausted"] = z_ex
                     mm_empty["latent_stream_gen_exhausted"] = z_ex
+                self._ar_emit_stop_token = True
                 return OmniOutput(
-                    text_hidden_states=None,
+                    text_hidden_states=torch.zeros((0, 1), device=out_dev, dtype=out_dtype),
                     multimodal_outputs=mm_empty,
                 )
 
@@ -879,6 +937,7 @@ class VoxCPMForConditionalGeneration(nn.Module):
         for info in infos:
             if self.model_stage in self._VAE_STAGES:
                 latent_audio_feat = self._extract_val(info, "latent_audio_feat", None)
+                print(f"---latent_audio_feat---:{latent_audio_feat.shape}")
                 audio_tensor = self._pipeline.decode(
                     latent_audio_feat,
                     trim_streaming_patch=async_chunk,
@@ -921,6 +980,7 @@ class VoxCPMForConditionalGeneration(nn.Module):
                         retry_badcase_ratio_threshold=retry_badcase_ratio_threshold,
                     )
                 gen = self._latent_stream_gens[req_key]
+                chunk_latent: torch.Tensor | None = None
                 try:
                     chunk_latent, is_last = next(gen)
                 except StopIteration:
@@ -944,6 +1004,11 @@ class VoxCPMForConditionalGeneration(nn.Module):
                     if created_temp is not None and os.path.exists(created_temp):
                         os.unlink(created_temp)
                 sample_rates.append(torch.tensor(sample_rate, dtype=torch.int32))
+                outputs_tensor = torch.stack(outputs)
+                if chunk_latent is not None:
+                    print(f"---outputs_tensor---:{outputs_tensor.shape},chunk_latent:{chunk_latent.shape}")
+                else:
+                    print(f"---outputs_tensor---:{outputs_tensor.shape},chunk_latent:StopIteration")
                 continue
 
             prompt_wav_path, prompt_text, temp_prompt_wav = self._resolve_prompt_inputs(info)
@@ -962,6 +1027,8 @@ class VoxCPMForConditionalGeneration(nn.Module):
                         retry_badcase_ratio_threshold=retry_badcase_ratio_threshold,
                     )
                     outputs.append(latent_audio_feat.float().cpu())
+                    outputs_tensor = torch.stack(outputs)
+                    print(f"---outputs_tensor---:{outputs_tensor.shape},latent_audio_feat:{latent_audio_feat.shape}")
             finally:
                 if temp_prompt_wav is not None and os.path.exists(temp_prompt_wav):
                     os.unlink(temp_prompt_wav)
@@ -976,8 +1043,28 @@ class VoxCPMForConditionalGeneration(nn.Module):
             assert gen_exhausted_flags is not None
             mm["omni_stream_gen_exhausted"] = gen_exhausted_flags
             mm["latent_stream_gen_exhausted"] = gen_exhausted_flags
+        if outputs:
+            outputs_tensor = torch.stack(outputs)
+            if outputs_tensor.ndim == 1:
+                text_hidden_states = outputs_tensor.unsqueeze(-1)
+            else:
+                hidden_dim = outputs_tensor.shape[-1]
+                text_hidden_states = outputs_tensor.reshape(-1, hidden_dim)
+        else:
+            text_hidden_states = torch.zeros((0, 1), device=out_dev, dtype=out_dtype)
+        text_hidden_states = text_hidden_states.to(device=out_dev, dtype=out_dtype)
+
+        if self.model_stage in self._LATENT_STAGES and async_chunk and gen_exhausted_flags:
+            self._ar_emit_stop_token = all(int(t.item()) == 1 for t in gen_exhausted_flags)
+        elif self.model_stage in self._LATENT_STAGES:
+            self._ar_emit_stop_token = True
+        elif self.model_stage in self._VAE_STAGES:
+            self._ar_emit_stop_token = True
+        else:
+            self._ar_emit_stop_token = True
+
         return OmniOutput(
-            text_hidden_states=None,
+            text_hidden_states=text_hidden_states,
             multimodal_outputs=mm,
         )
 
