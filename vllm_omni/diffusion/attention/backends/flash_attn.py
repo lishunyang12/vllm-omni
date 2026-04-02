@@ -222,6 +222,11 @@ class FlashAttentionImpl(AttentionImpl):
         )
         return output
 
+    @staticmethod
+    def _reshape_descale(scale: torch.Tensor, batch: int, num_heads_k: int) -> torch.Tensor:
+        """Reshape per-tensor scale to FA3's expected (batch, num_heads_k) shape."""
+        return scale.view(1, 1).expand(batch, num_heads_k).contiguous()
+
     def _forward_fp8(
         self,
         query: torch.Tensor,
@@ -256,6 +261,12 @@ class FlashAttentionImpl(AttentionImpl):
             attn_metadata.v_scale = None
             return self.forward_cuda(query, key, value, attn_metadata)
 
+        # Reshape per-tensor scales to FA3's expected (batch, num_kv_heads)
+        B, S, H, D = key.shape
+        q_descale = self._reshape_descale(q_scale, B, H)
+        k_descale = self._reshape_descale(k_scale, B, H)
+        v_descale = self._reshape_descale(v_scale, B, H)
+
         attention_mask = attn_metadata.attn_mask if attn_metadata is not None else None
         has_padding = attention_mask is not None and torch.any(~attention_mask)
 
@@ -263,7 +274,7 @@ class FlashAttentionImpl(AttentionImpl):
             # FA3 varlen with FP8 descale
             return self._forward_varlen_masked(
                 query, key, value, attention_mask,
-                q_descale=q_scale, k_descale=k_scale, v_descale=v_scale,
+                q_descale=q_descale, k_descale=k_descale, v_descale=v_descale,
             )
 
         # FA3 regular path with FP8 descale
@@ -271,9 +282,9 @@ class FlashAttentionImpl(AttentionImpl):
             query, key, value,
             softmax_scale=self.softmax_scale,
             causal=self.causal,
-            q_descale=q_scale,
-            k_descale=k_scale,
-            v_descale=v_scale,
+            q_descale=q_descale,
+            k_descale=k_descale,
+            v_descale=v_descale,
         )
         if isinstance(out, tuple):
             out = out[0]

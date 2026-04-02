@@ -178,17 +178,21 @@ for name, shape in bench_shapes:
 
     # FP8 benchmark (quantize + attention)
     fp8_q, fp8_k, fp8_v, qs, ks, vs = quantize_qkv_fp8(q_bf16, k_bf16, v_bf16)
+    # FA3 expects descale shape (batch, num_kv_heads)
+    qs_2d = qs.view(1, 1).expand(B, H).contiguous()
+    ks_2d = ks.view(1, 1).expand(B, H).contiguous()
+    vs_2d = vs.view(1, 1).expand(B, H).contiguous()
 
     for _ in range(n_warmup):
         fa3_attn_func(fp8_q, fp8_k, fp8_v, softmax_scale=softmax_scale,
-                      causal=False, q_descale=qs, k_descale=ks, v_descale=vs)
+                      causal=False, q_descale=qs_2d, k_descale=ks_2d, v_descale=vs_2d)
     torch.cuda.synchronize()
 
     # FP8 kernel only (no quant overhead)
     start = time.perf_counter()
     for _ in range(n_iters):
         fa3_attn_func(fp8_q, fp8_k, fp8_v, softmax_scale=softmax_scale,
-                      causal=False, q_descale=qs, k_descale=ks, v_descale=vs)
+                      causal=False, q_descale=qs_2d, k_descale=ks_2d, v_descale=vs_2d)
     torch.cuda.synchronize()
     fp8_kernel_time = (time.perf_counter() - start) / n_iters * 1000
 
@@ -196,8 +200,11 @@ for name, shape in bench_shapes:
     start = time.perf_counter()
     for _ in range(n_iters):
         fp8_q, fp8_k, fp8_v, qs, ks, vs = quantize_qkv_fp8(q_bf16, k_bf16, v_bf16)
+        qs_2d = qs.view(1, 1).expand(B, H).contiguous()
+        ks_2d = ks.view(1, 1).expand(B, H).contiguous()
+        vs_2d = vs.view(1, 1).expand(B, H).contiguous()
         fa3_attn_func(fp8_q, fp8_k, fp8_v, softmax_scale=softmax_scale,
-                      causal=False, q_descale=qs, k_descale=ks, v_descale=vs)
+                      causal=False, q_descale=qs_2d, k_descale=ks_2d, v_descale=vs_2d)
     torch.cuda.synchronize()
     fp8_e2e_time = (time.perf_counter() - start) / n_iters * 1000
 
@@ -266,12 +273,17 @@ for name, shape in bench_shapes:
         fp8_q, fp8_k, fp8_v, mask, S, _unpad_input
     )
 
+    # FA3 expects descale shape (batch, num_kv_heads)
+    qs_2d = qs.view(1, 1).expand(B, H).contiguous()
+    ks_2d = ks.view(1, 1).expand(B, H).contiguous()
+    vs_2d = vs.view(1, 1).expand(B, H).contiguous()
+
     for _ in range(n_warmup):
         flash_attn_varlen_func(q_up_fp8, k_up_fp8, v_up_fp8,
                                cu_seqlens_q=cu_q, cu_seqlens_k=cu_k,
                                max_seqlen_q=max_q, max_seqlen_k=max_k,
                                softmax_scale=softmax_scale, causal=False,
-                               q_descale=qs, k_descale=ks, v_descale=vs)
+                               q_descale=qs_2d, k_descale=ks_2d, v_descale=vs_2d)
     torch.cuda.synchronize()
 
     start = time.perf_counter()
@@ -280,7 +292,7 @@ for name, shape in bench_shapes:
                                cu_seqlens_q=cu_q, cu_seqlens_k=cu_k,
                                max_seqlen_q=max_q, max_seqlen_k=max_k,
                                softmax_scale=softmax_scale, causal=False,
-                               q_descale=qs, k_descale=ks, v_descale=vs)
+                               q_descale=qs_2d, k_descale=ks_2d, v_descale=vs_2d)
     torch.cuda.synchronize()
     varlen_fp8 = (time.perf_counter() - start) / n_iters * 1000
 
