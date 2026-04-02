@@ -16,11 +16,6 @@ from vllm.v1.metrics.perf import PerfStats
 from vllm.v1.request import Request, RequestStatus
 from vllm.v1.spec_decode.metrics import SpecDecodingStats
 
-from vllm_omni.core.omni_streaming_keys import (
-    pooler_stream_continues,
-    pooler_stream_gen_exhausted,
-    pooler_stream_terminal,
-)
 from vllm_omni.core.sched.output import OmniCachedRequestData, OmniNewRequestData
 from vllm_omni.distributed.omni_connectors.transfer_adapter.chunk_transfer_adapter import (
     OmniChunkTransferAdapter,
@@ -427,19 +422,6 @@ class OmniGenerationScheduler(VLLMScheduler):
             finish_reason = None
             routed_experts = None
 
-            if (
-                self.chunk_transfer_adapter is not None
-                and isinstance(pooler_output, dict)
-                and pooler_stream_continues(pooler_output)
-            ):
-                request.prompt_token_ids.append(0)
-                try:
-                    request._all_token_ids.append(0)  # type: ignore[attr-defined]
-                except Exception:
-                    pass
-                if hasattr(request, "num_prompt_tokens"):
-                    request.num_prompt_tokens = len(request.prompt_token_ids)
-
             # Diffusion request: completes in one step; mark finished and free resources
             if (
                 request.status == RequestStatus.FINISHED_STOPPED
@@ -448,15 +430,6 @@ class OmniGenerationScheduler(VLLMScheduler):
                     self.chunk_transfer_adapter is not None
                     and request.request_id in self.chunk_transfer_adapter.finished_requests
                     and request.num_computed_tokens >= len(request.prompt_token_ids)
-                )
-                or (
-                    self.chunk_transfer_adapter is not None
-                    and pooler_stream_terminal(pooler_output)
-                    and request.num_computed_tokens >= len(request.prompt_token_ids)
-                )
-                or (
-                    self.chunk_transfer_adapter is not None
-                    and pooler_stream_gen_exhausted(pooler_output)
                 )
             ):
                 request.status = RequestStatus.FINISHED_STOPPED
@@ -471,9 +444,11 @@ class OmniGenerationScheduler(VLLMScheduler):
                 finished = self._handle_stopped_request(request)
                 if finished:
                     kv_transfer_params = self._free_request(request)
-                    # Chunk adapter cleanup runs in save_loop after the final put (see
-                    # OmniChunkTransferAdapter._send_single_request); do not cleanup here
-                    # or the background send races with cleared put_req_chunk.
+                    if self.chunk_transfer_adapter is not None:
+                        self.chunk_transfer_adapter.cleanup(
+                            request.request_id,
+                            getattr(request, "external_req_id", None),
+                        )
                 if status_before_stop == RequestStatus.WAITING_FOR_CHUNK:
                     stopped_running_reqs.add(request)
                     stopped_preempted_reqs.add(request)
@@ -522,8 +497,6 @@ class OmniGenerationScheduler(VLLMScheduler):
                         num_nans_in_logits=request.num_nans_in_logits,
                     )
                 )
-                if self.chunk_transfer_adapter is not None:
-                    self.chunk_transfer_adapter.save_async(pooler_output, request)
             else:
                 # Invariant: EngineCore returns no partial prefill outputs.
                 assert not prompt_logprobs_tensors

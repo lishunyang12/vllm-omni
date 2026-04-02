@@ -4,7 +4,9 @@ This directory contains the minimal offline example for running native VoxCPM in
 
 It covers:
 
-- split-stage inference with `vllm_omni/model_executor/stage_configs/voxcpm.yaml`
+- split-stage offline inference
+- streaming with `vllm_omni/model_executor/stage_configs/voxcpm.yaml`
+- non-streaming with `vllm_omni/model_executor/stage_configs/voxcpm_no_async_chunk.yaml`
 - text-only synthesis
 - voice cloning with `ref_audio` + `ref_text`
 
@@ -38,7 +40,7 @@ export VOXCPM_MODEL=/path/to/voxcpm-model
 
 ## Quick Start
 
-Text-only synthesis:
+Text-only synthesis (non-streaming by default):
 
 ```bash
 python examples/offline_inference/voxcpm/end2end.py \
@@ -56,7 +58,17 @@ python examples/offline_inference/voxcpm/end2end.py \
   --ref-text "Transcript of the reference audio."
 ```
 
-Generated audio is saved to `output_audio/` by default.
+Streaming:
+
+```bash
+python examples/offline_inference/voxcpm/end2end.py \
+  --model "$VOXCPM_MODEL" \
+  --stage-configs-path vllm_omni/model_executor/stage_configs/voxcpm.yaml \
+  --text "This is a split-stage VoxCPM synthesis example running on vLLM Omni."
+```
+
+Generated audio is saved to `output_audio/` by default for non-streaming, and to
+`output_audio_streaming/` by default for streaming.
 
 ## Useful Arguments
 
@@ -66,24 +78,26 @@ Generated audio is saved to `output_audio/` by default.
 - `--min-len`: minimum token length
 - `--max-new-tokens`: maximum token length
 
-## Omni async_chunk vs Qwen3-TTS (same transport, different Stage0 semantics)
+## Omni async_chunk vs Qwen3-TTS (same transport, different Stage0 payloads)
 
 Both pipelines use `async_chunk: true`, [`OmniChunkTransferAdapter`](../../../vllm_omni/distributed/omni_connectors/transfer_adapter/chunk_transfer_adapter.py), `SharedMemoryConnector`, and a `custom_process_next_stage_input_func` to build the Stage0→Stage1 payload (`code_predictor_codes`, `finished`, plus modality-specific fields).
 
 | Aspect | Qwen3-TTS | VoxCPM |
 |--------|-----------|--------|
-| Stage0 `worker_type` | `ar` (connector merges payloads across AR steps) | `generation` (each chunk replaces `prompt_token_ids` for Stage1) |
-| Stage0 scheduler | `OmniARScheduler` | `OmniGenerationScheduler` |
-| What each Stage0 step produces | One speech-token frame (`audio_codes` in pooler) | One latent window from an internal iterator (`latent_audio_feat`) |
-| “More chunks?” signal | Implicit via AR decode until EOS | Explicit: `omni_stream_continue` / `omni_stream_gen_exhausted` (legacy: `latent_stream_*`) in pooler; see [`omni_streaming_keys.py`](../../../vllm_omni/core/omni_streaming_keys.py) |
-| Connector `codec_streaming` | `true` + frame windowing in [`talker2code2wav_async_chunk`](../../../vllm_omni/model_executor/stage_input_processors/qwen3_tts.py) | `false` — each chunk is a full latent for VAE ([`latent2vae_async_chunk`](../../../vllm_omni/model_executor/stage_input_processors/voxcpm.py)) |
+| Stage0 `worker_type` | `ar` | `ar` |
+| Stage0 scheduler | `OmniARScheduler` | `OmniARScheduler` |
+| What each Stage0 step produces | One speech-token frame (`audio_codes` in pooler) | One latent chunk (`latent_audio_feat`) |
+| “More chunks?” signal | Implicit via AR decode until EOS | Implicit via AR request completion on the last latent chunk |
+| Stage1 scheduler | `OmniGenerationScheduler` | `OmniGenerationScheduler` |
+| Stage1 payload | speech codes + chunk context | latent chunk + optional sample rate |
 | Stage1 | Code2Wav | VAE decode (`trim_streaming_patch` trims overlap) |
 
-**Stage0→Stage1 payload contract (VoxCPM streaming):** `latent2vae_async_chunk` sends `latent_audio_feat`, optional `sr`, `code_predictor_codes: [0]`, and `finished` when the request is done, the stream no longer continues, or the generator is exhausted. Pooler flags are interpreted via `pooler_stream_continues` / `pooler_stream_gen_exhausted` (supports both `omni_*` and legacy `latent_stream_*` keys).
+**Stage0→Stage1 payload contract (VoxCPM streaming):** `latent2vae_async_chunk` sends `latent_audio_feat`, optional `sr`, `code_predictor_codes: [0]`, and `finished` when the Stage0 AR request has completed. This keeps VoxCPM aligned with the framework’s common async-chunk pattern used by `qwen3_tts`.
 
 ## Notes
 
-- This branch only keeps the split-stage `latent_generator -> vae` pipeline.
+- This branch keeps the split-stage `latent_generator -> vae` pipeline.
+- Both streaming and non-streaming offline inference are kept.
 - It does not include the single-stage `voxcpm_full.yaml` path.
 - It does not include the OpenAI-compatible online speech serving adaptation.
 - Voice cloning requires both `--ref-audio` and `--ref-text`.

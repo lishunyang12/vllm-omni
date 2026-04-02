@@ -5,7 +5,6 @@ from typing import Any
 import torch
 from vllm.inputs import TextPrompt
 
-from vllm_omni.core.omni_streaming_keys import pooler_stream_continues, pooler_stream_gen_exhausted
 from vllm_omni.inputs.data import OmniTokensPrompt
 
 
@@ -64,7 +63,6 @@ def latent2vae_async_chunk(
 ) -> dict[str, Any] | None:
     """Stage-0 latent → stage-1 VAE under ``async_chunk`` (connector payload)."""
     del transfer_manager
-    request_id = getattr(request, "external_req_id", None) or getattr(request, "request_id", "")
     finished_request = bool(is_finished)
     if callable(getattr(request, "is_finished", None)):
         finished_request = finished_request or bool(request.is_finished())
@@ -80,27 +78,21 @@ def latent2vae_async_chunk(
     if isinstance(latent, torch.Tensor) and latent.numel() == 0:
         latent = None
 
-    streaming_more = pooler_stream_continues(pooling_output)
-    gen_exhausted = pooler_stream_gen_exhausted(pooling_output)
-
     if latent is None:
-        if finished_request or gen_exhausted:
+        if finished_request:
             return {
                 "code_predictor_codes": [0],
                 "finished": True,
             }
         return None
 
-    # Last chunk: no continuation flag (or explicit zero). ``gen_exhausted`` mirrors is_last on the
-    # latent generator (StopIteration is skipped because we pop the gen when is_last).
-    payload_finished = finished_request or not streaming_more or gen_exhausted
     sr = pooling_output.get("sr")
     out: dict[str, Any] = {
         "code_predictor_codes": [0],
         "latent_audio_feat": latent.detach().cpu().contiguous()
         if isinstance(latent, torch.Tensor)
         else latent,
-        "finished": bool(payload_finished),
+        "finished": finished_request,
     }
     if isinstance(sr, torch.Tensor):
         out["sr"] = sr.detach().cpu().contiguous()

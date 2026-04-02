@@ -949,21 +949,15 @@ class OmniGPUModelRunner(GPUModelRunner):
             # and forces the EOL token when column_id == ar_width.
             generated_len = len(req_state.output_token_ids) if req_state is not None else 0
             info = self.model_intermediate_buffer.get(req_id, {})
-            inject_rid = getattr(self.model, "inject_omni_request_id_into_runtime_info", False)
             if info:
                 info["generated_len"] = generated_len
-                if inject_rid:
-                    info["_omni_req_id"] = req_id
                 per_req_runtime_info.append(info)
                 if "thinker_reply_part_per_request" in info:
                     q = info["thinker_reply_part_per_request"]
                     if hasattr(q, "shape"):
                         logger.debug(f"[OMNI] req={req_id} has thinker_reply_part_per_request queue shape: {q.shape}")
             else:
-                row: dict = {"generated_len": generated_len} if inject_rid else {}
-                if inject_rid:
-                    row["_omni_req_id"] = req_id
-                per_req_runtime_info.append(row)
+                per_req_runtime_info.append({})
         return per_req_runtime_info
 
     def _compute_request_token_spans(self, num_scheduled_tokens_np) -> list[tuple[int, int]]:

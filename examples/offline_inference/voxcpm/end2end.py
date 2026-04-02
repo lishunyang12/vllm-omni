@@ -83,6 +83,19 @@ def _save_wav(mm: dict[str, Any], output_dir: Path, request_id: str) -> Path:
     return output_path
 
 
+def _iter_request_multimodal_outputs(request_output: Any):
+    outputs = getattr(request_output, "outputs", None)
+    if outputs:
+        for output in outputs:
+            mm = getattr(output, "multimodal_output", None)
+            if isinstance(mm, dict):
+                yield mm
+
+    mm = getattr(request_output, "multimodal_output", None)
+    if isinstance(mm, dict):
+        yield mm
+
+
 def parse_args():
     parser = FlexibleArgumentParser(
         description="Offline split-stage VoxCPM inference with vLLM Omni (auto sync/streaming by stage config)"
@@ -310,8 +323,7 @@ def _run_sync(args) -> list[Path]:
         for stage_outputs in omni.generate([prompt]):
             # Do not use output.request_id as the only filename stem: vLLM may reuse the same
             # id across sequential generate() calls, which overwrites the WAV.
-            for j, output in enumerate(stage_outputs.request_output):
-                mm = output.outputs[0].multimodal_output
+            for j, mm in enumerate(_iter_request_multimodal_outputs(stage_outputs.request_output)):
                 save_stem = f"run{run + 1}_{run_tag}" if j == 0 else f"run{run + 1}_{run_tag}_{j}"
                 run_paths.append(_save_wav(mm, output_dir, save_stem))
         if not run_paths:

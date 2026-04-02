@@ -2,6 +2,7 @@ async_chunk: true
 stage_args:
   - stage_id: 0
     stage_type: llm
+    is_comprehension: true
     runtime:
       devices: "0"
       max_batch_size: 1
@@ -9,8 +10,8 @@ stage_args:
       dtype: bfloat16
       model_stage: latent_generator
       model_arch: VoxCPMForConditionalGeneration
-      worker_type: generation
-      scheduler_cls: vllm_omni.core.sched.omni_generation_scheduler.OmniGenerationScheduler
+      worker_type: ar
+      scheduler_cls: vllm_omni.core.sched.omni_ar_scheduler.OmniARScheduler
       enforce_eager: true
       trust_remote_code: true
       async_scheduling: false
@@ -23,6 +24,14 @@ stage_args:
       custom_process_next_stage_input_func: vllm_omni.model_executor.stage_input_processors.voxcpm.latent2vae_async_chunk
     output_connectors:
       to_stage_1: connector_of_shared_memory
+    default_sampling_params:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: -1
+      max_tokens: 4096
+      seed: 42
+      detokenize: false
+      repetition_penalty: 1.0
     final_output: false
 
   - stage_id: 1

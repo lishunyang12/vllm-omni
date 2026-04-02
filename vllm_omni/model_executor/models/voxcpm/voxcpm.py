@@ -913,13 +913,6 @@ class VoxCPMForConditionalGeneration(nn.Module):
                     "latent_audio_feat": [torch.zeros((0,), dtype=torch.float32) for _ in infos],
                     "sr": [torch.tensor(sample_rate, dtype=torch.int32) for _ in infos],
                 }
-                if async_chunk and self.model_stage in self._LATENT_STAGES:
-                    z_cont = [torch.tensor(0, dtype=torch.int32) for _ in infos]
-                    z_ex = [torch.tensor(0, dtype=torch.int32) for _ in infos]
-                    mm_empty["omni_stream_continue"] = z_cont
-                    mm_empty["latent_stream_continue"] = z_cont
-                    mm_empty["omni_stream_gen_exhausted"] = z_ex
-                    mm_empty["latent_stream_gen_exhausted"] = z_ex
                 self._ar_emit_stop_token = True
                 return OmniOutput(
                     text_hidden_states=torch.zeros((0, 1), device=out_dev, dtype=out_dtype),
@@ -928,10 +921,7 @@ class VoxCPMForConditionalGeneration(nn.Module):
 
         outputs: list[torch.Tensor] = []
         sample_rates: list[torch.Tensor] = []
-        stream_continues: list[torch.Tensor] | None = (
-            [] if (self.model_stage in self._LATENT_STAGES and async_chunk) else None
-        )
-        gen_exhausted_flags: list[torch.Tensor] | None = (
+        last_chunk_flags: list[bool] | None = (
             [] if (self.model_stage in self._LATENT_STAGES and async_chunk) else None
         )
         for info in infos:
@@ -986,20 +976,14 @@ class VoxCPMForConditionalGeneration(nn.Module):
                 except StopIteration:
                     self._latent_stream_gens.pop(req_key, None)
                     outputs.append(torch.zeros((0,), dtype=torch.float32))
-                    assert stream_continues is not None
-                    stream_continues.append(torch.tensor(0, dtype=torch.int32))
-                    assert gen_exhausted_flags is not None
-                    gen_exhausted_flags.append(torch.tensor(1, dtype=torch.int32))
+                    assert last_chunk_flags is not None
+                    last_chunk_flags.append(True)
                 else:
                     if is_last:
                         self._latent_stream_gens.pop(req_key, None)
                     outputs.append(chunk_latent.detach().float().cpu())
-                    assert stream_continues is not None
-                    stream_continues.append(torch.tensor(0 if is_last else 1, dtype=torch.int32))
-                    assert gen_exhausted_flags is not None
-                    # is_last drops the generator before it hits StopIteration; mark exhausted here so
-                    # downstream connector always sees a terminal signal even if ``continue`` is wrong.
-                    gen_exhausted_flags.append(torch.tensor(1 if is_last else 0, dtype=torch.int32))
+                    assert last_chunk_flags is not None
+                    last_chunk_flags.append(bool(is_last))
                 finally:
                     if created_temp is not None and os.path.exists(created_temp):
                         os.unlink(created_temp)
@@ -1037,12 +1021,6 @@ class VoxCPMForConditionalGeneration(nn.Module):
 
         output_key = "latent_audio_feat" if self.model_stage in self._LATENT_STAGES else "model_outputs"
         mm: dict[str, Any] = {output_key: outputs, "sr": sample_rates}
-        if stream_continues is not None:
-            mm["omni_stream_continue"] = stream_continues
-            mm["latent_stream_continue"] = stream_continues
-            assert gen_exhausted_flags is not None
-            mm["omni_stream_gen_exhausted"] = gen_exhausted_flags
-            mm["latent_stream_gen_exhausted"] = gen_exhausted_flags
         if outputs:
             outputs_tensor = torch.stack(outputs)
             if outputs_tensor.ndim == 1:
@@ -1054,8 +1032,8 @@ class VoxCPMForConditionalGeneration(nn.Module):
             text_hidden_states = torch.zeros((0, 1), device=out_dev, dtype=out_dtype)
         text_hidden_states = text_hidden_states.to(device=out_dev, dtype=out_dtype)
 
-        if self.model_stage in self._LATENT_STAGES and async_chunk and gen_exhausted_flags:
-            self._ar_emit_stop_token = all(int(t.item()) == 1 for t in gen_exhausted_flags)
+        if self.model_stage in self._LATENT_STAGES and async_chunk and last_chunk_flags:
+            self._ar_emit_stop_token = all(last_chunk_flags)
         elif self.model_stage in self._LATENT_STAGES:
             self._ar_emit_stop_token = True
         elif self.model_stage in self._VAE_STAGES:
