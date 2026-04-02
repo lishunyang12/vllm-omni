@@ -192,6 +192,22 @@ class Attention(nn.Module):
         if self._resolve_fp8_attn():
             attn_mask = attn_metadata.attn_mask if attn_metadata is not None else None
             has_padding = attn_mask is not None and torch.any(~attn_mask)
+            # DEBUG: log mask stats (remove before finalizing PR)
+            if not hasattr(self, '_debug_mask_logged'):
+                self._debug_mask_logged = True
+                if attn_mask is not None:
+                    n_true = attn_mask.sum().item()
+                    n_total = attn_mask.numel()
+                    n_false = n_total - n_true
+                    logger.info(
+                        "DEBUG mask stats: shape=%s, true=%d, false=%d, "
+                        "has_padding=%s, q_shape=%s",
+                        list(attn_mask.shape), n_true, n_false,
+                        has_padding, list(query.shape),
+                    )
+                else:
+                    logger.info("DEBUG mask stats: attn_mask=None, q_shape=%s",
+                                list(query.shape))
             if not has_padding:
                 query, key, value, attn_metadata = self._quantize_qkv_fp8(
                     query, key, value, attn_metadata
