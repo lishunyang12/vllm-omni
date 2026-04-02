@@ -102,12 +102,12 @@ device = "cuda"
 
 # Simulate HunyuanVideo tensor shapes
 # 33 frames: ~(1, 2640, 24, 128) for single-stream, (1, 2640+256, 24, 128) for joint
-# 121 frames: ~(1, 9680, 24, 128) for single-stream
+# Actual shapes from debug_shapes.py:
+# 121f: q=[1, 50345, 16, 128] (48360 img + ~1985 encoder tokens)
+# dummy: q=[1, 6081, 16, 128] (smaller warmup shape)
 test_shapes = [
-    ("33f single-stream", (1, 2640, 24, 128)),
-    ("33f joint (img+txt)", (1, 2896, 24, 128)),
-    ("121f single-stream", (1, 9680, 24, 128)),
-    ("121f joint (img+txt)", (1, 9936, 24, 128)),
+    ("dummy warmup", (1, 6081, 16, 128)),
+    ("121f actual", (1, 50345, 16, 128)),
 ]
 
 for name, shape in test_shapes:
@@ -150,8 +150,8 @@ except Exception as e:
     exit()
 
 bench_shapes = [
-    ("33f", (1, 2640, 24, 128)),
-    ("121f", (1, 9680, 24, 128)),
+    ("dummy", (1, 6081, 16, 128)),
+    ("121f actual", (1, 50345, 16, 128)),
 ]
 
 n_warmup = 5
@@ -242,9 +242,9 @@ for name, shape in bench_shapes:
     k_bf16 = torch.randn(shape, dtype=torch.bfloat16, device=device)
     v_bf16 = torch.randn(shape, dtype=torch.bfloat16, device=device)
 
-    # Create a realistic mask: mostly True, some False at end (encoder padding)
+    # Create a realistic mask: ~1974 false values (actual encoder padding)
     mask = torch.ones(B, S, dtype=torch.bool, device=device)
-    n_pad = max(1, S // 20)  # 5% padding
+    n_pad = 1974  # actual mask_false from debug_shapes.py
     mask[:, -n_pad:] = False
 
     # Unpad inputs
@@ -298,7 +298,7 @@ for name, shape in bench_shapes:
 
     speedup = varlen_bf16 / varlen_fp8
 
-    print(f"\n  {name} {list(shape)} (5% padding):")
+    print(f"\n  {name} {list(shape)} ({n_pad} padding):")
     print(f"    BF16 varlen:  {varlen_bf16:.2f} ms")
     print(f"    FP8 varlen:   {varlen_fp8:.2f} ms  ({speedup:.2f}x)")
 
@@ -309,7 +309,7 @@ print("\n" + "=" * 60)
 print("6. Time breakdown estimate for one DiT layer")
 print("=" * 60)
 
-shape_121f = (1, 9680, 24, 128)
+shape_121f = (1, 50345, 16, 128)
 B, S, H, D = shape_121f
 hidden_dim = H * D  # 3072
 softmax_scale = D ** -0.5
