@@ -183,10 +183,15 @@ class Attention(nn.Module):
         query, key, value, attn_metadata, ctx = strategy.pre_attention(query, key, value, attn_metadata)
 
         # 1.5 FP8 Q/K/V quantization (after AllToAll stays BF16, before kernel)
+        # Skip when padding mask is present — FA3 varlen doesn't support
+        # descale, so quantize+dequant would be pure overhead.
         if self._resolve_fp8_attn():
-            query, key, value, attn_metadata = self._quantize_qkv_fp8(
-                query, key, value, attn_metadata
-            )
+            attn_mask = attn_metadata.attn_mask if attn_metadata is not None else None
+            has_padding = attn_mask is not None and torch.any(~attn_mask)
+            if not has_padding:
+                query, key, value, attn_metadata = self._quantize_qkv_fp8(
+                    query, key, value, attn_metadata
+                )
 
         # 2. Kernel Execution (Computation)
         if self.use_ring and strategy is not self._no_parallel_strategy:
