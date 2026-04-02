@@ -65,7 +65,8 @@ print(f"CUDA version: {torch.version.cuda}")
 if torch.cuda.is_available():
     gpu = torch.cuda.get_device_name(0)
     cap = torch.cuda.get_device_capability(0)
-    mem = torch.cuda.get_device_properties(0).total_mem / 1024**3
+    props = torch.cuda.get_device_properties(0)
+    mem = getattr(props, 'total_memory', getattr(props, 'total_mem', 0)) / 1024**3
     print(f"GPU: {gpu} (SM {cap[0]}{cap[1]}, {mem:.1f} GB)")
     print(f"  FP8 tensor cores: {'Yes' if cap[0] >= 9 else 'No'} (need SM90+)")
 else:
