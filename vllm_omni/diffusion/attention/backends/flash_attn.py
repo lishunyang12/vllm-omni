@@ -234,56 +234,84 @@ class FlashAttentionImpl(AttentionImpl):
         value: torch.Tensor,
         attn_metadata: AttentionMetadata,
     ) -> torch.Tensor:
-        """FP8 Q/K/V attention path: native FA3 with descale."""
+        """FP8 Q/K/V attention path.
+
+        Uses vLLM's bundled FA3 backend (vllm_flash_attn) which has the
+        two-level accumulation fix for FP8 on Hopper. Falls back to
+        fa3-fwd or dequant if vLLM's FA3 is unavailable.
+        """
         q_scale = attn_metadata.q_scale
         k_scale = attn_metadata.k_scale
         v_scale = attn_metadata.v_scale
 
-        from vllm_omni.diffusion.attention.backends.ring.ring_globals import (
-            HAS_FA3,
-            fa3_attn_func,
-        )
-
-        if not (HAS_FA3 and fa3_attn_func is not None):
-            # No FA3: dequant and use standard path
-            from vllm_omni.quantization.kv_quant import dequantize_fp8
-
-            logger.warning_once(
-                "FP8 attention without FA3 provides no compute benefit. "
-                "Install FA3 for optimal FP8 support on Hopper GPUs."
-            )
-            output_dtype = torch.bfloat16
-            query = dequantize_fp8(query, q_scale, output_dtype)
-            key = dequantize_fp8(key, k_scale, output_dtype)
-            value = dequantize_fp8(value, v_scale, output_dtype)
-            attn_metadata.q_scale = None
-            attn_metadata.k_scale = None
-            attn_metadata.v_scale = None
-            return self.forward_cuda(query, key, value, attn_metadata)
-
-        # Reshape per-tensor scales to FA3's expected (batch, num_kv_heads)
         B, S, H, D = key.shape
         q_descale = self._reshape_descale(q_scale, B, H)
         k_descale = self._reshape_descale(k_scale, B, H)
         v_descale = self._reshape_descale(v_scale, B, H)
 
-        # Use regular FA3 path even with padding — FA3 varlen + FP8 descale
-        # produces corrupted output on current fa3-fwd builds. The padding
-        # tokens (~4% for HunyuanVideo) add negligible extra compute.
-        #
-        # Use num_splits to improve FP8 accumulation accuracy at long sequences.
-        # FA3 FP8 TC on Hopper has imprecise accumulation (flash-attention #2250);
-        # splitting reduces tokens per chunk, bounding the error.
-        num_splits = max(1, S // 8192)  # ~8K tokens per split
-        out = fa3_attn_func(
-            query, key, value,
-            softmax_scale=self.softmax_scale,
-            causal=self.causal,
-            q_descale=q_descale,
-            k_descale=k_descale,
-            v_descale=v_descale,
-            num_splits=num_splits,
+        # Try vLLM's bundled FA3 (has two-level accumulation fix for FP8)
+        try:
+            from vllm.vllm_flash_attn import flash_attn_varlen_func as vllm_varlen
+
+            # varlen API needs (total_tokens, H, D) and cu_seqlens
+            q_flat = query.reshape(B * S, H, D)
+            k_flat = key.reshape(B * S, H, D)
+            v_flat = value.reshape(B * S, H, D)
+            cu_seqlens = torch.arange(
+                0, (B + 1) * S, step=S, dtype=torch.int32, device=query.device
+            )
+
+            out = vllm_varlen(
+                q_flat, k_flat, v_flat,
+                max_seqlen_q=S,
+                cu_seqlens_q=cu_seqlens,
+                max_seqlen_k=S,
+                cu_seqlens_k=cu_seqlens,
+                softmax_scale=self.softmax_scale,
+                causal=self.causal,
+                q_descale=q_descale,
+                k_descale=k_descale,
+                v_descale=v_descale,
+                fa_version=3,
+            )
+            if isinstance(out, tuple):
+                out = out[0]
+            return out.reshape(B, S, H, D)
+        except Exception as e:
+            logger.warning_once(
+                "vLLM FA3 FP8 failed (%s), trying fa3-fwd fallback.", e
+            )
+
+        # Fallback: fa3-fwd (may lack two-level accumulation fix)
+        from vllm_omni.diffusion.attention.backends.ring.ring_globals import (
+            HAS_FA3,
+            fa3_attn_func,
         )
-        if isinstance(out, tuple):
-            out = out[0]
-        return out
+
+        if HAS_FA3 and fa3_attn_func is not None:
+            out = fa3_attn_func(
+                query, key, value,
+                softmax_scale=self.softmax_scale,
+                causal=self.causal,
+                q_descale=q_descale,
+                k_descale=k_descale,
+                v_descale=v_descale,
+            )
+            if isinstance(out, tuple):
+                out = out[0]
+            return out
+
+        # Last resort: dequant to BF16
+        from vllm_omni.quantization.kv_quant import dequantize_fp8
+
+        logger.warning_once(
+            "No FA3 available for FP8 attention. Dequantizing to BF16."
+        )
+        output_dtype = torch.bfloat16
+        query = dequantize_fp8(query, q_scale, output_dtype)
+        key = dequantize_fp8(key, k_scale, output_dtype)
+        value = dequantize_fp8(value, v_scale, output_dtype)
+        attn_metadata.q_scale = None
+        attn_metadata.k_scale = None
+        attn_metadata.v_scale = None
+        return self.forward_cuda(query, key, value, attn_metadata)
