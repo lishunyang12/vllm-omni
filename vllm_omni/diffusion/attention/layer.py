@@ -134,11 +134,11 @@ class Attention(nn.Module):
             quantize_qkv_fp8,
         )
 
+        # TODO: delayed scaling (cached_scales) gives 17% speedup but causes
+        # green output. Disabled pending investigation. Use dynamic only.
         fp8_q, fp8_k, fp8_v, q_scale, k_scale, v_scale = quantize_qkv_fp8(
-            query, key, value, cached_scales=self._cached_qkv_scales
+            query, key, value, cached_scales=None
         )
-        # Cache scales for next call (delayed scaling)
-        self._cached_qkv_scales = (q_scale, k_scale, v_scale)
 
         if attn_metadata is None:
             attn_metadata = AttentionMetadata()
@@ -150,7 +150,7 @@ class Attention(nn.Module):
         if attn_metadata.joint_key is not None and attn_metadata.joint_value is not None:
             jk, jv, jk_scale, jv_scale = quantize_kv_fp8(
                 attn_metadata.joint_key, attn_metadata.joint_value,
-                cached_scales=self._cached_jkv_scales,
+                cached_scales=None,
             )
             attn_metadata.joint_key = jk
             attn_metadata.joint_value = jv
