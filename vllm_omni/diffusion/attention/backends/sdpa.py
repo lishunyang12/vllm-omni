@@ -105,8 +105,7 @@ class SDPAImpl(AttentionImpl):
             q_scale = attn_metadata.q_scale if attn_metadata else None
             k_scale = attn_metadata.k_scale if attn_metadata else None
             v_scale = attn_metadata.v_scale if attn_metadata else None
-            if q_scale is not None:
-                query = dequantize_fp8(query, q_scale, output_dtype)
+            query = dequantize_fp8(query, q_scale, output_dtype)
             key = dequantize_fp8(key, k_scale, output_dtype)
             value = dequantize_fp8(value, v_scale, output_dtype)
             logger.warning_once(
