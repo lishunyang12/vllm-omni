@@ -119,4 +119,4 @@ def dequantize_fp8(
     Returns:
         Dequantized tensor: ``tensor.to(output_dtype) * inv_scale``.
     """
-    return tensor.to(output_dtype) * inv_scale
+    return (tensor.to(output_dtype) * inv_scale).to(output_dtype)
