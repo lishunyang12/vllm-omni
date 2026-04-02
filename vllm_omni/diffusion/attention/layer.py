@@ -154,7 +154,13 @@ class Attention(nn.Module):
         try:
             config = get_forward_context().omni_diffusion_config
             enabled = config.kv_cache_dtype == "fp8"
-        except Exception:
+            logger.info(
+                "FP8 attention resolved: kv_cache_dtype=%s, enabled=%s",
+                getattr(config, "kv_cache_dtype", "MISSING"),
+                enabled,
+            )
+        except Exception as e:
+            logger.warning("FP8 attention resolve failed: %s", e)
             enabled = False
         if enabled and self.use_ring:
             raise ValueError(
