@@ -134,17 +134,21 @@ class Attention(nn.Module):
             quantize_qkv_fp8,
         )
 
-        # TODO: delayed scaling (cached_scales) gives 17% speedup but causes
-        # green output. Disabled pending investigation. Use dynamic only.
-        fp8_q, fp8_k, fp8_v, q_scale, k_scale, v_scale = quantize_qkv_fp8(
-            query, key, value, cached_scales=None
+        # Only quantize K/V to FP8, keep Q in BF16.
+        # Q precision is critical for softmax accuracy — FP8 Q causes
+        # green output due to Hopper FP8 TC accumulation imprecision.
+        fp8_k, fp8_v, k_scale, v_scale = quantize_kv_fp8(
+            key, value, cached_scales=None
         )
 
         if attn_metadata is None:
             attn_metadata = AttentionMetadata()
-        attn_metadata.q_scale = q_scale
+        attn_metadata.q_scale = None
         attn_metadata.k_scale = k_scale
         attn_metadata.v_scale = v_scale
+
+        # Q stays BF16, K/V are FP8
+        fp8_q = query
 
         # Quantize joint_key/joint_value with separate scales
         if attn_metadata.joint_key is not None and attn_metadata.joint_value is not None:
