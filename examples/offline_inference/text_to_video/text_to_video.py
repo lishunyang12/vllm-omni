@@ -185,6 +185,16 @@ def parse_args() -> argparse.Namespace:
         choices=["fp8", "gguf"],
         help="Quantization method for the transformer (fp8 for online FP8 quantization).",
     )
+    parser.add_argument(
+        "--kv-cache-dtype",
+        type=str,
+        default="auto",
+        choices=["auto", "fp8"],
+        help="Data type for attention Q/K/V quantization. "
+        "'fp8': dynamically quantize to float8_e4m3fn each forward pass. "
+        "On Hopper GPUs with FA3, enables native FP8 attention compute. "
+        "'auto': no quantization (default).",
+    )
     return parser.parse_args()
 
 
@@ -227,6 +237,8 @@ def main():
     # Check if profiling is requested via environment variable
     profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
 
+    kv_cache_dtype = args.kv_cache_dtype if args.kv_cache_dtype != "auto" else None
+
     omni_kwargs = dict(
         model=args.model,
         enable_layerwise_offload=args.enable_layerwise_offload,
@@ -239,6 +251,7 @@ def main():
         cache_backend=args.cache_backend,
         cache_config=cache_config,
         enable_diffusion_pipeline_profiler=args.enable_diffusion_pipeline_profiler,
+        kv_cache_dtype=kv_cache_dtype,
     )
     if args.boundary_ratio is not None:
         omni_kwargs["boundary_ratio"] = args.boundary_ratio
