@@ -91,20 +91,9 @@ class Attention(nn.Module):
         # Fallback strategy when SP is not active (outside sharded regions)
         self._no_parallel_strategy = NoParallelAttention()
 
-        # FP8 attention quantization: read from forward context config
-        self._fp8_attn_enabled = False
-        try:
-            config = get_forward_context().omni_diffusion_config
-            self._fp8_attn_enabled = config.kv_cache_dtype == "fp8"
-        except Exception:
-            pass
-
-        if self._fp8_attn_enabled and self.use_ring:
-            raise ValueError(
-                "FP8 attention quantization is not compatible with ring attention "
-                "(ring_degree > 1). Ring kernels do not propagate FP8 descale "
-                "factors. Use Ulysses SP instead."
-            )
+        # FP8 attention quantization: resolved lazily in forward() because
+        # forward_context is not available during model loading.
+        self._fp8_attn_enabled: bool | None = None
 
     def _get_active_parallel_strategy(self):
         """Get the parallel strategy based on current SP active state.
@@ -154,6 +143,24 @@ class Attention(nn.Module):
 
         return fp8_q, fp8_k, fp8_v, attn_metadata
 
+    def _resolve_fp8_attn(self) -> bool:
+        """Lazily resolve FP8 attention config from forward context."""
+        if self._fp8_attn_enabled is not None:
+            return self._fp8_attn_enabled
+        try:
+            config = get_forward_context().omni_diffusion_config
+            enabled = config.kv_cache_dtype == "fp8"
+        except Exception:
+            enabled = False
+        if enabled and self.use_ring:
+            raise ValueError(
+                "FP8 attention quantization is not compatible with ring attention "
+                "(ring_degree > 1). Ring kernels do not propagate FP8 descale "
+                "factors. Use Ulysses SP instead."
+            )
+        self._fp8_attn_enabled = enabled
+        return enabled
+
     def forward(
         self,
         query: torch.Tensor,
@@ -170,7 +177,7 @@ class Attention(nn.Module):
         query, key, value, attn_metadata, ctx = strategy.pre_attention(query, key, value, attn_metadata)
 
         # 1.5 FP8 Q/K/V quantization (after AllToAll stays BF16, before kernel)
-        if self._fp8_attn_enabled:
+        if self._resolve_fp8_attn():
             query, key, value, attn_metadata = self._quantize_qkv_fp8(
                 query, key, value, attn_metadata
             )
