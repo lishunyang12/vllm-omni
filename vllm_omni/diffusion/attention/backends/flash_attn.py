@@ -268,17 +268,9 @@ class FlashAttentionImpl(AttentionImpl):
         k_descale = self._reshape_descale(k_scale, B, H)
         v_descale = self._reshape_descale(v_scale, B, H)
 
-        attention_mask = attn_metadata.attn_mask if attn_metadata is not None else None
-        has_padding = attention_mask is not None and torch.any(~attention_mask)
-
-        if has_padding:
-            # FA3 varlen with FP8 descale
-            return self._forward_varlen_masked(
-                query, key, value, attention_mask,
-                q_descale=q_descale, k_descale=k_descale, v_descale=v_descale,
-            )
-
-        # FA3 regular path with FP8 descale
+        # Use regular FA3 path even with padding — FA3 varlen + FP8 descale
+        # produces corrupted output on current fa3-fwd builds. The padding
+        # tokens (~4% for HunyuanVideo) add negligible extra compute.
         out = fa3_attn_func(
             query, key, value,
             softmax_scale=self.softmax_scale,
