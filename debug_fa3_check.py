@@ -129,7 +129,22 @@ for name, shape in test_shapes:
     torch.cuda.synchronize()
     quant_time = (time.perf_counter() - start) / n_iters * 1000
 
-    print(f"  {name} {list(shape)}: quant={quant_time:.2f} ms")
+    # Static quant (with cached scale — no amax)
+    _, _, _, qs, ks, vs = quantize_qkv_fp8(q, k, v)
+    for _ in range(3):
+        quantize_qkv_fp8(q, k, v, cached_scales=(qs, ks, vs))
+    torch.cuda.synchronize()
+
+    start = time.perf_counter()
+    for _ in range(n_iters):
+        fp8_q, fp8_k, fp8_v, qs2, ks2, vs2 = quantize_qkv_fp8(
+            q, k, v, cached_scales=(qs, ks, vs)
+        )
+    torch.cuda.synchronize()
+    static_time = (time.perf_counter() - start) / n_iters * 1000
+
+    print(f"  {name} {list(shape)}: dynamic={quant_time:.2f} ms, "
+          f"static={static_time:.2f} ms ({quant_time/static_time:.1f}x faster)")
 
 # ============================================================
 # 4. FA3 attention kernel benchmark (BF16 vs FP8)

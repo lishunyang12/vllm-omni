@@ -96,6 +96,9 @@ class Attention(nn.Module):
         # FP8 attention quantization: resolved lazily in forward() because
         # forward_context is not available during model loading.
         self._fp8_attn_enabled: bool | None = None
+        # Cached scales for delayed scaling (reuse previous timestep's scales)
+        self._cached_qkv_scales: tuple | None = None
+        self._cached_jkv_scales: tuple | None = None
 
     def _get_active_parallel_strategy(self):
         """Get the parallel strategy based on current SP active state.
@@ -119,15 +122,23 @@ class Attention(nn.Module):
         value: torch.Tensor,
         attn_metadata: AttentionMetadata | None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, AttentionMetadata | None]:
-        """Quantize Q/K/V tensors to FP8 and store scales in attn_metadata."""
+        """Quantize Q/K/V tensors to FP8 and store scales in attn_metadata.
+
+        Uses delayed scaling: first call computes dynamic scales (amax),
+        subsequent calls reuse the cached scales (static, no amax).
+        Scales are refreshed each timestep since the first layer in each
+        step always runs dynamic.
+        """
         from vllm_omni.quantization.kv_quant import (
             quantize_kv_fp8,
             quantize_qkv_fp8,
         )
 
         fp8_q, fp8_k, fp8_v, q_scale, k_scale, v_scale = quantize_qkv_fp8(
-            query, key, value
+            query, key, value, cached_scales=self._cached_qkv_scales
         )
+        # Cache scales for next call (delayed scaling)
+        self._cached_qkv_scales = (q_scale, k_scale, v_scale)
 
         if attn_metadata is None:
             attn_metadata = AttentionMetadata()
@@ -138,12 +149,14 @@ class Attention(nn.Module):
         # Quantize joint_key/joint_value with separate scales
         if attn_metadata.joint_key is not None and attn_metadata.joint_value is not None:
             jk, jv, jk_scale, jv_scale = quantize_kv_fp8(
-                attn_metadata.joint_key, attn_metadata.joint_value
+                attn_metadata.joint_key, attn_metadata.joint_value,
+                cached_scales=self._cached_jkv_scales,
             )
             attn_metadata.joint_key = jk
             attn_metadata.joint_value = jv
             attn_metadata.jk_scale = jk_scale
             attn_metadata.jv_scale = jv_scale
+            self._cached_jkv_scales = (jk_scale, jv_scale)
 
         return fp8_q, fp8_k, fp8_v, attn_metadata
 

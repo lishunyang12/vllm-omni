@@ -6,8 +6,10 @@ Provides per-tensor dynamic quantization of Q/K/V tensors to
 float8_e4m3fn format. Designed for diffusion models where Q/K/V are
 computed fresh each forward pass (no persistent KV cache).
 
-Uses vLLM's fused CUDA kernel (scaled_fp8_quant) for efficient
-amax+scale+cast in a single kernel launch.
+Supports two modes:
+  - Dynamic: computes amax per call (accurate but ~4ms overhead at 50K tokens)
+  - Static (delayed scaling): reuses a cached scale from the previous call,
+    skipping the expensive amax reduction (~0.5ms overhead).
 """
 
 import torch
@@ -30,40 +32,51 @@ except ImportError:
 
 def _quantize_tensor_fp8(
     tensor: torch.Tensor,
+    cached_scale: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Quantize a single tensor to FP8 with per-tensor dynamic scaling.
+    """Quantize a single tensor to FP8 with per-tensor scaling.
 
-    Uses vLLM's fused CUDA kernel when available (single kernel launch
-    for amax reduction + scale computation + FP8 cast). Falls back to
-    3 separate PyTorch ops otherwise.
+    Args:
+        tensor: Input tensor in BF16/FP16.
+        cached_scale: If provided, use this scale (static mode, skips amax).
+            If None, compute scale dynamically.
 
     Returns:
         ``(fp8_tensor, inv_scale)`` where inv_scale is the dequant scale.
     """
     if _HAS_FUSED_QUANT:
-        # scaled_fp8_quant requires 2D input [M, N]
         orig_shape = tensor.shape
         flat = tensor.reshape(-1, orig_shape[-1])
-        # Dynamic per-tensor quantization: scale=None
-        fp8_flat, scale = _vllm_scaled_fp8_quant(flat)
+        # Pass cached_scale for static quant (no amax), None for dynamic
+        fp8_flat, scale = _vllm_scaled_fp8_quant(flat, scale=cached_scale)
         fp8_out = fp8_flat.reshape(orig_shape)
-        # scale from vLLM is 1/scale (inv_scale / dequant scale)
         return fp8_out, scale
     else:
         finfo = torch.finfo(torch.float8_e4m3fn)
-        amax = tensor.abs().amax().clamp(min=1e-12)
-        scale_factor = finfo.max / amax
-        fp8 = (tensor * scale_factor).clamp(finfo.min, finfo.max).to(
-            torch.float8_e4m3fn
-        )
-        inv_scale = amax / finfo.max
-        return fp8, inv_scale
+        if cached_scale is not None:
+            # Static: use cached scale directly
+            inv_scale = cached_scale
+            scale_factor = 1.0 / inv_scale
+            fp8 = (tensor * scale_factor).clamp(finfo.min, finfo.max).to(
+                torch.float8_e4m3fn
+            )
+            return fp8, inv_scale
+        else:
+            # Dynamic: compute amax
+            amax = tensor.abs().amax().clamp(min=1e-12)
+            scale_factor = finfo.max / amax
+            fp8 = (tensor * scale_factor).clamp(finfo.min, finfo.max).to(
+                torch.float8_e4m3fn
+            )
+            inv_scale = amax / finfo.max
+            return fp8, inv_scale
 
 
 def quantize_qkv_fp8(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
+    cached_scales: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
@@ -72,35 +85,46 @@ def quantize_qkv_fp8(
     torch.Tensor,
     torch.Tensor,
 ]:
-    """Quantize Q/K/V tensors to float8_e4m3fn with dynamic per-tensor scaling.
+    """Quantize Q/K/V tensors to float8_e4m3fn.
 
     Args:
         query: Query tensor in BF16/FP16, shape ``(B, S, H, D)``
         key: Key tensor in BF16/FP16, shape ``(B, S, H, D)``
         value: Value tensor in BF16/FP16, shape ``(B, S, H, D)``
+        cached_scales: Optional ``(q_scale, k_scale, v_scale)`` from a
+            previous call. When provided, skips the expensive amax
+            reduction (static/delayed scaling mode).
 
     Returns:
         ``(fp8_query, fp8_key, fp8_value, q_scale, k_scale, v_scale)``
         where scales are inverse (dequant) scales.
-        Pass as ``descale_q/k/v`` to FA3 or use :func:`dequantize_fp8`.
     """
-    fp8_q, q_scale = _quantize_tensor_fp8(query)
-    fp8_k, k_scale = _quantize_tensor_fp8(key)
-    fp8_v, v_scale = _quantize_tensor_fp8(value)
+    if cached_scales is not None:
+        cq, ck, cv = cached_scales
+    else:
+        cq = ck = cv = None
+    fp8_q, q_scale = _quantize_tensor_fp8(query, cq)
+    fp8_k, k_scale = _quantize_tensor_fp8(key, ck)
+    fp8_v, v_scale = _quantize_tensor_fp8(value, cv)
     return fp8_q, fp8_k, fp8_v, q_scale, k_scale, v_scale
 
 
 def quantize_kv_fp8(
     key: torch.Tensor,
     value: torch.Tensor,
+    cached_scales: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Quantize K/V tensors to float8_e4m3fn (joint attention path).
 
     Returns:
         ``(fp8_key, fp8_value, k_scale, v_scale)``
     """
-    fp8_k, k_scale = _quantize_tensor_fp8(key)
-    fp8_v, v_scale = _quantize_tensor_fp8(value)
+    if cached_scales is not None:
+        ck, cv = cached_scales
+    else:
+        ck = cv = None
+    fp8_k, k_scale = _quantize_tensor_fp8(key, ck)
+    fp8_v, v_scale = _quantize_tensor_fp8(value, cv)
     return fp8_k, fp8_v, k_scale, v_scale
 
 
