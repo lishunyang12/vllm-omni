@@ -198,10 +198,7 @@ class Attention(nn.Module):
         query, key, value, attn_metadata, ctx = strategy.pre_attention(query, key, value, attn_metadata)
 
         # 1.5 FP8 Q/K/V quantization (after AllToAll stays BF16, before kernel)
-        # Skip FP8 for long sequences — FA3 FP8 accumulation on Hopper loses
-        # precision above ~16K tokens (known issue, flash-attention #2250).
-        _FP8_MAX_SEQLEN = 16384
-        if self._resolve_fp8_attn() and query.shape[1] <= _FP8_MAX_SEQLEN:
+        if self._resolve_fp8_attn():
             # Zero out padding positions before quantizing — FP8 path skips
             # varlen to avoid FA3 varlen+descale bug, so padding must be
             # handled by zeroing K (makes softmax weight ≈ 0 for those positions).

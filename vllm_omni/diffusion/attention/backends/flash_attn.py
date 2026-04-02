@@ -270,6 +270,11 @@ class FlashAttentionImpl(AttentionImpl):
         # Use regular FA3 path even with padding — FA3 varlen + FP8 descale
         # produces corrupted output on current fa3-fwd builds. The padding
         # tokens (~4% for HunyuanVideo) add negligible extra compute.
+        #
+        # Use num_splits to improve FP8 accumulation accuracy at long sequences.
+        # FA3 FP8 TC on Hopper has imprecise accumulation (flash-attention #2250);
+        # splitting reduces tokens per chunk, bounding the error.
+        num_splits = max(1, S // 8192)  # ~8K tokens per split
         out = fa3_attn_func(
             query, key, value,
             softmax_scale=self.softmax_scale,
@@ -277,6 +282,7 @@ class FlashAttentionImpl(AttentionImpl):
             q_descale=q_descale,
             k_descale=k_descale,
             v_descale=v_descale,
+            num_splits=num_splits,
         )
         if isinstance(out, tuple):
             out = out[0]
