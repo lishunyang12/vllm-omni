@@ -1,49 +1,66 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""FP8 quantization utilities for diffusion model KV tensors.
+"""FP8 quantization utilities for diffusion attention tensors.
 
-Provides per-tensor dynamic quantization of Key and Value tensors to
-float8_e4m3fn format. Designed for diffusion models where K/V are computed
-fresh each forward pass (no persistent KV cache).
+Provides per-tensor dynamic quantization of Q/K/V tensors to
+float8_e4m3fn format. Designed for diffusion models where Q/K/V are
+computed fresh each forward pass (no persistent KV cache).
 """
 
 import torch
+
+
+def _quantize_tensor_fp8(
+    tensor: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantize a single tensor to FP8 with per-tensor dynamic scaling.
+
+    Returns:
+        ``(fp8_tensor, inv_scale)`` where inv_scale is the dequant scale.
+    """
+    finfo = torch.finfo(torch.float8_e4m3fn)
+    amax = tensor.abs().amax().clamp(min=1e-12)
+    scale_factor = finfo.max / amax
+    fp8 = (tensor * scale_factor).clamp(finfo.min, finfo.max).to(torch.float8_e4m3fn)
+    inv_scale = amax / finfo.max
+    return fp8, inv_scale
+
+
+def quantize_qkv_fp8(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Quantize Q/K/V tensors to float8_e4m3fn with dynamic per-tensor scaling.
+
+    Args:
+        query: Query tensor in BF16/FP16, shape ``(B, S, H, D)``
+        key: Key tensor in BF16/FP16, shape ``(B, S, H, D)``
+        value: Value tensor in BF16/FP16, shape ``(B, S, H, D)``
+
+    Returns:
+        ``(fp8_query, fp8_key, fp8_value, q_scale, k_scale, v_scale)``
+        where scales are inverse (dequant) scales: ``inv_scale = amax / FP8_MAX``.
+        Pass as ``descale_q/k/v`` to FA3 or use :func:`dequantize_fp8`.
+    """
+    fp8_q, q_scale = _quantize_tensor_fp8(query)
+    fp8_k, k_scale = _quantize_tensor_fp8(key)
+    fp8_v, v_scale = _quantize_tensor_fp8(value)
+    return fp8_q, fp8_k, fp8_v, q_scale, k_scale, v_scale
 
 
 def quantize_kv_fp8(
     key: torch.Tensor,
     value: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Quantize K/V tensors to float8_e4m3fn with dynamic per-tensor scaling.
-
-    Uses the same absmax scaling pattern as vLLM's ``input_to_float8``
-    (see ``vllm/model_executor/layers/quantization/utils/fp8_utils.py``).
-
-    Args:
-        key: Key tensor in BF16/FP16, shape ``(B, S, H, D)``
-        value: Value tensor in BF16/FP16, shape ``(B, S, H, D)``
+    """Quantize K/V tensors to float8_e4m3fn (joint attention path).
 
     Returns:
-        A tuple of ``(fp8_key, fp8_value, k_scale, v_scale)`` where scales
-        are *inverse* (dequant) scales: ``inv_scale = amax / FP8_MAX``.
-        Pass these scales as ``descale_k`` / ``descale_v`` to FA3 or use
-        :func:`dequantize_fp8` to convert back.
+        ``(fp8_key, fp8_value, k_scale, v_scale)``
     """
-    finfo = torch.finfo(torch.float8_e4m3fn)
-
-    # Key
-    k_amax = key.abs().amax().clamp(min=1e-12)
-    k_scale_factor = finfo.max / k_amax
-    fp8_key = (key * k_scale_factor).clamp(finfo.min, finfo.max).to(torch.float8_e4m3fn)
-    k_inv_scale = k_amax / finfo.max  # dequant scale
-
-    # Value
-    v_amax = value.abs().amax().clamp(min=1e-12)
-    v_scale_factor = finfo.max / v_amax
-    fp8_value = (value * v_scale_factor).clamp(finfo.min, finfo.max).to(torch.float8_e4m3fn)
-    v_inv_scale = v_amax / finfo.max  # dequant scale
-
-    return fp8_key, fp8_value, k_inv_scale, v_inv_scale
+    fp8_k, k_scale = _quantize_tensor_fp8(key)
+    fp8_v, v_scale = _quantize_tensor_fp8(value)
+    return fp8_k, fp8_v, k_scale, v_scale
 
 
 def dequantize_fp8(
@@ -55,7 +72,7 @@ def dequantize_fp8(
 
     Args:
         tensor: FP8-quantized tensor (float8_e4m3fn).
-        inv_scale: Inverse scale (dequant scale) produced by :func:`quantize_kv_fp8`.
+        inv_scale: Inverse scale (dequant scale).
         output_dtype: Target dtype (e.g. ``torch.bfloat16``).
 
     Returns:

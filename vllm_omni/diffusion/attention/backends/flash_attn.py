@@ -97,7 +97,7 @@ class FlashAttentionImpl(AttentionImpl):
         attn_metadata: AttentionMetadata = None,
     ) -> torch.Tensor:
         """CUDA/ROCm flash attention implementation."""
-        # Dispatch to FP8 path if K/V are quantized
+        # Dispatch to FP8 path if Q/K/V are quantized
         if key.dtype == torch.float8_e4m3fn:
             return self._forward_fp8(query, key, value, attn_metadata)
         from vllm_omni.diffusion.attention.backends.utils.fa import (
@@ -220,14 +220,10 @@ class FlashAttentionImpl(AttentionImpl):
         value: torch.Tensor,
         attn_metadata: AttentionMetadata,
     ) -> torch.Tensor:
-        """FP8 KV attention path: native FA3 or dequant fallback.
-
-        When an attention mask with padding is present, we dequantize and
-        fall through to the standard varlen path to avoid bypassing the
-        mask (FA3's varlen API does not support descale_k/descale_v).
-        """
+        """FP8 Q/K/V attention path: native FA3 or dequant fallback."""
         from vllm_omni.quantization.kv_quant import dequantize_fp8
 
+        q_scale = attn_metadata.q_scale
         k_scale = attn_metadata.k_scale
         v_scale = attn_metadata.v_scale
 
@@ -236,8 +232,11 @@ class FlashAttentionImpl(AttentionImpl):
 
         # If padding is present, dequant and use the standard masked path
         if has_padding:
-            key = dequantize_fp8(key, k_scale, query.dtype)
-            value = dequantize_fp8(value, v_scale, query.dtype)
+            output_dtype = torch.bfloat16
+            query = dequantize_fp8(query, q_scale, output_dtype)
+            key = dequantize_fp8(key, k_scale, output_dtype)
+            value = dequantize_fp8(value, v_scale, output_dtype)
+            attn_metadata.q_scale = None
             attn_metadata.k_scale = None
             attn_metadata.v_scale = None
             return self.forward_cuda(query, key, value, attn_metadata)
@@ -249,26 +248,38 @@ class FlashAttentionImpl(AttentionImpl):
         )
 
         if HAS_FA3 and fa3_attn_func is not None:
-            out = fa3_attn_func(
-                query,
-                key,
-                value,
-                softmax_scale=self.softmax_scale,
-                causal=self.causal,
-                descale_k=k_scale,
-                descale_v=v_scale,
-            )
+            fa3_kwargs: dict = {
+                "softmax_scale": self.softmax_scale,
+                "causal": self.causal,
+                "descale_k": k_scale,
+                "descale_v": v_scale,
+            }
+            # descale_q requires FA3 >= 2.7; guard against older versions
+            try:
+                out = fa3_attn_func(
+                    query, key, value, descale_q=q_scale, **fa3_kwargs
+                )
+            except TypeError:
+                logger.warning_once(
+                    "FA3 does not support descale_q (version < 2.7). "
+                    "Q will run in FP8 without descaling — consider upgrading."
+                )
+                out = fa3_attn_func(query, key, value, **fa3_kwargs)
             if isinstance(out, tuple):
                 out = out[0]
             return out
 
         # Fallback: dequantize to compute dtype and use standard path
         logger.warning_once(
-            "FP8 KV quantization without FA3 provides no performance benefit. "
+            "FP8 attention without FA3 provides no compute benefit. "
             "Install FA3 for optimal FP8 support on Hopper GPUs."
         )
-        key = dequantize_fp8(key, k_scale, query.dtype)
-        value = dequantize_fp8(value, v_scale, query.dtype)
+        output_dtype = torch.bfloat16
+        query_bf16 = dequantize_fp8(query, q_scale, output_dtype)
+        key_bf16 = dequantize_fp8(key, k_scale, output_dtype)
+        value_bf16 = dequantize_fp8(value, v_scale, output_dtype)
+        # Clear scales to avoid re-detection on recursive call
+        attn_metadata.q_scale = None
         attn_metadata.k_scale = None
         attn_metadata.v_scale = None
-        return self.forward_cuda(query, key, value, attn_metadata)
+        return self.forward_cuda(query_bf16, key_bf16, value_bf16, attn_metadata)

@@ -65,9 +65,13 @@ class AttentionMetadata:
     joint_strategy: str = "front"
     # the strategy to joint the query, key, and value, can be "front" or "rear"
 
-    # FP8 KV quantization dequant scales (set by Attention._quantize_kv)
+    # FP8 attention quantization dequant scales (set by Attention._quantize_qkv_fp8)
+    q_scale: torch.Tensor | None = None
     k_scale: torch.Tensor | None = None
     v_scale: torch.Tensor | None = None
+    # Separate scales for joint (img+txt concat) key/value
+    jk_scale: torch.Tensor | None = None
+    jv_scale: torch.Tensor | None = None
 
 
 T = TypeVar("T", bound=AttentionMetadata)

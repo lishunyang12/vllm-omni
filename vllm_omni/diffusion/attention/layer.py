@@ -93,20 +93,19 @@ class Attention(nn.Module):
         # Fallback strategy when SP is not active (outside sharded regions)
         self._no_parallel_strategy = NoParallelAttention()
 
-        # FP8 KV quantization: read from forward context config
-        self._kv_quant_enabled = False
+        # FP8 attention quantization: read from forward context config
+        self._fp8_attn_enabled = False
         try:
             config = get_forward_context().omni_diffusion_config
-            self._kv_quant_enabled = config.kv_quantization
+            self._fp8_attn_enabled = config.kv_cache_dtype == "fp8"
         except Exception:
             pass
 
-        if self._kv_quant_enabled and self.use_ring:
+        if self._fp8_attn_enabled and self.use_ring:
             raise ValueError(
-                "FP8 KV quantization is not compatible with ring attention "
+                "FP8 attention quantization is not compatible with ring attention "
                 "(ring_degree > 1). Ring kernels do not propagate FP8 descale "
-                "factors, which would silently corrupt results. Disable one of "
-                "the two, or use Ulysses SP instead."
+                "factors. Use Ulysses SP instead."
             )
 
     def _get_active_parallel_strategy(self):
@@ -124,29 +123,40 @@ class Attention(nn.Module):
                 return self._no_parallel_strategy
         return self.parallel_strategy
 
-    def _quantize_kv(
+    def _quantize_qkv_fp8(
         self,
+        query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
         attn_metadata: AttentionMetadata | None,
-    ) -> tuple[torch.Tensor, torch.Tensor, AttentionMetadata | None]:
-        """Quantize K/V tensors to FP8 and store scales in attn_metadata."""
-        from vllm_omni.quantization.kv_quant import quantize_kv_fp8
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, AttentionMetadata | None]:
+        """Quantize Q/K/V tensors to FP8 and store scales in attn_metadata."""
+        from vllm_omni.quantization.kv_quant import (
+            quantize_kv_fp8,
+            quantize_qkv_fp8,
+        )
 
-        fp8_key, fp8_value, k_scale, v_scale = quantize_kv_fp8(key, value)
+        fp8_q, fp8_k, fp8_v, q_scale, k_scale, v_scale = quantize_qkv_fp8(
+            query, key, value
+        )
 
         if attn_metadata is None:
             attn_metadata = AttentionMetadata()
+        attn_metadata.q_scale = q_scale
         attn_metadata.k_scale = k_scale
         attn_metadata.v_scale = v_scale
 
-        # Also quantize joint_key/joint_value if present
+        # Quantize joint_key/joint_value with separate scales
         if attn_metadata.joint_key is not None and attn_metadata.joint_value is not None:
-            jk, jv, _, _ = quantize_kv_fp8(attn_metadata.joint_key, attn_metadata.joint_value)
+            jk, jv, jk_scale, jv_scale = quantize_kv_fp8(
+                attn_metadata.joint_key, attn_metadata.joint_value
+            )
             attn_metadata.joint_key = jk
             attn_metadata.joint_value = jv
+            attn_metadata.jk_scale = jk_scale
+            attn_metadata.jv_scale = jv_scale
 
-        return fp8_key, fp8_value, attn_metadata
+        return fp8_q, fp8_k, fp8_v, attn_metadata
 
     def forward(
         self,
@@ -163,9 +173,11 @@ class Attention(nn.Module):
         # For Ring: Concat joint_q
         query, key, value, attn_metadata, ctx = strategy.pre_attention(query, key, value, attn_metadata)
 
-        # 1.5 FP8 KV quantization (after AllToAll stays BF16, before kernel)
-        if self._kv_quant_enabled:
-            key, value, attn_metadata = self._quantize_kv(key, value, attn_metadata)
+        # 1.5 FP8 Q/K/V quantization (after AllToAll stays BF16, before kernel)
+        if self._fp8_attn_enabled:
+            query, key, value, attn_metadata = self._quantize_qkv_fp8(
+                query, key, value, attn_metadata
+            )
 
         # 2. Kernel Execution (Computation)
         if self.use_ring and strategy is not self._no_parallel_strategy:

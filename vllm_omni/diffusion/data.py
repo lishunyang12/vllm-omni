@@ -504,6 +504,11 @@ class OmniDiffusionConfig:
     # On FA2/SDPA: dequant fallback (memory-only savings).
     kv_quantization: bool = False
 
+    # FP8 attention quantization (orthogonal to weight quantization).
+    # "fp8": dynamically quantize Q/K/V to float8_e4m3fn each forward pass.
+    # None or "auto": disabled.
+    kv_cache_dtype: str | None = None
+
     # Diffusion pipeline Profiling config
     enable_diffusion_pipeline_profiler: bool = False
 
