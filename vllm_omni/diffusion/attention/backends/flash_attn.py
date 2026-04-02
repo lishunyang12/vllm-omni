@@ -253,8 +253,7 @@ class FlashAttentionImpl(AttentionImpl):
                 "Install FA3 for optimal FP8 support on Hopper GPUs."
             )
             output_dtype = torch.bfloat16
-            if q_scale is not None:
-                query = dequantize_fp8(query, q_scale, output_dtype)
+            query = dequantize_fp8(query, q_scale, output_dtype)
             key = dequantize_fp8(key, k_scale, output_dtype)
             value = dequantize_fp8(value, v_scale, output_dtype)
             attn_metadata.q_scale = None
@@ -264,7 +263,7 @@ class FlashAttentionImpl(AttentionImpl):
 
         # Reshape per-tensor scales to FA3's expected (batch, num_kv_heads)
         B, S, H, D = key.shape
-        q_descale = self._reshape_descale(q_scale, B, H) if q_scale is not None else None
+        q_descale = self._reshape_descale(q_scale, B, H)
         k_descale = self._reshape_descale(k_scale, B, H)
         v_descale = self._reshape_descale(v_scale, B, H)
 
