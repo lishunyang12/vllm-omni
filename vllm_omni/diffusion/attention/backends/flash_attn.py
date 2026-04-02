@@ -59,6 +59,9 @@ class FlashAttentionImpl(AttentionImpl):
         key: torch.Tensor,
         value: torch.Tensor,
         attention_mask: torch.Tensor,
+        q_descale: torch.Tensor | None = None,
+        k_descale: torch.Tensor | None = None,
+        v_descale: torch.Tensor | None = None,
     ) -> torch.Tensor:
         from vllm_omni.diffusion.attention.backends.utils.fa import (
             _pad_input,
@@ -73,6 +76,15 @@ class FlashAttentionImpl(AttentionImpl):
             query, key, value, attention_mask, query_length, _unpad_input
         )
 
+        varlen_kwargs: dict = {
+            "causal": self.causal,
+            "softmax_scale": self.softmax_scale,
+        }
+        if q_descale is not None:
+            varlen_kwargs["q_descale"] = q_descale
+            varlen_kwargs["k_descale"] = k_descale
+            varlen_kwargs["v_descale"] = v_descale
+
         out_unpad = flash_attn_varlen_func(
             q,
             k,
@@ -81,10 +93,7 @@ class FlashAttentionImpl(AttentionImpl):
             cu_seqlens_k=cu_seq_lens_k,
             max_seqlen_q=max_length_q,
             max_seqlen_k=max_length_k,
-            **{
-                "causal": self.causal,
-                "softmax_scale": self.softmax_scale,
-            },
+            **varlen_kwargs,
         )
         out_unpad = self._unwrap_flash_output(out_unpad)
         return _pad_input(out_unpad, indices_q, query.size(0), query_length)
@@ -220,18 +229,24 @@ class FlashAttentionImpl(AttentionImpl):
         value: torch.Tensor,
         attn_metadata: AttentionMetadata,
     ) -> torch.Tensor:
-        """FP8 Q/K/V attention path: native FA3 or dequant fallback."""
-        from vllm_omni.quantization.kv_quant import dequantize_fp8
-
+        """FP8 Q/K/V attention path: native FA3 with descale."""
         q_scale = attn_metadata.q_scale
         k_scale = attn_metadata.k_scale
         v_scale = attn_metadata.v_scale
 
-        attention_mask = attn_metadata.attn_mask if attn_metadata is not None else None
-        has_padding = attention_mask is not None and torch.any(~attention_mask)
+        from vllm_omni.diffusion.attention.backends.ring.ring_globals import (
+            HAS_FA3,
+            fa3_attn_func,
+        )
 
-        # If padding is present, dequant and use the standard masked path
-        if has_padding:
+        if not (HAS_FA3 and fa3_attn_func is not None):
+            # No FA3: dequant and use standard path
+            from vllm_omni.quantization.kv_quant import dequantize_fp8
+
+            logger.warning_once(
+                "FP8 attention without FA3 provides no compute benefit. "
+                "Install FA3 for optimal FP8 support on Hopper GPUs."
+            )
             output_dtype = torch.bfloat16
             query = dequantize_fp8(query, q_scale, output_dtype)
             key = dequantize_fp8(key, k_scale, output_dtype)
@@ -241,45 +256,25 @@ class FlashAttentionImpl(AttentionImpl):
             attn_metadata.v_scale = None
             return self.forward_cuda(query, key, value, attn_metadata)
 
-        # Try FA3 native FP8 (Hopper / Ada / Ampere via fa3-fwd)
-        from vllm_omni.diffusion.attention.backends.ring.ring_globals import (
-            HAS_FA3,
-            fa3_attn_func,
-        )
+        attention_mask = attn_metadata.attn_mask if attn_metadata is not None else None
+        has_padding = attention_mask is not None and torch.any(~attention_mask)
 
-        if HAS_FA3 and fa3_attn_func is not None:
-            fa3_kwargs: dict = {
-                "softmax_scale": self.softmax_scale,
-                "causal": self.causal,
-                "descale_k": k_scale,
-                "descale_v": v_scale,
-            }
-            # descale_q requires FA3 >= 2.7; guard against older versions
-            try:
-                out = fa3_attn_func(
-                    query, key, value, descale_q=q_scale, **fa3_kwargs
-                )
-            except TypeError:
-                logger.warning_once(
-                    "FA3 does not support descale_q (version < 2.7). "
-                    "Q will run in FP8 without descaling — consider upgrading."
-                )
-                out = fa3_attn_func(query, key, value, **fa3_kwargs)
-            if isinstance(out, tuple):
-                out = out[0]
-            return out
+        if has_padding:
+            # FA3 varlen with FP8 descale
+            return self._forward_varlen_masked(
+                query, key, value, attention_mask,
+                q_descale=q_scale, k_descale=k_scale, v_descale=v_scale,
+            )
 
-        # Fallback: dequantize to compute dtype and use standard path
-        logger.warning_once(
-            "FP8 attention without FA3 provides no compute benefit. "
-            "Install FA3 for optimal FP8 support on Hopper GPUs."
+        # FA3 regular path with FP8 descale
+        out = fa3_attn_func(
+            query, key, value,
+            softmax_scale=self.softmax_scale,
+            causal=self.causal,
+            q_descale=q_scale,
+            k_descale=k_scale,
+            v_descale=v_scale,
         )
-        output_dtype = torch.bfloat16
-        query_bf16 = dequantize_fp8(query, q_scale, output_dtype)
-        key_bf16 = dequantize_fp8(key, k_scale, output_dtype)
-        value_bf16 = dequantize_fp8(value, v_scale, output_dtype)
-        # Clear scales to avoid re-detection on recursive call
-        attn_metadata.q_scale = None
-        attn_metadata.k_scale = None
-        attn_metadata.v_scale = None
-        return self.forward_cuda(query_bf16, key_bf16, value_bf16, attn_metadata)
+        if isinstance(out, tuple):
+            out = out[0]
+        return out
