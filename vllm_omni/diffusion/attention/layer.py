@@ -199,6 +199,16 @@ class Attention(nn.Module):
 
         # 1.5 FP8 Q/K/V quantization (after AllToAll stays BF16, before kernel)
         if self._resolve_fp8_attn():
+            # Zero out padding positions before quantizing — FP8 path skips
+            # varlen to avoid FA3 varlen+descale bug, so padding must be
+            # handled by zeroing K (makes softmax weight ≈ 0 for those positions).
+            if attn_metadata is not None and attn_metadata.attn_mask is not None:
+                mask = attn_metadata.attn_mask  # (B, S) bool
+                if not torch.all(mask):
+                    # Expand mask to (B, S, 1, 1) for broadcasting
+                    m = mask.unsqueeze(-1).unsqueeze(-1)
+                    key = key * m
+                    value = value * m
             query, key, value, attn_metadata = self._quantize_qkv_fp8(
                 query, key, value, attn_metadata
             )
