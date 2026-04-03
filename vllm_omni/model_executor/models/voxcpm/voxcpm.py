@@ -998,7 +998,6 @@ class VoxCPMForConditionalGeneration(nn.Module):
         for info in infos:
             if self.model_stage in self._VAE_STAGES:
                 latent_audio_feat = self._extract_val(info, "latent_audio_feat", None)
-                print(f"---latent_audio_feat---:{latent_audio_feat.shape}")
                 audio_tensor = self._pipeline.decode(
                     latent_audio_feat,
                     trim_streaming_patch=async_chunk,
@@ -1059,11 +1058,6 @@ class VoxCPMForConditionalGeneration(nn.Module):
                     if created_temp is not None and os.path.exists(created_temp):
                         os.unlink(created_temp)
                 sample_rates.append(torch.tensor(sample_rate, dtype=torch.int32))
-                outputs_tensor = torch.stack(outputs)
-                if chunk_latent is not None:
-                    print(f"---outputs_tensor---:{outputs_tensor.shape},chunk_latent:{chunk_latent.shape}")
-                else:
-                    print(f"---outputs_tensor---:{outputs_tensor.shape},chunk_latent:StopIteration")
                 continue
 
             prompt_wav_path, prompt_text, temp_prompt_wav = self._resolve_prompt_inputs(info)
@@ -1082,8 +1076,6 @@ class VoxCPMForConditionalGeneration(nn.Module):
                         retry_badcase_ratio_threshold=retry_badcase_ratio_threshold,
                     )
                     outputs.append(latent_audio_feat.float().cpu())
-                    outputs_tensor = torch.stack(outputs)
-                    print(f"---outputs_tensor---:{outputs_tensor.shape},latent_audio_feat:{latent_audio_feat.shape}")
             finally:
                 if temp_prompt_wav is not None and os.path.exists(temp_prompt_wav):
                     os.unlink(temp_prompt_wav)

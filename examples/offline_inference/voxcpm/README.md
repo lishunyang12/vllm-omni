@@ -60,7 +60,7 @@ python examples/offline_inference/voxcpm/end2end.py \
   --num-runs 3
 ```
 
-`--warmup-runs` only warms up the first batch of prompts. Warmup outputs are discarded and do not count toward `--num-runs`.
+`--warmup-runs` only warms up the first prompt. Warmup outputs are discarded and do not count toward `--num-runs`.
 
 Voice cloning:
 
@@ -79,8 +79,7 @@ Text batch (`--txt-prompts`, one text per line):
 ```bash
 python examples/offline_inference/voxcpm/end2end.py \
   --model "$VOXCPM_MODEL" \
-  --txt-prompts /path/to/prompts.txt \
-  --batch-size 4
+  --txt-prompts /path/to/prompts.txt
 ```
 
 Voice cloning batch with one shared reference (`--txt-prompts` + `--ref-audio` + `--ref-text`):
@@ -90,8 +89,7 @@ python examples/offline_inference/voxcpm/end2end.py \
   --model "$VOXCPM_MODEL" \
   --txt-prompts /path/to/prompts.txt \
   --ref-audio /path/to/reference.wav \
-  --ref-text "The exact transcript spoken in reference.wav." \
-  --batch-size 4
+  --ref-text "The exact transcript spoken in reference.wav."
 ```
 
 Voice cloning batch with per-item references (`--jsonl-prompts`):
@@ -104,8 +102,7 @@ EOF
 
 python examples/offline_inference/voxcpm/end2end.py \
   --model "$VOXCPM_MODEL" \
-  --jsonl-prompts /tmp/voxcpm_clone_batch.jsonl \
-  --batch-size 2
+  --jsonl-prompts /tmp/voxcpm_clone_batch.jsonl
 ```
 
 Streaming:
@@ -120,8 +117,12 @@ python examples/offline_inference/voxcpm/end2end.py \
 Generated audio is saved to `output_audio/` by default for non-streaming, and to
 `output_audio_streaming/` by default for streaming.
 
-The same batch flags also work with the streaming stage config. In streaming mode,
-`--batch-size` controls how many requests are launched concurrently in each wave.
+Streaming mode is currently limited to one request at a time. For batch generation, use `voxcpm_no_async_chunk.yaml`.
+
+This matches native VoxCPM more closely: upstream exposes streaming as a
+single-request generator, while its batch CLI runs requests sequentially.
+The script still prints `ttfa`, so you can compare first-audio latency between
+sync and streaming configs directly.
 
 ## Batch Input Formats
 
@@ -146,8 +147,7 @@ For voice cloning rows, provide `ref_audio` and `ref_text` together:
 - `--stage-configs-path`: override the split-stage config path explicitly
 - `--txt-prompts`: load one synthesis text per line from a `.txt` file
 - `--jsonl-prompts`: load prompts from `.jsonl`, including per-item voice cloning metadata
-- `--batch-size`: requests submitted together per sync batch, or concurrent requests per streaming wave
-- `--warmup-runs`: optional warmup passes before measured runs; only the first batch is used and outputs are discarded
+- `--warmup-runs`: optional warmup passes before measured runs; only the first prompt is used and outputs are discarded
 - `--cfg-value`: guidance value passed to VoxCPM
 - `--inference-timesteps`: number of diffusion timesteps
 - `--min-len`: minimum token length
@@ -155,12 +155,12 @@ For voice cloning rows, provide `ref_audio` and `ref_text` together:
 
 ## Batching Notes
 
-The script accepts prompt batches in both sync and streaming modes, but the
-default VoxCPM stage configs still use `runtime.max_batch_size: 1`. That means:
+This example now matches native VoxCPM batch semantics:
 
-- `--txt-prompts` and `--jsonl-prompts` already let you run many requests in one command.
-- `--batch-size` controls prompt grouping in the script.
-- To get true engine-level batching inside the stage runtime, also raise the batch-related limits in the stage config.
+- `--txt-prompts` and `--jsonl-prompts` mean "read many prompts from a file and run them sequentially"
+- the script does not submit multiple prompts together or run concurrent streaming waves
+- `voxcpm.yaml` remains single-request streaming
+- `voxcpm_no_async_chunk.yaml` is the recommended config for batch files
 
 ## Omni async_chunk vs Qwen3-TTS (same transport, different Stage0 payloads)
 
