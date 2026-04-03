@@ -127,6 +127,11 @@ def _make_voxcpm_model_for_omni(base: Type[Any]) -> Type[Any]:
 
     class VoxCPMModelForOmni(base):
         @torch.inference_mode()
+        def build_prompt_cache(self, *args: Any, **kwargs: Any):
+            with _patch_torchaudio_load_with_soundfile():
+                return super().build_prompt_cache(*args, **kwargs)
+
+        @torch.inference_mode()
         def _inference(
             self,
             text: torch.Tensor,
@@ -449,6 +454,49 @@ def _force_cuda_available_for_npu(device: torch.device):
         return
 
     with patch("torch.cuda.is_available", return_value=True):
+        yield
+
+
+@contextmanager
+def _patch_torchaudio_load_with_soundfile():
+    """Use soundfile-backed loading to avoid torchaudio's torchcodec dependency."""
+    try:
+        import soundfile as sf
+        import torchaudio
+    except ImportError:
+        yield
+        return
+
+    def _load_with_soundfile(
+        uri: Any,
+        frame_offset: int = 0,
+        num_frames: int = -1,
+        normalize: bool = True,
+        channels_first: bool = True,
+        format: str | None = None,
+        buffer_size: int = 4096,
+        backend: str | None = None,
+    ) -> tuple[torch.Tensor, int]:
+        del normalize, format, buffer_size, backend
+
+        audio, sample_rate = sf.read(uri, dtype="float32", always_2d=False)
+        audio_np = np.asarray(audio, dtype=np.float32)
+
+        start = max(int(frame_offset), 0)
+        stop = None if num_frames is None or int(num_frames) < 0 else start + int(num_frames)
+        audio_np = audio_np[start:stop]
+
+        if audio_np.ndim == 1:
+            audio_np = audio_np[None, :] if channels_first else audio_np[:, None]
+        elif audio_np.ndim == 2:
+            if channels_first:
+                audio_np = audio_np.T
+        else:
+            raise ValueError(f"Unsupported audio shape from soundfile: {audio_np.shape}")
+
+        return torch.from_numpy(np.ascontiguousarray(audio_np)), int(sample_rate)
+
+    with patch.object(torchaudio, "load", new=_load_with_soundfile):
         yield
 
 
