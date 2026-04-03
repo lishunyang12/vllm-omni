@@ -180,14 +180,19 @@ class NPUARModelRunner(OmniNPUModelRunner):
                 num_scheduled_tokens_np = np.array(tokens, dtype=np.int32)
                 max_num_scheduled_tokens = int(num_scheduled_tokens_np.max())
 
-                (
-                    logits_indices,
-                    spec_decode_metadata,
-                    total_num_scheduled_tokens,
-                ) = self._prepare_inputs(
+                prepare_inputs_result = self._prepare_inputs(
                     scheduler_output,
                     num_scheduled_tokens_np,
                 )
+                if isinstance(prepare_inputs_result, (tuple, list)) and len(prepare_inputs_result) >= 3:
+                    logits_indices = prepare_inputs_result[0]
+                    spec_decode_metadata = prepare_inputs_result[1]
+                    total_num_scheduled_tokens = prepare_inputs_result[2]
+                else:
+                    logits_indices, spec_decode_metadata = self._unpack_prepare_inputs_result(
+                        prepare_inputs_result
+                    )
+                    total_num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens
 
                 num_tokens_unpadded = scheduler_output.total_num_scheduled_tokens
                 if self.pcp_size > 1:

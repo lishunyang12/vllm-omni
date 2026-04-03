@@ -27,6 +27,24 @@ logger = init_logger(__name__)
 
 
 class OmniNPUModelRunner(OmniGPUModelRunner, NPUModelRunner):
+    @staticmethod
+    def _unpack_prepare_inputs_result(result: Any) -> tuple[Any, Any]:
+        """Normalize vLLM/vllm-ascend _prepare_inputs() return signatures.
+
+        Different backend/version combinations may append extra return values.
+        Omni runners only need the first two items: ``logits_indices`` and
+        ``spec_decode_metadata``.
+        """
+        if isinstance(result, tuple):
+            if len(result) < 2:
+                raise ValueError(f"_prepare_inputs() returned too few values: {len(result)}")
+            return result[0], result[1]
+        if isinstance(result, list):
+            if len(result) < 2:
+                raise ValueError(f"_prepare_inputs() returned too few values: {len(result)}")
+            return result[0], result[1]
+        raise TypeError(f"Unexpected _prepare_inputs() return type: {type(result)!r}")
+
     def load_model(self, *args, **kwargs) -> None:
         NPUModelRunner.load_model(self, *args, **kwargs)
         # Initialize enable_sp cache to avoid get_current_vllm_config() error
@@ -393,7 +411,10 @@ class OmniNPUModelRunner(OmniGPUModelRunner, NPUModelRunner):
             )
 
         # NPU-specific: all-gather for sequence parallelism
-        if get_forward_context().flash_comm_v1_enabled and not isinstance(model_output, IntermediateTensors):
+        if (
+            getattr(forward_context, "flash_comm_v1_enabled", False)
+            or getattr(forward_context, "sp_enabled", False)
+        ) and not isinstance(model_output, IntermediateTensors):
             model_output = self._all_gather_hidden_states_and_aux(model_output)
 
         return model_output

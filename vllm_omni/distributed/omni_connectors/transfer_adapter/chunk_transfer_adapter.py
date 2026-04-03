@@ -16,6 +16,30 @@ from .base import OmniTransferAdapterBase
 logger = get_connector_logger(__name__)
 
 
+def _connector_finished_truthy(val: Any) -> bool:
+    """Interpret connector ``finished`` without ``if tensor`` (PyTorch disallows tensor truthiness)."""
+    if val is None:
+        return False
+    if isinstance(val, torch.Tensor):
+        if val.numel() == 0:
+            return False
+        return bool(val.detach().cpu().reshape(-1)[0].item())
+    try:
+        import numpy as np
+
+        if isinstance(val, np.ndarray):
+            if val.size == 0:
+                return False
+            return bool(np.asarray(val.reshape(-1)[0]).item())
+        if isinstance(val, np.generic):
+            return bool(np.asarray(val).item())
+    except ImportError:
+        pass
+    if isinstance(val, (list, tuple)) and len(val) == 1:
+        return _connector_finished_truthy(val[0])
+    return bool(val)
+
+
 class OmniChunkTransferAdapter(OmniTransferAdapterBase):
     """Chunk-level transfer adapter for Omni connector pipelines.
 
@@ -152,10 +176,11 @@ class OmniChunkTransferAdapter(OmniTransferAdapterBase):
             if self.model_mode == "ar":
                 self._update_request_payload(external_req_id, payload_data)
                 request.additional_information = payload_data
-                if payload_data.get("finished"):
+                if _connector_finished_truthy(payload_data.get("finished")):
                     self.finished_requests.add(req_id)
             else:
-                if payload_data.get("finished"):
+                _fin_ok = _connector_finished_truthy(payload_data.get("finished"))
+                if _fin_ok:
                     self.finished_requests.add(req_id)
 
                 new_ids = payload_data.get("code_predictor_codes", [])
@@ -165,11 +190,16 @@ class OmniChunkTransferAdapter(OmniTransferAdapterBase):
                 request.additional_information = {}
                 if "left_context_size" in payload_data:
                     request.additional_information["left_context_size"] = payload_data["left_context_size"]
+                if "latent_audio_feat" in payload_data:
+                    request.additional_information["latent_audio_feat"] = payload_data["latent_audio_feat"]
+                if "sr" in payload_data:
+                    request.additional_information["sample_rate"] = payload_data["sr"]
                 request.num_computed_tokens = 0
 
                 # Empty chunk with more data expected: keep polling.
-                if not new_ids and not payload_data.get("finished"):
-                    return True
+                if not new_ids and not _fin_ok:
+                    if "latent_audio_feat" not in payload_data:
+                        return True
 
             # Mark as finished for consumption
             self._finished_load_reqs.add(req_id)
@@ -228,6 +258,8 @@ class OmniChunkTransferAdapter(OmniTransferAdapterBase):
                 logger.error(f"Failed to use custom_process_input_func for payload extraction: {e}")
 
         if not payload_data:
+            if is_finished:
+                self.cleanup(request.request_id, getattr(request, "external_req_id", None))
             return
 
         success, size, metadata = self.connector.put(

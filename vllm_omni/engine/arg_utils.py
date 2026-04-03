@@ -8,6 +8,11 @@ from vllm.logger import init_logger
 
 from vllm_omni.config import OmniModelConfig
 from vllm_omni.engine.output_modality import OutputModality
+from vllm_omni.model_executor.models.voxcpm.configuration_voxcpm import VoxCPMConfig
+from vllm_omni.model_executor.models.voxcpm.native_config import (
+    detect_native_voxcpm_model_type,
+    ensure_hf_compatible_voxcpm_config,
+)
 from vllm_omni.plugins import load_omni_general_plugins
 
 logger = init_logger(__name__)
@@ -32,12 +37,22 @@ def _register_omni_hf_configs() -> None:
         ("qwen3_tts", Qwen3TTSConfig),
         ("cosyvoice3", CosyVoice3Config),
         ("voxtral_tts", VoxtralTTSConfig),
+        ("voxcpm", VoxCPMConfig),
     ]:
         try:
             AutoConfig.register(model_type, config_cls)
         except ValueError:
-            # Already registered elsewhere; ignore.
             pass
+
+
+def _maybe_prepare_model_hf_config_path(model: str, hf_config_path: str | None) -> str | None:
+    if hf_config_path:
+        return hf_config_path
+
+    if detect_native_voxcpm_model_type(model) == "voxcpm":
+        return ensure_hf_compatible_voxcpm_config(model)
+
+    return hf_config_path
 
 
 def register_omni_models_to_vllm():
@@ -55,31 +70,6 @@ def register_omni_models_to_vllm():
 
 @dataclass
 class OmniEngineArgs(EngineArgs):
-    """Engine arguments for omni models, extending base EngineArgs.
-    Adds omni-specific configuration fields for multi-stage pipeline
-    processing and output type specification.
-    Args:
-        stage_id: Identifier for the stage in a multi-stage pipeline (default: 0)
-        model_stage: Stage type identifier, e.g., "thinker" or "talker"
-            (default: "thinker")
-        model_arch: Model architecture name
-            (default: "Qwen2_5OmniForConditionalGeneration")
-        engine_output_type: Optional output type specification for the engine.
-            Used to route outputs to appropriate processors (e.g., "image",
-            "audio", "latents"). If None, output type is inferred.
-        hf_config_name: Optional key for HF config subkey to be extracted
-            for this stage, e.g., talker_config; If None, the default
-            HF config will be used.
-        custom_process_next_stage_input_func: Optional path to a custom function for processing
-            inputs from previous stages
-            If None, default processing is used.
-        stage_connector_spec: Extra configuration for stage connector
-        async_chunk: If set to True, perform async chunk
-        worker_type: Model Type, e.g., "ar" or "generation"
-        task_type: Default task type for TTS models (CustomVoice, VoiceDesign, or Base).
-            If not specified, will be inferred from model path.
-    """
-
     stage_id: int = 0
     model_stage: str = "thinker"
     model_arch: str | None = None
@@ -111,34 +101,25 @@ class OmniEngineArgs(EngineArgs):
         return True
 
     def create_model_config(self) -> OmniModelConfig:
-        """Create an OmniModelConfig from these engine arguments.
-        Returns:
-            OmniModelConfig instance with all configuration fields set
-        """
-        # register omni models to avoid model not found error
         self._ensure_omni_models_registered()
+        self.hf_config_path = _maybe_prepare_model_hf_config_path(self.model, self.hf_config_path)
 
-        # Build stage_connector_config from stage_connector_spec
         stage_connector_config = {
             "name": self.stage_connector_spec.get("name", "SharedMemoryConnector"),
             "extra": self.stage_connector_spec.get("extra", {}).copy(),
         }
         stage_connector_config["extra"]["stage_id"] = self.stage_id
 
-        # If model_arch is specified, inject it into hf_overrides so vLLM can
-        # resolve the architecture even when config.json lacks 'architectures'.
         if self.model_arch:
             if self.hf_overrides is None:
                 self.hf_overrides = {}
             if isinstance(self.hf_overrides, dict):
                 self.hf_overrides.setdefault("architectures", [self.model_arch])
 
-        # Build the vLLM config first, then use it to create the Omni config.
         model_config = super().create_model_config()
 
-        omni_config = OmniModelConfig.from_vllm_model_config(
+        return OmniModelConfig.from_vllm_model_config(
             model_config=model_config,
-            # All kwargs below are Omni specific
             stage_id=self.stage_id,
             async_chunk=self.async_chunk,
             model_stage=self.model_stage,
@@ -151,9 +132,7 @@ class OmniEngineArgs(EngineArgs):
             omni_kv_config=self.omni_kv_config,
             task_type=self.task_type,
         )
-        return omni_config
 
     @property
     def output_modality(self) -> OutputModality:
-        """Parse engine_output_type into a type-safe OutputModality flag."""
         return OutputModality.from_string(self.engine_output_type)
