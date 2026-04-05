@@ -1,5 +1,12 @@
 -r common.txt
 onnxruntime>=1.23.2
 fa3-fwd==0.0.2
+# FlashAttention-4 for Blackwell (sm100+). Not installed by default because
+# prebuilt wheels are not yet universally available on PyPI and building from
+# source requires CUDA 12.8+ / a Blackwell toolchain. Blackwell users should
+# install manually:
+#   pip install flash-attn>=4.0.0 --no-build-isolation
+# On sm80-90 this package is not needed (fa3-fwd above is the preferred path).
+# flash-attn>=4.0.0
 # nvidia-cublas-cu12 is pinned to 12.9.1.4 via force-reinstall in Dockerfile.ci
 # because torch pins its own cublas version, making it unsatisfiable at resolve time.
