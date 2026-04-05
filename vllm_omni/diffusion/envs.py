@@ -67,33 +67,21 @@ class PackagesEnvChecker:
             if "Turing" in gpu_name or "Tesla" in gpu_name or "T4" in gpu_name:
                 return False
 
-            # Hardware-aware FA backend selection:
-            #   sm80/86/89/90 (Ampere/Ada/Hopper): fa3_fwd_interface (first-party,
-            #       supports sm80-90) -> flash_attn_interface (FA3 source build)
-            #       -> flash-attn 2.x/3.x (FA2)
-            #   sm100+ (Blackwell): FA4 only (fa3_fwd_interface does not support
-            #       Blackwell; FA4 is the only FA-family path)
+            # sm80-90: fa3_fwd_interface -> flash_attn_interface -> FA2
+            # sm100+ (Blackwell): FA4 only
             cc = platform.get_device_capability()
             capability = cc.major * 10 + cc.minor if cc is not None else 0
 
             if capability >= 100:
-                # Blackwell+: only FA4 is viable
-                try:
-                    import flash_attn as _fa
+                import flash_attn as _fa
 
-                    _fa_version = getattr(_fa, "__version__", "0.0.0")
-                    _fa_major = int(_fa_version.split(".", 1)[0])
-                    if _fa_major >= 4:
-                        from flash_attn import flash_attn_func  # noqa: F401
+                if int(getattr(_fa, "__version__", "0.0.0").split(".", 1)[0]) < 4:
+                    raise ImportError("Blackwell requires flash-attn>=4.0 (FA4)")
+                from flash_attn import flash_attn_func  # noqa: F401
 
-                        packages_info["has_fa4"] = True
-                        return True
-                except (ImportError, ModuleNotFoundError, ValueError):
-                    pass
-                # No FA4 available on Blackwell -> fall through to SDPA
-                return False
+                packages_info["has_fa4"] = True
+                return True
 
-            # sm80-90: try fa3_fwd_interface (first-party) first
             try:
                 import fa3_fwd_interface  # noqa: F401
 
@@ -101,7 +89,6 @@ class PackagesEnvChecker:
             except (ImportError, ModuleNotFoundError):
                 pass
 
-            # Try FA3 from flash-attention source build
             try:
                 import flash_attn_interface  # noqa: F401
 
@@ -109,7 +96,6 @@ class PackagesEnvChecker:
             except (ImportError, ModuleNotFoundError):
                 pass
 
-            # Try FA2 from flash-attn package
             from flash_attn import __version__
 
             if __version__ < "2.6.0":

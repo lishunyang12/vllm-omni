@@ -42,40 +42,33 @@ elif current_omni_platform.is_musa():
     # XXX (MUSA): Add MUSA-specific Flash Attention when available
     pass
 else:
-    # CUDA: hardware-aware FA backend selection.
-    #   sm80/86/89/90 (Ampere/Ada/Hopper): fa3_fwd_interface (first-party)
-    #       -> flash_attn_interface (FA3 source build) -> flash-attn 2.x/3.x (FA2)
-    #   sm100+ (Blackwell): FA4 only (fa3_fwd_interface does not support Blackwell)
+    # sm80-90: fa3_fwd_interface -> flash_attn_interface -> FA2
+    # sm100+ (Blackwell): FA4 only
     _cc = current_omni_platform.get_device_capability()
     _capability = _cc.major * 10 + _cc.minor if _cc is not None else 0
 
     if _capability >= 100:
-        # Blackwell+: only FA4 is viable
         try:
             import flash_attn as _fa
 
-            _fa_major = int(getattr(_fa, "__version__", "0.0.0").split(".", 1)[0])
-            if _fa_major >= 4:
+            if int(getattr(_fa, "__version__", "0.0.0").split(".", 1)[0]) >= 4:
                 from flash_attn import flash_attn_func, flash_attn_varlen_func  # noqa: F401
 
                 HAS_FA4 = True
         except (ImportError, ModuleNotFoundError, ValueError):
             pass
     else:
-        # sm80-90: try fa3_fwd_interface (first-party) first
         try:
             from fa3_fwd_interface import flash_attn_func, flash_attn_varlen_func  # noqa: F401
         except (ImportError, ModuleNotFoundError):
             pass
 
-        # Fallback: Try FA3 from flash-attention source build
         if flash_attn_func is None:
             try:
                 from flash_attn_interface import flash_attn_func, flash_attn_varlen_func  # noqa: F401
             except (ImportError, ModuleNotFoundError):
                 pass
 
-        # Fallback: Try FA2 from flash-attn package (try multiple import paths)
         if flash_attn_func is None:
             try:
                 from flash_attn import flash_attn_func, flash_attn_varlen_func  # noqa: F401
@@ -91,8 +84,6 @@ else:
             except (ImportError, ModuleNotFoundError):
                 pass
 
-# If no FA backend available, SDPA backend will be selected at the platform level
-# flash_attn_func and flash_attn_varlen_func will be None
 HAS_FLASH_ATTN = flash_attn_func is not None or flash_attn_varlen_func is not None
 
 

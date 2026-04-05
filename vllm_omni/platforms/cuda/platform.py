@@ -41,22 +41,15 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
     ) -> str:
         from vllm_omni.diffusion.envs import PACKAGES_CHECKER
 
-        # has_flash_attn from envs.py is already hardware-aware:
-        #   - sm80/86/89/90: True iff fa3_fwd_interface / flash_attn_interface / FA2 importable
-        #   - sm100+ (Blackwell): True iff flash-attn>=4.0 (FA4) importable
-        #   - otherwise: False
+        # has_flash_attn is hardware-aware (see envs.py): FA4 on sm100+,
+        # fa3-fwd / flash_attn_interface / FA2 on sm80-90.
         packages_info = PACKAGES_CHECKER.get_packages_info()
         flash_attn_supported = packages_info.get("has_flash_attn", False)
 
         if selected_backend is not None:
             backend_upper = selected_backend.upper()
             if backend_upper == "FLASH_ATTN" and not flash_attn_supported:
-                logger.warning(
-                    "Flash Attention is not available on this GPU. On Blackwell+ "
-                    "(sm100+), install flash-attn>=4.0 (FA4). On sm80-90, install "
-                    "fa3-fwd / flash-attention / flash-attn>=2.6. Falling back to "
-                    "TORCH_SDPA backend."
-                )
+                logger.warning("Flash Attention is not available on this GPU. Falling back to TORCH_SDPA backend.")
                 logger.info("Defaulting to diffusion attention backend SDPA")
                 return DiffusionAttentionBackendEnum.TORCH_SDPA.get_path()
             backend = DiffusionAttentionBackendEnum[backend_upper]
