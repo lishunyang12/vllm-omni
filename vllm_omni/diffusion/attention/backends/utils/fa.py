@@ -20,6 +20,7 @@ from vllm_omni.platforms import current_omni_platform
 # Flash Attention function detection with fallback chain
 flash_attn_func = None
 flash_attn_varlen_func = None
+HAS_FA4 = False
 
 if current_omni_platform.is_rocm():
     # ROCm: try Aiter first
@@ -41,35 +42,54 @@ elif current_omni_platform.is_musa():
     # XXX (MUSA): Add MUSA-specific Flash Attention when available
     pass
 else:
-    # CUDA: try FA3 -> FA2 fallback chain
-    # Try FA3 from fa3-fwd PyPI package
-    try:
-        from fa3_fwd_interface import flash_attn_func, flash_attn_varlen_func  # noqa: F401
-    except (ImportError, ModuleNotFoundError):
-        pass
+    # CUDA: hardware-aware FA backend selection.
+    #   sm80/86/89/90 (Ampere/Ada/Hopper): fa3_fwd_interface (first-party)
+    #       -> flash_attn_interface (FA3 source build) -> flash-attn 2.x/3.x (FA2)
+    #   sm100+ (Blackwell): FA4 only (fa3_fwd_interface does not support Blackwell)
+    _cc = current_omni_platform.get_device_capability()
+    _capability = _cc.major * 10 + _cc.minor if _cc is not None else 0
 
-    # Fallback: Try FA3 from flash-attention source build
-    if flash_attn_func is None:
+    if _capability >= 100:
+        # Blackwell+: only FA4 is viable
         try:
-            from flash_attn_interface import flash_attn_func, flash_attn_varlen_func  # noqa: F401
+            import flash_attn as _fa
+
+            _fa_major = int(getattr(_fa, "__version__", "0.0.0").split(".", 1)[0])
+            if _fa_major >= 4:
+                from flash_attn import flash_attn_func, flash_attn_varlen_func  # noqa: F401
+
+                HAS_FA4 = True
+        except (ImportError, ModuleNotFoundError, ValueError):
+            pass
+    else:
+        # sm80-90: try fa3_fwd_interface (first-party) first
+        try:
+            from fa3_fwd_interface import flash_attn_func, flash_attn_varlen_func  # noqa: F401
         except (ImportError, ModuleNotFoundError):
             pass
 
-    # Fallback: Try FA2 from flash-attn package (try multiple import paths)
-    if flash_attn_func is None:
-        try:
-            from flash_attn import flash_attn_func, flash_attn_varlen_func  # noqa: F401
-        except (ImportError, ModuleNotFoundError):
-            pass
+        # Fallback: Try FA3 from flash-attention source build
+        if flash_attn_func is None:
+            try:
+                from flash_attn_interface import flash_attn_func, flash_attn_varlen_func  # noqa: F401
+            except (ImportError, ModuleNotFoundError):
+                pass
 
-    if flash_attn_func is None:
-        try:
-            from flash_attn.flash_attn_interface import (  # noqa: F401
-                flash_attn_func,
-                flash_attn_varlen_func,
-            )
-        except (ImportError, ModuleNotFoundError):
-            pass
+        # Fallback: Try FA2 from flash-attn package (try multiple import paths)
+        if flash_attn_func is None:
+            try:
+                from flash_attn import flash_attn_func, flash_attn_varlen_func  # noqa: F401
+            except (ImportError, ModuleNotFoundError):
+                pass
+
+        if flash_attn_func is None:
+            try:
+                from flash_attn.flash_attn_interface import (  # noqa: F401
+                    flash_attn_func,
+                    flash_attn_varlen_func,
+                )
+            except (ImportError, ModuleNotFoundError):
+                pass
 
 # If no FA backend available, SDPA backend will be selected at the platform level
 # flash_attn_func and flash_attn_varlen_func will be None

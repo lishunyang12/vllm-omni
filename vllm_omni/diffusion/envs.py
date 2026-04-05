@@ -45,6 +45,7 @@ class PackagesEnvChecker:
 
     def initialize(self):
         packages_info = {}
+        packages_info["has_fa4"] = False
         packages_info["has_flash_attn"] = self._check_flash_attn(packages_info)
         self.packages_info = packages_info
 
@@ -66,8 +67,33 @@ class PackagesEnvChecker:
             if "Turing" in gpu_name or "Tesla" in gpu_name or "T4" in gpu_name:
                 return False
 
-            # Check for any FA backend: FA3 (fa3_fwd_interface, flash_attn_interface) or FA2 (flash_attn)
-            # Try FA3 from fa3-fwd PyPI package
+            # Hardware-aware FA backend selection:
+            #   sm80/86/89/90 (Ampere/Ada/Hopper): fa3_fwd_interface (first-party,
+            #       supports sm80-90) -> flash_attn_interface (FA3 source build)
+            #       -> flash-attn 2.x/3.x (FA2)
+            #   sm100+ (Blackwell): FA4 only (fa3_fwd_interface does not support
+            #       Blackwell; FA4 is the only FA-family path)
+            cc = platform.get_device_capability()
+            capability = cc.major * 10 + cc.minor if cc is not None else 0
+
+            if capability >= 100:
+                # Blackwell+: only FA4 is viable
+                try:
+                    import flash_attn as _fa
+
+                    _fa_version = getattr(_fa, "__version__", "0.0.0")
+                    _fa_major = int(_fa_version.split(".", 1)[0])
+                    if _fa_major >= 4:
+                        from flash_attn import flash_attn_func  # noqa: F401
+
+                        packages_info["has_fa4"] = True
+                        return True
+                except (ImportError, ModuleNotFoundError, ValueError):
+                    pass
+                # No FA4 available on Blackwell -> fall through to SDPA
+                return False
+
+            # sm80-90: try fa3_fwd_interface (first-party) first
             try:
                 import fa3_fwd_interface  # noqa: F401
 

@@ -41,32 +41,22 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
     ) -> str:
         from vllm_omni.diffusion.envs import PACKAGES_CHECKER
 
-        # Check compute capability for Flash Attention support
-        # Flash Attention requires compute capability >= 8.0 and < 10.0
-        compute_capability = cls.get_device_capability()
-        compute_supported = False
-        if compute_capability is not None:
-            major, minor = compute_capability
-            capability = major * 10 + minor
-            compute_supported = 80 <= capability < 100
-
-        # Check if FA packages are available
+        # has_flash_attn from envs.py is already hardware-aware:
+        #   - sm80/86/89/90: True iff fa3_fwd_interface / flash_attn_interface / FA2 importable
+        #   - sm100+ (Blackwell): True iff flash-attn>=4.0 (FA4) importable
+        #   - otherwise: False
         packages_info = PACKAGES_CHECKER.get_packages_info()
-        packages_available = packages_info.get("has_flash_attn", False)
-
-        # Both compute capability and packages must be available for FA
-        flash_attn_supported = compute_supported and packages_available
+        flash_attn_supported = packages_info.get("has_flash_attn", False)
 
         if selected_backend is not None:
             backend_upper = selected_backend.upper()
             if backend_upper == "FLASH_ATTN" and not flash_attn_supported:
-                if not compute_supported:
-                    logger.warning(
-                        "Flash Attention requires GPU with compute capability >= 8.0 "
-                        "and < 10.0. Falling back to TORCH_SDPA backend."
-                    )
-                elif not packages_available:
-                    logger.warning("Flash Attention packages not available. Falling back to TORCH_SDPA backend.")
+                logger.warning(
+                    "Flash Attention is not available on this GPU. On Blackwell+ "
+                    "(sm100+), install flash-attn>=4.0 (FA4). On sm80-90, install "
+                    "fa3-fwd / flash-attention / flash-attn>=2.6. Falling back to "
+                    "TORCH_SDPA backend."
+                )
                 logger.info("Defaulting to diffusion attention backend SDPA")
                 return DiffusionAttentionBackendEnum.TORCH_SDPA.get_path()
             backend = DiffusionAttentionBackendEnum[backend_upper]
