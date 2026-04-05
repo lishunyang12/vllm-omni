@@ -45,7 +45,6 @@ class PackagesEnvChecker:
 
     def initialize(self):
         packages_info = {}
-        packages_info["has_fa4"] = False
         packages_info["has_flash_attn"] = self._check_flash_attn(packages_info)
         self.packages_info = packages_info
 
@@ -67,21 +66,16 @@ class PackagesEnvChecker:
             if "Turing" in gpu_name or "Tesla" in gpu_name or "T4" in gpu_name:
                 return False
 
-            # sm80-90: fa3_fwd_interface -> flash_attn_interface -> FA2
-            # sm100+ (Blackwell): FA4 only
             cc = platform.get_device_capability()
             capability = cc.major * 10 + cc.minor if cc is not None else 0
 
-            if capability >= 100:
-                import flash_attn as _fa
+            if capability == 100:
+                # Blackwell datacenter (B100/B200): FA4 via flash-attn-4 package.
+                from flash_attn.cute import flash_attn_func  # noqa: F401
 
-                if int(getattr(_fa, "__version__", "0.0.0").split(".", 1)[0]) < 4:
-                    raise ImportError("Blackwell requires flash-attn>=4.0 (FA4)")
-                from flash_attn import flash_attn_func  # noqa: F401
-
-                packages_info["has_fa4"] = True
                 return True
 
+            # sm80-90 (Ampere/Ada/Hopper): fa3-fwd -> flash_attn_interface -> FA2
             try:
                 import fa3_fwd_interface  # noqa: F401
 

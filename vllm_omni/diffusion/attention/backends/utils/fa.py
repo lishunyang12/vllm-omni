@@ -20,7 +20,6 @@ from vllm_omni.platforms import current_omni_platform
 # Flash Attention function detection with fallback chain
 flash_attn_func = None
 flash_attn_varlen_func = None
-HAS_FA4 = False
 
 if current_omni_platform.is_rocm():
     # ROCm: try Aiter first
@@ -42,22 +41,17 @@ elif current_omni_platform.is_musa():
     # XXX (MUSA): Add MUSA-specific Flash Attention when available
     pass
 else:
-    # sm80-90: fa3_fwd_interface -> flash_attn_interface -> FA2
-    # sm100+ (Blackwell): FA4 only
     _cc = current_omni_platform.get_device_capability()
     _capability = _cc.major * 10 + _cc.minor if _cc is not None else 0
 
-    if _capability >= 100:
+    if _capability == 100:
+        # Blackwell datacenter: FA4 via flash-attn-4 package.
         try:
-            import flash_attn as _fa
-
-            if int(getattr(_fa, "__version__", "0.0.0").split(".", 1)[0]) >= 4:
-                from flash_attn import flash_attn_func, flash_attn_varlen_func  # noqa: F401
-
-                HAS_FA4 = True
-        except (ImportError, ModuleNotFoundError, ValueError):
+            from flash_attn.cute import flash_attn_func, flash_attn_varlen_func  # noqa: F401
+        except (ImportError, ModuleNotFoundError):
             pass
     else:
+        # sm80-90: fa3-fwd -> flash_attn_interface -> FA2
         try:
             from fa3_fwd_interface import flash_attn_func, flash_attn_varlen_func  # noqa: F401
         except (ImportError, ModuleNotFoundError):
@@ -72,15 +66,6 @@ else:
         if flash_attn_func is None:
             try:
                 from flash_attn import flash_attn_func, flash_attn_varlen_func  # noqa: F401
-            except (ImportError, ModuleNotFoundError):
-                pass
-
-        if flash_attn_func is None:
-            try:
-                from flash_attn.flash_attn_interface import (  # noqa: F401
-                    flash_attn_func,
-                    flash_attn_varlen_func,
-                )
             except (ImportError, ModuleNotFoundError):
                 pass
 

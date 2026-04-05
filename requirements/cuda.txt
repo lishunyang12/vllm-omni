@@ -1,7 +1,7 @@
 -r common.txt
 onnxruntime>=1.23.2
 fa3-fwd==0.0.2
-# FlashAttention-4 for Blackwell (sm100+). Unused on sm80-90.
-flash-attn>=4.0.0,<5.0.0
+# FlashAttention-4 for Blackwell datacenter (sm100). Unused on sm80-90.
+flash-attn-4
 # nvidia-cublas-cu12 is pinned to 12.9.1.4 via force-reinstall in Dockerfile.ci
 # because torch pins its own cublas version, making it unsatisfiable at resolve time.
