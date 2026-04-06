@@ -195,10 +195,15 @@ class Flux2KleinPipeline(nn.Module, CFGParallelMixin, SupportImageInput, Diffusi
         super().__init__()
         self.od_config = od_config
         self.is_distilled = is_distilled
+        # Support separate transformer weights path (e.g., NVFP4 checkpoints).
+        # When transformer_weights_path is set, load transformer weights from
+        # that path (no subfolder) instead of the main model's transformer dir.
+        transformer_model = od_config.transformer_weights_path or od_config.model
+        transformer_subfolder = "transformer" if transformer_model == od_config.model else None
         self.weights_sources = [
             DiffusersPipelineLoader.ComponentSource(
-                model_or_path=od_config.model,
-                subfolder="transformer",
+                model_or_path=transformer_model,
+                subfolder=transformer_subfolder,
                 revision=None,
                 prefix="transformer.",
                 fall_back_to_pt=True,
@@ -229,6 +234,20 @@ class Flux2KleinPipeline(nn.Module, CFGParallelMixin, SupportImageInput, Diffusi
             subfolder="vae",
             local_files_only=local_files_only,
         ).to(self._execution_device)
+
+        # Auto-detect NVFP4 quantization when a separate transformer weights
+        # path is provided but no explicit quantization config is set.
+        if od_config.transformer_weights_path and od_config.quantization_config is None:
+            from vllm_omni.diffusion.utils.nvfp4_utils import detect_nvfp4_from_safetensors
+
+            if detect_nvfp4_from_safetensors(od_config.transformer_weights_path):
+                from vllm_omni.quantization import build_quant_config
+
+                od_config.quantization_config = build_quant_config("modelopt_fp4")
+                logger.info(
+                    "Auto-detected NVFP4 quantization from transformer weights at %s",
+                    od_config.transformer_weights_path,
+                )
 
         transformer_kwargs = get_transformer_config_kwargs(od_config.tf_model_config, Flux2Transformer2DModel)
         self.transformer = Flux2Transformer2DModel(quant_config=od_config.quantization_config, **transformer_kwargs)

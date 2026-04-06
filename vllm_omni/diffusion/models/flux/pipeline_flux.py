@@ -73,10 +73,13 @@ class FluxPipeline(nn.Module, FluxPipelineMixin, CFGParallelMixin, DiffusionPipe
     ):
         super().__init__()
         self.od_config = od_config
+        # Support separate transformer weights path (e.g., NVFP4 checkpoints).
+        transformer_model = od_config.transformer_weights_path or od_config.model
+        transformer_subfolder = "transformer" if transformer_model == od_config.model else None
         self.weights_sources = [
             DiffusersPipelineLoader.ComponentSource(
-                model_or_path=od_config.model,
-                subfolder="transformer",
+                model_or_path=transformer_model,
+                subfolder=transformer_subfolder,
                 revision=None,
                 prefix="transformer.",
                 fall_back_to_pt=True,
