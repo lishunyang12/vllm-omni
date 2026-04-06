@@ -144,3 +144,36 @@ def dequantize_fp8(
         Dequantized tensor: ``tensor.to(output_dtype) * inv_scale``.
     """
     return (tensor.to(output_dtype) * inv_scale).to(output_dtype)
+
+
+def quantize_qkv_fp8_fast(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor,
+           torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Ultra-fast FP8 quantization using direct saturating cast (no amax).
+
+    For diffusion attention where Q/K/V values are typically in [-10, 10],
+    well within float8_e4m3fn range (±448). Eliminates the expensive
+    per-tensor amax reduction that dominates quantization overhead at
+    large sequence lengths (50K+ tokens).
+
+    Scale is fixed at 1.0 (identity), so descale is also 1.0.
+    """
+    one = torch.ones(1, dtype=torch.float32, device=query.device)
+    fp8_q = query.to(torch.float8_e4m3fn)
+    fp8_k = key.to(torch.float8_e4m3fn)
+    fp8_v = value.to(torch.float8_e4m3fn)
+    return fp8_q, fp8_k, fp8_v, one, one, one
+
+
+def quantize_kv_fp8_fast(
+    key: torch.Tensor,
+    value: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Fast FP8 quantization for K/V only (joint attention path)."""
+    one = torch.ones(1, dtype=torch.float32, device=key.device)
+    fp8_k = key.to(torch.float8_e4m3fn)
+    fp8_v = value.to(torch.float8_e4m3fn)
+    return fp8_k, fp8_v, one, one

@@ -130,12 +130,12 @@ class Attention(nn.Module):
         step always runs dynamic.
         """
         from vllm_omni.quantization.kv_quant import (
-            quantize_kv_fp8,
-            quantize_qkv_fp8,
+            quantize_kv_fp8_fast,
+            quantize_qkv_fp8_fast,
         )
 
-        fp8_q, fp8_k, fp8_v, q_scale, k_scale, v_scale = quantize_qkv_fp8(
-            query, key, value, cached_scales=None
+        fp8_q, fp8_k, fp8_v, q_scale, k_scale, v_scale = quantize_qkv_fp8_fast(
+            query, key, value
         )
 
         if attn_metadata is None:
@@ -146,9 +146,8 @@ class Attention(nn.Module):
 
         # Quantize joint_key/joint_value with separate scales
         if attn_metadata.joint_key is not None and attn_metadata.joint_value is not None:
-            jk, jv, jk_scale, jv_scale = quantize_kv_fp8(
+            jk, jv, jk_scale, jv_scale = quantize_kv_fp8_fast(
                 attn_metadata.joint_key, attn_metadata.joint_value,
-                cached_scales=None,
             )
             attn_metadata.joint_key = jk
             attn_metadata.joint_value = jv

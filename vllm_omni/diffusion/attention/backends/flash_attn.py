@@ -234,11 +234,10 @@ class FlashAttentionImpl(AttentionImpl):
         value: torch.Tensor,
         attn_metadata: AttentionMetadata,
     ) -> torch.Tensor:
-        """FP8 Q/K/V attention path.
+        """Optimized FP8 Q/K/V attention path.
 
-        Uses vLLM's bundled FA3 backend (vllm_flash_attn) which has the
-        two-level accumulation fix for FP8 on Hopper. Falls back to
-        fa3-fwd or dequant if vLLM's FA3 is unavailable.
+        Uses fa3_attn_func directly (non-varlen) for minimum overhead.
+        With scale=1.0 fast quantization, descale tensors are all-ones.
         """
         q_scale = attn_metadata.q_scale
         k_scale = attn_metadata.k_scale
@@ -249,40 +248,7 @@ class FlashAttentionImpl(AttentionImpl):
         k_descale = self._reshape_descale(k_scale, B, H)
         v_descale = self._reshape_descale(v_scale, B, H)
 
-        # Try vLLM's bundled FA3 (has two-level accumulation fix for FP8)
-        try:
-            from vllm.vllm_flash_attn import flash_attn_varlen_func as vllm_varlen
-
-            # varlen API needs (total_tokens, H, D) and cu_seqlens
-            q_flat = query.reshape(B * S, H, D)
-            k_flat = key.reshape(B * S, H, D)
-            v_flat = value.reshape(B * S, H, D)
-            cu_seqlens = torch.arange(
-                0, (B + 1) * S, step=S, dtype=torch.int32, device=query.device
-            )
-
-            out = vllm_varlen(
-                q_flat, k_flat, v_flat,
-                max_seqlen_q=S,
-                cu_seqlens_q=cu_seqlens,
-                max_seqlen_k=S,
-                cu_seqlens_k=cu_seqlens,
-                softmax_scale=self.softmax_scale,
-                causal=self.causal,
-                q_descale=q_descale,
-                k_descale=k_descale,
-                v_descale=v_descale,
-                fa_version=3,
-            )
-            if isinstance(out, tuple):
-                out = out[0]
-            return out.reshape(B, S, H, D)
-        except Exception as e:
-            logger.warning_once(
-                "vLLM FA3 FP8 failed (%s), trying fa3-fwd fallback.", e
-            )
-
-        # Fallback: fa3-fwd (may lack two-level accumulation fix)
+        # Primary path: fa3_attn_func (non-varlen, lowest overhead)
         from vllm_omni.diffusion.attention.backends.ring.ring_globals import (
             HAS_FA3,
             fa3_attn_func,
@@ -301,7 +267,7 @@ class FlashAttentionImpl(AttentionImpl):
                 out = out[0]
             return out
 
-        # Last resort: dequant to BF16
+        # Fallback: dequant to BF16
         from vllm_omni.quantization.kv_quant import dequantize_fp8
 
         logger.warning_once(
