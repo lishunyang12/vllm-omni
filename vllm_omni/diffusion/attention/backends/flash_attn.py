@@ -42,12 +42,13 @@ class FlashAttentionBackend(AttentionBackend):
 
 
 class FlashAttentionImpl(AttentionImpl):
-    # FP8 KV quantization: currently supported on CUDA and ROCm.
-    # NPU/XPU contributors: add your platform here when implementing
-    # FP8 support in forward_npu()/forward_xpu().
+    # Per-platform FP8 KV quantization support.
+    # To enable FP8 on a new platform, add its OmniPlatformEnum value here
+    # and handle kv_cache_dtype in the corresponding forward_{platform}().
     _supported_kv_cache_dtypes = {
         "cuda": {"fp8", "fp8_e4m3"},
-        "rocm": {"fp8", "fp8_e4m3"},
+        # "rocm": {"fp8", "fp8_e4m3"},
+        # "npu": {"fp8"},
     }
 
     def __init__(
