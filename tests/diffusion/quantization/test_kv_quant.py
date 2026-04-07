@@ -141,3 +141,93 @@ def test_attention_metadata_kv_cache_dtype():
 
     meta.kv_cache_dtype = "fp8"
     assert meta.kv_cache_dtype == "fp8"
+
+
+def test_fast_qkv_quantization():
+    """quantize_qkv_fp8_fast should use scale=1.0 (direct cast)."""
+    from vllm_omni.quantization.kv_quant import quantize_qkv_fp8_fast
+
+    q = torch.randn(1, 32, 4, 64, dtype=torch.bfloat16)
+    k = torch.randn(1, 32, 4, 64, dtype=torch.bfloat16)
+    v = torch.randn(1, 32, 4, 64, dtype=torch.bfloat16)
+
+    fp8_q, fp8_k, fp8_v, q_s, k_s, v_s = quantize_qkv_fp8_fast(q, k, v)
+
+    assert fp8_q.dtype == torch.float8_e4m3fn
+    assert fp8_k.dtype == torch.float8_e4m3fn
+    assert fp8_v.dtype == torch.float8_e4m3fn
+    # Fast path uses scale=1.0
+    assert q_s.item() == 1.0
+    assert k_s.item() == 1.0
+    assert v_s.item() == 1.0
+
+
+def test_fast_kv_quantization():
+    """quantize_kv_fp8_fast for joint attention path."""
+    from vllm_omni.quantization.kv_quant import quantize_kv_fp8_fast
+
+    k = torch.randn(1, 64, 4, 32, dtype=torch.bfloat16)
+    v = torch.randn(1, 64, 4, 32, dtype=torch.bfloat16)
+
+    fp8_k, fp8_v, k_s, v_s = quantize_kv_fp8_fast(k, v)
+
+    assert fp8_k.dtype == torch.float8_e4m3fn
+    assert fp8_v.dtype == torch.float8_e4m3fn
+    assert k_s.item() == 1.0
+    assert v_s.item() == 1.0
+
+
+def test_flash_backend_supports_kv_cache_dtype():
+    """FlashAttentionBackend should declare FP8 support."""
+    from vllm_omni.diffusion.attention.backends.flash_attn import FlashAttentionBackend
+
+    assert FlashAttentionBackend.supports_kv_cache_dtype(None) is True
+    assert FlashAttentionBackend.supports_kv_cache_dtype("fp8") is True
+    assert FlashAttentionBackend.supports_kv_cache_dtype("fp8_e4m3") is True
+    assert FlashAttentionBackend.supports_kv_cache_dtype("mxfp8") is False
+
+
+def test_sdpa_backend_does_not_support_fp8():
+    """SDPABackend should not declare FP8 support."""
+    from vllm_omni.diffusion.attention.backends.sdpa import SDPABackend
+
+    assert SDPABackend.supports_kv_cache_dtype(None) is True
+    assert SDPABackend.supports_kv_cache_dtype("fp8") is False
+
+
+def test_handle_kv_cache_dtype_clears_unsupported():
+    """_handle_kv_cache_dtype should clear unsupported dtype to None."""
+    from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
+    from vllm_omni.diffusion.attention.backends.sdpa import SDPAImpl
+
+    impl = SDPAImpl(num_heads=4, head_size=64, softmax_scale=0.125)
+    meta = AttentionMetadata(kv_cache_dtype="fp8")
+
+    # SDPA has empty _supported_kv_cache_dtypes, should clear fp8
+    impl._handle_kv_cache_dtype(meta, "cuda")
+    assert meta.kv_cache_dtype is None
+
+
+def test_handle_kv_cache_dtype_preserves_supported():
+    """_handle_kv_cache_dtype should preserve supported dtype."""
+    from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
+    from vllm_omni.diffusion.attention.backends.flash_attn import FlashAttentionImpl
+
+    impl = FlashAttentionImpl(num_heads=4, head_size=64, softmax_scale=0.125)
+    meta = AttentionMetadata(kv_cache_dtype="fp8")
+
+    impl._handle_kv_cache_dtype(meta, "cuda")
+    assert meta.kv_cache_dtype == "fp8"
+
+
+def test_handle_kv_cache_dtype_clears_unsupported_platform():
+    """FP8 on FlashAttention should be cleared for non-CUDA platforms."""
+    from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
+    from vllm_omni.diffusion.attention.backends.flash_attn import FlashAttentionImpl
+
+    impl = FlashAttentionImpl(num_heads=4, head_size=64, softmax_scale=0.125)
+    meta = AttentionMetadata(kv_cache_dtype="fp8")
+
+    # NPU not in FlashAttentionImpl._supported_kv_cache_dtypes
+    impl._handle_kv_cache_dtype(meta, "npu")
+    assert meta.kv_cache_dtype is None
