@@ -323,7 +323,9 @@ def parse_args():
     if args.warmup_runs < 0:
         parser.error("--warmup-runs must be >= 0")
     if args.output_dir is None:
-        args.output_dir = "output_audio_streaming" if _is_streaming_stage_config(args.stage_configs_path) else "output_audio"
+        args.output_dir = (
+            "output_audio_streaming" if _is_streaming_stage_config(args.stage_configs_path) else "output_audio"
+        )
     try:
         args.prompt_specs = _load_prompt_specs(args)
     except ValueError as exc:
@@ -468,11 +470,7 @@ async def _run_streaming_warmup(args, omni: AsyncOmni) -> None:
         results = await asyncio.gather(*tasks)
         total_samples = sum(int(audio.numel()) for audio, _, _, _ in results)
         warmup_ttfas = [ttfa for _, _, _, ttfa in results if ttfa is not None]
-        ttfa_text = (
-            f", first_audio={min(warmup_ttfas):.2f}s"
-            if warmup_ttfas
-            else ""
-        )
+        ttfa_text = f", first_audio={min(warmup_ttfas):.2f}s" if warmup_ttfas else ""
         print(
             f"Warmup (streaming) {warmup_index + 1}/{args.warmup_runs} finished: "
             f"{len(results)} prompt(s), {total_samples} sample(s) "
@@ -559,11 +557,7 @@ def _run_sync(args) -> list[Path]:
                         pass
                 if not save_outputs:
                     continue
-                save_stem = (
-                    f"run{run_index + 1}_{spec.label}"
-                    if j == 0
-                    else f"run{run_index + 1}_{spec.label}_{j}"
-                )
+                save_stem = f"run{run_index + 1}_{spec.label}" if j == 0 else f"run{run_index + 1}_{spec.label}_{j}"
                 saved_paths.append(_save_wav(mm, output_dir, save_stem))
 
         if output_count == 0:
