@@ -109,8 +109,8 @@ class AttentionImpl(ABC, Generic[T]):
     ) -> None:
         raise NotImplementedError
 
-    # Platform enum value → forward method name. New platforms only need
-    # to implement forward_{name}() and add an entry here.
+    # Platform enum value → forward method name. To add a new platform,
+    # implement forward_{name}() and register it here.
     _PLATFORM_DISPATCH: dict[str, str] = {
         "cuda": "forward_cuda",
         "rocm": "forward_hip",

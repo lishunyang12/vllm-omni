@@ -23,17 +23,14 @@ def is_quantized_kv_cache(kv_cache_dtype: str | None) -> bool:
     return kv_cache_dtype in ("fp8", "fp8_e4m3")
 
 
-# Try to use vLLM's fused CUDA kernel; fall back to PyTorch ops.
+# Try to use vLLM's fused CUDA kernel for quantization.
+# Falls back to device-agnostic PyTorch ops (works on any platform).
 try:
     from vllm._custom_ops import scaled_fp8_quant as _vllm_scaled_fp8_quant
 
     _HAS_FUSED_QUANT = True
 except ImportError:
     _HAS_FUSED_QUANT = False
-    logger.warning_once(
-        "vLLM scaled_fp8_quant not available, using PyTorch ops fallback. "
-        "FP8 attention will work but with higher quantization overhead."
-    )
 
 
 def _quantize_tensor_fp8(
