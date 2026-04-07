@@ -20,6 +20,14 @@ class FlashAttentionBackend(AttentionBackend):
     def supports_attention_mask(cls) -> bool:
         return True
 
+    @classmethod
+    def supports_kv_cache_dtype(cls, kv_cache_dtype: str | None) -> bool:
+        if kv_cache_dtype is None:
+            return True
+        from vllm_omni.quantization.kv_quant import is_quantized_kv_cache
+
+        return is_quantized_kv_cache(kv_cache_dtype)
+
     @staticmethod
     def get_supported_head_sizes() -> list[int]:
         return [64, 96, 128, 192, 256]
@@ -34,6 +42,14 @@ class FlashAttentionBackend(AttentionBackend):
 
 
 class FlashAttentionImpl(AttentionImpl):
+    # FP8 KV quantization: currently supported on CUDA and HIP.
+    # NPU/XPU contributors: add your platform here when implementing
+    # FP8 support in forward_npu()/forward_xpu().
+    _supported_kv_cache_dtypes = {
+        "CUDA": {"fp8", "fp8_e4m3"},
+        "HIP": {"fp8", "fp8_e4m3"},
+    }
+
     def __init__(
         self,
         num_heads: int,
@@ -106,8 +122,10 @@ class FlashAttentionImpl(AttentionImpl):
         attn_metadata: AttentionMetadata = None,
     ) -> torch.Tensor:
         """CUDA/ROCm flash attention implementation."""
-        # Dispatch to FP8 path if Q/K/V are quantized
-        if key.dtype == torch.float8_e4m3fn:
+        from vllm_omni.quantization.kv_quant import is_quantized_kv_cache
+
+        kv_cache_dtype = attn_metadata.kv_cache_dtype if attn_metadata else None
+        if is_quantized_kv_cache(kv_cache_dtype):
             return self._forward_fp8(query, key, value, attn_metadata)
         from vllm_omni.diffusion.attention.backends.utils.fa import (
             HAS_FLASH_ATTN,
@@ -234,21 +252,36 @@ class FlashAttentionImpl(AttentionImpl):
         value: torch.Tensor,
         attn_metadata: AttentionMetadata,
     ) -> torch.Tensor:
-        """Optimized FP8 Q/K/V attention path.
+        """FP8 attention: quantize Q/K/V here, then use FA3 native or BF16 fallback.
 
-        Uses fa3_attn_func directly (non-varlen) for minimum overhead.
-        With scale=1.0 fast quantization, descale tensors are all-ones.
+        Quantization is owned by the backend so that:
+        1. Non-FP8 backends (SDPA) never pay the quant/dequant cost.
+        2. Each platform can plug in its own FP8 conversion logic.
         """
-        q_scale = attn_metadata.q_scale
-        k_scale = attn_metadata.k_scale
-        v_scale = attn_metadata.v_scale
+        from vllm_omni.quantization.kv_quant import (
+            quantize_kv_fp8_fast,
+            quantize_qkv_fp8_fast,
+        )
+
+        # Quantize Q/K/V using fast saturating cast (scale=1.0)
+        fp8_q, fp8_k, fp8_v, q_scale, k_scale, v_scale = quantize_qkv_fp8_fast(
+            query, key, value
+        )
+
+        # Also quantize joint K/V if present
+        if attn_metadata.joint_key is not None and attn_metadata.joint_value is not None:
+            jk, jv, _, _ = quantize_kv_fp8_fast(
+                attn_metadata.joint_key, attn_metadata.joint_value
+            )
+            attn_metadata.joint_key = jk
+            attn_metadata.joint_value = jv
 
         B, S, H, D = key.shape
         q_descale = self._reshape_descale(q_scale, B, H)
         k_descale = self._reshape_descale(k_scale, B, H)
         v_descale = self._reshape_descale(v_scale, B, H)
 
-        # Primary path: fa3_attn_func (non-varlen, lowest overhead)
+        # Primary path: FA3 native FP8
         from vllm_omni.diffusion.attention.backends.ring.ring_globals import (
             HAS_FA3,
             fa3_attn_func,
@@ -256,28 +289,18 @@ class FlashAttentionImpl(AttentionImpl):
 
         if HAS_FA3 and fa3_attn_func is not None:
             out = fa3_attn_func(
-                query, key, value,
+                fp8_q, fp8_k, fp8_v,
                 softmax_scale=self.softmax_scale,
                 causal=self.causal,
                 q_descale=q_descale,
                 k_descale=k_descale,
                 v_descale=v_descale,
             )
-            if isinstance(out, tuple):
-                out = out[0]
-            return out
+            return self._unwrap_flash_output(out)
 
-        # Fallback: dequant to BF16
-        from vllm_omni.quantization.kv_quant import dequantize_fp8
-
+        # Fallback: no FA3, run standard BF16 path
         logger.warning_once(
-            "No FA3 available for FP8 attention. Dequantizing to BF16."
+            "No FA3 available for FP8 attention. Running in BF16."
         )
-        output_dtype = torch.bfloat16
-        query = dequantize_fp8(query, q_scale, output_dtype)
-        key = dequantize_fp8(key, k_scale, output_dtype)
-        value = dequantize_fp8(value, v_scale, output_dtype)
-        attn_metadata.q_scale = None
-        attn_metadata.k_scale = None
-        attn_metadata.v_scale = None
+        attn_metadata.kv_cache_dtype = None
         return self.forward_cuda(query, key, value, attn_metadata)

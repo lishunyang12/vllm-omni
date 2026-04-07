@@ -17,6 +17,12 @@ from vllm.logger import init_logger
 
 logger = init_logger(__name__)
 
+
+def is_quantized_kv_cache(kv_cache_dtype: str | None) -> bool:
+    """Check if the KV cache dtype implies quantized storage."""
+    return kv_cache_dtype in ("fp8", "fp8_e4m3")
+
+
 # Try to use vLLM's fused CUDA kernel; fall back to PyTorch ops.
 try:
     from vllm._custom_ops import scaled_fp8_quant as _vllm_scaled_fp8_quant

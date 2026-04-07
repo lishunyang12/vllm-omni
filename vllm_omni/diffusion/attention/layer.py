@@ -93,12 +93,10 @@ class Attention(nn.Module):
         # Fallback strategy when SP is not active (outside sharded regions)
         self._no_parallel_strategy = NoParallelAttention()
 
-        # FP8 attention quantization: resolved lazily in forward() because
+        # KV cache quantization: resolved lazily in forward() because
         # forward_context is not available during model loading.
-        self._fp8_attn_enabled: bool | None = None
-        # Cached scales for delayed scaling (reuse previous timestep's scales)
-        self._cached_qkv_scales: tuple | None = None
-        self._cached_jkv_scales: tuple | None = None
+        self._kv_cache_dtype: str | None = None
+        self._kv_cache_dtype_resolved: bool = False
 
     def _get_active_parallel_strategy(self):
         """Get the parallel strategy based on current SP active state.
@@ -115,71 +113,33 @@ class Attention(nn.Module):
                 return self._no_parallel_strategy
         return self.parallel_strategy
 
-    def _quantize_qkv_fp8(
-        self,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-        attn_metadata: AttentionMetadata | None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, AttentionMetadata | None]:
-        """Quantize Q/K/V tensors to FP8 and store scales in attn_metadata.
-
-        Uses delayed scaling: first call computes dynamic scales (amax),
-        subsequent calls reuse the cached scales (static, no amax).
-        Scales are refreshed each timestep since the first layer in each
-        step always runs dynamic.
-        """
-        from vllm_omni.quantization.kv_quant import (
-            quantize_kv_fp8_fast,
-            quantize_qkv_fp8_fast,
-        )
-
-        fp8_q, fp8_k, fp8_v, q_scale, k_scale, v_scale = quantize_qkv_fp8_fast(
-            query, key, value
-        )
-
-        if attn_metadata is None:
-            attn_metadata = AttentionMetadata()
-        attn_metadata.q_scale = q_scale
-        attn_metadata.k_scale = k_scale
-        attn_metadata.v_scale = v_scale
-
-        # Quantize joint_key/joint_value with separate scales
-        if attn_metadata.joint_key is not None and attn_metadata.joint_value is not None:
-            jk, jv, jk_scale, jv_scale = quantize_kv_fp8_fast(
-                attn_metadata.joint_key, attn_metadata.joint_value,
-            )
-            attn_metadata.joint_key = jk
-            attn_metadata.joint_value = jv
-            attn_metadata.jk_scale = jk_scale
-            attn_metadata.jv_scale = jv_scale
-            self._cached_jkv_scales = (jk_scale, jv_scale)
-
-        return fp8_q, fp8_k, fp8_v, attn_metadata
-
-    def _resolve_fp8_attn(self) -> bool:
-        """Lazily resolve FP8 attention config from forward context."""
-        if self._fp8_attn_enabled is not None:
-            return self._fp8_attn_enabled
+    def _resolve_kv_cache_dtype(self) -> str | None:
+        """Lazily resolve kv_cache_dtype from forward context."""
+        if self._kv_cache_dtype_resolved:
+            return self._kv_cache_dtype
         try:
             config = get_forward_context().omni_diffusion_config
-            enabled = config.kv_cache_dtype == "fp8"
-            logger.info(
-                "FP8 attention resolved: kv_cache_dtype=%s, enabled=%s",
-                getattr(config, "kv_cache_dtype", "MISSING"),
-                enabled,
-            )
-        except Exception as e:
-            logger.warning("FP8 attention resolve failed: %s", e)
-            enabled = False
-        if enabled and self.use_ring:
-            raise ValueError(
-                "FP8 attention quantization is not compatible with ring attention "
-                "(ring_degree > 1). Ring kernels do not propagate FP8 descale "
-                "factors. Use Ulysses SP instead."
-            )
-        self._fp8_attn_enabled = enabled
-        return enabled
+            dtype = config.kv_cache_dtype
+        except Exception:
+            dtype = None
+        if dtype:
+            if not self.attn_backend.supports_kv_cache_dtype(dtype):
+                logger.warning(
+                    "Attention backend %s does not support kv_cache_dtype='%s'. "
+                    "KV quantization will be disabled.",
+                    self.attn_backend.get_name(),
+                    dtype,
+                )
+                dtype = None
+            elif self.use_ring:
+                raise ValueError(
+                    "FP8 KV quantization is not compatible with ring attention "
+                    "(ring_degree > 1). Ring kernels do not propagate FP8 descale "
+                    "factors. Use Ulysses SP instead."
+                )
+        self._kv_cache_dtype = dtype
+        self._kv_cache_dtype_resolved = True
+        return dtype
 
     def forward(
         self,
@@ -196,20 +156,12 @@ class Attention(nn.Module):
         # For Ring: Concat joint_q
         query, key, value, attn_metadata, ctx = strategy.pre_attention(query, key, value, attn_metadata)
 
-        # 1.5 FP8 Q/K/V quantization (after AllToAll stays BF16, before kernel)
-        if self._resolve_fp8_attn():
-            # Zero out padding positions before quantizing — FP8 path skips
-            # varlen to avoid FA3 varlen+descale bug, so padding must be
-            # handled by zeroing K (makes softmax weight ≈ 0 for those positions).
-            if attn_metadata is not None and attn_metadata.attn_mask is not None:
-                mask = attn_metadata.attn_mask  # (B, S) bool
-                if not torch.all(mask):
-                    m = mask.unsqueeze(-1).unsqueeze(-1)
-                    key = key * m
-                    value = value * m
-            query, key, value, attn_metadata = self._quantize_qkv_fp8(
-                query, key, value, attn_metadata
-            )
+        # Signal KV quantization to backends via metadata
+        kv_cache_dtype = self._resolve_kv_cache_dtype()
+        if kv_cache_dtype:
+            if attn_metadata is None:
+                attn_metadata = AttentionMetadata()
+            attn_metadata.kv_cache_dtype = kv_cache_dtype
 
         # 2. Kernel Execution (Computation)
         if self.use_ring and strategy is not self._no_parallel_strategy:

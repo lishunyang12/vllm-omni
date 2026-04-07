@@ -498,15 +498,11 @@ class OmniDiffusionConfig:
     # Per-component: {"transformer": {"method": "fp8"}, "vae": None}
     quantization_config: str | QuantizationConfig | dict[str, Any] | None = None
 
-    # FP8 KV quantization: dynamically quantize attention K/V tensors to
-    # float8_e4m3fn each forward pass. Orthogonal to weight quantization.
+    # KV cache dtype for attention. Aligned with upstream vLLM's --kv-cache-dtype.
+    # None = native dtype (no quantization).
+    # "fp8" = dynamic FP8 (float8_e4m3fn) quantization per forward pass.
     # On Hopper+FA3: native FP8 attention (memory + compute savings).
-    # On FA2/SDPA: dequant fallback (memory-only savings).
-    kv_quantization: bool = False
-
-    # FP8 attention quantization (orthogonal to weight quantization).
-    # "fp8": dynamically quantize Q/K/V to float8_e4m3fn each forward pass.
-    # None or "auto": disabled.
+    # On other backends: no benefit, backends skip quantization.
     kv_cache_dtype: str | None = None
 
     # Diffusion pipeline Profiling config

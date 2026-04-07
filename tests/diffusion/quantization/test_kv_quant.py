@@ -121,19 +121,23 @@ def test_kv_cache_dtype_config_field():
     assert config_default.kv_cache_dtype is None
 
 
-def test_attention_metadata_scales():
-    """AttentionMetadata should have q/k/v and joint scale fields."""
+def test_is_quantized_kv_cache():
+    """is_quantized_kv_cache should detect FP8 dtype strings."""
+    from vllm_omni.quantization.kv_quant import is_quantized_kv_cache
+
+    assert is_quantized_kv_cache("fp8") is True
+    assert is_quantized_kv_cache("fp8_e4m3") is True
+    assert is_quantized_kv_cache(None) is False
+    assert is_quantized_kv_cache("auto") is False
+    assert is_quantized_kv_cache("bfloat16") is False
+
+
+def test_attention_metadata_kv_cache_dtype():
+    """AttentionMetadata should have kv_cache_dtype field."""
     from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
 
     meta = AttentionMetadata()
-    assert meta.q_scale is None
-    assert meta.k_scale is None
-    assert meta.v_scale is None
-    assert meta.jk_scale is None
-    assert meta.jv_scale is None
+    assert meta.kv_cache_dtype is None
 
-    scale = torch.tensor(0.5)
-    meta.q_scale = scale
-    meta.k_scale = scale
-    meta.v_scale = scale
-    assert meta.q_scale is scale
+    meta.kv_cache_dtype = "fp8"
+    assert meta.kv_cache_dtype == "fp8"
