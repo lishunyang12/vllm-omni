@@ -87,9 +87,13 @@ T = TypeVar("T", bound=AttentionMetadata)
 
 class AttentionImpl(ABC, Generic[T]):
 
-    # Per-platform kv_cache_dtype support. Maps platform name to set of
-    # supported dtype strings. Subclasses override to declare support.
-    # Example: {"CUDA": {"fp8", "fp8_e4m3"}, "NPU": {"fp8"}}
+    # Per-platform kv_cache_dtype support. Maps OmniPlatformEnum value
+    # (e.g. "cuda", "npu") to the set of quantized dtypes that platform
+    # handles. The base forward() checks this before dispatching and
+    # clears unsupported dtypes with a warning.
+    #
+    # To add FP8 support for a new platform in a subclass:
+    #   _supported_kv_cache_dtypes = {"cuda": {"fp8"}, "npu": {"fp8"}}
     _supported_kv_cache_dtypes: dict[str, set[str]] = {}
 
     @abstractmethod
@@ -105,32 +109,39 @@ class AttentionImpl(ABC, Generic[T]):
     ) -> None:
         raise NotImplementedError
 
+    # Platform enum value → forward method name. New platforms only need
+    # to implement forward_{name}() and add an entry here.
+    _PLATFORM_DISPATCH: dict[str, str] = {
+        "cuda": "forward_cuda",
+        "rocm": "forward_hip",
+        "npu": "forward_npu",
+        "xpu": "forward_xpu",
+        "musa": "forward_musa",
+    }
+
     def _handle_kv_cache_dtype(
         self,
         attn_metadata: T | None,
-        platform: str,
+        platform_key: str,
     ) -> None:
         """Check kv_cache_dtype compatibility for this platform.
 
         If the requested kv_cache_dtype is not in _supported_kv_cache_dtypes
         for the current platform, it is cleared to None with a warning.
-
-        To add FP8 support for a new platform, add the platform key:
-            _supported_kv_cache_dtypes = {"CUDA": {"fp8"}, "NPU": {"fp8"}}
         """
         if attn_metadata is None:
             return
         kv_cache_dtype = attn_metadata.kv_cache_dtype
         if kv_cache_dtype is None:
             return
-        supported = self._supported_kv_cache_dtypes.get(platform, set())
+        supported = self._supported_kv_cache_dtypes.get(platform_key, set())
         if kv_cache_dtype not in supported:
             logger.warning_once(
                 "kv_cache_dtype='%s' requested but %s on %s does not support "
                 "it. Running in native dtype.",
                 kv_cache_dtype,
                 type(self).__name__,
-                platform,
+                platform_key,
             )
             attn_metadata.kv_cache_dtype = None
 
@@ -142,23 +153,16 @@ class AttentionImpl(ABC, Generic[T]):
         attn_metadata: T | None = None,
     ) -> torch.Tensor:
         """Dispatch to platform-specific forward implementation."""
-        if current_omni_platform.is_rocm():
-            self._handle_kv_cache_dtype(attn_metadata, "HIP")
-            return self.forward_hip(query, key, value, attn_metadata)
-        elif current_omni_platform.is_cuda():
-            self._handle_kv_cache_dtype(attn_metadata, "CUDA")
-            return self.forward_cuda(query, key, value, attn_metadata)
-        elif current_omni_platform.is_npu():
-            self._handle_kv_cache_dtype(attn_metadata, "NPU")
-            return self.forward_npu(query, key, value, attn_metadata)
-        elif current_omni_platform.is_xpu():
-            self._handle_kv_cache_dtype(attn_metadata, "XPU")
-            return self.forward_xpu(query, key, value, attn_metadata)
-        elif current_omni_platform.is_musa():
-            self._handle_kv_cache_dtype(attn_metadata, "MUSA")
-            return self.forward_musa(query, key, value, attn_metadata)
-        else:
-            raise NotImplementedError(f"No forward implementation for platform: {current_omni_platform}")
+        platform_key = current_omni_platform._omni_enum.value
+        method_name = self._PLATFORM_DISPATCH.get(platform_key)
+        if method_name is None:
+            raise NotImplementedError(
+                f"No forward implementation for platform: {platform_key}. "
+                f"Register it in AttentionImpl._PLATFORM_DISPATCH."
+            )
+        self._handle_kv_cache_dtype(attn_metadata, platform_key)
+        method = getattr(self, method_name)
+        return method(query, key, value, attn_metadata)
 
     def forward_cuda(
         self,
