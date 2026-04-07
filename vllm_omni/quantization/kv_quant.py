@@ -47,7 +47,7 @@ def _quantize_tensor_fp8(
     Returns:
         ``(fp8_tensor, inv_scale)`` where inv_scale is the dequant scale.
     """
-    if _HAS_FUSED_QUANT:
+    if _HAS_FUSED_QUANT and tensor.is_cuda:
         orig_shape = tensor.shape
         flat = tensor.reshape(-1, orig_shape[-1])
         # Pass cached_scale for static quant (no amax), None for dynamic
