@@ -79,8 +79,10 @@ steps:
       echo "--- Image pushed successfully"
       echo "$${IMAGE_REGISTRY}/$${IMAGE_NAME}:$${VLLM_IMAGE_TAG}"
 
-  - label: "Upload Test Pipeline"
+  - label: "Upload Ready Pipeline"
     depends_on: image-build
+    key: upload-ready-pipeline
+    if: build.branch != "main" && build.pull_request.labels includes "ready"
     agents:
       queue: "linux-aarch64-a2b3-1"
     command: |
