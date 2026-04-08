@@ -41,21 +41,22 @@ class VoxCPM2LatentGenerator:
         if not isinstance(text, str) or not text.strip():
             raise ValueError("text must be a non-empty string")
 
-        # VoxCPM2's generate() returns audio numpy array.
-        # We call it and convert the result to a tensor.
+        # VoxCPM2's _generate() signature:
+        # (text, prompt_wav_path, prompt_text, reference_wav_path,
+        #  cfg_value, inference_timesteps, min_len, max_len, ...)
         gen_kwargs: dict[str, Any] = {
             "text": text.strip(),
             "cfg_value": cfg_value,
-            "num_inference_steps": inference_timesteps,
+            "inference_timesteps": inference_timesteps,
+            "min_len": min_length,
+            "max_len": max_length,
         }
         if reference_audio is not None:
-            gen_kwargs["reference_audio"] = reference_audio
+            gen_kwargs["reference_wav_path"] = reference_audio
         if prompt_audio is not None:
-            gen_kwargs["prompt_audio"] = prompt_audio
+            gen_kwargs["prompt_wav_path"] = prompt_audio
         if prompt_text is not None:
             gen_kwargs["prompt_text"] = prompt_text
-        if control_instruction is not None:
-            gen_kwargs["control_instruction"] = control_instruction
 
         result = self._model.generate(**gen_kwargs)
         if isinstance(result, torch.Tensor):
