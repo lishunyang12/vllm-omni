@@ -153,7 +153,7 @@ class AttentionImpl(ABC, Generic[T]):
         attn_metadata: T | None = None,
     ) -> torch.Tensor:
         """Dispatch to platform-specific forward implementation."""
-        platform_key = current_omni_platform._omni_enum.value
+        platform_key = current_omni_platform.device_name
         method_name = self._PLATFORM_DISPATCH.get(platform_key)
         if method_name is None:
             raise NotImplementedError(
