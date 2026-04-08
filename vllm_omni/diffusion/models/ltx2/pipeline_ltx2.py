@@ -31,11 +31,11 @@ from vllm_omni.diffusion.distributed.parallel_state import (
     get_classifier_free_guidance_world_size,
 )
 from vllm_omni.diffusion.distributed.utils import get_local_device
+from vllm_omni.diffusion.lora.loader import LTX2LoRALoaderMinxin
 from vllm_omni.diffusion.lora.manager import DiffusionLoRAManager
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
-from vllm_omni.lora.request import LoRARequest
 
 from .ltx2_transformer import LTX2VideoTransformer3DModel
 from .pipeline_ltx2_latent_upsample import LTX2LatentUpsamplePipeline
@@ -145,7 +145,7 @@ class _VideoAudioScheduler:
         return ((video_out, audio_out),)
 
 
-class LTX2Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin):
+class LTX2Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, LTX2LoRALoaderMinxin):
     def __init__(
         self,
         *,
@@ -1170,8 +1170,6 @@ class LTX2TwoStagesPipeline(nn.Module):
         # will not return the expected directory name, so we need to remove it by normpath
         if "distilled" in os.path.basename(os.path.normpath(self.model_path)):
             self.distilled = True
-        else:
-            raise NotImplementedError(f"{self.model_path} is not supported for {self.__class__.__name__}.")
 
         self.pipe = LTX2Pipeline(od_config=od_config, prefix=prefix)
         self.upsample_pipe = LTX2LatentUpsamplePipeline(
@@ -1261,17 +1259,16 @@ class LTX2TwoStagesPipeline(nn.Module):
             return_dict=False,
         )[0]
 
+        original_scheduler = self.pipe.scheduler
+        lora_loaded = False
         if not self.distilled:
             # Load Stage 2 distilled LoRA
             lora_path = f"{self.model_path}/ltx-2-19b-distilled-lora-384.safetensors"
-            lora_request = LoRARequest(
-                lora_name="stage_2_distilled",
-                lora_int_id=1,
-                lora_path=lora_path,
-            )
-            self.lora_manager.set_active_adapter(lora_request, lora_scale=1.0)
+            self.pipe.load_lora_weights(lora_path, adapter_name="stage_2_distilled")
+            lora_loaded = True
 
             # Change scheduler to use Stage 2 distilled sigmas as is
+            original_scheduler = self.pipe.scheduler
             new_scheduler = FlowMatchEulerDiscreteScheduler.from_config(
                 self.pipe.scheduler.config,
                 use_dynamic_shifting=False,
@@ -1298,6 +1295,11 @@ class LTX2TwoStagesPipeline(nn.Module):
             output_type="np",
             return_dict=False,
         ).output
+
+        if lora_loaded:
+            self.pipe.unload_lora_weights("stage_2_distilled")
+        if original_scheduler is not None:
+            self.pipe.scheduler = original_scheduler
 
         return DiffusionOutput(output=(video, audio))
 

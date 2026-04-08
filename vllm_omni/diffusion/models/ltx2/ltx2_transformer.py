@@ -1792,6 +1792,8 @@ class LTX2VideoTransformer3DModel(nn.Module):
             (".audio_attn1.to_qkv", ".audio_attn1.to_k", "k"),
             (".audio_attn1.to_qkv", ".audio_attn1.to_v", "v"),
         ]
+        # Expose packed shard mappings for LoRA handling of fused projections.
+        self.stacked_params_mapping = stacked_params_mapping
 
         params_dict = dict(self.named_parameters())
         tp_size = get_tensor_model_parallel_world_size()
