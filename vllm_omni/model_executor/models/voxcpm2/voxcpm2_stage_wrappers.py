@@ -41,9 +41,9 @@ class VoxCPM2LatentGenerator:
         if not isinstance(text, str) or not text.strip():
             raise ValueError("text must be a non-empty string")
 
-        # Access the internal tts_model to get latents (before VAE decode).
-        # VoxCPM2Model._generate_with_prompt_cache() returns
-        # Generator[(token_ids, target_tokens, latent_audio_feat)]
+        # Call generate_with_prompt_cache (public wrapper, non-streaming).
+        # Returns (decode_audio, target_text_token, pred_audio_feat).
+        # pred_audio_feat is the raw latent features before VAE decode.
         inner = getattr(self._model, "tts_model", self._model)
 
         # Build prompt cache for voice cloning
@@ -54,34 +54,24 @@ class VoxCPM2LatentGenerator:
                 prompt_wav_path=prompt_audio,
             )
         elif reference_audio:
-            # Reference cloning: build cache from reference audio
             prompt_cache = inner.build_prompt_cache(
                 prompt_wav_path=reference_audio,
             )
 
-        gen_kwargs: dict[str, Any] = {
-            "target_text": text.strip(),
-            "prompt_cache": prompt_cache or {},
-            "min_len": min_length,
-            "max_len": max_length,
-            "inference_timesteps": inference_timesteps,
-            "cfg_value": cfg_value,
-        }
+        # generate_with_prompt_cache returns tuple: (decoded_audio, text_tokens, latent_feat)
+        # The 3rd element (pred_audio_feat) is the raw latent we need for Stage 1 VAE
+        _decode_audio, _target_tok, pred_audio_feat = inner.generate_with_prompt_cache(
+            target_text=text.strip(),
+            prompt_cache=prompt_cache or {},
+            min_len=min_length,
+            max_len=max_length,
+            inference_timesteps=inference_timesteps,
+            cfg_value=cfg_value,
+        )
 
-        # Use latents_only=True to skip VAE decode (our injected override)
-        gen_kwargs["latents_only"] = True
-
-        # _generate_with_prompt_cache yields (decode_audio, target_text_token, latent_feat)
-        # With latents_only=True, decode_audio is None and latent_feat is raw latent
-        result = None
-        for _decode_audio, _target_tok, latent_feat in inner._generate_with_prompt_cache(**gen_kwargs):
-            result = latent_feat
-
-        if result is None:
-            return torch.zeros((0,), dtype=torch.float32)
-        if isinstance(result, torch.Tensor):
-            return result.detach().cpu().to(torch.float32)
-        return torch.as_tensor(result, dtype=torch.float32)
+        if isinstance(pred_audio_feat, torch.Tensor):
+            return pred_audio_feat.detach().cpu().to(torch.float32)
+        return torch.as_tensor(pred_audio_feat, dtype=torch.float32)
 
     def iter_latent_chunks_streaming(
         self,

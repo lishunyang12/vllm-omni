@@ -13,7 +13,7 @@ from pathlib import Path
 import torch
 from vllm.logger import init_logger
 
-from .voxcpm2_import_utils import import_audio_vae_v2, import_voxcpm2_core, import_voxcpm2_model, make_voxcpm2_model_for_omni
+from .voxcpm2_import_utils import import_audio_vae_v2, import_voxcpm2_core
 from .voxcpm2_stage_wrappers import VoxCPM2AudioVAE, VoxCPM2LatentGenerator
 
 logger = init_logger(__name__)
@@ -28,18 +28,7 @@ def _load_voxcpm2_model(
     """Load VoxCPM2 model via native from_pretrained API."""
     VoxCPM = import_voxcpm2_core()
 
-    # Monkey-patch the model class to use our subclass with latents_only support
-    VoxCPM2Model = import_voxcpm2_model()
-    VoxCPM2ModelForOmni = make_voxcpm2_model_for_omni(VoxCPM2Model)
-
-    # Temporarily replace the model class so from_pretrained creates our subclass
-    import voxcpm.model.voxcpm2 as _voxcpm2_module
-    _original_cls = _voxcpm2_module.VoxCPM2Model
-    _voxcpm2_module.VoxCPM2Model = VoxCPM2ModelForOmni
-    try:
-        model = VoxCPM.from_pretrained(model_path, load_denoiser=False)
-    finally:
-        _voxcpm2_module.VoxCPM2Model = _original_cls
+    model = VoxCPM.from_pretrained(model_path, load_denoiser=False)
     return model
 
 
