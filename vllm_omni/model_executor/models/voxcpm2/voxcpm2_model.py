@@ -138,6 +138,12 @@ class VoxCPM2ForConditionalGeneration(nn.Module):
         out_device, out_dtype = self._resolve_device_dtype()
 
         infos = runtime_additional_information or [{}]
+
+        # Dummy/warmup run: return properly sized tensor matching input_ids
+        if input_ids is not None and (not infos or not any(self._extract_val(i, "text", "") for i in infos)):
+            num_tokens = input_ids.shape[0] if input_ids.ndim > 0 else 1
+            hidden = torch.zeros((num_tokens, 1), device=out_device, dtype=out_dtype)
+            return OmniOutput(text_hidden_states=hidden, multimodal_outputs={})
         sample_rate = int(getattr(self._pipeline, "sample_rate", 48000))
         async_chunk = bool(getattr(self.vllm_config.model_config, "async_chunk", False))
 
