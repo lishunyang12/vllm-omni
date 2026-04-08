@@ -30,6 +30,7 @@ class VoxCPM2ForConditionalGeneration(nn.Module):
     input_modalities = "audio"
     _LATENT_STAGES = {"latent_generator", "latent", "ar_dit"}
     _VAE_STAGES = {"vae", "audio_vae"}
+    _FULL_PIPELINE_STAGES = {"full_pipeline"}
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
         super().__init__()
@@ -60,7 +61,12 @@ class VoxCPM2ForConditionalGeneration(nn.Module):
             return
 
         device, dtype = self._resolve_device_dtype()
-        if self.model_stage in self._LATENT_STAGES:
+        if self.model_stage in self._FULL_PIPELINE_STAGES:
+            # Single-stage: load full VoxCPM model (latent gen + VAE decode)
+            self._pipeline = load_voxcpm2_latent_generator(
+                self.model_path, device=device, dtype=dtype,
+            )
+        elif self.model_stage in self._LATENT_STAGES:
             self._pipeline = load_voxcpm2_latent_generator(
                 self.model_path, device=device, dtype=dtype,
             )
@@ -219,12 +225,29 @@ class VoxCPM2ForConditionalGeneration(nn.Module):
                 continue
 
             # Sync path
-            latent = self._pipeline.generate_latents(**gen_params)
-            outputs.append(latent.float().cpu())
+            if self.model_stage in self._FULL_PIPELINE_STAGES:
+                # Full pipeline: use native generate() → returns decoded audio (numpy)
+                import numpy as np
+                wav = self._pipeline._model.generate(
+                    text=gen_params["text"],
+                    reference_wav_path=gen_params.get("reference_audio"),
+                    prompt_wav_path=gen_params.get("prompt_audio"),
+                    prompt_text=gen_params.get("prompt_text"),
+                    cfg_value=gen_params["cfg_value"],
+                    inference_timesteps=gen_params["inference_timesteps"],
+                )
+                audio_tensor = torch.as_tensor(wav, dtype=torch.float32).reshape(-1)
+                outputs.append(audio_tensor)
+            else:
+                latent = self._pipeline.generate_latents(**gen_params)
+                outputs.append(latent.float().cpu())
             sample_rates.append(torch.tensor(sample_rate, dtype=torch.int32))
 
         # Build output
-        output_key = "latent_audio_feat" if self.model_stage in self._LATENT_STAGES else "model_outputs"
+        if self.model_stage in self._LATENT_STAGES:
+            output_key = "latent_audio_feat"
+        else:
+            output_key = "model_outputs"
         multimodal_outputs: dict[str, Any] = {output_key: outputs, "sr": sample_rates}
 
         if outputs and all(o.numel() > 0 for o in outputs):

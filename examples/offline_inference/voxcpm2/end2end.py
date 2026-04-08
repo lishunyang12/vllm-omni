@@ -29,7 +29,7 @@ from vllm_omni import AsyncOmni, Omni
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_STAGE_ASYNC = REPO_ROOT / "vllm_omni" / "model_executor" / "stage_configs" / "voxcpm2.yaml"
-DEFAULT_STAGE_SYNC = REPO_ROOT / "vllm_omni" / "model_executor" / "stage_configs" / "voxcpm2_no_async_chunk.yaml"
+DEFAULT_STAGE_SYNC = REPO_ROOT / "vllm_omni" / "model_executor" / "stage_configs" / "voxcpm2_single_stage.yaml"
 
 logger = logging.getLogger(__name__)
 
