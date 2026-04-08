@@ -221,9 +221,14 @@ class VoxCPM2ForConditionalGeneration(nn.Module):
         output_key = "latent_audio_feat" if self.model_stage in self._LATENT_STAGES else "model_outputs"
         multimodal_outputs: dict[str, Any] = {output_key: outputs, "sr": sample_rates}
 
-        if outputs:
+        if outputs and all(o.numel() > 0 for o in outputs):
             stacked = torch.stack(outputs)
-            text_hidden_states = stacked.unsqueeze(-1) if stacked.ndim == 1 else stacked.reshape(-1, stacked.shape[-1])
+            if stacked.numel() == 0:
+                text_hidden_states = torch.zeros((0, 1), device=out_device, dtype=out_dtype)
+            elif stacked.ndim == 1:
+                text_hidden_states = stacked.unsqueeze(-1)
+            else:
+                text_hidden_states = stacked.reshape(-1, max(stacked.shape[-1], 1))
         else:
             text_hidden_states = torch.zeros((0, 1), device=out_device, dtype=out_dtype)
         text_hidden_states = text_hidden_states.to(device=out_device, dtype=out_dtype)
