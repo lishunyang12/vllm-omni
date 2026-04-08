@@ -241,6 +241,9 @@ def resolve_model_config_path(model: str) -> str:
                 config_dict = get_hf_file_to_dict("config.json", model, revision=None)
                 if config_dict and "model_type" in config_dict:
                     model_type = config_dict["model_type"]
+                elif config_dict and "architecture" in config_dict:
+                    # Some models (e.g. VoxCPM2) use "architecture" instead of "model_type"
+                    model_type = config_dict["architecture"]
                 else:
                     # For models with empty config.json (e.g. CosyVoice3),
                     # try matching against registered omni stage configs.
