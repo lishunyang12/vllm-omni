@@ -68,9 +68,13 @@ class VoxCPM2LatentGenerator:
             "cfg_value": cfg_value,
         }
 
-        # _generate_with_prompt_cache is a generator, get the final result
+        # Use latents_only=True to skip VAE decode (our injected override)
+        gen_kwargs["latents_only"] = True
+
+        # _generate_with_prompt_cache yields (decode_audio, target_text_token, latent_feat)
+        # With latents_only=True, decode_audio is None and latent_feat is raw latent
         result = None
-        for _token_ids, _target_tok, latent_feat in inner._generate_with_prompt_cache(**gen_kwargs):
+        for _decode_audio, _target_tok, latent_feat in inner._generate_with_prompt_cache(**gen_kwargs):
             result = latent_feat
 
         if result is None:
@@ -122,6 +126,7 @@ class VoxCPM2LatentGenerator:
             "cfg_value": cfg_value,
             "streaming": True,
             "streaming_prefix_len": streaming_prefix_len,
+            "latents_only": True,
         }
 
         gen = inner._generate_with_prompt_cache(**gen_kw)
