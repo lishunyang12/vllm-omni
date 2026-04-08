@@ -28,15 +28,7 @@ def _load_voxcpm2_model(
     """Load VoxCPM2 model via native from_pretrained API."""
     VoxCPM = import_voxcpm2_core()
 
-    load_kwargs = {
-        "load_denoiser": False,
-    }
-    if device is not None:
-        load_kwargs["device"] = str(device)
-    if dtype is not None:
-        load_kwargs["dtype"] = dtype
-
-    model = VoxCPM.from_pretrained(model_path, **load_kwargs)
+    model = VoxCPM.from_pretrained(model_path, load_denoiser=False)
     return model
 
 
