@@ -41,24 +41,40 @@ class VoxCPM2LatentGenerator:
         if not isinstance(text, str) or not text.strip():
             raise ValueError("text must be a non-empty string")
 
-        # VoxCPM2's _generate() signature:
-        # (text, prompt_wav_path, prompt_text, reference_wav_path,
-        #  cfg_value, inference_timesteps, min_len, max_len, ...)
+        # Access the internal tts_model to get latents (before VAE decode).
+        # VoxCPM2Model._generate_with_prompt_cache() returns
+        # Generator[(token_ids, target_tokens, latent_audio_feat)]
+        inner = getattr(self._model, "tts_model", self._model)
+
+        # Build prompt cache for voice cloning
+        prompt_cache = None
+        if prompt_audio and prompt_text:
+            prompt_cache = inner.build_prompt_cache(
+                prompt_text=prompt_text,
+                prompt_wav_path=prompt_audio,
+            )
+        elif reference_audio:
+            # Reference cloning: build cache from reference audio
+            prompt_cache = inner.build_prompt_cache(
+                prompt_wav_path=reference_audio,
+            )
+
         gen_kwargs: dict[str, Any] = {
-            "text": text.strip(),
-            "cfg_value": cfg_value,
-            "inference_timesteps": inference_timesteps,
+            "target_text": text.strip(),
+            "prompt_cache": prompt_cache or {},
             "min_len": min_length,
             "max_len": max_length,
+            "inference_timesteps": inference_timesteps,
+            "cfg_value": cfg_value,
         }
-        if reference_audio is not None:
-            gen_kwargs["reference_wav_path"] = reference_audio
-        if prompt_audio is not None:
-            gen_kwargs["prompt_wav_path"] = prompt_audio
-        if prompt_text is not None:
-            gen_kwargs["prompt_text"] = prompt_text
 
-        result = self._model.generate(**gen_kwargs)
+        # _generate_with_prompt_cache is a generator, get the final result
+        result = None
+        for _token_ids, _target_tok, latent_feat in inner._generate_with_prompt_cache(**gen_kwargs):
+            result = latent_feat
+
+        if result is None:
+            return torch.zeros((0,), dtype=torch.float32)
         if isinstance(result, torch.Tensor):
             return result.detach().cpu().to(torch.float32)
         return torch.as_tensor(result, dtype=torch.float32)
@@ -83,7 +99,7 @@ class VoxCPM2LatentGenerator:
         if not isinstance(text, str) or not text.strip():
             raise ValueError("text must be a non-empty string")
 
-        inner = getattr(self._model, "model", self._model)
+        inner = getattr(self._model, "tts_model", self._model)
 
         # Build prompt cache for voice cloning
         prompt_cache = None
@@ -92,24 +108,23 @@ class VoxCPM2LatentGenerator:
                 prompt_text=prompt_text,
                 prompt_wav_path=prompt_audio,
             )
+        elif reference_audio:
+            prompt_cache = inner.build_prompt_cache(
+                prompt_wav_path=reference_audio,
+            )
 
         gen_kw: dict[str, Any] = {
             "target_text": text.strip(),
-            "prompt_cache": prompt_cache,
+            "prompt_cache": prompt_cache or {},
             "min_len": min_length,
             "max_len": max_length,
             "inference_timesteps": inference_timesteps,
             "cfg_value": cfg_value,
+            "streaming": True,
             "streaming_prefix_len": streaming_prefix_len,
-            "latents_only": True,
         }
 
-        # Try streaming entry point
-        stream_fn = getattr(inner, "generate_with_prompt_cache_streaming", None)
-        if stream_fn is not None:
-            gen = stream_fn(**gen_kw)
-        else:
-            gen = inner._generate_with_prompt_cache(streaming=True, **gen_kw)
+        gen = inner._generate_with_prompt_cache(**gen_kw)
 
         # Yield chunks with look-ahead for is_last detection
         iterator = iter(gen)
