@@ -41,14 +41,12 @@ class VoxCPM2LatentGenerator:
         if not isinstance(text, str) or not text.strip():
             raise ValueError("text must be a non-empty string")
 
+        # VoxCPM2's generate() returns audio numpy array.
+        # We call it and convert the result to a tensor.
         gen_kwargs: dict[str, Any] = {
             "text": text.strip(),
             "cfg_value": cfg_value,
-            "timesteps": inference_timesteps,
-            "temperature": temperature,
-            "top_p": top_p,
-            "min_length": min_length,
-            "max_length": max_length,
+            "num_inference_steps": inference_timesteps,
         }
         if reference_audio is not None:
             gen_kwargs["reference_audio"] = reference_audio
@@ -59,30 +57,6 @@ class VoxCPM2LatentGenerator:
         if control_instruction is not None:
             gen_kwargs["control_instruction"] = control_instruction
 
-        # VoxCPM2's generate() returns audio numpy array by default.
-        # We need the latent representation before VAE decoding.
-        # Use the internal model's generation with latents_only if available.
-        inner = getattr(self._model, "model", self._model)
-        if hasattr(inner, "_generate_with_prompt_cache"):
-            # Build prompt cache for voice cloning
-            prompt_cache = None
-            if prompt_audio and prompt_text:
-                prompt_cache = inner.build_prompt_cache(
-                    prompt_text=prompt_text,
-                    prompt_wav_path=prompt_audio,
-                )
-            _, _, pred_audio_feat = inner._generate_with_prompt_cache(
-                target_text=text.strip(),
-                prompt_cache=prompt_cache,
-                min_len=min_length,
-                max_len=max_length,
-                inference_timesteps=inference_timesteps,
-                cfg_value=cfg_value,
-                latents_only=True,
-            )
-            return pred_audio_feat.detach().cpu().to(torch.float32)
-
-        # Fallback: call generate and hope for latent output
         result = self._model.generate(**gen_kwargs)
         if isinstance(result, torch.Tensor):
             return result.detach().cpu().to(torch.float32)
