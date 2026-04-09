@@ -73,6 +73,17 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
             logger.info("Using diffusion attention backend '%s'", backend_upper)
             return backend.get_path()
 
+        # Prefer SageAttention (INT8 QK + FP8 PV on Hopper) when available
+        try:
+            import sageattention  # noqa: F401
+            sage_available = True
+        except ImportError:
+            sage_available = False
+
+        if sage_available:
+            logger.info("Defaulting to diffusion attention backend SAGE_ATTN")
+            return DiffusionAttentionBackendEnum.SAGE_ATTN.get_path()
+
         if flash_attn_supported:
             logger.info("Defaulting to diffusion attention backend FLASH_ATTN")
             return DiffusionAttentionBackendEnum.FLASH_ATTN.get_path()
