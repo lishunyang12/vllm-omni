@@ -25,7 +25,22 @@ import re
 import subprocess
 
 import torch
-from flash_attn.utils.benchmark import benchmark_forward
+import torch.utils.benchmark as benchmark
+
+
+def benchmark_forward(fn, *inputs, repeats=100, desc="", verbose=False, **kwinputs):
+    """Reimplemented from flash_attn.utils.benchmark.benchmark_forward
+    so we don't need flash_attn installed just for the timer."""
+    t = benchmark.Timer(
+        stmt="fn(*inputs, **kwinputs)",
+        globals={"fn": fn, "inputs": inputs, "kwinputs": kwinputs},
+        num_threads=torch.get_num_threads(),
+    )
+    m = t.timeit(repeats)
+    if verbose:
+        print(desc, "- Forward pass")
+        print(m)
+    return t, m
 
 
 def get_cuda_version():
