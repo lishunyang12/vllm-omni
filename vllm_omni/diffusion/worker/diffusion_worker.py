@@ -186,14 +186,20 @@ class DiffusionWorker:
         """Initialize the LoRA manager for this worker."""
         if self.model_runner.pipeline is None:
             return
-        self.lora_manager = DiffusionLoRAManager(
-            pipeline=self.model_runner.pipeline,
-            device=self.device,
-            dtype=self.od_config.dtype,
-            max_cached_adapters=self.od_config.max_cpu_loras,
-            lora_path=self.od_config.lora_path,
-            lora_scale=self.od_config.lora_scale,
-        )
+        try:
+            self.lora_manager = DiffusionLoRAManager(
+                pipeline=self.model_runner.pipeline,
+                device=self.device,
+                dtype=self.od_config.dtype,
+                max_cached_adapters=self.od_config.max_cpu_loras,
+                lora_path=self.od_config.lora_path,
+                lora_scale=self.od_config.lora_scale,
+            )
+        except Exception:
+            # fallback to load distilled LoRA
+            pipeline = self.model_runner.pipeline
+            if hasattr(pipeline, "load_lora_weights"):
+                pipeline.load_lora_weights(self.od_config.lora_path)
 
     def generate(self, request: OmniDiffusionRequest) -> DiffusionOutput:
         """Generate output for the given requests."""
