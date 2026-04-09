@@ -1,16 +1,24 @@
 # SPDX-License-Identifier: Apache-2.0
 """
-Kernel-level benchmark: FlashAttention vs SageAttention
-Isolates attention kernel performance from model loading, torch.compile, VAE, etc.
+Kernel-level benchmark: FA3 vs SageAttention vs SDPA
+Follows SageAttention official bench style (TFLOPS + sweep seq lengths).
+Reference: https://github.com/thu-ml/SageAttention/tree/main/bench
 
-HunyuanVideo 1.5 config: 16 heads, head_dim=128
-Latent seq lengths (after VAE compression 4x temporal, 16x spatial):
-  480x832, 33 frames  -> ~9 x 30 x 52  = ~14,040
-  480x832, 121 frames -> ~31 x 30 x 52 = ~48,360
+HunyuanVideo 1.5 diffusion config: B=1, H=16, D=128
+LLM-style config (SageAttention default): B=4, H=32, D=128
 
 Usage:
+  # Diffusion config (default) — HunyuanVideo 1.5
   python bench_attn_kernel.py
-  python bench_attn_kernel.py --seq-len 48360 --num-heads 16 --head-dim 128
+
+  # LLM config (matches SageAttention official bench)
+  python bench_attn_kernel.py --batch-size 4 --num-heads 32 --dtype float16
+
+  # Single seq length
+  python bench_attn_kernel.py --seq-len 48360
+
+  # Sweep mode (multiple seq lengths)
+  python bench_attn_kernel.py --sweep
 """
 
 import argparse
@@ -19,31 +27,44 @@ import time
 import torch
 
 
-def benchmark_fn(fn, warmup=5, repeat=20, **kwargs):
-    """Benchmark a function with CUDA synchronization."""
+def _flush_l2():
+    """Flush L2 cache with 256 MB zeros (same as SageAttention bench)."""
+    cache = torch.empty(int(256e6 // 4), dtype=torch.int, device="cuda")
+    cache.zero_()
+
+
+def benchmark_fn(fn, warmup=5, repeat=100, flush_l2=True):
+    """Benchmark with CUDA events (matches SageAttention bench style)."""
+    # warmup
     for _ in range(warmup):
-        fn(**kwargs)
+        fn()
+
+    torch.cuda.synchronize()
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+
+    start.record()
+    for _ in range(repeat):
+        if flush_l2:
+            _flush_l2()
+        fn()
+    end.record()
     torch.cuda.synchronize()
 
-    times = []
-    for _ in range(repeat):
-        torch.cuda.synchronize()
-        t0 = time.perf_counter()
-        fn(**kwargs)
-        torch.cuda.synchronize()
-        t1 = time.perf_counter()
-        times.append((t1 - t0) * 1000)  # ms
+    elapsed_ms = start.elapsed_time(end) / repeat
+    return elapsed_ms
 
-    times.sort()
-    # trim top/bottom 20%
-    trim = max(1, len(times) // 5)
-    trimmed = times[trim:-trim] if trim < len(times) // 2 else times
-    avg = sum(trimmed) / len(trimmed)
-    return avg, min(times), max(times)
+
+def calc_flops(batch, heads, headdim, seq_len, causal=False):
+    """Standard attention FLOPS: 4 * B * H * D * S^2 (halved if causal)."""
+    flops = 4 * batch * heads * headdim * seq_len * seq_len
+    if causal:
+        flops //= 2
+    return flops
 
 
 def _get_flash_attn_func():
-    """Try fa3_fwd_interface -> flash_attn_interface -> flash_attn (same order as vllm-omni)."""
+    """Try fa3_fwd_interface -> flash_attn_interface -> flash_attn."""
     for module_name in [
         "fa3_fwd_interface",
         "flash_attn_interface",
@@ -57,38 +78,10 @@ def _get_flash_attn_func():
     return None, None
 
 
-def bench_flash_attn(q, k, v, _fn=None):
-    return _fn(q, k, v, causal=False)
-
-
-def bench_sage_attn(q, k, v):
-    from sageattention import sageattn
-    return sageattn(q, k, v, tensor_layout="NHD", is_causal=False)
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--seq-len", type=int, default=48360,
-                        help="Sequence length (default: 48360 for 121 frames)")
-    parser.add_argument("--num-heads", type=int, default=16)
-    parser.add_argument("--head-dim", type=int, default=128)
-    parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--dtype", type=str, default="bfloat16",
-                        choices=["bfloat16", "float16"])
-    parser.add_argument("--warmup", type=int, default=5)
-    parser.add_argument("--repeat", type=int, default=20)
-    args = parser.parse_args()
-
-    dtype = getattr(torch, args.dtype)
+def run_single(B, S, H, D, dtype, repeat, causal=False):
+    """Run all backends for a single (B, S, H, D) config."""
     device = "cuda"
-    B, S, H, D = args.batch_size, args.seq_len, args.num_heads, args.head_dim
-
-    print(f"Config: B={B}, S={S}, H={H}, D={D}, dtype={args.dtype}")
-    print(f"Tensor shape: ({B}, {S}, {H}, {D})")
-    mem_per_tensor = B * S * H * D * (2 if dtype == torch.float16 or dtype == torch.bfloat16 else 4)
-    print(f"Memory per Q/K/V tensor: {mem_per_tensor / 1e6:.1f} MB")
-    print(f"Warmup={args.warmup}, Repeat={args.repeat}")
-    print()
+    flops = calc_flops(B, H, D, S, causal)
 
     q = torch.randn(B, S, H, D, dtype=dtype, device=device)
     k = torch.randn(B, S, H, D, dtype=dtype, device=device)
@@ -96,59 +89,134 @@ def main():
 
     results = {}
 
-    # --- FlashAttention (fa3_fwd / flash_attn_interface / flash_attn) ---
-    try:
-        fa_func, fa_module = _get_flash_attn_func()
-        if fa_func is None:
-            raise ImportError("none of fa3_fwd_interface, flash_attn_interface, flash_attn found")
-        label = f"FlashAttn ({fa_module})"
-        avg, lo, hi = benchmark_fn(bench_flash_attn, warmup=args.warmup,
-                                   repeat=args.repeat, q=q, k=k, v=v, _fn=fa_func)
-        results["FlashAttention"] = (avg, lo, hi)
-        print(f"{label:24s} avg={avg:7.2f} ms  min={lo:7.2f} ms  max={hi:7.2f} ms")
-    except ImportError as e:
-        print(f"FlashAttention:  NOT AVAILABLE ({e})")
-    except Exception as e:
-        print(f"FlashAttention:  ERROR - {e}")
+    # --- FA3 / FlashAttention ---
+    fa_func, fa_module = _get_flash_attn_func()
+    if fa_func is not None:
+        try:
+            ms = benchmark_fn(lambda: fa_func(q, k, v, causal=causal), repeat=repeat)
+            tflops = flops / ms / 1e9  # ms -> s -> TFLOPS
+            results["FA3"] = (ms, tflops)
+        except Exception as e:
+            results["FA3"] = (None, f"ERROR: {e}")
+    else:
+        results["FA3"] = (None, "N/A")
 
     # --- SageAttention ---
     try:
-        from sageattention import sageattn  # noqa: F401
-        avg, lo, hi = benchmark_fn(bench_sage_attn, warmup=args.warmup,
-                                   repeat=args.repeat, q=q, k=k, v=v)
-        results["SageAttention"] = (avg, lo, hi)
-        print(f"SageAttention:   avg={avg:7.2f} ms  min={lo:7.2f} ms  max={hi:7.2f} ms")
+        from sageattention import sageattn
+        ms = benchmark_fn(
+            lambda: sageattn(q, k, v, tensor_layout="NHD", is_causal=causal),
+            repeat=repeat,
+        )
+        tflops = flops / ms / 1e9
+        results["SageAttn"] = (ms, tflops)
     except ImportError:
-        print("SageAttention:   NOT AVAILABLE (sageattention not installed)")
+        results["SageAttn"] = (None, "N/A")
     except Exception as e:
-        print(f"SageAttention:   ERROR - {e}")
+        results["SageAttn"] = (None, f"ERROR: {e}")
 
     # --- torch SDPA ---
     try:
-        # SDPA expects (B, H, S, D)
-        q_sdpa = q.transpose(1, 2)
-        k_sdpa = k.transpose(1, 2)
-        v_sdpa = v.transpose(1, 2)
-
-        def bench_sdpa(q, k, v):
-            return torch.nn.functional.scaled_dot_product_attention(
-                q, k, v, is_causal=False)
-
-        avg, lo, hi = benchmark_fn(bench_sdpa, warmup=args.warmup,
-                                   repeat=args.repeat, q=q_sdpa, k=k_sdpa, v=v_sdpa)
-        results["torch SDPA"] = (avg, lo, hi)
-        print(f"torch SDPA:      avg={avg:7.2f} ms  min={lo:7.2f} ms  max={hi:7.2f} ms")
+        q_sdpa = q.transpose(1, 2).contiguous()
+        k_sdpa = k.transpose(1, 2).contiguous()
+        v_sdpa = v.transpose(1, 2).contiguous()
+        ms = benchmark_fn(
+            lambda: torch.nn.functional.scaled_dot_product_attention(
+                q_sdpa, k_sdpa, v_sdpa, is_causal=causal
+            ),
+            repeat=repeat,
+        )
+        tflops = flops / ms / 1e9
+        results["SDPA"] = (ms, tflops)
     except Exception as e:
-        print(f"torch SDPA:      ERROR - {e}")
+        results["SDPA"] = (None, f"ERROR: {e}")
 
-    # --- Summary ---
-    if len(results) >= 2:
-        print()
-        baseline_name = "FlashAttention" if "FlashAttention" in results else list(results.keys())[0]
-        baseline_avg = results[baseline_name][0]
-        for name, (avg, lo, hi) in results.items():
-            ratio = avg / baseline_avg
-            print(f"  {name:20s}  {avg:7.2f} ms  ({ratio:.2f}x vs {baseline_name})")
+    return results
+
+
+def print_row(seq_len, results):
+    """Print one row of results."""
+    parts = [f"S={seq_len:>6d}"]
+    for name in ["FA3", "SageAttn", "SDPA"]:
+        ms, tflops = results.get(name, (None, "N/A"))
+        if ms is not None:
+            parts.append(f"{name}: {ms:7.2f} ms ({tflops:6.1f} TFLOPS)")
+        else:
+            parts.append(f"{name}: {tflops}")
+    print("  ".join(parts))
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Attention kernel benchmark (FA3 vs SageAttn vs SDPA)")
+    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--num-heads", type=int, default=16)
+    parser.add_argument("--head-dim", type=int, default=128)
+    parser.add_argument("--dtype", type=str, default="bfloat16",
+                        choices=["bfloat16", "float16"])
+    parser.add_argument("--repeat", type=int, default=100)
+    parser.add_argument("--causal", action="store_true")
+    parser.add_argument("--seq-len", type=int, default=None,
+                        help="Single seq length to test")
+    parser.add_argument("--sweep", action="store_true",
+                        help="Sweep standard seq lengths (1K-32K) + diffusion lengths")
+    args = parser.parse_args()
+
+    dtype = getattr(torch, args.dtype)
+    B, H, D = args.batch_size, args.num_heads, args.head_dim
+
+    fa_func, fa_module = _get_flash_attn_func()
+    fa_label = f"fa3_fwd ({fa_module})" if fa_module else "N/A"
+
+    print(f"Config: B={B}, H={H}, D={D}, dtype={args.dtype}, causal={args.causal}")
+    print(f"FlashAttn source: {fa_label}")
+    print(f"Repeat: {args.repeat}, L2 flush: enabled")
+    print(f"GPU: {torch.cuda.get_device_name(0)}")
+    print()
+
+    if args.seq_len is not None:
+        # Single seq length mode
+        seq_lens = [args.seq_len]
+    elif args.sweep:
+        # Sweep: standard (SageAttention bench) + diffusion-specific
+        seq_lens = [1024, 2048, 4096, 8192, 14040, 16384, 32768, 48360]
+    else:
+        # Default: diffusion-relevant lengths
+        seq_lens = [14040, 48360]
+
+    print(f"{'S':>8s}  {'FA3':>24s}  {'SageAttn':>24s}  {'SDPA':>24s}")
+    print("-" * 90)
+
+    all_results = {}
+    for S in seq_lens:
+        results = run_single(B, S, H, D, dtype, args.repeat, causal=args.causal)
+        all_results[S] = results
+
+        parts = [f"{S:>8d}"]
+        for name in ["FA3", "SageAttn", "SDPA"]:
+            ms, tflops = results.get(name, (None, "N/A"))
+            if ms is not None:
+                parts.append(f"{ms:7.2f} ms / {tflops:6.1f} TF")
+            else:
+                parts.append(f"{'N/A':>24s}")
+        print("  ".join(parts))
+
+    # Summary
+    print()
+    print("Speedup vs FA3:")
+    for S in seq_lens:
+        results = all_results[S]
+        fa3_ms = results["FA3"][0] if results["FA3"][0] else None
+        if fa3_ms is None:
+            continue
+        parts = [f"  S={S:>6d}"]
+        for name in ["SageAttn", "SDPA"]:
+            ms = results[name][0] if results[name][0] else None
+            if ms:
+                parts.append(f"{name}: {ms/fa3_ms:.2f}x")
+            else:
+                parts.append(f"{name}: N/A")
+        print("  ".join(parts))
 
 
 if __name__ == "__main__":
