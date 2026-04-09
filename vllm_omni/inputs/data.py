@@ -1,7 +1,8 @@
 import copy
 import pprint
-from dataclasses import asdict, dataclass, field, fields
-from typing import Any, TypeAlias, TypedDict
+from dataclasses import dataclass, field, fields
+from functools import wraps
+from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict, TypeVar
 
 from vllm.inputs import PromptType
 from vllm.sampling_params import SamplingParams
@@ -17,6 +18,23 @@ except ImportError:
 
 import torch
 from vllm.inputs import EmbedsPrompt, TextPrompt, TokensInput, TokensPrompt
+
+_T = TypeVar("_T")
+
+
+def track_init_args(cls: type[_T]) -> type[_T]:
+    """Decorator that wraps __init__ to track which kwargs were explicitly
+    passed by the caller, so that merge_with_def_params can distinguish
+    'caller set this to 0' from 'caller never touched this'."""
+    original_init = cls.__init__
+
+    @wraps(original_init)
+    def new_init(self, **kwargs):
+        self._init_kwargs = set(kwargs.keys())
+        original_init(self, **kwargs)
+
+    cls.__init__ = new_init
+    return cls
 
 
 class OmniTextPrompt(TextPrompt):
@@ -170,6 +188,7 @@ def token_inputs_omni(
     return inputs
 
 
+@track_init_args
 @dataclass
 class OmniDiffusionSamplingParams:
     """
@@ -178,7 +197,14 @@ class OmniDiffusionSamplingParams:
     This dataclass contains all information needed during the diffusion pipeline
     execution, allowing methods to update specific components without needing
     to manage numerous individual parameters.
+
+    The @track_init_args decorator records which kwargs the caller explicitly
+    passed, so merge_with_def_params can fill in pipeline defaults only for
+    fields the caller never touched.
     """
+
+    if TYPE_CHECKING:
+        _init_kwargs: set[str]
 
     # Additional text-related parameters
     max_sequence_length: int | None = None
@@ -234,8 +260,7 @@ class OmniDiffusionSamplingParams:
     step_index: int | None = None
     boundary_ratio: float | None = None
 
-    # Scheduler parameters – ``None`` means "not explicitly set by the caller";
-    # each pipeline's ``forward()`` decides its own model-specific default.
+    # Scheduler parameters
     num_inference_steps: int | None = None
     guidance_scale: float = 0.0
     guidance_scale_provided: bool = False
@@ -247,7 +272,7 @@ class OmniDiffusionSamplingParams:
     eta: float = 0.0
     sigmas: list[float] | None = None
 
-    true_cfg_scale: float | None = None  # qwen-image specific now
+    true_cfg_scale: float | None = None
 
     n_tokens: int | None = None
     extra_step_kwargs: dict[str, Any] = field(default_factory=dict)
@@ -327,20 +352,24 @@ class OmniDiffusionSamplingParams:
         return float(fps)
 
     def __str__(self):
-        return pprint.pformat(asdict(self), indent=2, width=120)
+        return pprint.pformat({f.name: getattr(self, f.name) for f in fields(self)}, indent=2, width=120)
 
     def clone(self) -> "OmniDiffusionSamplingParams":
         return copy.deepcopy(self)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain dict for IPC / serialization."""
+        return {f.name: getattr(self, f.name) for f in fields(self)}
+
     def merge_with_def_params(self, def_params: "DiffusionParamOverrides"):
-        """Merges an instance of this class with a pipeline's defaults."""
+        """Merges an instance of this class with a pipeline's defaults.
+
+        Only fills in fields that the caller did not explicitly pass to
+        __init__; explicitly-set values (including falsy ones like 0 or
+        False) are preserved.
+        """
         for attr_name, attr_val in def_params.validated_overrides.items():
-            # For now, check if the field is falsy and override it.
-            # TODO: We should handle this better, because this does
-            # not distinguish between the user passing a Falsy value
-            # vs initializing with the default, but it matches the
-            # current pipeline behavior.
-            if not getattr(self, attr_name):
+            if attr_name not in self._init_kwargs:
                 setattr(self, attr_name, attr_val)
 
 
