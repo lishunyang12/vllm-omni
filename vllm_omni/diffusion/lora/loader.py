@@ -29,6 +29,50 @@ def get_converter_by_pipeline(pipeline):
     return lora_convert_mapping.get(pipeline.__class__.__name__, None)
 
 
+def _prepare_lora_deltas(lora_sd, module, lora_a_suffix="lora_A.weight", lora_b_suffix="lora_B.weight"):
+    lora_deltas = {}
+
+    stacked_sd = defaultdict(list)
+    for key, param in lora_sd.items():
+        base_key = key[: -len(f".{lora_a_suffix}")]
+        is_stacked_param = False
+        if hasattr(module, "stacked_params_mapping"):
+            # attn1.to_q.lora_A.weight
+            #                           => attn1.to_q => attn1.to_q.delta
+            # attn1.to_q.lora_B.weight
+            for param_name, weight_name, _ in module.stacked_params_mapping:
+                if weight_name not in key:
+                    continue
+                is_stacked_param = True
+                if key.endswith(lora_a_suffix):
+                    a = param
+                    b = lora_sd[f"{base_key}.{lora_b_suffix}"]
+                    delta = torch.matmul(b, a)
+                    stacked_base_key = key.replace(weight_name, param_name)[: -len(f".{lora_a_suffix}")]
+                    stacked_sd[stacked_base_key].append(delta)
+
+            if is_stacked_param:
+                continue
+
+            if key.endswith(lora_a_suffix):
+                a = param
+                b = lora_sd[f"{base_key}.{lora_b_suffix}"]
+                delta = torch.matmul(b, a)
+                lora_deltas[base_key] = delta
+        else:
+            if key.endswith(lora_a_suffix):
+                a = param
+                b = lora_sd[f"{base_key}.{lora_b_suffix}"]
+                delta = torch.matmul(b, a)
+                lora_deltas[base_key] = delta
+
+    for stacked_base_key, delta_list in stacked_sd.items():
+        stacked_delta = torch.concat(delta_list)
+        lora_deltas[stacked_base_key] = stacked_delta
+
+    return lora_deltas
+
+
 def _load_lora_state_dict(
     pretrained_model_name_or_path: str,
     weights_name: str | None = None,
@@ -112,50 +156,10 @@ class LoraLoaderMixin:
         state_dict,
         module,
         prefix: str = "transformer",
+        lora_a_suffix: str = "lora_A.weight",
+        lora_b_suffix: str = "lora_B.weight",
     ):
-        lora_deltas = {}
-        lora_a_suffix = "lora_A.weight"
-        lora_b_suffix = "lora_B.weight"
-
-        # handle stacked QKV fusion
-        stacked_sd = defaultdict(list)
-        for key, param in state_dict.items():
-            base_key = key[: -len(f".{lora_a_suffix}")]
-            is_stacked_param = False
-            if hasattr(module, "stacked_params_mapping"):
-                # attn1.to_q.lora_A.weight
-                #                           => attn1.to_q => attn1.to_q.delta
-                # attn1.to_q.lora_B.weight
-                for param_name, weight_name, _ in module.stacked_params_mapping:
-                    if weight_name not in key:
-                        continue
-                    is_stacked_param = True
-                    if key.endswith(lora_a_suffix):
-                        a = param
-                        b = state_dict[f"{base_key}.{lora_b_suffix}"]
-                        delta = torch.matmul(b, a)
-                        stacked_base_key = key.replace(weight_name, param_name)[: -len(f".{lora_a_suffix}")]
-                        stacked_sd[stacked_base_key].append(delta)
-
-                if is_stacked_param:
-                    continue
-
-                if key.endswith(lora_a_suffix):
-                    a = param
-                    b = state_dict[f"{base_key}.{lora_b_suffix}"]
-                    delta = torch.matmul(b, a)
-                    lora_deltas[base_key] = delta
-            else:
-                if key.endswith(lora_a_suffix):
-                    a = param
-                    b = state_dict[f"{base_key}.{lora_b_suffix}"]
-                    delta = torch.matmul(b, a)
-                    lora_deltas[base_key] = delta
-
-        for stacked_base_key, delta_list in stacked_sd.items():
-            stacked_delta = torch.concat(delta_list)
-            lora_deltas[stacked_base_key] = stacked_delta
-
+        lora_deltas = _prepare_lora_deltas(state_dict, module, lora_a_suffix, lora_b_suffix)
         lora_loaded_keys = set()
         lora_key_loaded_count = 0
         for name, params in module.named_parameters(prefix):
