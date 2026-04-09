@@ -11,7 +11,8 @@ Scripts:
   bench_qk_int8_pv_fp8_cuda_sm90.py -> --method sage_int8_fp8_cuda_sm90 (H100)
 
 Usage:
-  python bench_attn_kernel.py --method fa3
+  python bench_attn_kernel.py --method fa3 --dtype bfloat16
+  python bench_attn_kernel.py --method sageattn --dtype bfloat16
   python bench_attn_kernel.py --method fa2
   python bench_attn_kernel.py --method torch
   python bench_attn_kernel.py --method sage_int8_fp16_cuda
@@ -57,7 +58,7 @@ def get_cuda_version():
 
 parser = argparse.ArgumentParser(description='Attention Kernel Benchmark (SageAttention official style)')
 parser.add_argument('--method', type=str, default='fa3',
-                    choices=['fa2', 'torch', 'xformers', 'fa3',
+                    choices=['fa2', 'torch', 'xformers', 'fa3', 'sageattn',
                              'sage_int8_fp16_cuda', 'sage_int8_fp16_triton',
                              'sage_int8_fp8_cuda', 'sage_int8_fp8_cuda_sm90'])
 parser.add_argument('--batch_size', type=int, default=4, help='Batch size')
@@ -67,11 +68,14 @@ parser.add_argument('--quant_gran', type=str, default='per_warp', choices=['per_
                     help='Quantization granularity (sage kernels only)')
 parser.add_argument('--pv_accum_dtype', type=str, default=None,
                     help='PV accumulation dtype (sage kernels only)')
+parser.add_argument('--dtype', type=str, default='float16', choices=['float16', 'bfloat16'],
+                    help='Data type for FA3/sageattn/baseline (default: float16)')
 args = parser.parse_args()
 
 head = args.num_heads
 batch = args.batch_size
 headdim = args.head_dim
+dtype = getattr(torch, args.dtype)
 
 # ============================================================
 # bench_baseline: fa2 / torch / xformers
@@ -84,15 +88,15 @@ if args.method in ('fa2', 'torch', 'xformers'):
     torch.backends.cuda.enable_mem_efficient_sdp(args.method == 'xformers')
 
     print(f"Baseline: {args.method}")
-    print(f"batch: {batch}, head: {head}, headdim: {headdim}")
+    print(f"batch: {batch}, head: {head}, headdim: {headdim}, dtype: {args.dtype}")
 
     for is_causal in [False, True]:
         print(f"is_causal: {is_causal}")
         for seq_len in sorted({1024, 2048, 4096, 8192, 16384, 32768}):
             flops = 4 * head * batch * headdim * seq_len * seq_len // (2 if is_causal else 1)
-            q = torch.randn(batch, head, seq_len, headdim, dtype=torch.float16, device="cuda")
-            k = torch.randn(batch, head, seq_len, headdim, dtype=torch.float16, device="cuda")
-            v = torch.randn(batch, head, seq_len, headdim, dtype=torch.float16, device="cuda")
+            q = torch.randn(batch, head, seq_len, headdim, dtype=dtype, device="cuda")
+            k = torch.randn(batch, head, seq_len, headdim, dtype=dtype, device="cuda")
+            v = torch.randn(batch, head, seq_len, headdim, dtype=dtype, device="cuda")
             for i in range(5): sdpa(q, k, v, is_causal=is_causal)
             torch.cuda.synchronize()
             _, time = benchmark_forward(sdpa, q, k, v, is_causal=is_causal, repeats=100, verbose=False, desc='Triton')
@@ -118,18 +122,39 @@ elif args.method == 'fa3':
         raise ImportError("Neither fa3_fwd_interface nor flash_attn_interface found. Install FA3.")
 
     print(f"FlashAttention3 Benchmark (source: {fa3_source})")
-    print(f"batch: {batch}, head: {head}, headdim: {headdim}")
+    print(f"batch: {batch}, head: {head}, headdim: {headdim}, dtype: {args.dtype}")
 
     for is_causal in [False, True]:
         print(f"is_causal: {is_causal}")
         for seq_len in sorted({1024, 2048, 4096, 8192, 16384, 32768}):
             flops = 4 * head * batch * headdim * seq_len * seq_len // (2 if is_causal else 1)
-            q = torch.randn(batch, seq_len, head, headdim, dtype=torch.float16, device="cuda")
-            k = torch.randn(batch, seq_len, head, headdim, dtype=torch.float16, device="cuda")
-            v = torch.randn(batch, seq_len, head, headdim, dtype=torch.float16, device="cuda")
+            q = torch.randn(batch, seq_len, head, headdim, dtype=dtype, device="cuda")
+            k = torch.randn(batch, seq_len, head, headdim, dtype=dtype, device="cuda")
+            v = torch.randn(batch, seq_len, head, headdim, dtype=dtype, device="cuda")
             for i in range(5): flash_attn_func_v3(q, k, v, causal=is_causal)
             torch.cuda.synchronize()
             _, time = benchmark_forward(flash_attn_func_v3, q, k, v, causal=is_causal, repeats=100, verbose=False, desc='Triton')
+            print(f'{seq_len} flops:{flops/time.mean*1e-12}')
+
+# ============================================================
+# bench sageattn high-level API (what vllm-omni actually calls)
+# ============================================================
+elif args.method == 'sageattn':
+    from sageattention import sageattn
+
+    print(f"SageAttention (sageattn high-level API) Benchmark")
+    print(f"batch: {batch}, head: {head}, headdim: {headdim}, dtype: {args.dtype}")
+
+    for is_causal in [False, True]:
+        print(f"is_causal: {is_causal}")
+        for seq_len in sorted({1024, 2048, 4096, 8192, 16384, 32768}):
+            flops = 4 * head * batch * headdim * seq_len * seq_len // (2 if is_causal else 1)
+            q = torch.randn(batch, seq_len, head, headdim, dtype=dtype, device="cuda")
+            k = torch.randn(batch, seq_len, head, headdim, dtype=dtype, device="cuda")
+            v = torch.randn(batch, seq_len, head, headdim, dtype=dtype, device="cuda")
+            for i in range(5): sageattn(q, k, v, tensor_layout="NHD", is_causal=is_causal)
+            torch.cuda.synchronize()
+            _, time = benchmark_forward(sageattn, q, k, v, tensor_layout="NHD", is_causal=is_causal, repeats=100, verbose=False, desc='SageAttn')
             print(f'{seq_len} flops:{flops/time.mean*1e-12}')
 
 # ============================================================
