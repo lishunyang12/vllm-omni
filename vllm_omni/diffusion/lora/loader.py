@@ -173,14 +173,45 @@ class LoraLoaderMixin:
         lora_deltas = _prepare_lora_deltas(state_dict, module, lora_a_suffix, lora_b_suffix)
         lora_loaded_keys = set()
         lora_key_loaded_count = 0
+
+        param_to_weight_names = defaultdict(list)
+        if hasattr(module, "stacked_params_mapping"):
+            for param_name, weight_name, _ in module.stacked_params_mapping:
+                param_to_weight_names[param_name].append(weight_name)
+
+        def update_loaded_keys(base_key):
+            """
+            This function updates lora_loaded_keys. It must be called after the parameter
+            of base_key is merged into module.
+            """
+            lora_a_key = f"{base_key}.{lora_a_suffix}"
+            lora_b_key = f"{base_key}.{lora_b_suffix}"
+
+            is_stacked_param = False
+            for param_name, weight_names in param_to_weight_names.items():
+                if param_name not in base_key:
+                    continue
+                is_stacked_param = True
+                for weight_name in weight_names:
+                    lora_a_key = f"{base_key.replace(param_name, weight_name)}.{lora_a_suffix}"
+                    lora_b_key = f"{base_key.replace(param_name, weight_name)}.{lora_b_suffix}"
+                    for k in (lora_a_key, lora_b_key):
+                        if k in state_dict:
+                            lora_loaded_keys.add(k)
+                        else:
+                            logger.warning(f"Failed to index lora key {k}")
+                break
+
+            if not is_stacked_param:
+                # sanity check is no need, as lora_deltas already checked
+                lora_loaded_keys.add(lora_a_key)
+                lora_loaded_keys.add(lora_b_key)
+
         for name, params in module.named_parameters(prefix):
             if not name.endswith(".weight"):
                 continue
 
             base_key = name[: -len(".weight")]
-            lora_a_key = f"{base_key}.{lora_a_suffix}"
-            lora_b_key = f"{base_key}.{lora_b_suffix}"
-
             if base_key not in lora_deltas:
                 continue
 
@@ -189,30 +220,7 @@ class LoraLoaderMixin:
             lora_key_loaded_count += 1
             del delta
 
-            is_stacked_param = False
-            if hasattr(module, "stacked_params_mapping"):
-                for param_name, weight_name, _ in module.stacked_params_mapping:
-                    if param_name not in base_key:
-                        continue
-                    is_stacked_param = True
-                    lora_a_key = f"{base_key.replace(param_name, weight_name)}.{lora_a_suffix}"
-                    lora_b_key = f"{base_key.replace(param_name, weight_name)}.{lora_b_suffix}"
-
-                    if lora_a_key in state_dict:
-                        lora_loaded_keys.add(lora_a_key)
-                    else:
-                        logger.warning(f"Failed to index lora key {lora_a_key}")
-                    if lora_b_key in state_dict:
-                        lora_loaded_keys.add(lora_b_key)
-                    else:
-                        logger.warning(f"Failed to index lora key {lora_b_key}")
-
-                if not is_stacked_param:
-                    lora_loaded_keys.add(lora_a_key)
-                    lora_loaded_keys.add(lora_b_key)
-            else:
-                lora_loaded_keys.add(lora_a_key)
-                lora_loaded_keys.add(lora_b_key)
+            update_loaded_keys(base_key)
 
         for k in state_dict:
             if k not in lora_loaded_keys:
