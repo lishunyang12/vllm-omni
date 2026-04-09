@@ -32,39 +32,50 @@ def get_converter_by_pipeline(pipeline):
 def _prepare_lora_deltas(lora_sd, module, lora_a_suffix="lora_A.weight", lora_b_suffix="lora_B.weight"):
     lora_deltas = {}
 
+    # prepare stacked parameters mapping for later use
+    # stacked_params_mapping                       param_to_weight_names
+    # [(".to_qkv", ".to_q.", "q")
+    # (".to_qkv", ".to_k.", "k")  ========> {".to_qkv": [".to_q", ".to_k", ".to_v"]}
+    # (".to_qkv", ".to_v.", "v")]
+
+    weight_to_param_name = {}
+    if hasattr(module, "stacked_params_mapping"):
+        weight_to_param_name = {weight_name: param_name for param_name, weight_name, _ in module.stacked_params_mapping}
+
+    # stacked_sd is to store packed parameter deltas (format: [str, list[torch.Tensor]])
+    # example: {".to_qkv": [delta_q, delta_k, delta_v]}
     stacked_sd = defaultdict(list)
     for key, param in lora_sd.items():
         base_key = key[: -len(f".{lora_a_suffix}")]
-        is_stacked_param = False
-        if hasattr(module, "stacked_params_mapping"):
-            # attn1.to_q.lora_A.weight
-            #                           => attn1.to_q => attn1.to_q.delta
-            # attn1.to_q.lora_B.weight
-            for param_name, weight_name, _ in module.stacked_params_mapping:
-                if weight_name not in key:
-                    continue
-                is_stacked_param = True
-                if key.endswith(lora_a_suffix):
-                    a = param
-                    b = lora_sd[f"{base_key}.{lora_b_suffix}"]
-                    delta = torch.matmul(b, a)
-                    stacked_base_key = key.replace(weight_name, param_name)[: -len(f".{lora_a_suffix}")]
-                    stacked_sd[stacked_base_key].append(delta)
 
-            if is_stacked_param:
+        is_stacked_param = False
+        for weight_name, param_name in weight_to_param_name.items():
+            if weight_name not in key:
+                continue
+            is_stacked_param = True
+            # handle lora_a_key and lora_b_key together
+            if key.endswith(lora_a_suffix):
+                a = param
+                b = lora_sd[f"{base_key}.{lora_b_suffix}"]
+                delta = torch.matmul(b, a)
+                stacked_base_key = key.replace(weight_name, param_name)[: -len(f".{lora_a_suffix}")]
+                stacked_sd[stacked_base_key].append(delta)
+            else:
+                # lora_b_key was already handled, skip
                 continue
 
-            if key.endswith(lora_a_suffix):
-                a = param
-                b = lora_sd[f"{base_key}.{lora_b_suffix}"]
-                delta = torch.matmul(b, a)
-                lora_deltas[base_key] = delta
+        if is_stacked_param:
+            # already handled, skip
+            continue
+
+        if key.endswith(lora_a_suffix):
+            a = param
+            b = lora_sd[f"{base_key}.{lora_b_suffix}"]
+            delta = torch.matmul(b, a)
+            lora_deltas[base_key] = delta
         else:
-            if key.endswith(lora_a_suffix):
-                a = param
-                b = lora_sd[f"{base_key}.{lora_b_suffix}"]
-                delta = torch.matmul(b, a)
-                lora_deltas[base_key] = delta
+            # same as above
+            continue
 
     for stacked_base_key, delta_list in stacked_sd.items():
         stacked_delta = torch.concat(delta_list)
