@@ -254,10 +254,6 @@ class LoraLoaderMixin:
 
 
 class QwenImageLoraLoaderMixin(LoraLoaderMixin):
-    transformer_name = "transformer"
-    lora_loaded = set()
-    lora_loaded_deltas = {}
-
     def load_lora_weights(
         self,
         pretrained_model_name_or_path: str,
@@ -301,11 +297,7 @@ class QwenImageLoraLoaderMixin(LoraLoaderMixin):
 
 
 class LTX2LoraLoaderMinxin(LoraLoaderMixin):
-    transformer_name = "transformer"
     connectors_name = "connectors"
-
-    lora_loaded = set()
-    lora_loaded_deltas = {}
 
     def load_lora_weights(
         self,
