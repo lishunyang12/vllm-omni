@@ -58,7 +58,7 @@ def _load_lora_state_dict(
         raise e
 
 
-class LTX2LoRALoaderMinxin:
+class LTX2LoraLoaderMinxin:
     transformer_name = "transformer"
     connectors_name = "connectors"
 

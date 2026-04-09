@@ -31,7 +31,7 @@ from vllm_omni.diffusion.distributed.parallel_state import (
     get_classifier_free_guidance_world_size,
 )
 from vllm_omni.diffusion.distributed.utils import get_local_device
-from vllm_omni.diffusion.lora.loader import LTX2LoRALoaderMinxin
+from vllm_omni.diffusion.lora.loader import LTX2LoraLoaderMinxin
 from vllm_omni.diffusion.lora.manager import DiffusionLoRAManager
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
@@ -145,7 +145,7 @@ class _VideoAudioScheduler:
         return ((video_out, audio_out),)
 
 
-class LTX2Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, LTX2LoRALoaderMinxin):
+class LTX2Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, LTX2LoraLoaderMinxin):
     def __init__(
         self,
         *,
