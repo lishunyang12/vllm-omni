@@ -3,7 +3,7 @@
 # Resolution: 480×832, 33 frames
 set -e
 
-MODEL="hunyuanvideo-community/HunyuanVideo-1.5-480p_t2v"
+MODEL="hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v"
 PROMPT="A serene lakeside sunrise with mist over the water."
 SCRIPT="examples/offline_inference/text_to_video/text_to_video.py"
 OUTPUT_DIR="${OUTPUT_DIR:-/workspace}"
