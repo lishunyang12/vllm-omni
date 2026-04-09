@@ -42,9 +42,23 @@ def benchmark_fn(fn, warmup=5, repeat=20, **kwargs):
     return avg, min(times), max(times)
 
 
-def bench_flash_attn(q, k, v):
-    from flash_attn import flash_attn_func
-    return flash_attn_func(q, k, v, causal=False)
+def _get_flash_attn_func():
+    """Try fa3_fwd_interface -> flash_attn_interface -> flash_attn (same order as vllm-omni)."""
+    for module_name in [
+        "fa3_fwd_interface",
+        "flash_attn_interface",
+        "flash_attn",
+    ]:
+        try:
+            mod = __import__(module_name, fromlist=["flash_attn_func"])
+            return getattr(mod, "flash_attn_func"), module_name
+        except (ImportError, AttributeError):
+            continue
+    return None, None
+
+
+def bench_flash_attn(q, k, v, _fn=None):
+    return _fn(q, k, v, causal=False)
 
 
 def bench_sage_attn(q, k, v):
@@ -82,15 +96,18 @@ def main():
 
     results = {}
 
-    # --- FlashAttention ---
+    # --- FlashAttention (fa3_fwd / flash_attn_interface / flash_attn) ---
     try:
-        from flash_attn import flash_attn_func  # noqa: F401
+        fa_func, fa_module = _get_flash_attn_func()
+        if fa_func is None:
+            raise ImportError("none of fa3_fwd_interface, flash_attn_interface, flash_attn found")
+        label = f"FlashAttn ({fa_module})"
         avg, lo, hi = benchmark_fn(bench_flash_attn, warmup=args.warmup,
-                                   repeat=args.repeat, q=q, k=k, v=v)
+                                   repeat=args.repeat, q=q, k=k, v=v, _fn=fa_func)
         results["FlashAttention"] = (avg, lo, hi)
-        print(f"FlashAttention:  avg={avg:7.2f} ms  min={lo:7.2f} ms  max={hi:7.2f} ms")
-    except ImportError:
-        print("FlashAttention:  NOT AVAILABLE (flash_attn not installed)")
+        print(f"{label:24s} avg={avg:7.2f} ms  min={lo:7.2f} ms  max={hi:7.2f} ms")
+    except ImportError as e:
+        print(f"FlashAttention:  NOT AVAILABLE ({e})")
     except Exception as e:
         print(f"FlashAttention:  ERROR - {e}")
 
