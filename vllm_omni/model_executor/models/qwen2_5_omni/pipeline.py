@@ -58,3 +58,33 @@ QWEN2_5_OMNI_PIPELINE = PipelineConfig(
 )
 
 register_pipeline(QWEN2_5_OMNI_PIPELINE)
+
+
+# ---------------------------------------------------------------------------
+# Variant: thinker-only single-stage topology
+# ---------------------------------------------------------------------------
+# Used by tests/engine/test_async_omni_engine_abort.py to exercise abort
+# behavior on the AR thinker stage in isolation, without paying the cost of
+# spinning up the talker and code2wav stages. The test fixture
+# ``tests/engine/deploy/qwen2_5_omni_thinker_ci.yaml`` selects this pipeline
+# explicitly via its ``pipeline:`` field.
+QWEN2_5_OMNI_THINKER_ONLY_PIPELINE = PipelineConfig(
+    model_type="qwen2_5_omni_thinker_only",
+    model_arch="Qwen2_5OmniForConditionalGeneration",
+    stages=(
+        StagePipelineConfig(
+            stage_id=0,
+            model_stage="thinker",
+            execution_type=StageExecutionType.LLM_AR,
+            input_sources=(),
+            final_output=True,
+            final_output_type="text",
+            is_comprehension=True,
+            requires_multimodal_data=True,
+            engine_output_type="latent",
+            sampling_constraints={"detokenize": True},
+        ),
+    ),
+)
+
+register_pipeline(QWEN2_5_OMNI_THINKER_ONLY_PIPELINE)

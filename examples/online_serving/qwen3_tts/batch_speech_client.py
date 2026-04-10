@@ -8,7 +8,7 @@ the reference for each item.
 Start the server (with batch-optimized config for best throughput):
 
     vllm serve Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice \
-        --stage-configs-path vllm_omni/model_executor/stage_configs/qwen3_tts_batch.yaml \
+        --deploy-config vllm_omni/deploy/qwen3_tts_batch.yaml \
         --trust-remote-code
 
 Examples:

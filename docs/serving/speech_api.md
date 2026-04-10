@@ -521,7 +521,7 @@ For best throughput, use a batch-optimized stage config with `max_batch_size > 1
 
 ```bash
 vllm serve Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice \
-    --stage-configs-path vllm_omni/model_executor/stage_configs/qwen3_tts_batch.yaml \
+    --deploy-config vllm_omni/deploy/qwen3_tts_batch.yaml \
     --omni --port 8091 --trust-remote-code --enforce-eager
 ```
 

@@ -43,7 +43,7 @@ Then open http://localhost:7860 in your browser.
 
 ### Launch the Server
 
-The default deploy config is located at `vllm_omni/deploy/qwen3_tts.yaml` and is loaded automatically by the model registry — no `--deploy-config` flag needed for default use. For other platforms (e.g., NPU), refer to `vllm_omni/platforms/npu/stage_configs/qwen3_tts.yaml` (still on the legacy schema and loaded via `--stage-configs-path`).
+The default deploy config is located at `vllm_omni/deploy/qwen3_tts.yaml` and is loaded automatically by the model registry — no `--deploy-config` flag needed for default use. Platform-specific deltas (NPU, ROCm, XPU) are merged in automatically from the `platforms:` block of the same YAML based on the detected runtime.
 
 ```bash
 # CustomVoice model (predefined speakers)

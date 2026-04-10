@@ -1,0 +1,19 @@
+# Batched deploy for Qwen3-TTS.
+#
+# Same topology and connector layout as qwen3_tts.yaml, but with batched
+# talker and code2wav stages (max_num_seqs > 1) and slightly tighter
+# memory budgets so the batch fits.
+#
+# max_num_seqs must be a power of two to align with CUDA graph capture
+# sizes on stage 0, and must match --batch-size in the example scripts.
+
+base_config: qwen3_tts.yaml
+
+stages:
+  - stage_id: 0
+    max_num_seqs: 4
+    gpu_memory_utilization: 0.2
+
+  - stage_id: 1
+    max_num_seqs: 4
+    gpu_memory_utilization: 0.2

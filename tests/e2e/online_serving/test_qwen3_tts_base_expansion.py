@@ -12,8 +12,6 @@ import os
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 os.environ["VLLM_TEST_CLEAN_GPU_MEMORY"] = "0"
 
-from pathlib import Path
-
 import pytest
 
 from tests.conftest import OmniServerParams
@@ -26,15 +24,12 @@ REF_TEXT = "Okay. Yeah. I resent you. I love you. I respect you. But you know wh
 
 
 def get_stage_config(name: str = "qwen3_tts.yaml") -> str:
-    """Resolve a stage/deploy config path.
+    """Resolve a deploy config path under vllm_omni/deploy/.
 
-    For the migrated base ``qwen3_tts.yaml`` we use the new
-    ``vllm_omni/deploy/`` location; legacy variant YAMLs still live under
-    ``vllm_omni/model_executor/stage_configs/`` until they're migrated.
+    Both ``qwen3_tts.yaml`` (default) and ``qwen3_tts_no_async_chunk.yaml``
+    (variant) live under the new deploy directory.
     """
-    if name == "qwen3_tts.yaml":
-        return get_deploy_config_path("qwen3_tts.yaml")
-    return str(Path(__file__).parent.parent.parent.parent / "vllm_omni" / "model_executor" / "stage_configs" / name)
+    return get_deploy_config_path(name)
 
 
 def get_prompt(prompt_type="text"):

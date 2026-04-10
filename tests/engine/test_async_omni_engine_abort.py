@@ -8,6 +8,10 @@ import pytest
 from vllm import SamplingParams
 from vllm.inputs import PromptType
 
+# Side-effect import: registers QWEN2_5_OMNI_THINKER_ONLY_PIPELINE in the
+# pipeline registry so the test deploy YAML below can select it via
+# its top-level ``pipeline:`` field.
+import vllm_omni.model_executor.models.qwen2_5_omni.pipeline  # noqa: F401, E402
 from tests.utils import hardware_test
 from vllm_omni.entrypoints.async_omni import AsyncOmni
 
@@ -15,7 +19,10 @@ os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
 SEED = 42
 
-stage_config = str(Path(__file__).parent.parent / "e2e" / "stage_configs" / "qwen2_5_omni_thinker_ci.yaml")
+# Single-stage thinker-only deploy. Uses the new schema's per-deploy
+# pipeline selector so we don't pay the cost of spinning up the full
+# 3-stage qwen2_5_omni pipeline just to test abort behavior.
+stage_config = str(Path(__file__).parent / "deploy" / "qwen2_5_omni_thinker_ci.yaml")
 model = "Qwen/Qwen2.5-Omni-7B"
 
 

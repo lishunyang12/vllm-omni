@@ -121,7 +121,8 @@ vllm_omni/model_executor/stage_configs/
 | `models/qwen3_tts/qwen3_tts_code_predictor_vllm.py` | Stage 0 - optimized AR |
 | `models/qwen3_tts/qwen3_tts_code2wav.py` | Stage 1 - decoder |
 | `deploy/qwen3_tts.yaml` (new schema) | Deploy config (async_chunk enabled) — paired with `models/qwen3_tts/pipeline.py` for the frozen topology |
-| `stage_configs/qwen3_tts_batch.yaml` (legacy) | Batch mode config — still on the legacy schema |
+| `deploy/qwen3_tts_batch.yaml` | Batch-mode variant deploy (overlays the base via `base_config:` inheritance) |
+| `deploy/qwen3_tts_no_async_chunk.yaml` | Synchronous variant (selects `qwen3_tts_no_async_chunk` pipeline via `pipeline:` field) |
 | `stage_input_processors/qwen3_tts.py` | Stage transition processors |
 
 ## Step-by-Step Implementation

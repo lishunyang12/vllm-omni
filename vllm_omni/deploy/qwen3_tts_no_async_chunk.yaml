@@ -1,0 +1,35 @@
+# Synchronous (no async-chunk) deploy for Qwen3-TTS.
+#
+# Reuses the qwen3_tts model classes but selects a different pipeline
+# topology via the top-level ``pipeline:`` field. The synchronous variant:
+#   - Sets ``async_chunk: false``
+#   - Drops the SharedMemoryConnector wiring (sync mode passes codec codes
+#     through the per-stage input processor instead of streaming chunks)
+#   - Uses a different processor chain on the talker / code2wav boundary
+#     (registered as ``QWEN3_TTS_NO_ASYNC_CHUNK_PIPELINE`` in pipeline.py)
+
+# Select the sync pipeline registration (not the default qwen3_tts one).
+pipeline: qwen3_tts_no_async_chunk
+
+base_config: qwen3_tts.yaml
+
+async_chunk: false
+
+# Sync mode does not use the SharedMemoryConnector. Clearing the inherited
+# connector definition keeps the deploy file self-documenting.
+connectors: null
+
+stages:
+  - stage_id: 0
+    max_num_seqs: 1
+    gpu_memory_utilization: 0.2
+    enforce_eager: true
+    async_scheduling: false
+    # Drop the inherited stage 0 → stage 1 connector wiring.
+    output_connectors: null
+
+  - stage_id: 1
+    gpu_memory_utilization: 0.2
+    async_scheduling: false
+    # Drop the inherited stage 1 input connector.
+    input_connectors: null

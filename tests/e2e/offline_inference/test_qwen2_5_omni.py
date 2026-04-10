@@ -2,8 +2,6 @@
 E2E tests for Qwen2.5-Omni model with mixed modality inputs, audio and text output.
 """
 
-from pathlib import Path
-
 import pytest
 
 from tests.conftest import (
@@ -35,9 +33,7 @@ def get_cuda_graph_config():
     )
 
 
-if current_omni_platform.is_npu():
-    stage_config = str(Path(__file__).parent / "stage_configs" / "npu" / "qwen2_5_omni_ci.yaml")
-elif current_omni_platform.is_rocm() or current_omni_platform.is_xpu():
+if current_omni_platform.is_rocm() or current_omni_platform.is_xpu() or current_omni_platform.is_npu():
     stage_config = _CI_DEPLOY
 else:
     stage_config = get_cuda_graph_config()

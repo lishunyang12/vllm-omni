@@ -13,34 +13,29 @@ import os
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 os.environ["VLLM_TEST_CLEAN_GPU_MEMORY"] = "0"
 
-from pathlib import Path
-
 import pytest
 
 from tests.conftest import modify_stage_config
-from tests.utils import hardware_test
+from tests.utils import get_deploy_config_path, hardware_test
 
 MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
 
 
+def get_stage_config(name: str = "qwen3_tts_no_async_chunk.yaml") -> str:
+    """Resolve a deploy config path under vllm_omni/deploy/."""
+    return get_deploy_config_path(name)
+
+
 def get_cuda_graph_config():
-    path = modify_stage_config(
+    return modify_stage_config(
         get_stage_config(),
         updates={
-            "stage_args": {
-                0: {
-                    "engine_args.enforce_eager": "true",
-                },
-                1: {"engine_args.enforce_eager": "true"},
+            "stages": {
+                0: {"enforce_eager": True},
+                1: {"enforce_eager": True},
             },
         },
     )
-    return path
-
-
-def get_stage_config(name: str = "qwen3_tts_no_async_chunk.yaml"):
-    """Get the no_async_chunk stage config path (async_chunk disable, cuda_graph disabled)."""
-    return str(Path(__file__).parent.parent.parent.parent / "vllm_omni" / "model_executor" / "stage_configs" / name)
 
 
 # Same structure as test_qwen3_omni: models, stage_configs, test_params

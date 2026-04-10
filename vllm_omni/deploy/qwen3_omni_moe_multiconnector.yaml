@@ -1,0 +1,34 @@
+# Multi-node deploy for Qwen3-Omni-MoE.
+#
+# Same topology as the default qwen3_omni_moe.yaml, but uses
+# MooncakeStoreConnector for cross-node communication instead of
+# SharedMemoryConnector. Use this when stages run on different physical
+# hosts and need a transfer connector that crosses node boundaries.
+
+base_config: qwen3_omni_moe.yaml
+
+connectors:
+  mooncake_connector:
+    name: MooncakeStoreConnector
+    extra:
+      host: "127.0.0.1"
+      metadata_server: "http://10.90.67.86:8080/metadata"
+      master: "10.90.67.86:50051"
+      segment: 512000000    # 512 MB
+      localbuf: 64000000    # 64 MB
+      proto: "tcp"
+
+stages:
+  - stage_id: 0
+    output_connectors:
+      to_stage_1: mooncake_connector
+
+  - stage_id: 1
+    input_connectors:
+      from_stage_0: mooncake_connector
+    output_connectors:
+      to_stage_2: mooncake_connector
+
+  - stage_id: 2
+    input_connectors:
+      from_stage_1: mooncake_connector

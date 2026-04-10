@@ -169,6 +169,13 @@ class DeployConfig:
     edges: list[dict[str, Any]] | None = None
     stages: list[StageDeployConfig] = field(default_factory=list)
     platforms: dict[str, Any] | None = None
+    # Optional explicit pipeline registration key. When set, overrides the
+    # auto-detected ``model_type`` lookup in the pipeline registry. Used by
+    # variant deploys whose topology differs from the default for the same
+    # HuggingFace model_type — e.g. ``qwen3_tts_no_async_chunk`` reuses the
+    # qwen3_tts model classes but registers a different pipeline (different
+    # processor functions, no SharedMemoryConnector).
+    pipeline: str | None = None
 
 
 _STAGE_NON_ENGINE_KEYS = frozenset(
@@ -292,6 +299,7 @@ def load_deploy_config(path: str | Path) -> DeployConfig:
         edges=raw_dict.get("edges", None),
         stages=stages,
         platforms=raw_dict.get("platforms", None),
+        pipeline=raw_dict.get("pipeline", None),
     )
 
 
@@ -705,9 +713,14 @@ class StageConfigFactory:
         and is only used to fill fields YAML doesn't already cover. When the
         set is ``None`` (programmatic ``Omni()`` callers, which have no
         argparse layer), every kwarg is treated as explicit.
-        """
-        pipeline_cfg = _PIPELINE_REGISTRY[model_type]
 
+        If the loaded deploy YAML has a ``pipeline:`` field set, it
+        overrides the auto-detected ``model_type`` for the pipeline
+        registry lookup. This lets variant deploys (e.g.
+        ``qwen3_tts_no_async_chunk``) reuse the model classes of a
+        different HuggingFace ``model_type`` while running a different
+        topology (different processor functions, different connectors).
+        """
         # Resolve deploy config path
         if deploy_config_path is None:
             deploy_path = _DEPLOY_DIR / f"{model_type}.yaml"
@@ -722,6 +735,20 @@ class StageConfigFactory:
             deploy_cfg = DeployConfig()
         else:
             deploy_cfg = load_deploy_config(deploy_path)
+
+        # Resolve which pipeline registration to use. The deploy YAML's
+        # explicit ``pipeline:`` field (if set) wins over the auto-detected
+        # model_type so variant topologies can be selected without renaming
+        # the model.
+        pipeline_key = deploy_cfg.pipeline or model_type
+        if pipeline_key not in _PIPELINE_REGISTRY:
+            raise KeyError(
+                f"Pipeline {pipeline_key!r} not in registry "
+                f"(deploy {deploy_path.name!r} requested it via 'pipeline:' field "
+                f"or via auto-detected model_type). Available: "
+                f"{sorted(_PIPELINE_REGISTRY.keys())}"
+            )
+        pipeline_cfg = _PIPELINE_REGISTRY[pipeline_key]
 
         stages = merge_pipeline_deploy(pipeline_cfg, deploy_cfg, cli_overrides)
 

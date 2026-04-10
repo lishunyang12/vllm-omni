@@ -12,8 +12,6 @@ import os
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 os.environ["VLLM_TEST_CLEAN_GPU_MEMORY"] = "0"
 
-from pathlib import Path
-
 import pytest
 
 from tests.conftest import OmniServerParams
@@ -23,15 +21,8 @@ MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
 
 
 def get_stage_config(name: str = "qwen3_tts.yaml") -> str:
-    """Resolve a stage/deploy config path.
-
-    For the migrated base ``qwen3_tts.yaml`` we use the new
-    ``vllm_omni/deploy/`` location; legacy variant YAMLs still live under
-    ``vllm_omni/model_executor/stage_configs/`` until they're migrated.
-    """
-    if name == "qwen3_tts.yaml":
-        return get_deploy_config_path("qwen3_tts.yaml")
-    return str(Path(__file__).parent.parent.parent.parent / "vllm_omni" / "model_executor" / "stage_configs" / name)
+    """Resolve a deploy config path under vllm_omni/deploy/."""
+    return get_deploy_config_path(name)
 
 
 def get_prompt(prompt_type="english"):

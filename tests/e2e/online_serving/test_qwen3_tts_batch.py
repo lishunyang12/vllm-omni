@@ -34,16 +34,8 @@ STAGE_INIT_TIMEOUT_S = 120
 
 
 def get_stage_config(name: str = "qwen3_tts.yaml") -> str:
-    """Resolve a stage/deploy config path.
-
-    For the migrated base ``qwen3_tts.yaml`` we use the new
-    ``vllm_omni/deploy/`` location; legacy variant YAMLs (batch, etc.)
-    still live under ``vllm_omni/model_executor/stage_configs/`` until
-    they're migrated.
-    """
-    if name == "qwen3_tts.yaml":
-        return get_deploy_config_path("qwen3_tts.yaml")
-    return str(Path(__file__).parent.parent.parent.parent / "vllm_omni" / "model_executor" / "stage_configs" / name)
+    """Resolve a deploy config path under vllm_omni/deploy/."""
+    return get_deploy_config_path(name)
 
 
 @pytest.fixture(scope="module")

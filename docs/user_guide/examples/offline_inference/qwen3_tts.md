@@ -150,7 +150,7 @@ The Code2Wav stage (stage 1) supports batched decoding, where multiple requests 
 python end2end.py --query-type CustomVoice \
     --txt-prompts benchmark_prompts.txt \
     --batch-size 4 \
-    --stage-configs-path vllm_omni/model_executor/stage_configs/qwen3_tts_batch.yaml
+    --deploy-config vllm_omni/deploy/qwen3_tts_batch.yaml
 ```
 
 **Important:** `--batch-size` must match a CUDA graph capture size (1, 2, 4, 8, 16...) because the Talker's code predictor KV cache is sized to `max_num_seqs`, and CUDA graphs pad the batch to the next capture size. Both stages need `max_num_seqs >= batch_size` in the stage config for batching to take effect. If only stage 1 has a higher `max_num_seqs`, it won't help — stage 1 can only batch chunks from requests that are in-flight simultaneously, which requires stage 0 to also process multiple requests concurrently.

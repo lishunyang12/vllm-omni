@@ -48,20 +48,32 @@ stages:
       repetition_penalty: 1.1
 
 platforms:
+  npu:
+    stages:
+      # NPU has cudagraph support for the thinker, unlike GPU which still
+      # only runs eager.
+      - stage_id: 0
+        enforce_eager: false
+      - stage_id: 2
+        # 3-NPU layout: stage 2 lives on its own card.
+        devices: "2"
+
   rocm:
     stages:
-      - stage_id: 0
-        gpu_memory_utilization: 0.8
-      - stage_id: 1
-        gpu_memory_utilization: 0.8
       - stage_id: 2
-        gpu_memory_utilization: 0.15
+        # 3-GPU MI325 layout: stage 2 on a separate card.
+        devices: "2"
 
   xpu:
     stages:
+      # Verified on 2x Intel Arc Pro B60. Both AR stages use cudagraphs.
       - stage_id: 0
         gpu_memory_utilization: 0.9
+        enforce_eager: false
       - stage_id: 1
         gpu_memory_utilization: 0.5
+        enforce_eager: false
       - stage_id: 2
         gpu_memory_utilization: 0.3
+        # Stage 2 colocates with stage 1's device on XPU.
+        devices: "1"
