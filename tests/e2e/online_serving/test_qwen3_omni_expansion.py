@@ -27,44 +27,31 @@ IMAGE_KEY = ["square", "quadrate", "rectangle"]
 VIDEO_KEY = ["sphere", "globe", "circle", "round", "ball"]
 
 
-def get_chunk_config(default_path):
-    path = modify_stage_config(
-        default_path,
-        updates={
-            "async_chunk": True,
-            "stage_args": {
-                0: {
-                    "engine_args.custom_process_next_stage_input_func": "vllm_omni.model_executor.stage_input_processors.qwen3_omni.thinker2talker_async_chunk"
-                },
-                1: {
-                    "engine_args.custom_process_next_stage_input_func": "vllm_omni.model_executor.stage_input_processors.qwen3_omni.talker2code2wav_async_chunk"
-                },
-            },
-        },
-        deletes={"stage_args": {2: ["custom_process_input_func"]}},
-    )
-    return path
-
-
 def get_batch_token_config(default_path):
-    path = modify_stage_config(
+    """Override stage 1's max_num_batched_tokens to exercise small-batch paths.
+
+    Uses the new flat-stage schema (``stages.<id>.<field>``); the legacy
+    ``stage_args.<id>.engine_args.<field>`` path no longer applies because
+    the deploy YAML doesn't nest engine fields under ``engine_args:``.
+    """
+    return modify_stage_config(
         default_path,
         updates={
-            "stage_args": {1: {"engine_args.max_num_batched_tokens": 64}},
+            "stages": {1: {"max_num_batched_tokens": 64}},
         },
     )
-    return path
 
 
 # CI stage config — single deploy YAML; xpu deltas applied via platforms:
+# async_chunk is enabled by default in the YAML, so the previous separate
+# ``async_chunk`` test case is now identical to ``default`` and has been
+# dropped to avoid running every test twice.
 default_path = get_deploy_config_path("ci/qwen3_omni_moe.yaml")
 
-# Create parameter combinations for model and stage config
 test_params = [
-    pytest.param(OmniServerParams(model=model, stage_config_path=default_path, use_stage_cli=True), id="default"),
     pytest.param(
-        OmniServerParams(model=model, stage_config_path=get_chunk_config(default_path), use_stage_cli=True),
-        id="async_chunk",
+        OmniServerParams(model=model, stage_config_path=default_path, use_stage_cli=True),
+        id="default",
     ),
 ]
 

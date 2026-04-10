@@ -1,5 +1,18 @@
-# CI deploy — minimal resources, dummy weights.
-# CUDA defaults; rocm/xpu deltas under platforms: are applied automatically.
+# CI overlay for Qwen3-Omni-MoE — inherits from the production deploy
+# (``../qwen3_omni_moe.yaml``) via ``base_config:`` and overrides only
+# the fields that need to be CI-friendly:
+#   - ``load_format: dummy`` so CI doesn't download weights from HF
+#   - smaller ``max_num_seqs`` / ``max_model_len`` so the engine fits on
+#     the CI hardware budget
+#   - ``mm_processor_cache_gb: 0`` to avoid mmap caches in /dev/shm
+#
+# Why two files instead of one: the production deploy is what end users
+# get when they run ``vllm serve ... --omni`` and must reflect the real
+# model defaults. The CI overlay is what the test runner picks up via
+# ``tests.utils.get_deploy_config_path("ci/qwen3_omni_moe.yaml")`` and
+# only matters during testing. Inheritance keeps them DRY — only the
+# CI-specific deltas are duplicated.
+
 base_config: ../qwen3_omni_moe.yaml
 
 stages:

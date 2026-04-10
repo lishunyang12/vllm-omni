@@ -12,16 +12,87 @@ Please refer to [README.md](../../../README.md)
 vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091
 ```
 
-If you want to open async chunking for qwen3-omni, launch the server with command below
+The default deploy config at `vllm_omni/deploy/qwen3_omni_moe.yaml` is loaded
+automatically by the model registry — no `--deploy-config` flag needed for the
+common case. Async-chunk streaming is **on by default** in the bundled config.
+NPU / ROCm / XPU per-platform deltas are merged in automatically from the
+`platforms:` section of the same YAML.
+
+If you have a custom deploy YAML, point at it explicitly:
 
 ```bash
-vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 --deploy-config vllm_omni/deploy/qwen3_omni_moe.yaml
+vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
+    --deploy-config /path/to/your_deploy_config.yaml
 ```
 
-If you have custom stage configs file, launch the server with command below
+### Tuning deployment parameters
+
+Most engine knobs (`max_num_batched_tokens`, `max_model_len`, `enforce_eager`,
+`gpu_memory_utilization`, `tensor_parallel_size`, …) can be tuned without
+editing the YAML. There are three layers, in increasing specificity:
+
+#### 1. Global CLI flags (apply to every stage)
+
 ```bash
-vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 --deploy-config /path/to/deploy_config_file
+# Tighter memory budget on a smaller GPU
+vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
+    --gpu-memory-utilization 0.85
+
+# Disable cudagraphs (e.g. for debugging)
+vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
+    --enforce-eager
+
+# Reduce context length
+vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
+    --max-model-len 32768
 ```
+
+Explicit CLI flags **override** the deploy YAML (which itself overrides the
+parser defaults). If you don't pass a flag, the YAML value wins.
+
+> ⚠️ **For multi-stage models that share GPUs (qwen3_omni_moe by default
+> shares cuda:1 between stages 1 and 2), avoid using global memory flags.**
+> A global `--gpu-memory-utilization 0.85` would apply to every stage and
+> oversubscribe the shared device. Use per-stage overrides instead — see
+> below.
+
+#### 2. Per-stage overrides via `--stage-overrides` (recommended for memory)
+
+```bash
+# Lower stage 1's memory budget; leave others at the YAML default
+vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
+    --stage-overrides '{
+        "1": {"gpu_memory_utilization": 0.5},
+        "2": {"max_num_batched_tokens": 65536}
+    }'
+```
+
+Per-stage values are always treated as explicit and beat YAML defaults for
+the named stage. Other stages keep their YAML values.
+
+#### 3. Custom deploy YAML
+
+When per-stage overrides get long, write a small overlay YAML that inherits
+from the bundled default:
+
+```yaml
+# my_qwen3_omni_overrides.yaml
+base_config: /path/to/vllm_omni/deploy/qwen3_omni_moe.yaml
+
+stages:
+  - stage_id: 0
+    max_num_batched_tokens: 65536
+    enforce_eager: true
+  - stage_id: 1
+    gpu_memory_utilization: 0.5
+  - stage_id: 2
+    max_model_len: 8192
+```
+
+Then start the server with `--deploy-config my_qwen3_omni_overrides.yaml`.
+The `base_config:` line tells the loader to inherit everything else (stages,
+connectors, edges, platforms section) from the bundled production YAML, so
+you only need to spell out the deltas.
 
 ### Send Multi-modal Request
 
