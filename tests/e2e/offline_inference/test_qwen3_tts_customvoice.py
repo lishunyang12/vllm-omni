@@ -21,18 +21,30 @@ from tests.utils import get_deploy_config_path, hardware_test
 MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
 
 
-def get_stage_config(name: str = "qwen3_tts_no_async_chunk.yaml") -> str:
-    """Resolve a deploy config path under vllm_omni/deploy/."""
-    return get_deploy_config_path(name)
-
-
 def get_cuda_graph_config():
+    """Build a temp deploy yaml mirroring the deleted qwen3_tts_no_async_chunk.yaml.
+
+    Composes the synchronous (no-async-chunk) variant on top of the bundled
+    qwen3_tts.yaml prod default, with cudagraphs disabled. Replaces the deleted
+    standalone variant yaml; same effective config, no checked-in file needed.
+    """
     return modify_stage_config(
-        get_stage_config(),
+        get_deploy_config_path("qwen3_tts.yaml"),
         updates={
+            "pipeline": "qwen3_tts_no_async_chunk",
+            "async_chunk": False,
             "stages": {
-                0: {"enforce_eager": True},
-                1: {"enforce_eager": True},
+                0: {
+                    "max_num_seqs": 1,
+                    "gpu_memory_utilization": 0.2,
+                    "enforce_eager": True,
+                    "async_scheduling": False,
+                },
+                1: {
+                    "gpu_memory_utilization": 0.2,
+                    "enforce_eager": True,
+                    "async_scheduling": False,
+                },
             },
         },
     )

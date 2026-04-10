@@ -32,7 +32,16 @@ RESULT_DIR="${SCRIPT_DIR}/results"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
 DEPLOY_CONFIG_ON="vllm_omni/deploy/qwen3_tts.yaml"
-DEPLOY_CONFIG_OFF="vllm_omni/deploy/qwen3_tts_no_async_chunk.yaml"
+# async_chunk OFF is now composed via CLI flags against the same prod yaml
+# (replaces the deleted qwen3_tts_no_async_chunk.yaml). The flags below switch
+# to the synchronous pipeline registration and apply the per-stage budgets the
+# variant yaml used to set.
+NO_ASYNC_CHUNK_FLAGS=(
+    --no-async-chunk
+    --pipeline qwen3_tts_no_async_chunk
+    --stage-overrides
+    '{"0":{"max_num_seqs":1,"gpu_memory_utilization":0.2,"enforce_eager":true,"async_scheduling":false},"1":{"gpu_memory_utilization":0.2,"async_scheduling":false}}'
+)
 
 mkdir -p "${RESULT_DIR}"
 
@@ -104,7 +113,8 @@ sleep 5
 echo ""
 echo "[Phase 2] Starting async_chunk OFF server on port ${PORT_OFF}..."
 CUDA_VISIBLE_DEVICES=${GPU_DEVICE} vllm-omni serve "${MODEL}" \
-    --deploy-config "${DEPLOY_CONFIG_OFF}" \
+    --deploy-config "${DEPLOY_CONFIG_ON}" \
+    "${NO_ASYNC_CHUNK_FLAGS[@]}" \
     --host 0.0.0.0 --port "${PORT_OFF}" \
     --trust-remote-code --enforce-eager --omni \
     > "${RESULT_DIR}/server_off_${TIMESTAMP}.log" 2>&1 &

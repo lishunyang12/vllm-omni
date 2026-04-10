@@ -24,12 +24,17 @@ REF_TEXT = "Okay. Yeah. I resent you. I love you. I respect you. But you know wh
 
 
 def get_stage_config(name: str = "qwen3_tts.yaml") -> str:
-    """Resolve a deploy config path under vllm_omni/deploy/.
-
-    Both ``qwen3_tts.yaml`` (default) and ``qwen3_tts_no_async_chunk.yaml``
-    (variant) live under the new deploy directory.
-    """
+    """Resolve a deploy config path under vllm_omni/deploy/."""
     return get_deploy_config_path(name)
+
+
+# JSON for --stage-overrides that mirrors the deleted qwen3_tts_no_async_chunk.yaml
+# stage settings. Paired with --no-async-chunk + --pipeline qwen3_tts_no_async_chunk.
+_NO_ASYNC_CHUNK_STAGE_OVERRIDES = (
+    '{"0":{"max_num_seqs":1,"gpu_memory_utilization":0.2,"enforce_eager":true,'
+    '"async_scheduling":false},'
+    '"1":{"gpu_memory_utilization":0.2,"async_scheduling":false}}'
+)
 
 
 def get_prompt(prompt_type="text"):
@@ -55,11 +60,22 @@ tts_server_params = [
         ),
         id="async_chunk",
     ),
+    # Synchronous (no async-chunk) variant — composed entirely from CLI flags
+    # against the bundled qwen3_tts.yaml prod default. Replaces the deleted
+    # qwen3_tts_no_async_chunk.yaml file; same effective config.
     pytest.param(
         OmniServerParams(
             model=MODEL,
-            stage_config_path=get_stage_config("qwen3_tts_no_async_chunk.yaml"),
-            server_args=["--trust-remote-code", "--disable-log-stats"],
+            stage_config_path=get_stage_config("qwen3_tts.yaml"),
+            server_args=[
+                "--trust-remote-code",
+                "--disable-log-stats",
+                "--no-async-chunk",
+                "--pipeline",
+                "qwen3_tts_no_async_chunk",
+                "--stage-overrides",
+                _NO_ASYNC_CHUNK_STAGE_OVERRIDES,
+            ],
         ),
         id="no_async_chunk",
     ),

@@ -57,17 +57,25 @@ vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
 # (yaml default for qwen3_omni_moe: on)
 vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
     --no-async-chunk
+
+# Switch to a variant pipeline registration (e.g. qwen3_tts has a
+# synchronous codec topology with different processor functions)
+vllm serve Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice --omni --port 8091 \
+    --no-async-chunk \
+    --pipeline qwen3_tts_no_async_chunk
 ```
 
 Explicit CLI flags **override** the deploy YAML (which itself overrides the
 parser defaults). If you don't pass a flag, the YAML value wins.
 
-> **Note on `--no-async-chunk`**: this flips the deploy-level `async_chunk:`
-> bool but does not switch pipeline registration. Models whose async-chunk
-> and synchronous topologies use different connectors / processor functions
-> (e.g. `qwen3_tts` vs `qwen3_tts_no_async_chunk`) still need a matching
-> `--deploy-config` to swap the topology. For `qwen3_omni_moe` and
-> `qwen2_5_omni`, the bool flip on the prod yaml is sufficient.
+> **Note on `--no-async-chunk` vs `--pipeline`**: `--no-async-chunk` flips
+> the deploy-level `async_chunk:` bool. `--pipeline <name>` switches which
+> entry in the pipeline registry the loader resolves — that's how you select
+> a topology variant whose processor functions / stage wiring differ from
+> the default (e.g. `qwen3_tts_no_async_chunk` ships its own sync codec
+> processor on stage 1). For models like `qwen3_omni_moe` and `qwen2_5_omni`
+> that don't have a separate variant pipeline, the bool flip alone is
+> enough. For `qwen3_tts`, pair both flags to fully switch topologies.
 
 > ⚠️ **For multi-stage models that share GPUs (qwen3_omni_moe by default
 > shares cuda:1 between stages 1 and 2), avoid using global memory flags.**

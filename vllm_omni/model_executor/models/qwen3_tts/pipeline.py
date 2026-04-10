@@ -67,9 +67,11 @@ register_pipeline(QWEN3_TTS_PIPELINE)
 # Same model classes as QWEN3_TTS_PIPELINE but with the synchronous codec
 # pipeline: stage 0 emits codec codes that stage 1 consumes via a per-stage
 # input processor (instead of being streamed through the SharedMemoryConnector
-# during async-chunk generation). The variant deploy YAML at
-# ``vllm_omni/deploy/qwen3_tts_no_async_chunk.yaml`` selects this pipeline
-# explicitly via its top-level ``pipeline:`` field.
+# during async-chunk generation). Selected at runtime via either the deploy
+# yaml's top-level ``pipeline:`` field or the ``--pipeline qwen3_tts_no_async_chunk``
+# CLI flag — paired with ``--no-async-chunk`` and per-stage budgets via
+# ``--stage-overrides``. There is no separate variant deploy yaml; both
+# topologies share ``vllm_omni/deploy/qwen3_tts.yaml`` as the base.
 QWEN3_TTS_NO_ASYNC_CHUNK_PIPELINE = PipelineConfig(
     model_type="qwen3_tts_no_async_chunk",
     model_arch="Qwen3TTSTalkerForConditionalGeneration",

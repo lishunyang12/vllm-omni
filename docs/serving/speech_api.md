@@ -517,15 +517,16 @@ for result in response.json()["results"]:
 
 All items are fanned out to `generate()` concurrently. The engine's stage worker automatically batches them up to the configured `max_batch_size` and queues the rest — no client-side throttling needed.
 
-For best throughput, use a batch-optimized stage config with `max_batch_size > 1`:
+For best throughput, raise both stages' `max_num_seqs` to ≥4 via `--stage-overrides`:
 
 ```bash
 vllm serve Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice \
-    --deploy-config vllm_omni/deploy/qwen3_tts_batch.yaml \
-    --omni --port 8091 --trust-remote-code --enforce-eager
+    --omni --port 8091 --trust-remote-code --enforce-eager \
+    --stage-overrides '{"0":{"max_num_seqs":4,"gpu_memory_utilization":0.2},
+                        "1":{"max_num_seqs":4,"gpu_memory_utilization":0.2}}'
 ```
 
-The default `qwen3_tts.yaml` uses `max_batch_size: 1` (single request). The `qwen3_tts_batch.yaml` config sets `max_batch_size: 4` for ~4x throughput.
+The bundled `qwen3_tts.yaml` uses `max_num_seqs: 1` (single request) on both stages. Bumping to 4 yields roughly 4× throughput on the talker and lets stage 1 batch chunks across in-flight requests.
 
 ## Supported Models
 

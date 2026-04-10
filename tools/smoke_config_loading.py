@@ -334,23 +334,13 @@ def main() -> int:
     check("qwen3_tts per-stage model_arch survives merge_pipeline_deploy", t_qwen3_tts_full_merge)
 
     # ------------------------------------------------------------------
-    # 18. qwen3_tts_no_async_chunk variant: pipeline: selector resolves
+    # 18. qwen3_tts no_async_chunk variant pipeline registration is callable
+    # via the new --pipeline CLI selector (no separate yaml file required)
     # ------------------------------------------------------------------
-    def t_qwen3_tts_no_async_chunk_variant():
+    def t_qwen3_tts_no_async_chunk_pipeline_registered():
         import vllm_omni.model_executor.models.qwen3_tts.pipeline  # noqa: F401
 
-        path = REPO_ROOT / "vllm_omni" / "deploy" / "qwen3_tts_no_async_chunk.yaml"
-        deploy = load_deploy_config(path)
-        assert deploy.pipeline == "qwen3_tts_no_async_chunk", (
-            f"deploy.pipeline expected 'qwen3_tts_no_async_chunk', got {deploy.pipeline!r}"
-        )
-        assert deploy.async_chunk is False, "no_async_chunk variant should set async_chunk: false"
-        # The variant clears the inherited connector
-        assert deploy.connectors is None, "no_async_chunk should clear inherited connectors"
-        # Per-stage connector wiring also cleared
-        assert deploy.stages[0].output_connectors is None
-        assert deploy.stages[1].input_connectors is None
-        # The variant pipeline is registered
+        # The variant pipeline is registered at import time
         assert "qwen3_tts_no_async_chunk" in _PIPELINE_REGISTRY
         sync_pipeline = _PIPELINE_REGISTRY["qwen3_tts_no_async_chunk"]
         # Sync pipeline: stage 1 has the sync custom_process_input_func
@@ -358,26 +348,13 @@ def main() -> int:
         # And stage 0 has NO async-chunk processor
         assert sync_pipeline.get_stage(0).custom_process_next_stage_input_func is None
 
-    check("qwen3_tts_no_async_chunk variant + pipeline: selector", t_qwen3_tts_no_async_chunk_variant)
+    check(
+        "qwen3_tts_no_async_chunk pipeline registered (CLI-selectable)",
+        t_qwen3_tts_no_async_chunk_pipeline_registered,
+    )
 
     # ------------------------------------------------------------------
-    # 19. qwen3_tts_batch variant: simple base_config overlay
-    # ------------------------------------------------------------------
-    def t_qwen3_tts_batch_variant():
-        path = REPO_ROOT / "vllm_omni" / "deploy" / "qwen3_tts_batch.yaml"
-        deploy = load_deploy_config(path)
-        # Inherits async_chunk and connector from base
-        assert deploy.async_chunk is True
-        assert deploy.connectors is not None
-        # But overrides max_num_seqs and gpu_memory_utilization
-        assert deploy.stages[0].max_num_seqs == 4
-        assert deploy.stages[0].gpu_memory_utilization == 0.2
-        assert deploy.stages[1].max_num_seqs == 4
-
-    check("qwen3_tts_batch variant inherits async_chunk + overrides batch params", t_qwen3_tts_batch_variant)
-
-    # ------------------------------------------------------------------
-    # 20. NPU/rocm/xpu platform overrides consolidated into deploy yamls
+    # 19. NPU/rocm/xpu platform overrides consolidated into deploy yamls
     # ------------------------------------------------------------------
     def t_platforms_consolidation():
         # qwen3_omni_moe — already had npu/rocm/xpu in PR #2383
@@ -408,7 +385,7 @@ def main() -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("ALL OK — 20 checks passed")
+    print("ALL OK — 19 checks passed")
     return 0
 
 
