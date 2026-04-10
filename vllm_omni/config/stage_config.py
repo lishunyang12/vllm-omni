@@ -42,13 +42,8 @@ class StageExecutionType(str, Enum):
 
 
 _EXECUTION_TYPE_TO_SCHEDULER: dict[StageExecutionType, str | None] = {
-    StageExecutionType.LLM_AR: (
-        "vllm_omni.core.sched.omni_ar_scheduler.OmniARScheduler"
-    ),
-    StageExecutionType.LLM_GENERATION: (
-        "vllm_omni.core.sched.omni_generation_scheduler"
-        ".OmniGenerationScheduler"
-    ),
+    StageExecutionType.LLM_AR: ("vllm_omni.core.sched.omni_ar_scheduler.OmniARScheduler"),
+    StageExecutionType.LLM_GENERATION: ("vllm_omni.core.sched.omni_generation_scheduler.OmniGenerationScheduler"),
     StageExecutionType.DIFFUSION: None,
 }
 
@@ -111,10 +106,7 @@ class PipelineConfig:
         for stage in self.stages:
             for src in stage.input_sources:
                 if src not in stage_id_set:
-                    errors.append(
-                        f"Stage {stage.stage_id} references "
-                        f"non-existent input source {src}"
-                    )
+                    errors.append(f"Stage {stage.stage_id} references non-existent input source {src}")
                 if src == stage.stage_id:
                     errors.append(f"Stage {stage.stage_id} references itself")
         if not any(not s.input_sources for s in self.stages):
@@ -174,15 +166,20 @@ class DeployConfig:
     platforms: dict[str, Any] | None = None
 
 
-_STAGE_NON_ENGINE_KEYS = frozenset({
-    "stage_id", "devices", "output_connectors",
-    "input_connectors", "default_sampling_params", "engine_extras",
-})
+_STAGE_NON_ENGINE_KEYS = frozenset(
+    {
+        "stage_id",
+        "devices",
+        "output_connectors",
+        "input_connectors",
+        "default_sampling_params",
+        "engine_extras",
+    }
+)
 
 # Fields on StageDeployConfig that are populated from engine_args dict
 _STAGE_DEPLOY_FIELDS = {
-    f.name: f for f in __import__("dataclasses").fields(StageDeployConfig)
-    if f.name not in _STAGE_NON_ENGINE_KEYS
+    f.name: f for f in __import__("dataclasses").fields(StageDeployConfig) if f.name not in _STAGE_NON_ENGINE_KEYS
 }
 
 
@@ -190,14 +187,9 @@ def _parse_stage_deploy(stage_data: dict[str, Any]) -> StageDeployConfig:
     """Parse a single stage entry from deploy YAML into StageDeployConfig."""
     if "engine_args" in stage_data:
         engine_args = dict(stage_data["engine_args"])
-        devices = stage_data.get("runtime", {}).get(
-            "devices", stage_data.get("devices", "0")
-        )
+        devices = stage_data.get("runtime", {}).get("devices", stage_data.get("devices", "0"))
     else:
-        engine_args = {
-            k: v for k, v in stage_data.items()
-            if k not in _STAGE_NON_ENGINE_KEYS and k != "stage_id"
-        }
+        engine_args = {k: v for k, v in stage_data.items() if k not in _STAGE_NON_ENGINE_KEYS and k != "stage_id"}
         devices = stage_data.get("devices", "0")
 
     kwargs: dict[str, Any] = {"stage_id": stage_data["stage_id"], "devices": devices}
@@ -308,10 +300,7 @@ def _apply_platform_overrides(
             if "devices" in ps.get("runtime", {}):
                 object.__setattr__(base, "devices", ps["runtime"]["devices"])
         else:
-            overrides = {
-                k: v for k, v in ps.items()
-                if k not in ("stage_id", "devices")
-            }
+            overrides = {k: v for k, v in ps.items() if k not in ("stage_id", "devices")}
             if "devices" in ps:
                 object.__setattr__(base, "devices", ps["devices"])
         for key, val in overrides.items():
@@ -359,9 +348,7 @@ def merge_pipeline_deploy(
         if ps.engine_output_type:
             yaml_engine_args["engine_output_type"] = ps.engine_output_type
         if ps.custom_process_next_stage_input_func:
-            yaml_engine_args["custom_process_next_stage_input_func"] = (
-                ps.custom_process_next_stage_input_func
-            )
+            yaml_engine_args["custom_process_next_stage_input_func"] = ps.custom_process_next_stage_input_func
 
         if ds is not None:
             for k, v in asdict(ds).items():
@@ -616,21 +603,15 @@ class StageConfigFactory:
         trust_remote_code = cli_overrides.get("trust_remote_code", True)
 
         # --- New path: check pipeline registry first ---
-        model_type, _ = cls._auto_detect_model_type(
-            model, trust_remote_code=trust_remote_code
-        )
+        model_type, _ = cls._auto_detect_model_type(model, trust_remote_code=trust_remote_code)
         if model_type and model_type in cls.PIPELINE_MODELS:
             pipeline_dir = cls.PIPELINE_MODELS[model_type]
             try:
-                __import__(
-                    f"vllm_omni.model_executor.models.{pipeline_dir}.pipeline"
-                )
+                __import__(f"vllm_omni.model_executor.models.{pipeline_dir}.pipeline")
             except ImportError:
                 pass
         if model_type and model_type in _PIPELINE_REGISTRY:
-            return cls._create_from_registry(
-                model_type, cli_overrides, deploy_config_path
-            )
+            return cls._create_from_registry(model_type, cli_overrides, deploy_config_path)
 
         # --- Legacy path: load from pipeline YAML ---
         pipeline = cls._load_pipeline(model, trust_remote_code=trust_remote_code)
@@ -688,18 +669,46 @@ class StageConfigFactory:
         stages = merge_pipeline_deploy(pipeline_cfg, deploy_cfg, cli_overrides)
 
         # For the registry path, deploy config already has per-stage values.
-        # Only apply per-stage CLI overrides (--stage-overrides / stage_N_*),
-        # not global argparse defaults which would clobber deploy values.
-        per_stage_only = {
-            k: v for k, v in cli_overrides.items()
-            if re.match(r"stage_\d+_", k) and v is not None
-        }
+        # Forward only CLI args the user explicitly set — drop argparse
+        # defaults so they don't clobber deploy YAML. We detect "explicit"
+        # by comparing against OmniEngineArgs defaults: if a CLI value
+        # differs from the dataclass default, the user set it.
+        explicit = cls._filter_explicit_cli_overrides(cli_overrides)
         for stage in stages:
-            stage.runtime_overrides = cls._merge_cli_overrides(
-                stage, per_stage_only
-            )
+            stage.runtime_overrides = cls._merge_cli_overrides(stage, explicit)
 
         return stages
+
+    @classmethod
+    def _filter_explicit_cli_overrides(cls, cli_overrides: dict[str, Any]) -> dict[str, Any]:
+        """Keep only CLI overrides the user explicitly set.
+
+        Compares each value against the corresponding ``OmniEngineArgs``
+        dataclass default. ``stage_<id>_*`` keys are always kept.
+        """
+        try:
+            from vllm_omni.engine.arg_utils import OmniEngineArgs
+
+            defaults = {
+                f.name: f.default
+                for f in __import__("dataclasses").fields(OmniEngineArgs)
+                if f.default is not __import__("dataclasses").MISSING
+            }
+        except Exception:
+            defaults = {}
+
+        explicit: dict[str, Any] = {}
+        for key, value in cli_overrides.items():
+            if value is None:
+                continue
+            if re.match(r"stage_\d+_", key):
+                explicit[key] = value
+                continue
+            if key in defaults and value == defaults[key]:
+                # Matches argparse default — assume not user-set.
+                continue
+            explicit[key] = value
+        return explicit
 
     @classmethod
     def create_default_diffusion(cls, kwargs: dict[str, Any]) -> list[dict[str, Any]]:

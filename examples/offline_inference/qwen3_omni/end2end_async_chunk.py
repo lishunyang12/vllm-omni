@@ -182,9 +182,16 @@ def clone_prompt_for_request(template: dict) -> dict:
 def _default_deploy_config_path() -> str | None:
     """Best-effort default deploy config for running Qwen3-Omni with async_chunk.
 
-    When this example is executed from within the repository, we resolve the
-    default YAML path relative to this file. When installed elsewhere, the
-    file may not exist and callers should pass --deploy-config explicitly.
+    The default ``vllm_omni/deploy/qwen3_omni_moe.yaml`` ships with
+    ``async_chunk: true`` at the top level, so loading it is enough to
+    enable async-chunk semantics. To disable it, copy the YAML and set
+    ``async_chunk: false`` (or pass ``--deploy-config`` to a YAML that
+    overrides the flag).
+
+    When this example is executed from within the repository, we resolve
+    the default YAML path relative to this file. When installed elsewhere,
+    the file may not exist and callers should pass ``--deploy-config``
+    explicitly.
     """
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
     candidate = os.path.join(
