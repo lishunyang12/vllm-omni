@@ -1161,6 +1161,31 @@ class TestCLIExplicitPrecedence:
         for stage in stages:
             assert stage.runtime_overrides.get("enable_prefix_caching") is True
 
+    def test_explicit_pipeline_override_selects_variant(self):
+        """``--pipeline qwen3_tts_no_async_chunk`` switches the pipeline
+        registration that ``_create_from_registry`` resolves, even when the
+        deploy YAML doesn't set the ``pipeline:`` field. Verifies the new
+        CLI flag mirrors the deploy-yaml ``pipeline:`` selector and that
+        ``pipeline`` does not leak into per-stage ``runtime_overrides`` (it's
+        in ``_INTERNAL_KEYS``)."""
+        import vllm_omni.model_executor.models.qwen3_tts.pipeline  # noqa: F401
+
+        stages = StageConfigFactory._create_from_registry(
+            "qwen3_tts",
+            cli_overrides={"pipeline": "qwen3_tts_no_async_chunk"},
+            cli_explicit_keys={"pipeline"},
+        )
+        # The variant pipeline has 2 stages, same as the default qwen3_tts.
+        assert len(stages) == 2
+        # The variant uses Qwen3TTSCode2Wav for stage 1 with a sync input
+        # processor — verify by checking model_arch on the merged stages.
+        assert stages[1].yaml_engine_args.get("model_arch") == "Qwen3TTSCode2Wav"
+        # ``pipeline`` must not leak into runtime_overrides (it's an internal
+        # key). If it did, _merge_cli_overrides would forward it as an engine
+        # arg, which vLLM would reject.
+        for stage in stages:
+            assert "pipeline" not in stage.runtime_overrides
+
 
 class TestSamplingConstraintsPrecedence:
     """Test that pipeline sampling_constraints override deploy defaults."""

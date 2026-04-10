@@ -743,10 +743,15 @@ class StageConfigFactory:
         if cli_async_chunk is not None and (cli_explicit_keys is None or "async_chunk" in cli_explicit_keys):
             deploy_cfg.async_chunk = bool(cli_async_chunk)
 
+        cli_pipeline = cli_overrides.get("pipeline")
+        if cli_pipeline is not None and (cli_explicit_keys is None or "pipeline" in cli_explicit_keys):
+            deploy_cfg.pipeline = str(cli_pipeline)
+
         # Resolve which pipeline registration to use. The deploy YAML's
         # explicit ``pipeline:`` field (if set) wins over the auto-detected
         # model_type so variant topologies can be selected without renaming
-        # the model.
+        # the model. The CLI ``--pipeline`` flag above lets users override
+        # the YAML's choice as well.
         pipeline_key = deploy_cfg.pipeline or model_type
         if pipeline_key not in _PIPELINE_REGISTRY:
             raise KeyError(
@@ -1051,6 +1056,10 @@ class StageConfigFactory:
         # every stage by ``merge_pipeline_deploy``. Don't forward it again as
         # a per-stage CLI override.
         "async_chunk",
+        # ``pipeline`` selects which entry in the pipeline registry to load
+        # (variant topology). It's consumed before stage merging happens and
+        # has no meaning as a per-stage engine arg.
+        "pipeline",
     }
 
     @classmethod
