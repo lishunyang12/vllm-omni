@@ -54,6 +54,8 @@ READY_TIMEOUT="${E2E_READY_TIMEOUT:-900}"
 REQUEST_TIMEOUT="${E2E_REQUEST_TIMEOUT:-120}"
 LOG_GREP="${E2E_LOG_GREP:-}"
 KEEP_LOG="${E2E_KEEP_LOG:-0}"
+STREAM_LOG="${E2E_STREAM_LOG:-0}"     # 1 = tail -f the server log to stdout
+LOG_SNIPPET_LINES="${E2E_LOG_SNIPPET_LINES:-8}"  # last N lines per polling tick
 
 # Forward anything after `--` to `vllm serve`. If no `--`, EXTRA_ARGS is empty.
 EXTRA_ARGS=()
@@ -67,6 +69,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 SERVER_PID=""
+TAIL_PID=""
 RESPONSE_FILE="/tmp/e2e_serve_smoke_response_$$.json"
 
 # ---------------------------------------------------------------------------
@@ -74,6 +77,10 @@ RESPONSE_FILE="/tmp/e2e_serve_smoke_response_$$.json"
 # ---------------------------------------------------------------------------
 cleanup() {
     local exit_code=$?
+    if [[ -n "$TAIL_PID" ]] && kill -0 "$TAIL_PID" 2>/dev/null; then
+        kill "$TAIL_PID" 2>/dev/null || true
+        wait "$TAIL_PID" 2>/dev/null || true
+    fi
     if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
         echo ""
         echo "=== Cleaning up server (PID $SERVER_PID) ==="
@@ -169,6 +176,14 @@ SERVER_PID=$!
 echo "Server PID: $SERVER_PID"
 echo "Streaming log → $LOG_FILE"
 
+if [[ "$STREAM_LOG" == "1" ]]; then
+    echo ""
+    echo "=== Live log streaming enabled (E2E_STREAM_LOG=1) ==="
+    # Start tail -f after a brief delay so the file exists
+    ( sleep 1 && tail -F "$LOG_FILE" 2>/dev/null | sed 's/^/[server] /' ) &
+    TAIL_PID=$!
+fi
+
 # ---------------------------------------------------------------------------
 # Step 2 — wait for ready
 # ---------------------------------------------------------------------------
@@ -193,6 +208,15 @@ while true; do
     elapsed=$((elapsed + poll_interval))
     if (( elapsed % 30 == 0 )); then
         echo "  ... still waiting (${elapsed}s elapsed)"
+        # Print last N log lines so the user can see what's happening,
+        # unless full streaming is already on (would be redundant).
+        if [[ "$STREAM_LOG" != "1" ]] && [[ -s "$LOG_FILE" ]]; then
+            echo "  --- last $LOG_SNIPPET_LINES log lines ---"
+            tail -n "$LOG_SNIPPET_LINES" "$LOG_FILE" 2>/dev/null \
+                | sed 's/^/    | /' \
+                || true
+            echo "  $(printf '%.0s-' {1..40})"
+        fi
     fi
 done
 
