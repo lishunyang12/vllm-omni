@@ -1,11 +1,17 @@
 # Deploy config for Qwen2.5-Omni — CUDA defaults + platform overrides.
 # Verified on 2x H100-80G GPUs (stages 0/1 on separate GPUs, stage 2
 # colocated with stage 0).
+#
+# Stage 0 (thinker) and stage 2 (token2wav) share cuda:0. Stage 2's
+# flashinfer kernel warmup spikes to ~27 GiB transient memory (well above
+# its steady-state need), so stage 0's budget is held to 0.55 to leave
+# enough headroom on the shared device. With 0.55 + 0.40 = 0.95, ~4 GiB
+# stays free for the warmup spike.
 
 stages:
   - stage_id: 0
     max_num_seqs: 1
-    gpu_memory_utilization: 0.8
+    gpu_memory_utilization: 0.55
     enforce_eager: true
     max_num_batched_tokens: 32768
     mm_processor_cache_gb: 0
@@ -34,7 +40,7 @@ stages:
 
   - stage_id: 2
     max_num_seqs: 1
-    gpu_memory_utilization: 0.15
+    gpu_memory_utilization: 0.40
     enforce_eager: true
     max_num_batched_tokens: 32768
     async_scheduling: false
