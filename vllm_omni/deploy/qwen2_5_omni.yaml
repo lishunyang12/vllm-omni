@@ -2,22 +2,18 @@
 # Verified on 2x H100-80G GPUs (stages 0/1 on separate GPUs, stage 2
 # colocated with stage 0).
 #
-# Stage 0 (thinker) and stage 2 (token2wav) share cuda:0. Stage 2's
-# flashinfer kernel warmup spikes to ~27 GiB *transient* memory in the
-# token2wav DiT forward pass — well above token2wav's steady-state need
-# (~10 GiB). The spike has to fit alongside stage 0's reserved budget,
-# so on an 80 GiB H100:
-#   stage 0 budget = 0.48  → 38 GiB reserved
-#   stage 2 baseline       ≈ 10 GiB
-#   free for warmup spike  ≈ 79 - 38 - 10 = 31 GiB  (need 27, margin 4)
-# Stage 2's gpu_memory_utilization=0.40 is the *cap*, not the reservation
-# — vLLM only grows into it if KV cache profiling demands it, which
-# token2wav doesn't.
+# Stage 2 (token2wav) sets ``enable_flashinfer_autotune: false`` because
+# its DiT block does not use any flashinfer kernels — vLLM's autotune
+# would still run a full ``_dummy_run`` of token2wav at
+# ``max_num_batched_tokens`` shape, which spikes ~27 GiB transient memory
+# in the DiT attention mask and OOMs the shared cuda:0 device. Disabling
+# autotune skips that wasted dummy forward; flashinfer is never invoked
+# in this stage so there is nothing to autotune.
 
 stages:
   - stage_id: 0
     max_num_seqs: 1
-    gpu_memory_utilization: 0.48
+    gpu_memory_utilization: 0.8
     enforce_eager: true
     max_num_batched_tokens: 32768
     mm_processor_cache_gb: 0
@@ -46,8 +42,9 @@ stages:
 
   - stage_id: 2
     max_num_seqs: 1
-    gpu_memory_utilization: 0.40
+    gpu_memory_utilization: 0.15
     enforce_eager: true
+    enable_flashinfer_autotune: false
     max_num_batched_tokens: 32768
     async_scheduling: false
     devices: "0"
