@@ -1,5 +1,5 @@
 # XPU CI deploy — verified on 8x Intel Arc Pro B60.
-base_config: ../../../../vllm_omni/deploy/qwen3_omni_moe.yaml
+base_config: ../../qwen3_omni_moe.yaml
 
 stages:
   - stage_id: 0

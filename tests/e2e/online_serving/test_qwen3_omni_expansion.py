@@ -9,7 +9,6 @@ import os
 from vllm_omni.platforms import current_omni_platform
 
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
-from pathlib import Path
 
 import pytest
 
@@ -21,7 +20,7 @@ from tests.conftest import (
     generate_synthetic_video,
     modify_stage_config,
 )
-from tests.utils import hardware_test
+from tests.utils import get_deploy_config_path, hardware_test
 
 model = "Qwen/Qwen3-Omni-30B-A3B-Instruct"
 
@@ -60,10 +59,10 @@ def get_batch_token_config(default_path):
 
 
 # CI stage config for 2*H100-80G GPUs
-default_path = str(Path(__file__).parent.parent / "deploy" / "qwen3_omni_ci.yaml")
+default_path = get_deploy_config_path("ci/cuda/qwen3_omni_moe.yaml")
 
 if current_omni_platform.is_xpu():
-    default_path = str(Path(__file__).parent.parent / "deploy" / "xpu" / "qwen3_omni_ci.yaml")
+    default_path = get_deploy_config_path("ci/xpu/qwen3_omni_moe.yaml")
 
 # Create parameter combinations for model and stage config
 test_params = [

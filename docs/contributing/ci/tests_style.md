@@ -229,6 +229,7 @@ from tests.conftest import (
     generate_synthetic_video,
     merge_base64_and_convert_to_text,
 )
+from tests.utils import get_deploy_config_path
 from vllm_omni.platforms import current_omni_platform
 
 # Edit: model name and stage config path
@@ -236,7 +237,7 @@ models = ["Qwen/Qwen3-Omni-30B-A3B-Instruct"]
 
 #If you use the default configuration file, you can directly use the following address.
 def get_default_config():
-    return str(Path(__file__).parent.parent / "deploy" / "qwen3_omni_ci.yaml")
+    return get_deploy_config_path("ci/cuda/qwen3_omni_moe.yaml")
 
 #If you need to modify the configuration file, you can use modify_stage_config.
 def get_chunk_config():

@@ -7,15 +7,13 @@ import os
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 os.environ["VLLM_TEST_CLEAN_GPU_MEMORY"] = "0"
 
-from pathlib import Path
-
 import pytest
 
 from tests.conftest import (
     generate_synthetic_video,
     modify_stage_config,
 )
-from tests.utils import hardware_test
+from tests.utils import get_deploy_config_path, hardware_test
 from vllm_omni.platforms import current_omni_platform
 
 models = ["Qwen/Qwen3-Omni-30B-A3B-Instruct"]
@@ -23,7 +21,7 @@ models = ["Qwen/Qwen3-Omni-30B-A3B-Instruct"]
 
 def get_cuda_graph_config():
     path = modify_stage_config(
-        str(Path(__file__).parent.parent / "deploy" / "qwen3_omni_ci.yaml"),
+        get_deploy_config_path("ci/cuda/qwen3_omni_moe.yaml"),
         updates={
             "stages": {
                 0: {"enforce_eager": True},
@@ -37,9 +35,9 @@ def get_cuda_graph_config():
 # CI stage config for 2xH100-80G GPUs or AMD GPU MI325
 if current_omni_platform.is_rocm():
     # ROCm stage config optimized for MI325 GPU
-    stage_configs = [str(Path(__file__).parent.parent / "deploy" / "rocm" / "qwen3_omni_ci.yaml")]
+    stage_configs = [get_deploy_config_path("ci/rocm/qwen3_omni_moe.yaml")]
 elif current_omni_platform.is_xpu():
-    stage_configs = [str(Path(__file__).parent.parent / "deploy" / "xpu" / "qwen3_omni_ci.yaml")]
+    stage_configs = [get_deploy_config_path("ci/xpu/qwen3_omni_moe.yaml")]
 else:
     stage_configs = [get_cuda_graph_config()]
 

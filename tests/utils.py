@@ -11,6 +11,7 @@ import threading
 import time
 from collections.abc import Callable
 from contextlib import ExitStack, contextmanager, suppress
+from pathlib import Path
 from typing import Any, Literal
 
 import cloudpickle
@@ -23,6 +24,24 @@ from vllm.utils.torch_utils import cuda_device_count_stateless
 from vllm_omni.platforms import current_omni_platform
 
 _P = ParamSpec("_P")
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_DEPLOY_DIR = _REPO_ROOT / "vllm_omni" / "deploy"
+
+
+def get_deploy_config_path(rel_path: str) -> str:
+    """Resolve a deploy config path relative to ``vllm_omni/deploy/``.
+
+    Per RFC #1807, deploy YAMLs (including CI/test variants under ``ci/``)
+    live alongside the product configs in ``vllm_omni/deploy/`` so that tests
+    and users share a single source of truth.
+
+    Args:
+        rel_path: Path relative to ``vllm_omni/deploy/``,
+            e.g. ``"qwen3_omni_moe.yaml"`` or ``"ci/cuda/qwen3_omni_moe.yaml"``.
+    """
+    return str(_DEPLOY_DIR / rel_path)
+
 
 if current_platform.is_rocm():
     from amdsmi import (

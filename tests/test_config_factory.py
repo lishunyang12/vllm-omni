@@ -785,11 +785,10 @@ class TestBaseConfigInheritance:
     """Test deploy YAML base_config inheritance."""
 
     def test_ci_inherits_from_main(self):
-        from pathlib import Path
-
+        from tests.utils import get_deploy_config_path
         from vllm_omni.config.stage_config import load_deploy_config
 
-        ci_path = Path(__file__).parent / "e2e" / "deploy" / "qwen3_omni_ci.yaml"
+        ci_path = Path(get_deploy_config_path("ci/cuda/qwen3_omni_moe.yaml"))
         if not ci_path.exists():
             pytest.skip("CI deploy config not found")
 
@@ -805,11 +804,10 @@ class TestBaseConfigInheritance:
         assert deploy.async_chunk is True
 
     def test_ci_sampling_merge(self):
-        from pathlib import Path
-
+        from tests.utils import get_deploy_config_path
         from vllm_omni.config.stage_config import load_deploy_config
 
-        ci_path = Path(__file__).parent / "e2e" / "deploy" / "qwen3_omni_ci.yaml"
+        ci_path = Path(get_deploy_config_path("ci/cuda/qwen3_omni_moe.yaml"))
         if not ci_path.exists():
             pytest.skip("CI deploy config not found")
 

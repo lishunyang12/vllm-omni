@@ -3,7 +3,6 @@ E2E Online tests for Qwen3-Omni model with video input and audio output.
 """
 
 import os
-from pathlib import Path
 
 import pytest
 
@@ -15,7 +14,7 @@ from tests.conftest import (
     generate_synthetic_video,
     modify_stage_config,
 )
-from tests.utils import hardware_test
+from tests.utils import get_deploy_config_path, hardware_test
 from vllm_omni.platforms import current_omni_platform
 
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
@@ -27,7 +26,7 @@ models = ["Qwen/Qwen3-Omni-30B-A3B-Instruct"]
 
 def get_chunk_config():
     path = modify_stage_config(
-        str(Path(__file__).parent.parent / "deploy" / "qwen3_omni_ci.yaml"),
+        get_deploy_config_path("ci/cuda/qwen3_omni_moe.yaml"),
         updates={
             "async_chunk": True,
             "stage_args": {
@@ -45,7 +44,7 @@ def get_chunk_config():
 
 
 if current_omni_platform.is_xpu():
-    stage_configs = [str(Path(__file__).parent.parent / "deploy" / "xpu" / "qwen3_omni_ci.yaml")]
+    stage_configs = [get_deploy_config_path("ci/xpu/qwen3_omni_moe.yaml")]
 else:  # MI325 GPU should share the same config as H100
     stage_configs = [get_chunk_config()]
 

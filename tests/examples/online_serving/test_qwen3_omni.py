@@ -19,17 +19,17 @@ from tests.examples.conftest import (
     run_cmd,
     strip_trailing_audio_saved_line,
 )
-from tests.utils import hardware_test
+from tests.utils import get_deploy_config_path, hardware_test
 
 pytestmark = [pytest.mark.advanced_model, pytest.mark.example]
 
 models = ["Qwen/Qwen3-Omni-30B-A3B-Instruct"]
 
 
-stage_configs = [str(Path(__file__).parent.parent.parent / "e2e" / "deploy" / "qwen3_omni_ci.yaml")]
+stage_configs = [get_deploy_config_path("ci/cuda/qwen3_omni_moe.yaml")]
 
 if current_omni_platform.is_xpu():
-    stage_configs = [str(Path(__file__).parent.parent.parent / "e2e" / "deploy" / "xpu" / "qwen3_omni_ci.yaml")]
+    stage_configs = [get_deploy_config_path("ci/xpu/qwen3_omni_moe.yaml")]
 
 
 example_dir = str(Path(__file__).parent.parent.parent.parent / "examples" / "online_serving")
