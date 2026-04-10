@@ -6,6 +6,7 @@ import torch
 from diffusers.loaders.lora_conversion_utils import (
     _convert_non_diffusers_ltx2_lora_to_diffusers,
     _convert_non_diffusers_qwen_lora_to_diffusers,
+    _convert_non_diffusers_wan_lora_to_diffusers,
 )
 from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file
@@ -22,6 +23,8 @@ lora_convert_mapping: dict[str, Callable] = {
     "QwenImagePipeline": _convert_non_diffusers_qwen_lora_to_diffusers,
     "QwenImageEditPipeline": _convert_non_diffusers_qwen_lora_to_diffusers,
     "QwenImageEditPlusPipeline": _convert_non_diffusers_qwen_lora_to_diffusers,
+    "Wan22Pipeline": _convert_non_diffusers_wan_lora_to_diffusers,
+    "Wan22I2VPipeline": _convert_non_diffusers_wan_lora_to_diffusers,
 }
 
 
@@ -360,3 +363,98 @@ class LTX2LoraLoaderMinxin(LoraLoaderMixin):
 
         self.lora_loaded.remove(adapter_name)
         del self.lora_loaded_deltas[adapter_name]
+
+
+class WanLoraLoaderMixin(LoraLoaderMixin):
+    supported_ckpt_mapping = {
+        "wan2.2_i2v_A14b_high_noise_lora_rank64_lightx2v_4step_1022.safetensors": "transformer",
+        "wan2.2_i2v_A14b_low_noise_lora_rank64_lightx2v_4step_1022.safetensors": "transformer_2",
+        "wan2.2_t2v_A14b_high_noise_lora_rank64_lightx2v_4step_1217.safetensors": "transformer",
+        "wan2.2_t2v_A14b_low_noise_lora_rank64_lightx2v_4step_1217.safetensors": "transformer_2",
+        "high_noise_model.safetensors": "transformer",
+        "low_noise_model.safetensors": "transformer_2",
+    }
+
+    def load_lora_weights(
+        self,
+        pretrained_model_name_or_path: str,
+        adapter_name: str | None = None,
+    ):
+        if adapter_name in self.lora_loaded:
+            return
+        self.lora_loaded.add(adapter_name)
+
+        cls_name = self.__class__.__name__
+        task = "i2v" if "I2V" in cls_name else "t2v"
+
+        lora_paths = self._get_target_lora_paths(pretrained_model_name_or_path, self.has_transformer_2, task=task)
+        for lora_path in lora_paths:
+            state_dict = _load_lora_state_dict(lora_path)
+            is_non_diffusers_format = any(k.startswith("diffusion_model.") for k in state_dict)
+            if is_non_diffusers_format:
+                converter = get_converter_by_pipeline(self)
+                if converter is None:
+                    raise ValueError(f"Converter for Lora weights not found for {self.__class__.__name__}")
+
+                state_dict = converter(state_dict)
+
+            state_dict = _remap_state_dict_keys(
+                state_dict,
+                [
+                    (".ffn.net.0.", ".ffn.net_0."),
+                    (".ffn.net.2.", ".ffn.net_2."),
+                    (
+                        ".to_out.0.",
+                        ".to_out.",
+                    ),
+                ],
+            )
+
+            if self.has_transformer_2:
+                # wan22 load path
+                filename = os.path.basename(lora_path)
+                target_module_name = self.supported_ckpt_mapping[filename]
+                module = getattr(find_module_with_attr(self, target_module_name), target_module_name)
+                self.load_lora_into_module(state_dict, module, prefix=self.transformer_name)
+            else:
+                # wan21 load path
+                self.load_lora_into_module(state_dict, self.transformer, prefix=self.transformer_name)
+
+    def unload_lora_weights(self, adapter_name: str):
+        if adapter_name not in self.lora_loaded:
+            return
+        lora_deltas = self.lora_loaded_deltas[adapter_name]
+
+        transformer = get_transformer_from_pipeline(self)
+        self.unload_module_lora(transformer, lora_deltas, prefix=self.transformer_name)
+
+        self.lora_loaded.remove(adapter_name)
+        del self.lora_loaded_deltas[adapter_name]
+
+    def _get_target_lora_paths(
+        self,
+        pretrained_model_name_or_path,
+        is_wan22: bool = True,
+        task: str = "t2v",
+    ):
+        lora_paths = []
+        if os.path.isdir(pretrained_model_name_or_path):
+            for filename in os.listdir(pretrained_model_name_or_path):
+                if not filename.endswith(".safetensors"):
+                    continue
+                if filename not in self.supported_ckpt_mapping:
+                    continue
+                if task in filename.lower():
+                    lora_paths.append(os.path.join(pretrained_model_name_or_path, filename))
+
+            return lora_paths
+
+        if is_wan22:
+            raise ValueError("Wan22 distilled LoRA weights are not supported by directory")
+
+        filename = os.path.basename(pretrained_model_name_or_path).lower()
+        if task not in filename:
+            raise ValueError(f"LoRA weights {pretrained_model_name_or_path} is not a {task} LoRA weights")
+
+        lora_paths.append(pretrained_model_name_or_path)
+        return lora_paths

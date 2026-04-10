@@ -12,6 +12,8 @@ import torch
 from vllm_omni.diffusion.data import DiffusionParallelConfig
 from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
+from vllm_omni.lora.request import LoRARequest
+from vllm_omni.lora.utils import stable_lora_int_id
 from vllm_omni.outputs import OmniRequestOutput
 from vllm_omni.platforms import current_omni_platform
 
@@ -185,6 +187,18 @@ def parse_args() -> argparse.Namespace:
         choices=["fp8", "gguf"],
         help="Quantization method for the transformer (fp8 for online FP8 quantization).",
     )
+    parser.add_argument(
+        "--lora-path",
+        type=str,
+        default=None,
+        help="Path to LoRA adapter folder (PEFT format). Loaded at initialization and used for generation.",
+    )
+    parser.add_argument(
+        "--lora-scale",
+        type=float,
+        default=1.0,
+        help="Scale factor for LoRA weights (default: 1.0).",
+    )
     return parser.parse_args()
 
 
@@ -250,6 +264,8 @@ def main():
         omni_kwargs["cache_backend"] = args.cache_backend
         omni_kwargs["cache_config"] = cache_config
         omni_kwargs["enable_cache_dit_summary"] = args.enable_cache_dit_summary
+    if args.lora_path is not None:
+        omni_kwargs["lora_path"] = args.lora_path
 
     omni = Omni(**omni_kwargs)
 
@@ -271,9 +287,23 @@ def main():
     print(f"  Video size: {args.width}x{args.height}")
     print(f"{'=' * 60}\n")
 
+    lora_request = None
+    if args.lora_path:
+        lora_request_id = stable_lora_int_id(args.lora_path)
+        lora_request = LoRARequest(
+            lora_name=Path(args.lora_path).stem,
+            lora_int_id=lora_request_id,
+            lora_path=args.lora_path,
+        )
+
     prompt_dict = {"prompt": args.prompt}
     if args.negative_prompt:
         prompt_dict["negative_prompt"] = args.negative_prompt
+
+    extra_args = {}
+    if lora_request:
+        extra_args["lora_request"] = lora_request
+        extra_args["lora_scale"] = args.lora_scale
 
     sampling_kwargs = dict(
         height=args.height,
@@ -282,6 +312,7 @@ def main():
         guidance_scale=args.guidance_scale,
         num_inference_steps=args.num_inference_steps,
         num_frames=args.num_frames,
+        extra_args=extra_args,
     )
     if args.guidance_scale_high is not None:
         sampling_kwargs["guidance_scale_2"] = args.guidance_scale_high
