@@ -377,21 +377,7 @@ def main() -> int:
     check("qwen3_tts_batch variant inherits async_chunk + overrides batch params", t_qwen3_tts_batch_variant)
 
     # ------------------------------------------------------------------
-    # 20. multiconnector variants for qwen3_omni_moe and qwen2_5_omni
-    # ------------------------------------------------------------------
-    def t_multiconnector_variants():
-        for name in ("qwen3_omni_moe_multiconnector.yaml", "qwen2_5_omni_multiconnector.yaml"):
-            path = REPO_ROOT / "vllm_omni" / "deploy" / name
-            deploy = load_deploy_config(path)
-            assert deploy.connectors is not None
-            assert "mooncake_connector" in deploy.connectors, f"{name} should define mooncake_connector"
-            # Stage 0 outputs to mooncake
-            assert deploy.stages[0].output_connectors == {"to_stage_1": "mooncake_connector"}
-
-    check("multiconnector variants define mooncake_connector + per-stage wiring", t_multiconnector_variants)
-
-    # ------------------------------------------------------------------
-    # 21. NPU/rocm/xpu platform overrides consolidated into deploy yamls
+    # 20. NPU/rocm/xpu platform overrides consolidated into deploy yamls
     # ------------------------------------------------------------------
     def t_platforms_consolidation():
         # qwen3_omni_moe — already had npu/rocm/xpu in PR #2383
@@ -422,7 +408,7 @@ def main() -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("ALL OK — 21 checks passed")
+    print("ALL OK — 20 checks passed")
     return 0
 
 

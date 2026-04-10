@@ -113,6 +113,54 @@ The `base_config:` line tells the loader to inherit everything else (stages,
 connectors, edges, platforms section) from the bundled production YAML, so
 you only need to spell out the deltas.
 
+#### 4. Multi-node deployment (cross-host transfer connector)
+
+The bundled `qwen3_omni_moe.yaml` uses `SharedMemoryConnector` between stages,
+which only works when all stages run on the same physical host. For
+**cross-node** deployments, write a small overlay YAML that swaps in a
+network-capable connector (e.g. `MooncakeStoreConnector`) and re-points each
+stage's connector wiring at it. The connector spec carries your own server
+addresses — there is no checked-in default because every cluster is
+different.
+
+```yaml
+# my_qwen3_omni_multinode.yaml
+base_config: /path/to/vllm_omni/deploy/qwen3_omni_moe.yaml
+
+connectors:
+  mooncake_connector:
+    name: MooncakeStoreConnector
+    extra:
+      host: "127.0.0.1"
+      metadata_server: "http://YOUR_METADATA_HOST:8080/metadata"
+      master: "YOUR_MASTER_HOST:50051"
+      segment: 512000000    # 512 MB transfer segment
+      localbuf: 64000000    # 64 MB local buffer
+      proto: "tcp"
+
+stages:
+  - stage_id: 0
+    output_connectors:
+      to_stage_1: mooncake_connector
+  - stage_id: 1
+    input_connectors:
+      from_stage_0: mooncake_connector
+    output_connectors:
+      to_stage_2: mooncake_connector
+  - stage_id: 2
+    input_connectors:
+      from_stage_1: mooncake_connector
+```
+
+Then launch with `--deploy-config my_qwen3_omni_multinode.yaml`. Same
+pattern works for Qwen2.5-Omni — replace `base_config:` with the path to
+`vllm_omni/deploy/qwen2_5_omni.yaml`.
+
+> ⚠️ Replace `YOUR_METADATA_HOST` / `YOUR_MASTER_HOST` with the actual
+> mooncake server addresses for your cluster. The `base_config:` overlay
+> inherits all stage budgets, devices, and edges from the bundled prod
+> YAML — you only need to spell out the connector swap.
+
 ### Send Multi-modal Request
 
 Get into the example folder
