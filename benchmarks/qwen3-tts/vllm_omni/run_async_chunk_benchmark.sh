@@ -31,7 +31,10 @@ PORT_OFF="${PORT_OFF:-8001}"
 RESULT_DIR="${SCRIPT_DIR}/results"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 
-STAGE_CONFIG_ON="vllm_omni/model_executor/stage_configs/qwen3_tts.yaml"
+# async_chunk path uses the new deploy schema (vllm_omni/deploy/);
+# the no-async-chunk variant has not been migrated yet and still uses
+# the legacy stage_configs/ path.
+DEPLOY_CONFIG_ON="vllm_omni/deploy/qwen3_tts.yaml"
 STAGE_CONFIG_OFF="vllm_omni/model_executor/stage_configs/qwen3_tts_no_async_chunk.yaml"
 
 mkdir -p "${RESULT_DIR}"
@@ -77,7 +80,7 @@ wait_for_server() {
 echo ""
 echo "[Phase 1] Starting async_chunk ON server on port ${PORT_ON}..."
 CUDA_VISIBLE_DEVICES=${GPU_DEVICE} vllm-omni serve "${MODEL}" \
-    --stage-configs-path "${STAGE_CONFIG_ON}" \
+    --deploy-config "${DEPLOY_CONFIG_ON}" \
     --host 0.0.0.0 --port "${PORT_ON}" \
     --trust-remote-code --enforce-eager --omni \
     > "${RESULT_DIR}/server_on_${TIMESTAMP}.log" 2>&1 &
