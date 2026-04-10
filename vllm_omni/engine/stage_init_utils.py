@@ -323,6 +323,20 @@ def build_vllm_config(
 
     filtered_engine_args_dict = filter_dataclass_kwargs(OmniEngineArgs, engine_args_dict)
     omni_engine_args = OmniEngineArgs(**filtered_engine_args_dict)
+
+    # Multi-stage pipelines (e.g. qwen3_tts code2wav) intentionally request
+    # max_model_len larger than the HF model's max_position_embeddings,
+    # because they process accumulated codec streams that are longer than
+    # the model's original text context. vLLM's pydantic validator refuses
+    # this without VLLM_ALLOW_LONG_MAX_MODEL_LEN=1, so set it on behalf of
+    # any stage whose deploy yaml explicitly asks for a longer context. The
+    # deploy yaml is the source of truth for stage topology and the author
+    # has already accepted the trade-off; the env var is just vLLM's
+    # required acknowledgment. Use ``setdefault`` so an explicit user
+    # setting still wins.
+    if filtered_engine_args_dict.get("max_model_len") is not None:
+        os.environ.setdefault("VLLM_ALLOW_LONG_MAX_MODEL_LEN", "1")
+
     vllm_config = omni_engine_args.create_engine_config(
         usage_context=UsageContext.LLM_CLASS,
         headless=headless,
