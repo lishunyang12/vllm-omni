@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import OmniServerParams
-from tests.utils import hardware_test
+from tests.utils import get_deploy_config_path, hardware_test
 
 MODEL = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
 
@@ -25,8 +25,15 @@ REF_AUDIO_URL = "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/
 REF_TEXT = "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
 
 
-def get_stage_config(name: str = "qwen3_tts.yaml"):
-    """Get the stage config path from vllm_omni model_executor stage_configs."""
+def get_stage_config(name: str = "qwen3_tts.yaml") -> str:
+    """Resolve a stage/deploy config path.
+
+    For the migrated base ``qwen3_tts.yaml`` we use the new
+    ``vllm_omni/deploy/`` location; legacy variant YAMLs still live under
+    ``vllm_omni/model_executor/stage_configs/`` until they're migrated.
+    """
+    if name == "qwen3_tts.yaml":
+        return get_deploy_config_path("qwen3_tts.yaml")
     return str(Path(__file__).parent.parent.parent.parent / "vllm_omni" / "model_executor" / "stage_configs" / name)
 
 

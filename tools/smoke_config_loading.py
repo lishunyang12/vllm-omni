@@ -238,6 +238,102 @@ def main() -> int:
     )
 
     # ------------------------------------------------------------------
+    # 12. qwen2_5_omni prod deploy YAML loads + has 3 stages
+    # ------------------------------------------------------------------
+    def t_qwen2_5_prod_loads():
+        path = REPO_ROOT / "vllm_omni" / "deploy" / "qwen2_5_omni.yaml"
+        deploy = load_deploy_config(path)
+        assert len(deploy.stages) == 3
+        # Stage 0 thinker on device 0, stage 1 talker on device 1
+        assert deploy.stages[0].devices == "0"
+        assert deploy.stages[1].devices == "1"
+        # Stage 2 colocates with stage 0 by default (single-GPU layout)
+        assert deploy.stages[2].devices == "0"
+
+    check("qwen2_5_omni prod deploy loads with 3 stages", t_qwen2_5_prod_loads)
+
+    # ------------------------------------------------------------------
+    # 13. qwen2_5_omni CI overlay inherits from prod
+    # ------------------------------------------------------------------
+    def t_qwen2_5_ci_inherits():
+        path = REPO_ROOT / "vllm_omni" / "deploy" / "ci" / "qwen2_5_omni.yaml"
+        deploy = load_deploy_config(path)
+        s0 = deploy.stages[0]
+        # CI overrides
+        assert s0.engine_extras.get("load_format") == "dummy"
+        assert s0.max_model_len == 16384
+        # Inherited from prod base
+        assert s0.devices == "0"
+        assert s0.enforce_eager is True
+
+    check("qwen2_5_omni CI overlay inherits prod base + applies CI overrides", t_qwen2_5_ci_inherits)
+
+    # ------------------------------------------------------------------
+    # 14. qwen2_5_omni pipeline registered with 3 valid stages
+    # ------------------------------------------------------------------
+    def t_qwen2_5_pipeline_registry():
+        import vllm_omni.model_executor.models.qwen2_5_omni.pipeline  # noqa: F401
+
+        assert "qwen2_5_omni" in _PIPELINE_REGISTRY
+        pipeline = _PIPELINE_REGISTRY["qwen2_5_omni"]
+        assert len(pipeline.stages) == 3
+        assert pipeline.validate() == []
+        # Stage 1 (talker) has the qwen2.5-specific stop token
+        assert pipeline.get_stage(1).sampling_constraints["stop_token_ids"] == [8294]
+
+    check("qwen2_5_omni pipeline registered with 3 valid stages", t_qwen2_5_pipeline_registry)
+
+    # ------------------------------------------------------------------
+    # 15. qwen3_tts prod deploy YAML loads with the SharedMemoryConnector
+    # ------------------------------------------------------------------
+    def t_qwen3_tts_prod_loads():
+        path = REPO_ROOT / "vllm_omni" / "deploy" / "qwen3_tts.yaml"
+        deploy = load_deploy_config(path)
+        assert len(deploy.stages) == 2
+        assert deploy.async_chunk is True
+        assert deploy.connectors is not None
+        assert "connector_of_shared_memory" in deploy.connectors
+        # Both stages share device 0 by default
+        assert deploy.stages[0].devices == "0"
+        assert deploy.stages[1].devices == "0"
+
+    check("qwen3_tts prod deploy loads with connector + 2 stages", t_qwen3_tts_prod_loads)
+
+    # ------------------------------------------------------------------
+    # 16. qwen3_tts pipeline registered + per-stage model_arch override
+    # ------------------------------------------------------------------
+    def t_qwen3_tts_pipeline_registry():
+        import vllm_omni.model_executor.models.qwen3_tts.pipeline  # noqa: F401
+
+        assert "qwen3_tts" in _PIPELINE_REGISTRY
+        pipeline = _PIPELINE_REGISTRY["qwen3_tts"]
+        assert len(pipeline.stages) == 2
+        assert pipeline.validate() == []
+        # Stage 0 (talker) has no per-stage model_arch (inherits pipeline default)
+        assert pipeline.get_stage(0).model_arch is None
+        # Stage 1 (code2wav) has its own model_arch
+        assert pipeline.get_stage(1).model_arch == "Qwen3TTSCode2Wav"
+
+    check("qwen3_tts pipeline registered with per-stage model_arch override", t_qwen3_tts_pipeline_registry)
+
+    # ------------------------------------------------------------------
+    # 17. Full merge: per-stage model_arch flows through merge_pipeline_deploy
+    # ------------------------------------------------------------------
+    def t_qwen3_tts_full_merge():
+        import vllm_omni.model_executor.models.qwen3_tts.pipeline  # noqa: F401
+
+        path = REPO_ROOT / "vllm_omni" / "deploy" / "qwen3_tts.yaml"
+        deploy = load_deploy_config(path)
+        pipeline = _PIPELINE_REGISTRY["qwen3_tts"]
+        stages = merge_pipeline_deploy(pipeline, deploy)
+        # Stage 0 (talker) inherits the pipeline-level model_arch
+        assert stages[0].yaml_engine_args["model_arch"] == "Qwen3TTSTalkerForConditionalGeneration"
+        # Stage 1 (code2wav) uses its per-stage override
+        assert stages[1].yaml_engine_args["model_arch"] == "Qwen3TTSCode2Wav"
+
+    check("qwen3_tts per-stage model_arch survives merge_pipeline_deploy", t_qwen3_tts_full_merge)
+
+    # ------------------------------------------------------------------
     # Summary
     # ------------------------------------------------------------------
     print("=" * 72)
@@ -246,7 +342,7 @@ def main() -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("ALL OK — 11 checks passed")
+    print("ALL OK — 17 checks passed")
     return 0
 
 

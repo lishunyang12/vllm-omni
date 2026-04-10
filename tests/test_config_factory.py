@@ -781,6 +781,96 @@ class TestQwen3OmniPipeline:
         assert s.custom_process_input_func is not None
 
 
+class TestQwen2_5OmniPipeline:
+    def test_registered(self):
+        import vllm_omni.model_executor.models.qwen2_5_omni.pipeline  # noqa: F401
+
+        p = _PIPELINE_REGISTRY.get("qwen2_5_omni")
+        assert p is not None
+        assert p.model_arch == "Qwen2_5OmniForConditionalGeneration"
+        assert len(p.stages) == 3
+        assert p.validate() == []
+
+    def test_thinker(self):
+        import vllm_omni.model_executor.models.qwen2_5_omni.pipeline  # noqa: F401
+
+        s = _PIPELINE_REGISTRY["qwen2_5_omni"].get_stage(0)
+        assert s.model_stage == "thinker"
+        assert s.execution_type == StageExecutionType.LLM_AR
+        assert s.is_comprehension is True
+        assert s.engine_output_type == "latent"
+        assert s.requires_multimodal_data is True
+
+    def test_talker(self):
+        import vllm_omni.model_executor.models.qwen2_5_omni.pipeline  # noqa: F401
+
+        s = _PIPELINE_REGISTRY["qwen2_5_omni"].get_stage(1)
+        assert s.input_sources == (0,)
+        assert s.sampling_constraints["stop_token_ids"] == [8294]
+        assert s.custom_process_input_func is not None
+
+    def test_code2wav(self):
+        import vllm_omni.model_executor.models.qwen2_5_omni.pipeline  # noqa: F401
+
+        s = _PIPELINE_REGISTRY["qwen2_5_omni"].get_stage(2)
+        assert s.execution_type == StageExecutionType.LLM_GENERATION
+        assert s.final_output_type == "audio"
+        assert s.engine_output_type == "audio"
+
+
+class TestQwen3TTSPipeline:
+    def test_registered(self):
+        import vllm_omni.model_executor.models.qwen3_tts.pipeline  # noqa: F401
+
+        p = _PIPELINE_REGISTRY.get("qwen3_tts")
+        assert p is not None
+        assert p.model_arch == "Qwen3TTSTalkerForConditionalGeneration"
+        assert len(p.stages) == 2
+        assert p.validate() == []
+
+    def test_talker_stage(self):
+        import vllm_omni.model_executor.models.qwen3_tts.pipeline  # noqa: F401
+
+        s = _PIPELINE_REGISTRY["qwen3_tts"].get_stage(0)
+        assert s.model_stage == "qwen3_tts"
+        assert s.execution_type == StageExecutionType.LLM_AR
+        assert s.is_comprehension is True
+        assert s.engine_output_type == "latent"
+        assert s.sampling_constraints["stop_token_ids"] == [2150]
+        # Stage 0 inherits the pipeline-level model_arch
+        assert s.model_arch is None
+
+    def test_code2wav_stage_has_per_stage_model_arch(self):
+        import vllm_omni.model_executor.models.qwen3_tts.pipeline  # noqa: F401
+
+        s = _PIPELINE_REGISTRY["qwen3_tts"].get_stage(1)
+        assert s.execution_type == StageExecutionType.LLM_GENERATION
+        assert s.final_output_type == "audio"
+        assert s.engine_output_type == "audio"
+        # Per-stage model_arch override (different from pipeline-level talker)
+        assert s.model_arch == "Qwen3TTSCode2Wav"
+        # tts_args is passed through via extras
+        assert s.extras["tts_args"]["max_instructions_length"] == 500
+
+    def test_per_stage_model_arch_flows_through_merge(self, tmp_path):
+        """Verify the new ps.model_arch override survives merge_pipeline_deploy."""
+        import vllm_omni.model_executor.models.qwen3_tts.pipeline  # noqa: F401
+        from vllm_omni.config.stage_config import load_deploy_config, merge_pipeline_deploy
+
+        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_tts.yaml"
+        if not deploy_path.exists():
+            pytest.skip("qwen3_tts deploy yaml not found")
+
+        deploy = load_deploy_config(deploy_path)
+        pipeline = _PIPELINE_REGISTRY["qwen3_tts"]
+        stages = merge_pipeline_deploy(pipeline, deploy)
+
+        # Stage 0 inherits pipeline-level model_arch
+        assert stages[0].yaml_engine_args["model_arch"] == "Qwen3TTSTalkerForConditionalGeneration"
+        # Stage 1 uses its per-stage override
+        assert stages[1].yaml_engine_args["model_arch"] == "Qwen3TTSCode2Wav"
+
+
 class TestBaseConfigInheritance:
     """Test deploy YAML base_config inheritance."""
 

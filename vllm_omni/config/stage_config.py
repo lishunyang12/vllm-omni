@@ -62,6 +62,11 @@ class StagePipelineConfig:
     requires_multimodal_data: bool = False
     hf_config_name: str | None = None
     engine_output_type: str | None = None
+    # Optional per-stage architecture override. When ``None`` (the common
+    # case), the stage uses the pipeline-level ``model_arch``. Used by
+    # multi-arch pipelines like Qwen3-TTS where the talker and code2wav
+    # stages have different model classes.
+    model_arch: str | None = None
     sampling_constraints: dict[str, Any] = field(default_factory=dict)
     custom_process_input_func: str | None = None
     custom_process_next_stage_input_func: str | None = None
@@ -376,7 +381,9 @@ def merge_pipeline_deploy(
         scheduler_cls = _EXECUTION_TYPE_TO_SCHEDULER.get(ps.execution_type)
 
         yaml_engine_args: dict[str, Any] = {}
-        yaml_engine_args["model_arch"] = pipeline.model_arch
+        # Per-stage model_arch override (e.g. Qwen3-TTS code2wav stage)
+        # falls back to the pipeline-level model_arch when not set.
+        yaml_engine_args["model_arch"] = ps.model_arch or pipeline.model_arch
         if ps.engine_output_type:
             yaml_engine_args["engine_output_type"] = ps.engine_output_type
         if ps.custom_process_next_stage_input_func:
