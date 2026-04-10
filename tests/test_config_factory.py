@@ -1123,6 +1123,44 @@ class TestCLIExplicitPrecedence:
         )
         assert stages[2].runtime_overrides.get("max_num_seqs") == 999
 
+    def test_explicit_async_chunk_false_overrides_yaml(self):
+        """``--no-async-chunk`` flips the deploy-level async_chunk to False even
+        when the YAML sets it to True. Verifies that the per-stage
+        ``async_chunk: True`` injection in ``merge_pipeline_deploy`` is skipped
+        and that ``async_chunk`` does not leak through ``_merge_cli_overrides``.
+        """
+        stages = self._stages(
+            cli_overrides={"async_chunk": False},
+            cli_explicit_keys={"async_chunk"},
+        )
+        # qwen3_omni_moe.yaml has `async_chunk: true`, so by default every
+        # stage's engine_args would carry it. With the explicit override, it
+        # must NOT show up.
+        for stage in stages:
+            assert stage.yaml_engine_args.get("async_chunk") is not True
+            assert stage.runtime_overrides.get("async_chunk") is None
+
+    def test_default_async_chunk_leaves_yaml_alone(self):
+        """An unset ``--async-chunk`` (default None) must leave the YAML's True
+        in force on every stage."""
+        stages = self._stages(
+            cli_overrides={"async_chunk": None},
+            cli_explicit_keys=set(),
+        )
+        # qwen3_omni_moe.yaml: `async_chunk: true` → injected on every stage.
+        for stage in stages:
+            assert stage.yaml_engine_args.get("async_chunk") is True
+
+    def test_explicit_enable_prefix_caching_overrides_yaml(self):
+        """``--enable-prefix-caching`` (global) flips every stage's
+        ``enable_prefix_caching`` to True regardless of the YAML default."""
+        stages = self._stages(
+            cli_overrides={"enable_prefix_caching": True},
+            cli_explicit_keys={"enable_prefix_caching"},
+        )
+        for stage in stages:
+            assert stage.runtime_overrides.get("enable_prefix_caching") is True
+
 
 class TestSamplingConstraintsPrecedence:
     """Test that pipeline sampling_constraints override deploy defaults."""

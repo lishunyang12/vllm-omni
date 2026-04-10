@@ -82,6 +82,10 @@ def _detect_explicit_cli_keys(argv: list[str]) -> set[str]:
 
     Used to distinguish user-typed CLI args from argparse default values, so
     that deploy YAMLs are not silently overridden by parser defaults.
+
+    For ``argparse.BooleanOptionalAction`` flags (e.g. ``--enable-prefix-caching``
+    / ``--no-enable-prefix-caching``), both forms map to the same ``dest``, so
+    the ``no_`` prefix is stripped here to match what argparse records.
     """
     explicit: set[str] = set()
     for tok in argv:
@@ -90,7 +94,11 @@ def _detect_explicit_cli_keys(argv: list[str]) -> set[str]:
         name = tok[2:].split("=", 1)[0]
         if not name:
             continue
-        explicit.add(name.replace("-", "_"))
+        attr = name.replace("-", "_")
+        explicit.add(attr)
+        # BooleanOptionalAction: --no-foo records as dest `foo`, not `no_foo`.
+        if attr.startswith("no_"):
+            explicit.add(attr[3:])
     return explicit
 
 
@@ -182,6 +190,17 @@ class OmniServeCommand(CLISubcommand):
             default=None,
             help="Per-stage JSON overrides. Example: "
             '\'{"0": {"gpu_memory_utilization": 0.8}, "2": {"enforce_eager": true}}\'',
+        )
+        omni_config_group.add_argument(
+            "--async-chunk",
+            action=argparse.BooleanOptionalAction,
+            default=None,
+            help="Enable (--async-chunk) or disable (--no-async-chunk) pipeline-wide "
+            "async chunked streaming between stages. Overrides the deploy YAML's "
+            "top-level ``async_chunk:`` field. Default (unset) leaves the YAML value "
+            "in force. NOTE: switching topology variants that need different "
+            "connectors/processor functions (e.g. qwen3_tts vs qwen3_tts_no_async_chunk) "
+            "still requires a matching --deploy-config.",
         )
         omni_config_group.add_argument(
             "--stage-id",

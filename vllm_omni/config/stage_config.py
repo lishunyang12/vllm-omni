@@ -736,6 +736,13 @@ class StageConfigFactory:
         else:
             deploy_cfg = load_deploy_config(deploy_path)
 
+        # Top-level CLI overrides for fields that live on DeployConfig itself
+        # (not on per-stage StageDeployConfig). The user-typed value wins over
+        # the YAML's value; an unset (default-None) flag leaves the YAML alone.
+        cli_async_chunk = cli_overrides.get("async_chunk")
+        if cli_async_chunk is not None and (cli_explicit_keys is None or "async_chunk" in cli_explicit_keys):
+            deploy_cfg.async_chunk = bool(cli_async_chunk)
+
         # Resolve which pipeline registration to use. The deploy YAML's
         # explicit ``pipeline:`` field (if set) wins over the auto-detected
         # model_type so variant topologies can be selected without renaming
@@ -1039,6 +1046,11 @@ class StageConfigFactory:
         "log_stats",
         "tokenizer",
         "parallel_config",
+        # ``async_chunk`` is a pipeline-wide DeployConfig field, applied at
+        # the deploy level by ``_create_from_registry`` and re-injected into
+        # every stage by ``merge_pipeline_deploy``. Don't forward it again as
+        # a per-stage CLI override.
+        "async_chunk",
     }
 
     @classmethod

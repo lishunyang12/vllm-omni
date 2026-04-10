@@ -153,6 +153,27 @@ def main() -> int:
     )
 
     # ------------------------------------------------------------------
+    # 11. BooleanOptionalAction: --no-X must record the same dest as --X
+    # so an explicit --no-enable-prefix-caching can override a YAML
+    # `enable_prefix_caching: true` per-stage default.
+    # ------------------------------------------------------------------
+    check(
+        "--no-enable-prefix-caching records `enable_prefix_caching` (BooleanOptionalAction dest)",
+        {"no_enable_prefix_caching", "enable_prefix_caching"},
+        _detect_explicit_cli_keys(["--no-enable-prefix-caching"]),
+    )
+    check(
+        "--no-async-chunk records `async_chunk` (BooleanOptionalAction dest)",
+        {"no_async_chunk", "async_chunk"},
+        _detect_explicit_cli_keys(["--no-async-chunk"]),
+    )
+    check(
+        "--async-chunk affirmative form records `async_chunk`",
+        {"async_chunk"},
+        _detect_explicit_cli_keys(["--async-chunk"]),
+    )
+
+    # ------------------------------------------------------------------
     # Summary
     # ------------------------------------------------------------------
     print("=" * 72)
@@ -161,7 +182,7 @@ def main() -> int:
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("ALL OK — 10 checks passed")
+    print("ALL OK — 13 checks passed")
     return 0
 
 

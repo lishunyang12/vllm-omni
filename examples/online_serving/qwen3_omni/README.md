@@ -45,10 +45,29 @@ vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
 # Reduce context length
 vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
     --max-model-len 32768
+
+# Toggle prefix caching on every stage (yaml default: off)
+vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
+    --enable-prefix-caching
+# ...or force it off if the yaml turned it on
+vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
+    --no-enable-prefix-caching
+
+# Toggle pipeline-wide async chunked streaming between stages
+# (yaml default for qwen3_omni_moe: on)
+vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
+    --no-async-chunk
 ```
 
 Explicit CLI flags **override** the deploy YAML (which itself overrides the
 parser defaults). If you don't pass a flag, the YAML value wins.
+
+> **Note on `--no-async-chunk`**: this flips the deploy-level `async_chunk:`
+> bool but does not switch pipeline registration. Models whose async-chunk
+> and synchronous topologies use different connectors / processor functions
+> (e.g. `qwen3_tts` vs `qwen3_tts_no_async_chunk`) still need a matching
+> `--deploy-config` to swap the topology. For `qwen3_omni_moe` and
+> `qwen2_5_omni`, the bool flip on the prod yaml is sufficient.
 
 > ⚠️ **For multi-stage models that share GPUs (qwen3_omni_moe by default
 > shares cuda:1 between stages 1 and 2), avoid using global memory flags.**
