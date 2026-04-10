@@ -6,8 +6,6 @@ E2E Online tests for Qwen3-Omni model.
 
 import os
 
-from vllm_omni.platforms import current_omni_platform
-
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
 import pytest
@@ -58,11 +56,8 @@ def get_batch_token_config(default_path):
     return path
 
 
-# CI stage config for 2*H100-80G GPUs
-default_path = get_deploy_config_path("ci/cuda/qwen3_omni_moe.yaml")
-
-if current_omni_platform.is_xpu():
-    default_path = get_deploy_config_path("ci/xpu/qwen3_omni_moe.yaml")
+# CI stage config — single deploy YAML; xpu deltas applied via platforms:
+default_path = get_deploy_config_path("ci/qwen3_omni_moe.yaml")
 
 # Create parameter combinations for model and stage config
 test_params = [

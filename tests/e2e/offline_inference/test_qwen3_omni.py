@@ -19,9 +19,14 @@ from vllm_omni.platforms import current_omni_platform
 models = ["Qwen/Qwen3-Omni-30B-A3B-Instruct"]
 
 
+# Single CI deploy YAML; rocm/xpu deltas are picked automatically via the
+# platforms: section. Only CUDA needs an extra enforce_eager tweak.
+_CI_DEPLOY = get_deploy_config_path("ci/qwen3_omni_moe.yaml")
+
+
 def get_cuda_graph_config():
-    path = modify_stage_config(
-        get_deploy_config_path("ci/cuda/qwen3_omni_moe.yaml"),
+    return modify_stage_config(
+        _CI_DEPLOY,
         updates={
             "stages": {
                 0: {"enforce_eager": True},
@@ -29,15 +34,10 @@ def get_cuda_graph_config():
             },
         },
     )
-    return path
 
 
-# CI stage config for 2xH100-80G GPUs or AMD GPU MI325
-if current_omni_platform.is_rocm():
-    # ROCm stage config optimized for MI325 GPU
-    stage_configs = [get_deploy_config_path("ci/rocm/qwen3_omni_moe.yaml")]
-elif current_omni_platform.is_xpu():
-    stage_configs = [get_deploy_config_path("ci/xpu/qwen3_omni_moe.yaml")]
+if current_omni_platform.is_rocm() or current_omni_platform.is_xpu():
+    stage_configs = [_CI_DEPLOY]
 else:
     stage_configs = [get_cuda_graph_config()]
 

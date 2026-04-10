@@ -24,9 +24,12 @@ os.environ["VLLM_TEST_CLEAN_GPU_MEMORY"] = "0"
 models = ["Qwen/Qwen3-Omni-30B-A3B-Instruct"]
 
 
+_CI_DEPLOY = get_deploy_config_path("ci/qwen3_omni_moe.yaml")
+
+
 def get_chunk_config():
     path = modify_stage_config(
-        get_deploy_config_path("ci/cuda/qwen3_omni_moe.yaml"),
+        _CI_DEPLOY,
         updates={
             "async_chunk": True,
             "stage_args": {
@@ -44,7 +47,7 @@ def get_chunk_config():
 
 
 if current_omni_platform.is_xpu():
-    stage_configs = [get_deploy_config_path("ci/xpu/qwen3_omni_moe.yaml")]
+    stage_configs = [_CI_DEPLOY]
 else:  # MI325 GPU should share the same config as H100
     stage_configs = [get_chunk_config()]
 

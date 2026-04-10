@@ -215,6 +215,40 @@ def _deep_merge_stage(base: dict, overlay: dict) -> dict:
     return merged
 
 
+def _merge_stage_lists(
+    base_stages: list[dict[str, Any]] | None,
+    overlay_stages: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Merge two ``stages:`` lists by ``stage_id`` (overlay wins per field)."""
+    by_id: dict[int, dict[str, Any]] = {s["stage_id"]: s for s in (base_stages or [])}
+    for overlay_stage in overlay_stages or []:
+        sid = overlay_stage["stage_id"]
+        if sid in by_id:
+            by_id[sid] = _deep_merge_stage(by_id[sid], overlay_stage)
+        else:
+            by_id[sid] = overlay_stage
+    return list(by_id.values())
+
+
+def _merge_platforms(
+    base: dict[str, Any] | None,
+    overlay: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Deep-merge two ``platforms:`` blocks per-platform, per-stage_id."""
+    if not base and not overlay:
+        return None
+    base = base or {}
+    overlay = overlay or {}
+    merged: dict[str, Any] = {}
+    for plat in set(base) | set(overlay):
+        bp = base.get(plat) or {}
+        op = overlay.get(plat) or {}
+        merged_plat = {**bp, **{k: v for k, v in op.items() if k != "stages"}}
+        merged_plat["stages"] = _merge_stage_lists(bp.get("stages"), op.get("stages"))
+        merged[plat] = merged_plat
+    return merged
+
+
 def _resolve_deploy_yaml(path: str | Path) -> dict[str, Any]:
     """Load a deploy YAML with optional ``base_config`` inheritance."""
     raw_dict = to_dict(load_yaml_config(path))
@@ -227,18 +261,16 @@ def _resolve_deploy_yaml(path: str | Path) -> dict[str, Any]:
     base_path = Path(path).parent / base_path
     base_dict = _resolve_deploy_yaml(base_path)
 
-    # Merge top-level scalars: overlay wins
-    merged = {**base_dict, **{k: v for k, v in raw_dict.items() if k != "stages"}}
-
-    # Merge stages by stage_id
-    base_stages = {s["stage_id"]: s for s in base_dict.get("stages", [])}
-    for overlay_stage in raw_dict.get("stages", []):
-        sid = overlay_stage["stage_id"]
-        if sid in base_stages:
-            base_stages[sid] = _deep_merge_stage(base_stages[sid], overlay_stage)
-        else:
-            base_stages[sid] = overlay_stage
-    merged["stages"] = list(base_stages.values())
+    # Merge top-level scalars: overlay wins. ``stages:`` and ``platforms:``
+    # are deep-merged below so an overlay can layer on top of the base.
+    merged = {
+        **base_dict,
+        **{k: v for k, v in raw_dict.items() if k not in ("stages", "platforms")},
+    }
+    merged["stages"] = _merge_stage_lists(base_dict.get("stages"), raw_dict.get("stages"))
+    merged_platforms = _merge_platforms(base_dict.get("platforms"), raw_dict.get("platforms"))
+    if merged_platforms is not None:
+        merged["platforms"] = merged_platforms
 
     return merged
 
@@ -592,10 +624,16 @@ class StageConfigFactory:
         model: str,
         cli_overrides: dict[str, Any] | None = None,
         deploy_config_path: str | None = None,
+        cli_explicit_keys: set[str] | None = None,
     ) -> list[StageConfig] | None:
         """Load pipeline + deploy config, merge with CLI overrides.
 
         Checks _PIPELINE_REGISTRY first (new path), falls back to legacy YAML.
+
+        ``cli_explicit_keys`` is the set of CLI keys the user actually typed
+        (captured at the parser layer in ``vllm serve``). When ``None`` —
+        which is the case for programmatic ``Omni()`` callers — every kwarg
+        in ``cli_overrides`` is treated as explicit.
         """
         if cli_overrides is None:
             cli_overrides = {}
@@ -611,7 +649,7 @@ class StageConfigFactory:
             except ImportError:
                 pass
         if model_type and model_type in _PIPELINE_REGISTRY:
-            return cls._create_from_registry(model_type, cli_overrides, deploy_config_path)
+            return cls._create_from_registry(model_type, cli_overrides, deploy_config_path, cli_explicit_keys)
 
         # --- Legacy path: load from pipeline YAML ---
         pipeline = cls._load_pipeline(model, trust_remote_code=trust_remote_code)
@@ -647,8 +685,20 @@ class StageConfigFactory:
         model_type: str,
         cli_overrides: dict[str, Any],
         deploy_config_path: str | None = None,
+        cli_explicit_keys: set[str] | None = None,
     ) -> list[StageConfig]:
-        """Create StageConfigs from pipeline registry + deploy YAML."""
+        """Create StageConfigs from pipeline registry + deploy YAML.
+
+        Precedence (high → low):
+            explicit CLI args  >  deploy YAML  >  parser default CLI values
+
+        ``cli_explicit_keys`` carries the set of long-option attribute names
+        the user actually typed (captured in ``OmniServeCommand.cmd``). Any
+        kwarg whose key is not in that set is treated as a parser default
+        and is only used to fill fields YAML doesn't already cover. When the
+        set is ``None`` (programmatic ``Omni()`` callers, which have no
+        argparse layer), every kwarg is treated as explicit.
+        """
         pipeline_cfg = _PIPELINE_REGISTRY[model_type]
 
         # Resolve deploy config path
@@ -668,47 +718,30 @@ class StageConfigFactory:
 
         stages = merge_pipeline_deploy(pipeline_cfg, deploy_cfg, cli_overrides)
 
-        # For the registry path, deploy config already has per-stage values.
-        # Forward only CLI args the user explicitly set — drop argparse
-        # defaults so they don't clobber deploy YAML. We detect "explicit"
-        # by comparing against OmniEngineArgs defaults: if a CLI value
-        # differs from the dataclass default, the user set it.
-        explicit = cls._filter_explicit_cli_overrides(cli_overrides)
-        for stage in stages:
-            stage.runtime_overrides = cls._merge_cli_overrides(stage, explicit)
-
-        return stages
-
-    @classmethod
-    def _filter_explicit_cli_overrides(cls, cli_overrides: dict[str, Any]) -> dict[str, Any]:
-        """Keep only CLI overrides the user explicitly set.
-
-        Compares each value against the corresponding ``OmniEngineArgs``
-        dataclass default. ``stage_<id>_*`` keys are always kept.
-        """
-        try:
-            from vllm_omni.engine.arg_utils import OmniEngineArgs
-
-            defaults = {
-                f.name: f.default
-                for f in __import__("dataclasses").fields(OmniEngineArgs)
-                if f.default is not __import__("dataclasses").MISSING
-            }
-        except Exception:
-            defaults = {}
-
-        explicit: dict[str, Any] = {}
+        # Split CLI overrides by explicitness. Per-stage `stage_<id>_*` keys
+        # are always treated as explicit (the user typed them, either as a
+        # flag or via --stage-overrides JSON).
+        explicit_overrides: dict[str, Any] = {}
+        default_overrides: dict[str, Any] = {}
         for key, value in cli_overrides.items():
             if value is None:
                 continue
-            if re.match(r"stage_\d+_", key):
-                explicit[key] = value
-                continue
-            if key in defaults and value == defaults[key]:
-                # Matches argparse default — assume not user-set.
-                continue
-            explicit[key] = value
-        return explicit
+            is_per_stage = bool(re.match(r"stage_\d+_", key))
+            is_explicit = cli_explicit_keys is None or key in cli_explicit_keys or is_per_stage
+            if is_explicit:
+                explicit_overrides[key] = value
+            else:
+                default_overrides[key] = value
+
+        for stage in stages:
+            # Default CLI values fill only fields YAML doesn't already set.
+            # Explicit CLI values override YAML on top of that.
+            yaml_keys = set(stage.yaml_engine_args)
+            fallback = {k: v for k, v in default_overrides.items() if k not in yaml_keys}
+            merged = {**fallback, **explicit_overrides}
+            stage.runtime_overrides = cls._merge_cli_overrides(stage, merged)
+
+        return stages
 
     @classmethod
     def create_default_diffusion(cls, kwargs: dict[str, Any]) -> list[dict[str, Any]]:

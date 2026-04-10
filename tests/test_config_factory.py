@@ -788,7 +788,7 @@ class TestBaseConfigInheritance:
         from tests.utils import get_deploy_config_path
         from vllm_omni.config.stage_config import load_deploy_config
 
-        ci_path = Path(get_deploy_config_path("ci/cuda/qwen3_omni_moe.yaml"))
+        ci_path = Path(get_deploy_config_path("ci/qwen3_omni_moe.yaml"))
         if not ci_path.exists():
             pytest.skip("CI deploy config not found")
 
@@ -807,7 +807,7 @@ class TestBaseConfigInheritance:
         from tests.utils import get_deploy_config_path
         from vllm_omni.config.stage_config import load_deploy_config
 
-        ci_path = Path(get_deploy_config_path("ci/cuda/qwen3_omni_moe.yaml"))
+        ci_path = Path(get_deploy_config_path("ci/qwen3_omni_moe.yaml"))
         if not ci_path.exists():
             pytest.skip("CI deploy config not found")
 
@@ -902,6 +902,39 @@ class TestPlatformOverrides:
         deploy = _apply_platform_overrides(deploy, platform="unknown_hw")
         assert deploy.stages[0].gpu_memory_utilization == original_mem
 
+    def test_platforms_deep_merge_inheritance(self, tmp_path):
+        """Overlay's platforms: block layers onto base's, per-stage."""
+        from vllm_omni.config.stage_config import _apply_platform_overrides, load_deploy_config
+
+        base = tmp_path / "base.yaml"
+        base.write_text(
+            "stages:\n"
+            "  - stage_id: 0\n"
+            "    gpu_memory_utilization: 0.9\n"
+            "platforms:\n"
+            "  rocm:\n"
+            "    stages:\n"
+            "      - stage_id: 0\n"
+            "        enforce_eager: true\n"
+        )
+        overlay = tmp_path / "overlay.yaml"
+        overlay.write_text(
+            f"base_config: {base.name}\n"
+            "platforms:\n"
+            "  rocm:\n"
+            "    stages:\n"
+            "      - stage_id: 0\n"
+            "        max_num_seqs: 1\n"
+        )
+
+        deploy = load_deploy_config(overlay)
+        deploy = _apply_platform_overrides(deploy, platform="rocm")
+        # Both base's enforce_eager and overlay's max_num_seqs should apply.
+        assert deploy.stages[0].enforce_eager is True
+        assert deploy.stages[0].max_num_seqs == 1
+        # Inherited stage default not touched by overlay platforms section.
+        assert deploy.stages[0].gpu_memory_utilization == 0.9
+
 
 class TestCLIOverrideFlow:
     """Test --stage-overrides JSON merge into StageConfig."""
@@ -943,6 +976,62 @@ class TestCLIOverrideFlow:
         for s in stages:
             s.runtime_overrides = StageConfigFactory._merge_cli_overrides(s, overrides)
             assert s.runtime_overrides["enforce_eager"] is True
+
+
+class TestCLIExplicitPrecedence:
+    """Verify YAML > argparse defaults; explicit CLI args > YAML."""
+
+    def _stages(self, cli_overrides, cli_explicit_keys):
+        import vllm_omni.model_executor.models.qwen3_omni.pipeline  # noqa: F401
+
+        return StageConfigFactory._create_from_registry(
+            "qwen3_omni_moe",
+            cli_overrides=cli_overrides,
+            cli_explicit_keys=cli_explicit_keys,
+        )
+
+    def test_explicit_cli_overrides_yaml(self):
+        """User-typed --max-num-seqs wins over the deploy YAML value."""
+        stages = self._stages(
+            cli_overrides={"max_num_seqs": 999},
+            cli_explicit_keys={"max_num_seqs"},
+        )
+        # Stage 2 yaml has max_num_seqs=1; explicit CLI must beat it.
+        assert stages[2].runtime_overrides.get("max_num_seqs") == 999
+
+    def test_default_cli_does_not_override_yaml(self):
+        """Argparse defaults must NOT clobber values that are present in YAML."""
+        stages = self._stages(
+            cli_overrides={"max_num_seqs": 256},
+            cli_explicit_keys=set(),  # user typed nothing
+        )
+        # Stage 2's YAML value (1) should win because the user didn't type --max-num-seqs.
+        assert stages[2].runtime_overrides.get("max_num_seqs") != 256
+
+    def test_default_cli_fills_missing_yaml_field(self):
+        """Argparse defaults still fill fields the YAML doesn't set."""
+        stages = self._stages(
+            cli_overrides={"some_unrelated_knob": "fallback"},
+            cli_explicit_keys=set(),
+        )
+        # Field absent from YAML → CLI default flows through as a fallback.
+        assert stages[0].runtime_overrides.get("some_unrelated_knob") == "fallback"
+
+    def test_per_stage_overrides_always_explicit(self):
+        """``stage_<id>_*`` keys are always treated as explicit."""
+        stages = self._stages(
+            cli_overrides={"stage_0_gpu_memory_utilization": 0.42},
+            cli_explicit_keys=set(),  # not in the explicit set, but per-stage
+        )
+        assert stages[0].runtime_overrides.get("gpu_memory_utilization") == 0.42
+
+    def test_none_explicit_set_treats_all_as_explicit(self):
+        """Programmatic Omni() callers (cli_explicit_keys=None) keep current behavior."""
+        stages = self._stages(
+            cli_overrides={"max_num_seqs": 999},
+            cli_explicit_keys=None,
+        )
+        assert stages[2].runtime_overrides.get("max_num_seqs") == 999
 
 
 class TestSamplingConstraintsPrecedence:

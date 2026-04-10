@@ -5,8 +5,6 @@ See examples/online_serving/qwen3_omni/README.md
 
 import os
 
-from vllm_omni.platforms import current_omni_platform
-
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
 from pathlib import Path
@@ -26,10 +24,7 @@ pytestmark = [pytest.mark.advanced_model, pytest.mark.example]
 models = ["Qwen/Qwen3-Omni-30B-A3B-Instruct"]
 
 
-stage_configs = [get_deploy_config_path("ci/cuda/qwen3_omni_moe.yaml")]
-
-if current_omni_platform.is_xpu():
-    stage_configs = [get_deploy_config_path("ci/xpu/qwen3_omni_moe.yaml")]
+stage_configs = [get_deploy_config_path("ci/qwen3_omni_moe.yaml")]
 
 
 example_dir = str(Path(__file__).parent.parent.parent.parent / "examples" / "online_serving")

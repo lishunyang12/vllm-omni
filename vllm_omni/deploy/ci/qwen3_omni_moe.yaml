@@ -1,0 +1,80 @@
+# CI deploy — minimal resources, dummy weights.
+# CUDA defaults; rocm/xpu deltas under platforms: are applied automatically.
+base_config: ../qwen3_omni_moe.yaml
+
+stages:
+  - stage_id: 0
+    max_num_seqs: 5
+    max_model_len: 32768
+    mm_processor_cache_gb: 0
+    load_format: dummy
+    default_sampling_params:
+      max_tokens: 150
+      ignore_eos: false
+
+  - stage_id: 1
+    gpu_memory_utilization: 0.5
+    max_num_seqs: 5
+    max_model_len: 32768
+    load_format: dummy
+    default_sampling_params:
+      max_tokens: 1000
+
+  - stage_id: 2
+    max_num_seqs: 5
+    max_num_batched_tokens: 100000
+    load_format: dummy
+    default_sampling_params:
+      max_tokens: 2000
+
+platforms:
+  rocm:
+    stages:
+      - stage_id: 0
+        max_num_seqs: 1
+        default_sampling_params:
+          max_tokens: 100
+      - stage_id: 1
+        max_num_seqs: 1
+        enforce_eager: true
+        default_sampling_params:
+          max_tokens: 100
+      - stage_id: 2
+        max_num_seqs: 1
+        max_num_batched_tokens: 1000000
+        default_sampling_params:
+          max_tokens: 200
+
+  xpu:
+    stages:
+      - stage_id: 0
+        gpu_memory_utilization: 0.85
+        max_num_seqs: 1
+        tensor_parallel_size: 4
+        enforce_eager: true
+        max_num_batched_tokens: 4096
+        max_model_len: 4096
+        max_cudagraph_capture_size: 0
+        skip_mm_profiling: true
+        devices: "0,1,2,3"
+        default_sampling_params:
+          max_tokens: 100
+          ignore_eos: false
+      - stage_id: 1
+        gpu_memory_utilization: 0.6
+        max_num_seqs: 1
+        enforce_eager: true
+        max_num_batched_tokens: 4096
+        max_model_len: 4096
+        max_cudagraph_capture_size: 0
+        skip_mm_profiling: true
+        devices: "4"
+      - stage_id: 2
+        gpu_memory_utilization: 0.3
+        max_num_seqs: 1
+        max_num_batched_tokens: 100000
+        max_cudagraph_capture_size: 0
+        skip_mm_profiling: true
+        devices: "5"
+        default_sampling_params:
+          max_tokens: 2000

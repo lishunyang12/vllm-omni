@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import signal
+import sys
 from types import FrameType
 from typing import Any
 
@@ -75,6 +76,24 @@ def _ensure_vllm_platform():
             )
 
 
+def _detect_explicit_cli_keys(argv: list[str]) -> set[str]:
+    """Walk ``argv`` and return the set of long-option attribute names the
+    user explicitly provided (e.g. ``--max-num-seqs 64`` → ``max_num_seqs``).
+
+    Used to distinguish user-typed CLI args from argparse default values, so
+    that deploy YAMLs are not silently overridden by parser defaults.
+    """
+    explicit: set[str] = set()
+    for tok in argv:
+        if not tok.startswith("--"):
+            continue
+        name = tok[2:].split("=", 1)[0]
+        if not name:
+            continue
+        explicit.add(name.replace("-", "_"))
+    return explicit
+
+
 class OmniServeCommand(CLISubcommand):
     """The `serve` subcommand for the vLLM CLI."""
 
@@ -89,6 +108,10 @@ class OmniServeCommand(CLISubcommand):
         # If model is specified in CLI (as positional arg), it takes precedence
         if hasattr(args, "model_tag") and args.model_tag is not None:
             args.model = args.model_tag
+
+        # Stash the set of long-option keys the user actually typed so the
+        # stage-config factory can give YAML precedence over argparse defaults.
+        args._cli_explicit_keys = _detect_explicit_cli_keys(sys.argv[1:])
 
         if args.headless:
             run_headless(args)
@@ -157,7 +180,7 @@ class OmniServeCommand(CLISubcommand):
             "--stage-overrides",
             type=str,
             default=None,
-            help='Per-stage JSON overrides. Example: '
+            help="Per-stage JSON overrides. Example: "
             '\'{"0": {"gpu_memory_utilization": 0.8}, "2": {"enforce_eager": true}}\'',
         )
         omni_config_group.add_argument(
