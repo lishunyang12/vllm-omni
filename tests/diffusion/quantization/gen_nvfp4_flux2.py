@@ -37,7 +37,11 @@ def _make_minimal_vllm_config():
 
 def _init_distributed_only() -> None:
     import torch.distributed as dist
-    from vllm.distributed import init_distributed_environment
+    from vllm.distributed import init_distributed_environment as init_vllm_distributed
+
+    from vllm_omni.diffusion.distributed.parallel_state import (
+        init_distributed_environment as init_omni_distributed,
+    )
 
     if dist.is_available() and dist.is_initialized():
         return
@@ -48,7 +52,16 @@ def _init_distributed_only() -> None:
     os.environ.setdefault("WORLD_SIZE", "1")
     os.environ.setdefault("LOCAL_RANK", "0")
 
-    init_distributed_environment(
+    init_vllm_distributed(
+        world_size=1,
+        rank=0,
+        local_rank=0,
+        distributed_init_method="env://",
+        backend="nccl",
+    )
+    # vllm-omni keeps its own _WORLD GroupCoordinator separate from vLLM's;
+    # without this its init_model_parallel_group asserts on get_world_group().
+    init_omni_distributed(
         world_size=1,
         rank=0,
         local_rank=0,
