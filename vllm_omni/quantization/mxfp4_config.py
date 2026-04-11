@@ -7,7 +7,7 @@ Uses Marlin kernel on SM 75+, pure-PyTorch emulation fallback otherwise.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn.functional as F
@@ -48,7 +48,8 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 _FP4_VALUES = torch.tensor(
-    [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0], dtype=torch.float32,
+    [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0],
+    dtype=torch.float32,
 )
 _FP4_MAX = 6.0
 
@@ -64,9 +65,7 @@ def quantize_weight_mxfp4(
     """
     block_size = OCP_MX_BLOCK_SIZE
     N, K = weight.shape
-    assert K % block_size == 0, (
-        f"in_features ({K}) must be divisible by MX block size ({block_size})"
-    )
+    assert K % block_size == 0, f"in_features ({K}) must be divisible by MX block size ({block_size})"
     num_blocks = K // block_size
     w_blocked = weight.float().reshape(N, num_blocks, block_size)
 
@@ -164,7 +163,7 @@ class Mxfp4OnlineLinearMethod(LinearMethodBase):
     Uses Marlin W4A16 kernel on SM 75+, emulation fallback otherwise.
     """
 
-    def __init__(self, quant_config: "DiffusionMxfp4Config"):
+    def __init__(self, quant_config: DiffusionMxfp4Config):
         self.quant_config = quant_config
         self.use_marlin = _use_marlin()
 
@@ -248,9 +247,7 @@ class DiffusionMxfp4Config(QuantizationConfig):
     ) -> None:
         super().__init__()
         if activation_scheme != "dynamic":
-            raise ValueError(
-                f"MXFP4 only supports dynamic activation scheme, got {activation_scheme!r}"
-            )
+            raise ValueError(f"MXFP4 only supports dynamic activation scheme, got {activation_scheme!r}")
         self.activation_scheme = activation_scheme
         self.ignored_layers = ignored_layers or []
 
@@ -271,23 +268,29 @@ class DiffusionMxfp4Config(QuantizationConfig):
         return []
 
     @classmethod
-    def from_config(cls, config: dict[str, Any]) -> "DiffusionMxfp4Config":
+    def from_config(cls, config: dict[str, Any]) -> DiffusionMxfp4Config:
         activation_scheme = cls.get_from_keys_or(
-            config, ["activation_scheme"], "dynamic",
+            config,
+            ["activation_scheme"],
+            "dynamic",
         )
         ignored_layers = cls.get_from_keys_or(
-            config, ["ignored_layers"], None,
+            config,
+            ["ignored_layers"],
+            None,
         )
         if not ignored_layers:
             ignored_layers = cls.get_from_keys_or(
-                config, ["modules_to_not_convert"], None,
+                config,
+                ["modules_to_not_convert"],
+                None,
             )
         return cls(
             activation_scheme=activation_scheme,
             ignored_layers=ignored_layers,
         )
 
-    def apply_vllm_mapper(self, hf_to_vllm_mapper: "WeightsMapper"):
+    def apply_vllm_mapper(self, hf_to_vllm_mapper: WeightsMapper):
         if self.ignored_layers is not None:
             self.ignored_layers = hf_to_vllm_mapper.apply_list(
                 self.ignored_layers,
@@ -297,7 +300,7 @@ class DiffusionMxfp4Config(QuantizationConfig):
         self,
         layer: Module,
         prefix: str,
-    ) -> Optional["QuantizeMethodBase"]:
+    ) -> QuantizeMethodBase | None:
         if isinstance(layer, LinearBase):
             if is_layer_skipped(
                 prefix=prefix,

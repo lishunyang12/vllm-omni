@@ -1,7 +1,7 @@
 import os
 import types
 from collections import Counter
-from dataclasses import asdict, fields, is_dataclass
+from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any, get_args, get_origin
 
@@ -17,6 +17,10 @@ from vllm_omni.platforms import current_omni_platform
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 logger = init_logger(__name__)
+
+_DIFFUSERS_CLASS_TO_CONFIG: dict[str, str] = {
+    "GlmImagePipeline": "glm_image",
+}
 
 
 def inject_omni_kv_config(stage: Any, omni_conn_cfg: dict[str, Any], omni_from: str, omni_to: str) -> None:
@@ -141,12 +145,21 @@ def _convert_dataclasses_to_dict(obj: Any) -> Any:
     if isinstance(obj, set):
         return list(obj)
     # Handle dataclass objects
-    # Note: asdict() recursively converts nested dataclasses but not Counter objects,
-    # so we need to recursively process the result
-    if is_dataclass(obj):
-        result = asdict(obj)
-        # Recursively process the result to convert any Counter objects
-        return _convert_dataclasses_to_dict(result)
+    # Use field iteration instead of asdict() to:
+    # 1. Only include init fields (non-init fields cause "unexpected kwarg" errors)
+    # 2. Skip None values matching field defaults (avoids Pydantic validation
+    #    failures when None is explicitly passed for non-Optional typed fields,
+    #    e.g. CompilationConfig.cudagraph_capture_sizes: list[int] = None)
+    if is_dataclass(obj) and not isinstance(obj, type):
+        result = {}
+        for f in fields(obj):
+            if not f.init:
+                continue
+            value = getattr(obj, f.name)
+            if value is None and f.default is None:
+                continue
+            result[f.name] = _convert_dataclasses_to_dict(value)
+        return result
     # Handle dictionaries (recurse into values) and filter out callables(cause error in OmegaConf.create)
     # Note: This must come AFTER Counter check since Counter is a dict subclass
     if isinstance(obj, dict):
@@ -167,6 +180,28 @@ def _convert_dataclasses_to_dict(obj: Any) -> Any:
             return obj
     # Primitive types and other objects that OmegaConf can handle
     return obj
+
+
+def _try_resolve_omni_model_type(model: str) -> str | None:
+    """Try to resolve model_type for omni models with empty config.json.
+
+    Checks if any registered omni stage config file name matches a substring
+    in the model name (e.g. 'cosyvoice3' in 'FunAudioLLM/Fun-CosyVoice3-0.5B-2512').
+    When multiple configs match, the longest stem wins to avoid ambiguity
+    (e.g. 'bagel_single_stage' over 'bagel').
+    """
+    stage_configs_dir = PROJECT_ROOT / "vllm_omni" / "model_executor" / "stage_configs"
+    if not stage_configs_dir.exists():
+        return None
+    model_lower = model.lower().replace("-", "").replace("_", "")
+    best_match: str | None = None
+    best_len = 0
+    for config_file in sorted(stage_configs_dir.glob("*.yaml")):
+        candidate = config_file.stem.replace("-", "").replace("_", "")
+        if candidate in model_lower and len(candidate) > best_len:
+            best_match = config_file.stem
+            best_len = len(candidate)
+    return best_match
 
 
 def resolve_model_config_path(model: str) -> str:
@@ -207,7 +242,11 @@ def resolve_model_config_path(model: str) -> str:
                 if config_dict and "model_type" in config_dict:
                     model_type = config_dict["model_type"]
                 else:
-                    raise ValueError(f"config.json found but missing 'model_type' for model: {model}")
+                    # For models with empty config.json (e.g. CosyVoice3),
+                    # try matching against registered omni stage configs.
+                    model_type = _try_resolve_omni_model_type(model)
+                    if model_type is None:
+                        raise ValueError(f"config.json found but missing 'model_type' for model: {model}")
             except Exception as e:
                 raise ValueError(f"Failed to read config.json for model: {model}. Error: {e}") from e
         else:
@@ -218,13 +257,16 @@ def resolve_model_config_path(model: str) -> str:
             )
 
     default_config_path = current_omni_platform.get_default_stage_config_path()
-    model_type_str = f"{model_type}.yaml"
+    if model_type in _DIFFUSERS_CLASS_TO_CONFIG:
+        normalized_model_type = _DIFFUSERS_CLASS_TO_CONFIG[model_type]
+    else:
+        normalized_model_type = model_type.replace("-", "_")
+    model_type_str = f"{normalized_model_type}.yaml"
     complete_config_path = PROJECT_ROOT / default_config_path / model_type_str
     if os.path.exists(complete_config_path):
         return str(complete_config_path)
 
-    # Fall back to default config
-    stage_config_file = f"vllm_omni/model_executor/stage_configs/{model_type}.yaml"
+    stage_config_file = f"vllm_omni/model_executor/stage_configs/{normalized_model_type}.yaml"
     stage_config_path = PROJECT_ROOT / stage_config_file
     if not os.path.exists(stage_config_path):
         return None
@@ -257,11 +299,19 @@ def load_stage_configs_from_model(model: str, base_engine_args: dict | None = No
     stage_config_path = resolve_model_config_path(model)
     if stage_config_path is None:
         return []
-    stage_configs = load_stage_configs_from_yaml(config_path=stage_config_path, base_engine_args=base_engine_args)
+    stage_configs = load_stage_configs_from_yaml(
+        config_path=stage_config_path,
+        base_engine_args=base_engine_args,
+        prefer_stage_engine_args=True,
+    )
     return stage_configs
 
 
-def load_stage_configs_from_yaml(config_path: str, base_engine_args: dict | None = None) -> list:
+def load_stage_configs_from_yaml(
+    config_path: str,
+    base_engine_args: dict | None = None,
+    prefer_stage_engine_args: bool = True,
+) -> list:
     """Load stage configurations from a YAML file.
 
     .. deprecated::
@@ -269,6 +319,9 @@ def load_stage_configs_from_yaml(config_path: str, base_engine_args: dict | None
 
     Args:
         config_path: Path to the YAML configuration file
+        base_engine_args: Engine args supplied by the caller.
+        prefer_stage_engine_args: When True, YAML stage args override caller
+            engine args. When False, caller engine args override YAML defaults.
 
     Returns:
         List of stage configuration dictionaries from the file's stage_args
@@ -285,7 +338,11 @@ def load_stage_configs_from_yaml(config_path: str, base_engine_args: dict | None
         base_engine_args_tmp = base_engine_args.copy()
         # Update base_engine_args with stage-specific engine_args if they exist
         if hasattr(stage_arg, "engine_args") and stage_arg.engine_args is not None:
-            base_engine_args_tmp = create_config(merge_configs(base_engine_args_tmp, stage_arg.engine_args))
+            if prefer_stage_engine_args:
+                merged_engine_args = merge_configs(base_engine_args_tmp, stage_arg.engine_args)
+            else:
+                merged_engine_args = merge_configs(stage_arg.engine_args, base_engine_args_tmp)
+            base_engine_args_tmp = create_config(merged_engine_args)
         stage_type = getattr(stage_arg, "stage_type", "llm")
         if hasattr(stage_arg, "runtime") and stage_arg.runtime is not None and stage_type != "diffusion":
             base_engine_args_tmp.async_chunk = global_async_chunk

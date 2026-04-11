@@ -20,7 +20,7 @@ from vllm_omni.entrypoints.openai.protocol.videos import (
     VideoGenerationResponse,
 )
 from vllm_omni.entrypoints.openai.utils import get_stage_type, parse_lora_request
-from vllm_omni.entrypoints.openai.video_api_utils import encode_video_base64
+from vllm_omni.entrypoints.openai.video_api_utils import _encode_video_bytes, encode_video_base64
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniSamplingParams, OmniTextPrompt
 
 logger = init_logger(__name__)
@@ -31,6 +31,18 @@ class ReferenceImage:
     """Reference class for tracking additional metadata if needed"""
 
     data: Image.Image
+
+
+@dataclass
+class VideoGenerationArtifacts:
+    """Normalized outputs and profiler metadata extracted from one request."""
+
+    videos: list[Any]
+    audios: list[Any | None]
+    audio_sample_rate: int
+    output_fps: int
+    stage_durations: dict[str, float]
+    peak_memory_mb: float
 
 
 class OmniOpenAIServingVideo:
@@ -71,13 +83,14 @@ class OmniOpenAIServingVideo:
             stage_configs=stage_configs,
         )
 
-    async def generate_videos(
+    async def _run_and_extract(
         self,
         request: VideoGenerationRequest,
         reference_id: str,
         *,
         reference_image: ReferenceImage | None = None,
-    ) -> VideoGenerationResponse:
+    ) -> VideoGenerationArtifacts:
+        """Run the generation pipeline and extract video/audio/profiler outputs."""
         prompt: OmniTextPrompt = OmniTextPrompt(prompt=request.prompt)
         if request.negative_prompt is not None:
             prompt["negative_prompt"] = request.negative_prompt
@@ -144,30 +157,77 @@ class OmniOpenAIServingVideo:
         )
 
         result = await self._run_generation(prompt, gen_params, reference_id)
-        _t_encode_start = time.perf_counter()
         videos = self._extract_video_outputs(result)
         audios = self._extract_audio_outputs(result, expected_count=len(videos))
         audio_sample_rate = self._resolve_audio_sample_rate(result)
-        output_fps = vp.fps or 24
+        output_fps = vp.fps or self._resolve_fps(result) or 24
+        return VideoGenerationArtifacts(
+            videos=videos,
+            audios=audios,
+            audio_sample_rate=audio_sample_rate,
+            output_fps=output_fps,
+            stage_durations=self._extract_stage_durations(result),
+            peak_memory_mb=self._extract_peak_memory_mb(result),
+        )
 
+    async def generate_videos(
+        self,
+        request: VideoGenerationRequest,
+        reference_id: str,
+        *,
+        reference_image: ReferenceImage | None = None,
+    ) -> VideoGenerationResponse:
+        artifacts = await self._run_and_extract(request, reference_id, reference_image=reference_image)
+        _t_encode_start = time.perf_counter()
         video_data = [
             VideoData(
                 b64_json=(
-                    encode_video_base64(video, fps=output_fps)
-                    if audios[idx] is None
+                    encode_video_base64(video, fps=artifacts.output_fps)
+                    if artifacts.audios[idx] is None
                     else encode_video_base64(
                         video,
-                        fps=output_fps,
-                        audio=audios[idx],
-                        audio_sample_rate=audio_sample_rate,
+                        fps=artifacts.output_fps,
+                        audio=artifacts.audios[idx],
+                        audio_sample_rate=artifacts.audio_sample_rate,
                     )
                 )
             )
-            for idx, video in enumerate(videos)
+            for idx, video in enumerate(artifacts.videos)
         ]
         _t_encode_ms = (time.perf_counter() - _t_encode_start) * 1000
         logger.info("Video response encoding (MP4+base64): %.2f ms", _t_encode_ms)
-        return VideoGenerationResponse(created=int(time.time()), data=video_data)
+        return VideoGenerationResponse(
+            created=int(time.time()),
+            data=video_data,
+            stage_durations=artifacts.stage_durations,
+            peak_memory_mb=artifacts.peak_memory_mb,
+        )
+
+    async def generate_video_bytes(
+        self,
+        request: VideoGenerationRequest,
+        reference_id: str,
+        *,
+        reference_image: ReferenceImage | None = None,
+    ) -> tuple[bytes, dict[str, float], float]:
+        """Generate a video and return raw MP4 bytes, bypassing base64 encoding."""
+        artifacts = await self._run_and_extract(request, reference_id, reference_image=reference_image)
+        if len(artifacts.videos) > 1:
+            logger.warning(
+                "Video request %s generated %d outputs; returning only the first.",
+                reference_id,
+                len(artifacts.videos),
+            )
+        audio = artifacts.audios[0]
+        _t_encode_start = time.perf_counter()
+        video_bytes = _encode_video_bytes(
+            artifacts.videos[0],
+            fps=artifacts.output_fps,
+            **({"audio": audio, "audio_sample_rate": artifacts.audio_sample_rate} if audio is not None else {}),
+        )
+        _t_encode_ms = (time.perf_counter() - _t_encode_start) * 1000
+        logger.info("Video response encoding (MP4 bytes): %.2f ms", _t_encode_ms)
+        return video_bytes, artifacts.stage_durations, artifacts.peak_memory_mb
 
     @staticmethod
     def _apply_lora(lora_body: Any, gen_params: OmniDiffusionSamplingParams) -> None:
@@ -323,6 +383,46 @@ class OmniOpenAIServingVideo:
 
         return 24000
 
+    @staticmethod
+    def _resolve_fps(result: Any) -> int | None:
+        """Extract fps from multimodal_output if the model reported it."""
+        multimodal_output = getattr(result, "multimodal_output", None)
+        if isinstance(multimodal_output, dict):
+            fps = multimodal_output.get("fps")
+            if fps is not None:
+                try:
+                    fps_val = fps.item() if hasattr(fps, "item") else int(fps)
+                    if fps_val > 0:
+                        return fps_val
+                except (TypeError, ValueError):
+                    pass
+
+        request_output = getattr(result, "request_output", None)
+        if isinstance(request_output, dict):
+            mm = request_output.get("multimodal_output") or {}
+            if isinstance(mm, dict):
+                fps = mm.get("fps")
+                if fps is not None:
+                    try:
+                        fps_val = fps.item() if hasattr(fps, "item") else int(fps)
+                        if fps_val > 0:
+                            return fps_val
+                    except (TypeError, ValueError):
+                        pass
+        elif hasattr(request_output, "multimodal_output"):
+            mm = getattr(request_output, "multimodal_output", None)
+            if isinstance(mm, dict):
+                fps = mm.get("fps")
+                if fps is not None:
+                    try:
+                        fps_val = fps.item() if hasattr(fps, "item") else int(fps)
+                        if fps_val > 0:
+                            return fps_val
+                    except (TypeError, ValueError):
+                        pass
+
+        return None
+
     @classmethod
     def _extract_audio_sample_rate_from_result(cls, result: Any) -> int | None:
         multimodal_output = getattr(result, "multimodal_output", None)
@@ -401,3 +501,16 @@ class OmniOpenAIServingVideo:
             return None
 
         return sample_rate if sample_rate > 0 else None
+
+    @staticmethod
+    def _extract_stage_durations(result: Any) -> dict[str, float]:
+        stage_durations = getattr(result, "stage_durations", None)
+        return stage_durations if isinstance(stage_durations, dict) else {}
+
+    @staticmethod
+    def _extract_peak_memory_mb(result: Any) -> float:
+        peak_memory_mb = getattr(result, "peak_memory_mb", 0.0)
+        try:
+            return float(peak_memory_mb or 0.0)
+        except (TypeError, ValueError):
+            return 0.0

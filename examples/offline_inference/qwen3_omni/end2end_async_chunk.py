@@ -32,13 +32,13 @@ import torch
 
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
-import librosa
 from PIL import Image
 from vllm import SamplingParams
 from vllm.assets.audio import AudioAsset
 from vllm.assets.image import ImageAsset
 from vllm.assets.video import VideoAsset, video_to_ndarrays
 from vllm.multimodal.image import convert_image_mode
+from vllm.multimodal.media.audio import load_audio
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 from vllm_omni.entrypoints.async_omni import AsyncOmni
@@ -89,7 +89,7 @@ def get_audio_query(
     if audio_path:
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
-        audio_signal, sr = librosa.load(audio_path, sr=sampling_rate)
+        audio_signal, sr = load_audio(audio_path, sr=sampling_rate)
         audio_data = (audio_signal.astype(np.float32), sr)
     else:
         audio_data = AudioAsset("mary_had_lamb").audio_and_sample_rate
@@ -382,7 +382,6 @@ async def run_all(args):
             stage_configs_path=args.stage_configs_path,
             log_stats=args.log_stats,
             stage_init_timeout=args.stage_init_timeout,
-            enable_diffusion_pipeline_profiler=args.enable_diffusion_pipeline_profiler,
         )
 
         # Use default sampling params from stage config (they are pre-configured
@@ -584,11 +583,6 @@ def parse_args():
         type=int,
         default=16000,
         help="Sampling rate for audio loading.",
-    )
-    parser.add_argument(
-        "--enable-diffusion-pipeline-profiler",
-        action="store_true",
-        help="Enable diffusion pipeline profiler to display stage durations.",
     )
     return parser.parse_args()
 
