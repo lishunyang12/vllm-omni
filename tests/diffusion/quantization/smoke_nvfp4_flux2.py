@@ -101,20 +101,40 @@ def _run_pipeline_under_vllm_config(args: argparse.Namespace) -> int:
         pipe = Flux2KleinPipeline(od_config=od)
         print("[3/3] Flux2KleinPipeline construct + load_weights OK")
 
-        # Quick NaN check on the transformer with a zero input.
+        # Quick NaN check on the transformer with a zero input. Shapes are
+        # derived from the actual loaded model so this works for klein-4B,
+        # klein-9B, and any future Flux2 variant.
         import torch
 
+        cfg = pipe.transformer.config
         device = next(pipe.transformer.parameters()).device
         dtype = next(pipe.transformer.parameters()).dtype
+
+        n_img_tokens = 256  # 16×16 patches — small enough to be cheap
+        n_txt_tokens = 64
+        n_rope_axes = len(cfg.axes_dims_rope)
+
         with torch.inference_mode():
-            x = torch.zeros(1, 1024, pipe.transformer.config.in_channels, device=device, dtype=dtype)
-            t = torch.zeros(1, device=device, dtype=dtype)
-            out = pipe.transformer(hidden_states=x, timestep=t)
+            hidden_states = torch.zeros(1, n_img_tokens, cfg.in_channels, device=device, dtype=dtype)
+            encoder_hidden_states = torch.zeros(1, n_txt_tokens, cfg.joint_attention_dim, device=device, dtype=dtype)
+            timestep = torch.zeros(1, device=device, dtype=dtype)
+            img_ids = torch.zeros(n_img_tokens, n_rope_axes, device=device, dtype=dtype)
+            txt_ids = torch.zeros(n_txt_tokens, n_rope_axes, device=device, dtype=dtype)
+            guidance = torch.zeros(1, device=device, dtype=dtype) if cfg.guidance_embeds else None
+
+            out = pipe.transformer(
+                hidden_states=hidden_states,
+                encoder_hidden_states=encoder_hidden_states,
+                timestep=timestep,
+                img_ids=img_ids,
+                txt_ids=txt_ids,
+                guidance=guidance,
+            )
             sample = out.sample if hasattr(out, "sample") else out[0]
-            if torch.isnan(sample).any():
-                print("FAIL: forward produced NaN", file=sys.stderr)
+            if torch.isnan(sample).any() or torch.isinf(sample).any():
+                print("FAIL: forward produced NaN/Inf", file=sys.stderr)
                 return 2
-        print("      forward pass finite")
+            print(f"      forward pass finite (output shape={tuple(sample.shape)})")
         return 0
 
 
