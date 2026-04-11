@@ -54,15 +54,27 @@ class FluxNvFp4LinearMethod(ModelOptNvFp4LinearMethod):
     _call_count: int = 0
 
     def process_weights_after_loading(self, layer):  # type: ignore[override]
+        import os
+
+        # Let us flip the nibble swap on/off at runtime via an env var for
+        # quick experimentation — SGLang's swap was validated on
+        # FLUX.2-dev-NVFP4 specifically, and it's possible klein-4b-nvfp4
+        # ships the bytes in upstream-vLLM's expected order already.
+        #
+        #   VLLM_OMNI_NVFP4_FLUX_SWAP=0  → disable swap
+        #   VLLM_OMNI_NVFP4_FLUX_SWAP=1  → enable swap (default)
         import torch
+
+        swap_enabled = os.environ.get("VLLM_OMNI_NVFP4_FLUX_SWAP", "1") == "1"
 
         FluxNvFp4LinearMethod._call_count += 1
         if FluxNvFp4LinearMethod._call_count <= 3:
             logger.warning(
-                "[FluxNvFp4] process_weights_after_loading call #%d, "
-                "prefix=%s, weight.shape=%s, weight.dtype=%s, "
-                "weight_scale.shape=%s, weight_scale.dtype=%s",
+                "[FluxNvFp4] call #%d swap=%s prefix=%s "
+                "weight.shape=%s weight.dtype=%s "
+                "weight_scale.shape=%s weight_scale.dtype=%s",
                 FluxNvFp4LinearMethod._call_count,
+                swap_enabled,
                 getattr(layer, "prefix", "<no-prefix>"),
                 tuple(layer.weight.data.shape),
                 layer.weight.data.dtype,
@@ -70,14 +82,10 @@ class FluxNvFp4LinearMethod(ModelOptNvFp4LinearMethod):
                 layer.weight_scale.data.dtype if hasattr(layer, "weight_scale") else "<none>",
             )
 
-        # Nibble swap BEFORE super() — upstream's
-        # prepare_weights_for_nvfp4_cutlass pads + swizzles, but does NOT
-        # rewrite the packed FP4 bytes. So we only need to fix the byte
-        # order, and upstream's swizzle of weight_scale is the right one.
-        # See sgl-project/sglang#20137.
-        w = layer.weight.data
-        if w.dtype == torch.uint8:
-            layer.weight.data = ((w >> 4) | ((w & 0x0F) << 4)).to(torch.uint8).contiguous()
+        if swap_enabled:
+            w = layer.weight.data
+            if w.dtype == torch.uint8:
+                layer.weight.data = ((w >> 4) | ((w & 0x0F) << 4)).to(torch.uint8).contiguous()
 
         super().process_weights_after_loading(layer)
 
