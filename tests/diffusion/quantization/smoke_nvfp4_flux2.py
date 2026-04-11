@@ -23,7 +23,45 @@ What it checks, in order:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+
+
+def _init_single_rank_distributed() -> None:
+    """Bring up a 1-rank tensor-parallel group so vLLM parallel linears work.
+
+    Flux2 transformer linears (QKVParallelLinear / ColumnParallelLinear / ...)
+    call ``get_tensor_model_parallel_world_size()`` in their ``__init__``,
+    which asserts that the TP group exists. The normal vllm-omni entry point
+    sets this up; this smoke script bypasses it, so we have to initialize a
+    minimal single-process world ourselves.
+    """
+    import torch.distributed as dist
+    from vllm.distributed import (
+        ensure_model_parallel_initialized,
+        init_distributed_environment,
+    )
+
+    if dist.is_available() and dist.is_initialized():
+        return
+
+    os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+    os.environ.setdefault("MASTER_PORT", "29500")
+    os.environ.setdefault("RANK", "0")
+    os.environ.setdefault("WORLD_SIZE", "1")
+    os.environ.setdefault("LOCAL_RANK", "0")
+
+    init_distributed_environment(
+        world_size=1,
+        rank=0,
+        local_rank=0,
+        distributed_init_method="env://",
+        backend="nccl",
+    )
+    ensure_model_parallel_initialized(
+        tensor_model_parallel_size=1,
+        pipeline_model_parallel_size=1,
+    )
 
 
 def main() -> int:
@@ -65,6 +103,9 @@ def main() -> int:
     if args.skip_forward:
         print("[3/3] skipped (--skip-forward)")
         return 0
+
+    # vLLM parallel linears require a TP group at construction time.
+    _init_single_rank_distributed()
 
     from vllm_omni.diffusion.data import OmniDiffusionConfig
     from vllm_omni.diffusion.models.flux2_klein.pipeline_flux2_klein import (
