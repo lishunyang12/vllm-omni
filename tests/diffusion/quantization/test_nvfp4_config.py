@@ -21,19 +21,32 @@ pytestmark = [pytest.mark.core_model, pytest.mark.diffusion]
 # ---------------------------------------------------------------------------
 
 
-def test_build_quant_config_modelopt_fp4():
-    from vllm_omni.quantization import build_quant_config
-
-    config = build_quant_config("modelopt_fp4")
-    assert config is not None
-    # ModelOptNvFp4Config is registered under "modelopt_fp4"
-    assert "modelopt" in config.get_name() or "fp4" in config.get_name()
-
-
 def test_modelopt_fp4_in_supported_methods():
     from vllm_omni.quantization import SUPPORTED_QUANTIZATION_METHODS
 
     assert "modelopt_fp4" in SUPPORTED_QUANTIZATION_METHODS
+
+
+def test_modelopt_nvfp4_from_config_dict():
+    """ModelOptNvFp4Config.from_config must accept the dict produced by
+    parse_nvfp4_quant_metadata."""
+    from vllm.model_executor.layers.quantization.modelopt import (
+        ModelOptNvFp4Config,
+    )
+
+    quant_dict = {
+        "quantization": {
+            "quant_algo": "NVFP4",
+            "kv_cache_quant_algo": None,
+            "exclude_modules": ["*norm_out*", "*proj_out*"],
+            "group_size": 16,
+        }
+    }
+    config = ModelOptNvFp4Config.from_config(quant_dict)
+    assert config.get_name() == "modelopt_fp4"
+    assert config.is_checkpoint_nvfp4_serialized
+    assert config.group_size == 16
+    assert "*norm_out*" in config.exclude_modules
 
 
 # ---------------------------------------------------------------------------
@@ -120,22 +133,42 @@ class TestBflFormatDetection:
     """Test BFL checkpoint format auto-detection in load_weights."""
 
     def test_detects_bfl_format(self):
-        weights = [
-            ("double_blocks.0.img_attn.qkv.weight", torch.zeros(1)),
-            ("single_blocks.0.linear1.weight", torch.zeros(1)),
-        ]
-        is_bfl, buffered = Flux2Transformer2DModel._is_bfl_format(weights)
+        weights = iter(
+            [
+                ("double_blocks.0.img_attn.qkv.weight", torch.zeros(1)),
+                ("single_blocks.0.linear1.weight", torch.zeros(1)),
+            ]
+        )
+        is_bfl, chained = Flux2Transformer2DModel._peek_bfl_format(weights)
         assert is_bfl is True
-        assert len(buffered) == 2
+        # The iterator should still yield all original entries.
+        assert len(list(chained)) == 2
 
     def test_detects_diffusers_format(self):
-        weights = [
-            ("transformer_blocks.0.attn.to_q.weight", torch.zeros(1)),
-            ("single_transformer_blocks.0.attn.to_qkv_mlp_proj.weight", torch.zeros(1)),
-        ]
-        is_bfl, buffered = Flux2Transformer2DModel._is_bfl_format(weights)
+        weights = iter(
+            [
+                ("transformer_blocks.0.attn.to_q.weight", torch.zeros(1)),
+                ("single_transformer_blocks.0.attn.to_qkv_mlp_proj.weight", torch.zeros(1)),
+            ]
+        )
+        is_bfl, chained = Flux2Transformer2DModel._peek_bfl_format(weights)
         assert is_bfl is False
-        assert len(buffered) == 2
+        assert len(list(chained)) == 2
+
+    def test_peek_does_not_drain_large_iterator(self):
+        """Peek path must only consume a handful of entries, not the whole stream."""
+
+        call_count = {"n": 0}
+
+        def gen():
+            for i in range(1000):
+                call_count["n"] += 1
+                yield (f"double_blocks.{i}.img_attn.qkv.weight", torch.zeros(1))
+
+        is_bfl, _ = Flux2Transformer2DModel._peek_bfl_format(gen())
+        assert is_bfl is True
+        # Should have only pulled a single entry to decide — certainly fewer than 1000.
+        assert call_count["n"] < 10
 
     def test_bfl_mapping_handles_scale_rename(self):
         """BFL .scale should be renamed to .weight."""
@@ -197,15 +230,57 @@ class TestNvfp4Detection:
         self._create_fake_safetensors(str(tmp_path / "model.safetensors"), header)
         assert detect_nvfp4_from_safetensors(str(tmp_path)) is False
 
-    def test_detects_from_metadata_marker(self, tmp_path):
+    def test_detects_from_quantization_metadata_key(self, tmp_path):
+        """FLUX.2-dev-NVFP4 stores metadata under ``_quantization_metadata``."""
         from vllm_omni.diffusion.utils.nvfp4_utils import detect_nvfp4_from_safetensors
 
+        qmeta = {"format_version": "1.0", "layers": {"block.0.qkv": {"format": "nvfp4"}}}
         header = {
-            "__metadata__": {"quantization": "NVFP4"},
+            "__metadata__": {"_quantization_metadata": json.dumps(qmeta)},
             "model.layer.0.weight": {"dtype": "BF16", "shape": [128, 128], "data_offsets": [0, 32768]},
         }
         self._create_fake_safetensors(str(tmp_path / "model.safetensors"), header)
         assert detect_nvfp4_from_safetensors(str(tmp_path)) is True
+
+    def test_parse_quant_metadata_builds_modelopt_dict(self, tmp_path):
+        from vllm_omni.diffusion.utils.nvfp4_utils import parse_nvfp4_quant_metadata
+
+        qmeta = {
+            "format_version": "1.0",
+            "layers": {
+                "double_blocks.0.img_attn.qkv": {"format": "nvfp4"},
+                "single_blocks.0.linear1": {"format": "nvfp4"},
+            },
+        }
+        header = {
+            "__metadata__": {"_quantization_metadata": json.dumps(qmeta)},
+            "double_blocks.0.img_attn.qkv.weight": {"dtype": "U8", "shape": [1, 1], "data_offsets": [0, 1]},
+            "double_blocks.0.img_attn.qkv.weight_scale": {
+                "dtype": "F8_E4M3",
+                "shape": [1, 1],
+                "data_offsets": [1, 2],
+            },
+        }
+        self._create_fake_safetensors(str(tmp_path / "model.safetensors"), header)
+        parsed = parse_nvfp4_quant_metadata(str(tmp_path))
+        assert parsed is not None
+        assert parsed["quantization"]["quant_algo"] == "NVFP4"
+        assert parsed["quantization"]["group_size"] == 16
+        assert parsed["quantization"]["kv_cache_quant_algo"] is None
+        # Exclude list must cover the non-quantized Flux2 layers.
+        excl = parsed["quantization"]["exclude_modules"]
+        assert any("proj_out" in p for p in excl)
+        assert any("add_kv_proj" in p for p in excl)
+
+    def test_resolve_nvfp4_checkpoint_file_prefers_plain(self, tmp_path):
+        from vllm_omni.diffusion.utils.nvfp4_utils import resolve_nvfp4_checkpoint_file
+
+        header = {"w": {"dtype": "U8", "shape": [1], "data_offsets": [0, 1]}}
+        self._create_fake_safetensors(str(tmp_path / "flux2-dev-nvfp4.safetensors"), header)
+        self._create_fake_safetensors(str(tmp_path / "flux2-dev-nvfp4-mixed.safetensors"), header)
+
+        assert resolve_nvfp4_checkpoint_file(str(tmp_path)) == "flux2-dev-nvfp4.safetensors"
+        assert resolve_nvfp4_checkpoint_file(str(tmp_path), prefer_mixed=True) == "flux2-dev-nvfp4-mixed.safetensors"
 
     def test_returns_false_for_empty_dir(self, tmp_path):
         from vllm_omni.diffusion.utils.nvfp4_utils import detect_nvfp4_from_safetensors

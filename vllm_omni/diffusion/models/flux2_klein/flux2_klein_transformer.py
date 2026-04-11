@@ -1014,15 +1014,35 @@ class Flux2Transformer2DModel(nn.Module):
         return Transformer2DModelOutput(sample=output)
 
     @staticmethod
-    def _is_bfl_format(weights: Iterable[tuple[str, torch.Tensor]]) -> tuple[bool, list[tuple[str, torch.Tensor]]]:
-        """Detect BFL checkpoint format and buffer the weights iterator."""
-        buffered: list[tuple[str, torch.Tensor]] = []
+    def _peek_bfl_format(
+        weights: Iterable[tuple[str, torch.Tensor]],
+    ) -> tuple[bool, Iterable[tuple[str, torch.Tensor]]]:
+        """Detect BFL checkpoint format by peeking the first few entries.
+
+        Unlike a full materialization, this only consumes up to a handful of
+        items from the iterator and then chains them back so the caller gets
+        a complete stream. Prevents peak host-RAM spikes on large NVFP4
+        checkpoints where the full state dict would otherwise be held in a
+        Python list.
+        """
+        import itertools
+
+        iterator = iter(weights)
+        peeked: list[tuple[str, torch.Tensor]] = []
         is_bfl = False
-        for name, weight in weights:
-            if not is_bfl and (name.startswith("double_blocks.") or name.startswith("single_blocks.")):
+        # At most a few entries is enough: the first weight name carries the
+        # naming convention unambiguously.
+        for _ in range(4):
+            try:
+                entry = next(iterator)
+            except StopIteration:
+                break
+            peeked.append(entry)
+            if entry[0].startswith(("double_blocks.", "single_blocks.")):
                 is_bfl = True
-            buffered.append((name, weight))
-        return is_bfl, buffered
+                break
+
+        return is_bfl, itertools.chain(peeked, iterator)
 
     @staticmethod
     def _apply_bfl_mapping(
@@ -1056,7 +1076,9 @@ class Flux2Transformer2DModel(nn.Module):
         self.stacked_params_mapping = stacked_params_mapping
 
         # Detect and remap BFL checkpoint format (e.g., NVFP4 checkpoints).
-        is_bfl, weights = self._is_bfl_format(weights)
+        # Uses a peek-based check so we don't materialize the full weight
+        # iterator just to decide whether to apply the mapping.
+        is_bfl, weights = self._peek_bfl_format(weights)
         if is_bfl:
             logger.info("Detected BFL checkpoint format, remapping weight names")
             weights = self._apply_bfl_mapping(weights)
