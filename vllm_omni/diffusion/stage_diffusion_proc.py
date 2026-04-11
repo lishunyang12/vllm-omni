@@ -82,7 +82,13 @@ class StageDiffusionProc:
                 od_config.update_multimodal_support()
 
                 tf_config_dict = get_hf_file_to_dict("transformer/config.json", od_config.model)
-                od_config.tf_model_config = TransformerConfig.from_dict(tf_config_dict)
+                # Use set_tf_model_config so a `quantization_config` block embedded
+                # in transformer/config.json (e.g. AutoRound, ModelOpt NVFP4) is
+                # propagated into od_config.quantization_config. A bare attribute
+                # assignment would leave od_config.quantization_config as None and
+                # the pipeline would then build BF16 linears, crashing later when
+                # the quantized weight file is loaded into the wrong-shape params.
+                od_config.set_tf_model_config(TransformerConfig.from_dict(tf_config_dict))
             else:
                 raise FileNotFoundError("model_index.json not found")
         except (AttributeError, OSError, ValueError, FileNotFoundError):
@@ -90,18 +96,18 @@ class StageDiffusionProc:
             if cfg is None:
                 raise ValueError(f"Could not find config.json or model_index.json for model {od_config.model}")
 
-            od_config.tf_model_config = TransformerConfig.from_dict(cfg)
+            od_config.set_tf_model_config(TransformerConfig.from_dict(cfg))
             model_type = cfg.get("model_type")
             architectures = cfg.get("architectures") or []
 
             if model_type == "bagel" or "BagelForConditionalGeneration" in architectures:
                 od_config.model_class_name = "BagelPipeline"
-                od_config.tf_model_config = TransformerConfig()
+                od_config.set_tf_model_config(TransformerConfig())
                 od_config.update_multimodal_support()
             elif model_type == "nextstep":
                 if od_config.model_class_name is None:
                     od_config.model_class_name = "NextStep11Pipeline"
-                od_config.tf_model_config = TransformerConfig()
+                od_config.set_tf_model_config(TransformerConfig())
                 od_config.update_multimodal_support()
             elif architectures and len(architectures) == 1:
                 od_config.model_class_name = architectures[0]
