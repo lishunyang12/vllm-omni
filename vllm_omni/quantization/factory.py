@@ -21,10 +21,42 @@ from vllm.model_executor.layers.quantization import (
 from vllm.model_executor.layers.quantization.base_config import (
     QuantizationConfig,
 )
+from vllm.model_executor.layers.quantization.modelopt import (
+    ModelOptNvFp4LinearMethod,
+)
 
 from .component_config import ComponentQuantizationConfig
 
 logger = init_logger(__name__)
+
+
+class FluxNvFp4LinearMethod(ModelOptNvFp4LinearMethod):
+    """ModelOpt NVFP4 LinearMethod variant for NVIDIA/BFL FLUX.2 checkpoints.
+
+    NVIDIA's BFL-released FLUX.2 NVFP4 safetensors pack FP4 nibbles in the
+    opposite byte order to what vLLM upstream's FlashInfer CUTLASS path
+    expects for LLM ModelOpt checkpoints. Loading such a checkpoint through
+    the stock path produces numerically-stable but semantically garbage
+    output (pure noise images). This subclass adds a single per-byte nibble
+    swap before delegating to the upstream
+    ``process_weights_after_loading``. Everything else (weight shape,
+    weight_scale padding, kernel dispatch, forward path) is inherited.
+
+    Confirmed by sgl-project/sglang#20137, which added the same one-line
+    workaround for the same checkpoint family.
+
+    Defined at module level so ``multiprocessing.spawn`` can pickle it by
+    qualified name when the ``OmniDiffusionConfig`` is sent to a worker
+    subprocess.
+    """
+
+    def process_weights_after_loading(self, layer):  # type: ignore[override]
+        import torch
+
+        w = layer.weight.data
+        swapped = ((w >> 4) | ((w & 0x0F) << 4)).to(torch.uint8).contiguous()
+        layer.weight.data = swapped
+        super().process_weights_after_loading(layer)
 
 
 def _build_gguf(**kw: Any) -> QuantizationConfig:
@@ -74,40 +106,19 @@ def _build_modelopt_nvfp4(**kw: Any) -> QuantizationConfig:
 def _build_modelopt_nvfp4_flux(**kw: Any) -> QuantizationConfig:
     """ModelOpt NVFP4 variant for NVIDIA/BFL FLUX.2 checkpoints.
 
-    NVIDIA's FLUX.2-NVFP4 safetensors pack FP4 nibbles in the opposite byte
-    order to what vLLM upstream's FlashInfer CUTLASS path expects for LLM
-    ModelOpt checkpoints — loading them through the stock path produces
-    numerically-stable but semantically garbage output (pure noise images).
-    Confirmed by sgl-project/sglang#20137, which also needed a one-line
-    nibble swap for the same checkpoint family.
-
-    We take the stock ``ModelOptNvFp4Config`` built via ``from_config``,
-    then install a per-instance ``LinearMethodCls`` that adds a single
-    nibble-swap step before delegating to the upstream
-    ``process_weights_after_loading``. Everything else (weight shape,
-    weight_scale padding, kernel dispatch, forward path) is inherited.
+    Takes the stock ``ModelOptNvFp4Config`` built via ``from_config``, then
+    installs ``FluxNvFp4LinearMethod`` as the per-instance
+    ``LinearMethodCls`` so our nibble-swap override runs on each quantized
+    layer at load time. See ``FluxNvFp4LinearMethod`` for why the swap is
+    needed.
     """
-    from vllm.model_executor.layers.quantization.modelopt import (
-        ModelOptNvFp4Config,
-        ModelOptNvFp4LinearMethod,
-    )
-
-    class _FluxNvFp4LinearMethod(ModelOptNvFp4LinearMethod):
-        def process_weights_after_loading(self, layer):  # type: ignore[override]
-            # Swap high/low nibbles on every byte of the packed FP4 weight.
-            # Upstream expects one packing order, FLUX.2 ships the other.
-            import torch
-
-            w = layer.weight.data
-            swapped = ((w >> 4) | ((w & 0x0F) << 4)).to(torch.uint8).contiguous()
-            layer.weight.data = swapped
-            super().process_weights_after_loading(layer)
+    from vllm.model_executor.layers.quantization.modelopt import ModelOptNvFp4Config
 
     config = ModelOptNvFp4Config.from_config({"quantization": kw})
-    # Instance-level override — ModelOptQuantConfigBase.get_quant_method looks
-    # up LinearMethodCls via ``self.LinearMethodCls``, which resolves the
-    # instance attribute before the class attribute.
-    config.LinearMethodCls = _FluxNvFp4LinearMethod  # type: ignore[assignment]
+    # Instance-level override — ModelOptQuantConfigBase.get_quant_method
+    # looks up ``self.LinearMethodCls``, which resolves the instance
+    # attribute before the class attribute.
+    config.LinearMethodCls = FluxNvFp4LinearMethod  # type: ignore[assignment]
     return config
 
 
