@@ -75,6 +75,9 @@ def _run(args: argparse.Namespace) -> int:
     from vllm.transformers_utils.config import get_hf_file_to_dict
 
     from vllm_omni.diffusion.data import OmniDiffusionConfig, TransformerConfig
+    from vllm_omni.diffusion.distributed.parallel_state import (
+        initialize_model_parallel as initialize_diffusion_model_parallel,
+    )
     from vllm_omni.diffusion.forward_context import set_forward_context
     from vllm_omni.diffusion.model_loader.diffusers_loader import (
         DiffusersPipelineLoader,
@@ -87,6 +90,21 @@ def _run(args: argparse.Namespace) -> int:
         ensure_model_parallel_initialized(
             tensor_model_parallel_size=1,
             pipeline_model_parallel_size=1,
+        )
+
+        # vllm-omni's diffusion side maintains its OWN parallel groups
+        # (CFG / SP / VAE PP / data) on top of vLLM's TP/PP. Pipelines like
+        # Flux2KleinPipeline.predict_noise_maybe_with_cfg() reach for the
+        # CFG group at forward time, so we have to create singleton groups
+        # for all the dimensions or that path asserts.
+        initialize_diffusion_model_parallel(
+            data_parallel_size=1,
+            cfg_parallel_size=1,
+            sequence_parallel_size=1,
+            ulysses_degree=1,
+            ring_degree=1,
+            tensor_parallel_size=1,
+            pipeline_parallel_size=1,
         )
 
         od = OmniDiffusionConfig(

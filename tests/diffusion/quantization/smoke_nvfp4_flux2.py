@@ -81,6 +81,10 @@ def _run_pipeline_under_vllm_config(args: argparse.Namespace) -> int:
     from vllm.config import LoadConfig, set_current_vllm_config
     from vllm.distributed import ensure_model_parallel_initialized
 
+    from vllm_omni.diffusion.distributed.parallel_state import (
+        initialize_model_parallel as initialize_diffusion_model_parallel,
+    )
+
     vllm_config = _make_minimal_vllm_config()
     with set_current_vllm_config(vllm_config):
         # Model-parallel init must run inside the context — it reads the
@@ -88,6 +92,20 @@ def _run_pipeline_under_vllm_config(args: argparse.Namespace) -> int:
         ensure_model_parallel_initialized(
             tensor_model_parallel_size=1,
             pipeline_model_parallel_size=1,
+        )
+
+        # vllm-omni's diffusion side has its OWN parallel groups
+        # (CFG / SP / VAE PP / data) on top of vLLM's TP/PP. Singleton groups
+        # are required for diffusion pipelines that reach for them at forward
+        # time (e.g. CFG group via predict_noise_maybe_with_cfg).
+        initialize_diffusion_model_parallel(
+            data_parallel_size=1,
+            cfg_parallel_size=1,
+            sequence_parallel_size=1,
+            ulysses_degree=1,
+            ring_degree=1,
+            tensor_parallel_size=1,
+            pipeline_parallel_size=1,
         )
 
         from vllm.transformers_utils.config import get_hf_file_to_dict
