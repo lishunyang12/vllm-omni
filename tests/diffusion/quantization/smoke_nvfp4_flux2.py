@@ -106,6 +106,8 @@ def _run_pipeline_under_vllm_config(args: argparse.Namespace) -> int:
         # klein-9B, and any future Flux2 variant.
         import torch
 
+        from vllm_omni.diffusion.forward_context import set_forward_context
+
         cfg = pipe.transformer.config
         device = next(pipe.transformer.parameters()).device
         dtype = next(pipe.transformer.parameters()).dtype
@@ -122,14 +124,18 @@ def _run_pipeline_under_vllm_config(args: argparse.Namespace) -> int:
             txt_ids = torch.zeros(n_txt_tokens, n_rope_axes, device=device, dtype=dtype)
             guidance = torch.zeros(1, device=device, dtype=dtype) if cfg.guidance_embeds else None
 
-            out = pipe.transformer(
-                hidden_states=hidden_states,
-                encoder_hidden_states=encoder_hidden_states,
-                timestep=timestep,
-                img_ids=img_ids,
-                txt_ids=txt_ids,
-                guidance=guidance,
-            )
+            # Flux2 forward calls get_forward_context() — wrap with
+            # set_forward_context. Pass omni_diffusion_config so SP-active
+            # checks resolve via parallel_config.sequence_parallel_size.
+            with set_forward_context(omni_diffusion_config=od):
+                out = pipe.transformer(
+                    hidden_states=hidden_states,
+                    encoder_hidden_states=encoder_hidden_states,
+                    timestep=timestep,
+                    img_ids=img_ids,
+                    txt_ids=txt_ids,
+                    guidance=guidance,
+                )
             sample = out.sample if hasattr(out, "sample") else out[0]
             if torch.isnan(sample).any() or torch.isinf(sample).any():
                 print("FAIL: forward produced NaN/Inf", file=sys.stderr)
