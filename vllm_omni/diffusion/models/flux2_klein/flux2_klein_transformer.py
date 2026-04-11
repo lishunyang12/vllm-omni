@@ -37,7 +37,6 @@ from vllm.model_executor.layers.linear import (
     RowParallelLinear,
 )
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
-from vllm.model_executor.models.utils import WeightsMapper
 
 from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
 from vllm_omni.diffusion.attention.layer import Attention
@@ -48,56 +47,14 @@ from vllm_omni.diffusion.distributed.sp_plan import (
 )
 from vllm_omni.diffusion.forward_context import get_forward_context
 from vllm_omni.diffusion.layers.rope import RotaryEmbedding, apply_rope_to_qk
+from vllm_omni.diffusion.utils.bfl_mapping import (
+    apply_bfl_mapping,
+    peek_bfl_format,
+)
 
 logger = init_logger(__name__)
 if TYPE_CHECKING:
     from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
-
-# BFL (Black Forest Labs) checkpoint name mappings for NVFP4 / non-diffusers weights.
-# Reuses the same conventions as the GGUF adapter (flux2_klein.py).
-_BFL_TO_DIFFUSERS_PREFIX = {
-    "single_blocks.": "single_transformer_blocks.",
-    "img_in": "x_embedder",
-    "txt_in": "context_embedder",
-    "time_in.in_layer": "time_guidance_embed.timestep_embedder.linear_1",
-    "time_in.out_layer": "time_guidance_embed.timestep_embedder.linear_2",
-    "guidance_in.in_layer": "time_guidance_embed.guidance_embedder.linear_1",
-    "guidance_in.out_layer": "time_guidance_embed.guidance_embedder.linear_2",
-    "double_stream_modulation_img.lin": "double_stream_modulation_img.linear",
-    "double_stream_modulation_txt.lin": "double_stream_modulation_txt.linear",
-    "single_stream_modulation.lin": "single_stream_modulation.linear",
-    "final_layer.linear": "proj_out",
-    "final_layer.adaLN_modulation.1": "norm_out.linear",
-}
-
-_BFL_TO_DIFFUSERS_DOUBLE_BLOCK = {
-    "double_blocks.": "transformer_blocks.",
-    "img_attn.norm.query_norm": "attn.norm_q",
-    "img_attn.norm.key_norm": "attn.norm_k",
-    "img_attn.proj": "attn.to_out.0",
-    "img_mlp.0": "ff.linear_in",
-    "img_mlp.2": "ff.linear_out",
-    "txt_attn.norm.query_norm": "attn.norm_added_q",
-    "txt_attn.norm.key_norm": "attn.norm_added_k",
-    "txt_attn.proj": "attn.to_add_out",
-    "txt_mlp.0": "ff_context.linear_in",
-    "txt_mlp.2": "ff_context.linear_out",
-    # Fused QKV projections
-    "img_attn.qkv": "attn.to_qkv",
-    "txt_attn.qkv": "attn.add_kv_proj",
-}
-
-_BFL_TO_DIFFUSERS_SINGLE_BLOCK = {
-    "linear1": "attn.to_qkv_mlp_proj",
-    "linear2": "attn.to_out",
-    "norm.query_norm": "attn.norm_q",
-    "norm.key_norm": "attn.norm_k",
-}
-
-_BFL_WEIGHTS_MAPPER = WeightsMapper(
-    orig_to_new_prefix=_BFL_TO_DIFFUSERS_PREFIX,
-    orig_to_new_substr=_BFL_TO_DIFFUSERS_DOUBLE_BLOCK | _BFL_TO_DIFFUSERS_SINGLE_BLOCK,
-)
 
 
 class Flux2SwiGLU(nn.Module):
@@ -1013,55 +970,10 @@ class Flux2Transformer2DModel(nn.Module):
             return (output,)
         return Transformer2DModelOutput(sample=output)
 
-    @staticmethod
-    def _peek_bfl_format(
-        weights: Iterable[tuple[str, torch.Tensor]],
-    ) -> tuple[bool, Iterable[tuple[str, torch.Tensor]]]:
-        """Detect BFL checkpoint format by peeking the first few entries.
-
-        Unlike a full materialization, this only consumes up to a handful of
-        items from the iterator and then chains them back so the caller gets
-        a complete stream. Prevents peak host-RAM spikes on large NVFP4
-        checkpoints where the full state dict would otherwise be held in a
-        Python list.
-        """
-        import itertools
-
-        iterator = iter(weights)
-        peeked: list[tuple[str, torch.Tensor]] = []
-        is_bfl = False
-        # At most a few entries is enough: the first weight name carries the
-        # naming convention unambiguously.
-        for _ in range(4):
-            try:
-                entry = next(iterator)
-            except StopIteration:
-                break
-            peeked.append(entry)
-            if entry[0].startswith(("double_blocks.", "single_blocks.")):
-                is_bfl = True
-                break
-
-        return is_bfl, itertools.chain(peeked, iterator)
-
-    @staticmethod
-    def _apply_bfl_mapping(
-        weights: Iterable[tuple[str, torch.Tensor]],
-    ) -> Iterable[tuple[str, torch.Tensor]]:
-        """Remap BFL checkpoint names to diffusers format and handle special cases."""
-
-        def _remap(items: Iterable[tuple[str, torch.Tensor]]) -> Iterable[tuple[str, torch.Tensor]]:
-            for name, weight in items:
-                # RMSNorm: BFL uses .scale, diffusers uses .weight
-                if name.endswith(".scale"):
-                    name = name[: -len(".scale")] + ".weight"
-                # adaLN modulation: BFL stores [scale, shift], diffusers stores [shift, scale]
-                if name == "norm_out.linear.weight":
-                    shift, scale = weight.chunk(2, dim=0)
-                    weight = torch.cat([scale, shift], dim=0)
-                yield name, weight
-
-        yield from _remap(_BFL_WEIGHTS_MAPPER.apply(weights))
+    # Backwards-compat aliases used by tests; the real implementations live
+    # in vllm_omni.diffusion.utils.bfl_mapping.
+    _peek_bfl_format = staticmethod(peek_bfl_format)
+    _apply_bfl_mapping = staticmethod(apply_bfl_mapping)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         stacked_params_mapping = [

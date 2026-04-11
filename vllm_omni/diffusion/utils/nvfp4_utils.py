@@ -176,24 +176,25 @@ def _header_looks_nvfp4(header: dict[str, Any]) -> bool:
 def _build_flux2_exclude_modules(quantized_paths: set[str]) -> list[str]:
     """Build exclude_modules in diffusers naming for Flux2 NVFP4 checkpoints.
 
-    Even though *quantized_paths* is BFL-style, the ``exclude_modules`` we
-    return is written in the diffusers naming that vLLM sees at inference
-    time, so ``fnmatch`` in ``is_layer_excluded`` catches the correct
-    prefixes.
+    The set of quantized layers varies across BFL releases. For example,
+    ``FLUX.2-dev-NVFP4`` leaves the text-stream attention (``txt_attn``) in
+    BF16, while ``FLUX.2-klein-4b-nvfp4`` quantizes it. We therefore drive
+    the exclude list off the *actual* per-layer metadata that ModelOpt
+    embedded in the safetensors header, instead of hard-coding a single
+    pattern.
 
-    We hard-code the Flux2 exclude set here because it is stable across
-    FLUX.2-dev-NVFP4 / FLUX.2-dev-NVFP4-mixed — only linear layers in
-    ``transformer_blocks.*.attn.{to_qkv,to_out.0}``,
-    ``transformer_blocks.*.{ff,ff_context}.{linear_in,linear_out}`` and
-    ``single_transformer_blocks.*.attn.{to_qkv_mlp_proj,to_out}`` are
-    quantized. The rest must be excluded.
+    *quantized_paths* uses the checkpoint's native (BFL) layer naming, but
+    the patterns we return must match the diffusers names that ModelOpt's
+    ``is_layer_excluded`` will see at inference. We probe a small set of
+    BFL substrings against *quantized_paths* and emit the diffusers-style
+    wildcard for any module group that is not present.
+
+    Layer groups that are *always* unquantized in every Flux2 NVFP4 ckp
+    we've seen (embedders, modulation, final layer, time/guidance) are
+    listed unconditionally.
     """
-    del quantized_paths  # reserved for future per-layer validation
-    return [
-        # Text-stream attention (NVIDIA's ckp leaves these in BF16)
-        "*attn.add_kv_proj*",
-        "*attn.to_add_out*",
-        # Embedders (patch, context)
+    excl = [
+        # Embedders — patch + context, never quantized
         "*x_embedder*",
         "*context_embedder*",
         # Time / guidance embeddings
@@ -206,6 +207,18 @@ def _build_flux2_exclude_modules(quantized_paths: set[str]) -> list[str]:
         "*norm_out.linear*",
         "*proj_out*",
     ]
+
+    # Conditional excludes derived from the embedded per-layer metadata.
+    # Each entry maps a BFL substring → list of diffusers-name wildcards
+    # that should be excluded if no quantized layer matches that substring.
+    conditional = [
+        ("txt_attn.qkv", ["*attn.add_kv_proj*"]),
+        ("txt_attn.proj", ["*attn.to_add_out*"]),
+    ]
+    for bfl_substr, diffusers_patterns in conditional:
+        if not any(bfl_substr in p for p in quantized_paths):
+            excl.extend(diffusers_patterns)
+    return excl
 
 
 def _list_safetensors(weights_path: str) -> list[str]:

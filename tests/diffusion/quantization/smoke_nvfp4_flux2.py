@@ -28,8 +28,12 @@ import sys
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base", default="black-forest-labs/FLUX.2-dev")
-    parser.add_argument("--nvfp4", default="black-forest-labs/FLUX.2-dev-NVFP4")
+    # Defaults target the FLUX.2-klein-4B variant because that is the model
+    # the Flux2KleinPipeline (with its hardcoded Qwen3 text encoder) is built
+    # for. FLUX.2-dev uses a Mistral-3 text encoder and lives behind the
+    # separate Flux2Pipeline class which does not yet have NVFP4 plumbing.
+    parser.add_argument("--base", default="black-forest-labs/FLUX.2-klein-4B")
+    parser.add_argument("--nvfp4", default="black-forest-labs/FLUX.2-klein-4b-nvfp4")
     parser.add_argument("--skip-forward", action="store_true")
     args = parser.parse_args()
 
