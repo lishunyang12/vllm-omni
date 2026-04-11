@@ -50,13 +50,47 @@ class FluxNvFp4LinearMethod(ModelOptNvFp4LinearMethod):
     subprocess.
     """
 
+    # Log only the first few layers to avoid spamming for ~144 linears.
+    _debug_log_budget: int = 4
+
     def process_weights_after_loading(self, layer):  # type: ignore[override]
         import torch
 
-        w = layer.weight.data
-        swapped = ((w >> 4) | ((w & 0x0F) << 4)).to(torch.uint8).contiguous()
+        w_before = layer.weight.data
+        before_shape = tuple(w_before.shape)
+        before_dtype = w_before.dtype
+        # Sample a few bytes so we can see whether upstream's kernel re-layout
+        # leaves our swap in place or rewrites the weight tensor.
+        before_sample = w_before.flatten()[:8].tolist() if w_before.numel() >= 8 else w_before.flatten().tolist()
+
+        # Swap high/low nibbles.
+        swapped = ((w_before >> 4) | ((w_before & 0x0F) << 4)).to(torch.uint8).contiguous()
         layer.weight.data = swapped
+        after_swap_sample = swapped.flatten()[:8].tolist() if swapped.numel() >= 8 else swapped.flatten().tolist()
+
         super().process_weights_after_loading(layer)
+
+        w_after = layer.weight.data
+        after_shape = tuple(w_after.shape)
+        after_dtype = w_after.dtype
+        after_sample = w_after.flatten()[:8].tolist() if w_after.numel() >= 8 else w_after.flatten().tolist()
+
+        if FluxNvFp4LinearMethod._debug_log_budget > 0:
+            FluxNvFp4LinearMethod._debug_log_budget -= 1
+            logger.info(
+                "[FluxNvFp4] process_weights_after_loading: prefix=%s\n"
+                "  before swap:  shape=%s dtype=%s sample=%s\n"
+                "  after swap:   sample=%s\n"
+                "  after super:  shape=%s dtype=%s sample=%s",
+                getattr(layer, "prefix", "<no-prefix>"),
+                before_shape,
+                before_dtype,
+                before_sample,
+                after_swap_sample,
+                after_shape,
+                after_dtype,
+                after_sample,
+            )
 
 
 def _build_gguf(**kw: Any) -> QuantizationConfig:
