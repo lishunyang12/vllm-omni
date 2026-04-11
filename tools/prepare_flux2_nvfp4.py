@@ -90,8 +90,12 @@ def _parse_quant_metadata(nvfp4_safetensors_path: Path) -> dict:
             f"Could not parse NVFP4 metadata from {nvfp4_safetensors_path}. Is this really a ModelOpt-NVFP4 checkpoint?"
         )
     qc = dict(quant_dict["quantization"])
-    # Mark which vllm-omni factory entry to dispatch through.
-    qc["quant_method"] = "modelopt_fp4"
+    # Mark which vllm-omni factory entry to dispatch through. We use the
+    # FLUX.2-specific variant which adds a one-byte nibble swap on top of
+    # upstream's ModelOptNvFp4LinearMethod — NVIDIA's BFL NVFP4 ckps pack
+    # FP4 nibbles in the opposite order to the LLM path (see sgl-project/
+    # sglang#20137 for the same workaround).
+    qc["quant_method"] = "modelopt_fp4_flux"
     return qc
 
 

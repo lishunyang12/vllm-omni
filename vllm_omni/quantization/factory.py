@@ -71,12 +71,53 @@ def _build_modelopt_nvfp4(**kw: Any) -> QuantizationConfig:
     return ModelOptNvFp4Config.from_config({"quantization": kw})
 
 
+def _build_modelopt_nvfp4_flux(**kw: Any) -> QuantizationConfig:
+    """ModelOpt NVFP4 variant for NVIDIA/BFL FLUX.2 checkpoints.
+
+    NVIDIA's FLUX.2-NVFP4 safetensors pack FP4 nibbles in the opposite byte
+    order to what vLLM upstream's FlashInfer CUTLASS path expects for LLM
+    ModelOpt checkpoints — loading them through the stock path produces
+    numerically-stable but semantically garbage output (pure noise images).
+    Confirmed by sgl-project/sglang#20137, which also needed a one-line
+    nibble swap for the same checkpoint family.
+
+    We take the stock ``ModelOptNvFp4Config`` built via ``from_config``,
+    then install a per-instance ``LinearMethodCls`` that adds a single
+    nibble-swap step before delegating to the upstream
+    ``process_weights_after_loading``. Everything else (weight shape,
+    weight_scale padding, kernel dispatch, forward path) is inherited.
+    """
+    from vllm.model_executor.layers.quantization.modelopt import (
+        ModelOptNvFp4Config,
+        ModelOptNvFp4LinearMethod,
+    )
+
+    class _FluxNvFp4LinearMethod(ModelOptNvFp4LinearMethod):
+        def process_weights_after_loading(self, layer):  # type: ignore[override]
+            # Swap high/low nibbles on every byte of the packed FP4 weight.
+            # Upstream expects one packing order, FLUX.2 ships the other.
+            import torch
+
+            w = layer.weight.data
+            swapped = ((w >> 4) | ((w & 0x0F) << 4)).to(torch.uint8).contiguous()
+            layer.weight.data = swapped
+            super().process_weights_after_loading(layer)
+
+    config = ModelOptNvFp4Config.from_config({"quantization": kw})
+    # Instance-level override — ModelOptQuantConfigBase.get_quant_method looks
+    # up LinearMethodCls via ``self.LinearMethodCls``, which resolves the
+    # instance attribute before the class attribute.
+    config.LinearMethodCls = _FluxNvFp4LinearMethod  # type: ignore[assignment]
+    return config
+
+
 _OVERRIDES: dict[str, Callable[..., QuantizationConfig]] = {
     "gguf": _build_gguf,
     "int8": _build_int8,
     "inc": _build_inc,
     "auto-round": _build_inc,
     "modelopt_fp4": _build_modelopt_nvfp4,
+    "modelopt_fp4_flux": _build_modelopt_nvfp4_flux,
 }
 
 SUPPORTED_QUANTIZATION_METHODS: list[str] = list(dict.fromkeys(QUANTIZATION_METHODS + list(_OVERRIDES.keys())))

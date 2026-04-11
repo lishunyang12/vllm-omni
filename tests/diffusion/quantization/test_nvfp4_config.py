@@ -46,6 +46,32 @@ def test_build_quant_config_modelopt_fp4():
     assert "*norm_out*" in config.exclude_modules
 
 
+def test_build_quant_config_modelopt_fp4_flux_installs_nibble_swap():
+    """The FLUX.2 variant adds a per-instance LinearMethodCls that swaps
+    FP4 nibbles before delegating to the upstream process_weights_after_loading.
+
+    We don't run the GPU kernel here — we just confirm that the returned
+    config's LinearMethodCls is a subclass of the stock one, so that the
+    runtime ``get_quant_method`` path will construct our variant.
+    """
+    from vllm.model_executor.layers.quantization.modelopt import (
+        ModelOptNvFp4LinearMethod,
+    )
+
+    from vllm_omni.quantization import build_quant_config
+
+    config = build_quant_config(
+        "modelopt_fp4_flux",
+        quant_algo="NVFP4",
+        kv_cache_quant_algo=None,
+        exclude_modules=["*norm_out*"],
+        group_size=16,
+    )
+    assert config.is_checkpoint_nvfp4_serialized
+    assert issubclass(config.LinearMethodCls, ModelOptNvFp4LinearMethod)
+    assert config.LinearMethodCls is not ModelOptNvFp4LinearMethod
+
+
 def test_modelopt_nvfp4_from_config_dict():
     """Upstream ModelOptNvFp4Config.from_config must accept the dict produced
     by parse_nvfp4_quant_metadata — sanity check for the prep script."""
