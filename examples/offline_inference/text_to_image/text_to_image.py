@@ -43,15 +43,6 @@ def parse_args() -> argparse.Namespace:
         "stabilityai/stable-diffusion-3.5-medium, Tongyi-MAI/Z-Image-Turbo and etc.",
     )
     parser.add_argument(
-        "--transformer-weights-path",
-        type=str,
-        default=None,
-        help="Optional separate path/HF repo for the transformer weights only "
-        "(e.g. black-forest-labs/FLUX.2-klein-4b-nvfp4). The text encoder, VAE, "
-        "scheduler and architecture config still come from --model. NVFP4 "
-        "checkpoints are auto-detected when this flag is set.",
-    )
-    parser.add_argument(
         "--stage-configs-path",
         type=str,
         default=None,
@@ -330,7 +321,6 @@ def main():
 
     omni_kwargs = {
         "model": args.model,
-        "transformer_weights_path": args.transformer_weights_path,
         "enable_layerwise_offload": args.enable_layerwise_offload,
         "vae_use_slicing": args.vae_use_slicing,
         "vae_use_tiling": args.vae_use_tiling,

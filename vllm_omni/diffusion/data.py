@@ -498,12 +498,6 @@ class OmniDiffusionConfig:
     # Per-component: {"transformer": {"method": "fp8"}, "vae": None}
     quantization_config: str | QuantizationConfig | dict[str, Any] | None = None
 
-    # Optional separate path for transformer weights (e.g., NVFP4 checkpoints).
-    # When set, transformer weights are loaded from this path instead of the
-    # main model path. Other components (VAE, text encoder, etc.) still use
-    # the main model path.
-    transformer_weights_path: str | None = None
-
     # Diffusion pipeline Profiling config
     enable_diffusion_pipeline_profiler: bool = False
 

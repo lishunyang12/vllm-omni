@@ -195,50 +195,13 @@ class Flux2KleinPipeline(nn.Module, CFGParallelMixin, SupportImageInput, Diffusi
         super().__init__()
         self.od_config = od_config
         self.is_distilled = is_distilled
-
-        # Resolve the transformer weights source. When the user points to a
-        # separate transformer weights path (e.g. black-forest-labs/FLUX.2-dev-NVFP4),
-        # we load weights from there but keep the architecture/config coming
-        # from od_config.model (the BF16 base) because the NVFP4 repo has no
-        # config.json of its own.
-        transformer_model = od_config.transformer_weights_path or od_config.model
-        transformer_subfolder = "transformer" if transformer_model == od_config.model else None
-
-        # Auto-detect NVFP4 BEFORE constructing ComponentSource, so we can
-        # restrict allow_patterns to just the single file we actually need
-        # (FLUX.2-dev-NVFP4 ships both nvfp4 and nvfp4-mixed variants at
-        # repo root, ~42 GB combined — don't download both).
-        allow_patterns_overrides: list[str] | None = None
-        if od_config.transformer_weights_path and od_config.quantization_config is None:
-            from vllm_omni.diffusion.utils.nvfp4_utils import (
-                parse_nvfp4_quant_metadata,
-                resolve_nvfp4_checkpoint_file,
-            )
-
-            quant_dict = parse_nvfp4_quant_metadata(od_config.transformer_weights_path)
-            if quant_dict is not None:
-                from vllm.model_executor.layers.quantization.modelopt import (
-                    ModelOptNvFp4Config,
-                )
-
-                od_config.quantization_config = ModelOptNvFp4Config.from_config(quant_dict)
-                logger.info(
-                    "Auto-detected NVFP4 quantization from transformer weights at %s",
-                    od_config.transformer_weights_path,
-                )
-                picked = resolve_nvfp4_checkpoint_file(od_config.transformer_weights_path)
-                if picked is not None:
-                    allow_patterns_overrides = [picked]
-                    logger.info("Restricting NVFP4 download to %s", picked)
-
         self.weights_sources = [
             DiffusersPipelineLoader.ComponentSource(
-                model_or_path=transformer_model,
-                subfolder=transformer_subfolder,
+                model_or_path=od_config.model,
+                subfolder="transformer",
                 revision=None,
                 prefix="transformer.",
                 fall_back_to_pt=True,
-                allow_patterns_overrides=allow_patterns_overrides,
             )
         ]
 

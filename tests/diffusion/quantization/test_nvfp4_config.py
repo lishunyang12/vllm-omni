@@ -9,9 +9,9 @@ import pytest
 import torch
 
 from vllm_omni.diffusion.models.flux2_klein.flux2_klein_transformer import (
-    _BFL_WEIGHTS_MAPPER,
     Flux2Transformer2DModel,
 )
+from vllm_omni.diffusion.utils.bfl_mapping import BFL_WEIGHTS_MAPPER as _BFL_WEIGHTS_MAPPER
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion]
 
@@ -27,9 +27,28 @@ def test_modelopt_fp4_in_supported_methods():
     assert "modelopt_fp4" in SUPPORTED_QUANTIZATION_METHODS
 
 
+def test_build_quant_config_modelopt_fp4():
+    """vllm_omni.quantization.build_quant_config dispatches "modelopt_fp4"
+    through ModelOptNvFp4Config.from_config — mirrors the on-disk flow where
+    transformer/config.json carries the quantization_config block."""
+    from vllm_omni.quantization import build_quant_config
+
+    config = build_quant_config(
+        "modelopt_fp4",
+        quant_algo="NVFP4",
+        kv_cache_quant_algo=None,
+        exclude_modules=["*norm_out*", "*proj_out*"],
+        group_size=16,
+    )
+    assert config.get_name() == "modelopt_fp4"
+    assert config.is_checkpoint_nvfp4_serialized
+    assert config.group_size == 16
+    assert "*norm_out*" in config.exclude_modules
+
+
 def test_modelopt_nvfp4_from_config_dict():
-    """ModelOptNvFp4Config.from_config must accept the dict produced by
-    parse_nvfp4_quant_metadata."""
+    """Upstream ModelOptNvFp4Config.from_config must accept the dict produced
+    by parse_nvfp4_quant_metadata — sanity check for the prep script."""
     from vllm.model_executor.layers.quantization.modelopt import (
         ModelOptNvFp4Config,
     )

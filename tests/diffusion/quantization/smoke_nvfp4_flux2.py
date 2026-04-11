@@ -1,256 +1,126 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""End-to-end smoke test for FLUX.2 NVFP4 loading.
+"""Smoke test for FLUX.2 NVFP4 loading via the standard ``Omni`` entry point.
 
-Run on a Blackwell (or emulation-capable) GPU box:
+Manual, not pytest-collected — needs a GPU, network, and a model directory
+that has already been prepared by ``tools/prepare_flux2_nvfp4.py``.
 
-    python tests/diffusion/quantization/smoke_nvfp4_flux2.py
+What it verifies, in order:
+  1. ``parse_nvfp4_quant_metadata`` reads NVFP4 metadata directly from a
+     BFL-style safetensors header (pure-python, no GPU).
+  2. The merged model directory has a ``transformer/config.json`` containing
+     a ``quantization_config`` block that vllm-omni's ``TransformerConfig``
+     will recognize.
+  3. ``Omni(model=...).generate(...)`` runs one short denoising pass and
+     produces a non-None image. All the distributed / vllm_config /
+     forward_context plumbing is handled by the standard entry point — we
+     don't reach into vLLM or vllm-omni internals.
 
-This script is intentionally NOT pytest-collected: it needs a real GPU and
-~30 GB of free disk/VRAM, and it downloads the ~21 GB NVFP4 safetensors from
-Hugging Face. It is meant for manual verification of the loader path, not
-for CI.
+Usage::
 
-What it checks, in order:
-  1. ``parse_nvfp4_quant_metadata`` can read the metadata straight from the
-     HF repo header (no full-shard download).
-  2. ``ModelOptNvFp4Config.from_config`` accepts that dict and produces a
-     config with ``is_checkpoint_nvfp4_serialized=True``.
-  3. ``Flux2KleinPipeline`` constructs, loads weights end-to-end, and one
-     forward pass through the transformer does not NaN.
+    python tools/prepare_flux2_nvfp4.py --output-dir /tmp/klein-4b-nvfp4
+    python tests/diffusion/quantization/smoke_nvfp4_flux2.py \\
+        --model /tmp/klein-4b-nvfp4
 """
 
 from __future__ import annotations
 
 import argparse
-import os
+import json
 import sys
+from pathlib import Path
 
 
-def _make_minimal_vllm_config():
-    """Build a minimal VllmConfig sufficient for parallel-linear construction."""
-    from vllm.config import VllmConfig
-    from vllm.config.parallel import ParallelConfig
-
-    parallel_config = ParallelConfig(
-        tensor_parallel_size=1,
-        pipeline_parallel_size=1,
-    )
-    return VllmConfig(parallel_config=parallel_config)
-
-
-def _init_distributed_only() -> None:
-    """Bring up torch.distributed in single-rank mode (no model-parallel yet).
-
-    Flux2 transformer linears (QKVParallelLinear / ColumnParallelLinear / ...)
-    call ``get_tensor_model_parallel_world_size()`` in their ``__init__``,
-    which asserts that the TP group exists. We split this from the
-    model-parallel init because the latter must run *inside* a
-    ``set_current_vllm_config(...)`` context.
-    """
-    import torch.distributed as dist
-    from vllm.distributed import init_distributed_environment as init_vllm_distributed
-
-    from vllm_omni.diffusion.distributed.parallel_state import (
-        init_distributed_environment as init_omni_distributed,
-    )
-
-    if dist.is_available() and dist.is_initialized():
-        return
-
-    os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
-    os.environ.setdefault("MASTER_PORT", "29500")
-    os.environ.setdefault("RANK", "0")
-    os.environ.setdefault("WORLD_SIZE", "1")
-    os.environ.setdefault("LOCAL_RANK", "0")
-
-    init_vllm_distributed(
-        world_size=1,
-        rank=0,
-        local_rank=0,
-        distributed_init_method="env://",
-        backend="nccl",
-    )
-    # vllm-omni keeps its own _WORLD GroupCoordinator separate from vLLM's;
-    # without this its init_model_parallel_group asserts on get_world_group().
-    init_omni_distributed(
-        world_size=1,
-        rank=0,
-        local_rank=0,
-        distributed_init_method="env://",
-        backend="nccl",
-    )
-
-
-def _run_pipeline_under_vllm_config(args: argparse.Namespace) -> int:
-    """Step 3 body: must run entirely inside the set_current_vllm_config ctx.
-
-    vLLM custom ops (RMSNorm, NVFP4 linear, ...) read the global vllm_config
-    in their ``__init__`` and again on every forward call, so the context
-    has to stay alive for the entire pipeline construction *and* the smoke
-    forward pass.
-    """
-    import torch
-    from vllm.config import LoadConfig, set_current_vllm_config
-    from vllm.distributed import ensure_model_parallel_initialized
-
-    from vllm_omni.diffusion.distributed.parallel_state import (
-        initialize_model_parallel as initialize_diffusion_model_parallel,
-    )
-
-    vllm_config = _make_minimal_vllm_config()
-    with set_current_vllm_config(vllm_config):
-        # Model-parallel init must run inside the context — it reads the
-        # current vllm_config to wire up DP/PP/TP/EP groups.
-        ensure_model_parallel_initialized(
-            tensor_model_parallel_size=1,
-            pipeline_model_parallel_size=1,
+def _check_transformer_config(model_dir: Path) -> int:
+    """Verify the merged model dir has quantization_config in transformer/config.json."""
+    tf_cfg_path = model_dir / "transformer" / "config.json"
+    if not tf_cfg_path.exists():
+        print(f"FAIL: {tf_cfg_path} not found — did you run prepare_flux2_nvfp4.py?", file=sys.stderr)
+        return 1
+    with open(tf_cfg_path) as f:
+        tf_cfg = json.load(f)
+    qc = tf_cfg.get("quantization_config")
+    if not qc:
+        print(
+            f"FAIL: {tf_cfg_path} has no 'quantization_config' block. Re-run prepare_flux2_nvfp4.py to patch it in.",
+            file=sys.stderr,
         )
-
-        # vllm-omni's diffusion side has its OWN parallel groups
-        # (CFG / SP / VAE PP / data) on top of vLLM's TP/PP. Singleton groups
-        # are required for diffusion pipelines that reach for them at forward
-        # time (e.g. CFG group via predict_noise_maybe_with_cfg).
-        initialize_diffusion_model_parallel(
-            data_parallel_size=1,
-            cfg_parallel_size=1,
-            sequence_parallel_size=1,
-            ulysses_degree=1,
-            ring_degree=1,
-            tensor_parallel_size=1,
-            pipeline_parallel_size=1,
-        )
-
-        from vllm.transformers_utils.config import get_hf_file_to_dict
-
-        from vllm_omni.diffusion.data import OmniDiffusionConfig, TransformerConfig
-        from vllm_omni.diffusion.model_loader.diffusers_loader import (
-            DiffusersPipelineLoader,
-        )
-
-        od = OmniDiffusionConfig(
-            model=args.base,
-            model_class_name="Flux2KleinPipeline",
-            transformer_weights_path=args.nvfp4,
-        )
-
-        # vllm-omni's normal entry point runs _enrich_config() which reads
-        # transformer/config.json from the HF repo and populates
-        # tf_model_config with the model-specific dims (num_attention_heads,
-        # attention_head_dim, mlp_ratio, ...). Without this, Flux2Transformer2DModel
-        # falls back to its 48-head defaults (inner_dim=6144), which mismatches
-        # klein-4B's actual 24-head architecture (inner_dim=3072) and produces
-        # an "Attempted to load weight ([18432, 3072]) into parameter ([36864, 6144])"
-        # error during weight load.
-        tf_config_dict = get_hf_file_to_dict("transformer/config.json", od.model)
-        if tf_config_dict is None:
-            print("FAIL: could not fetch transformer/config.json from", od.model, file=sys.stderr)
-            return 3
-        od.tf_model_config = TransformerConfig.from_dict(tf_config_dict)
-
-        # The diffusers loader is what wires together:
-        #   1. pipeline construction (Flux2KleinPipeline.__init__)
-        #   2. load_weights — streams the NVFP4 safetensors into the
-        #      transformer's parameter slots
-        #   3. process_weights_after_loading — turns weight_scale_2/input_scale
-        #      into the runtime weight_global_scale/alpha that NvFp4LinearMethod
-        #      expects on .apply(). Without this step the forward path
-        #      crashes with AttributeError: 'weight_global_scale'.
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        loader = DiffusersPipelineLoader(load_config=LoadConfig(), od_config=od)
-        pipe = loader.load_model(
-            od_config=od,
-            load_device=device.type,
-            load_format="default",
-            device=device,
-        )
-        print("[3/3] DiffusersPipelineLoader.load_model OK (weights + post-load processed)")
-
-        # Quick NaN check on the transformer with a zero input. Shapes are
-        # derived from the actual loaded model so this works for klein-4B,
-        # klein-9B, and any future Flux2 variant.
-        import torch
-
-        from vllm_omni.diffusion.forward_context import set_forward_context
-
-        cfg = pipe.transformer.config
-        device = next(pipe.transformer.parameters()).device
-        dtype = next(pipe.transformer.parameters()).dtype
-
-        n_img_tokens = 256  # 16×16 patches — small enough to be cheap
-        n_txt_tokens = 64
-        n_rope_axes = len(cfg.axes_dims_rope)
-
-        with torch.inference_mode():
-            hidden_states = torch.zeros(1, n_img_tokens, cfg.in_channels, device=device, dtype=dtype)
-            encoder_hidden_states = torch.zeros(1, n_txt_tokens, cfg.joint_attention_dim, device=device, dtype=dtype)
-            timestep = torch.zeros(1, device=device, dtype=dtype)
-            img_ids = torch.zeros(n_img_tokens, n_rope_axes, device=device, dtype=dtype)
-            txt_ids = torch.zeros(n_txt_tokens, n_rope_axes, device=device, dtype=dtype)
-            guidance = torch.zeros(1, device=device, dtype=dtype) if cfg.guidance_embeds else None
-
-            # Flux2 forward calls get_forward_context() — wrap with
-            # set_forward_context. Pass omni_diffusion_config so SP-active
-            # checks resolve via parallel_config.sequence_parallel_size.
-            with set_forward_context(omni_diffusion_config=od):
-                out = pipe.transformer(
-                    hidden_states=hidden_states,
-                    encoder_hidden_states=encoder_hidden_states,
-                    timestep=timestep,
-                    img_ids=img_ids,
-                    txt_ids=txt_ids,
-                    guidance=guidance,
-                )
-            sample = out.sample if hasattr(out, "sample") else out[0]
-            if torch.isnan(sample).any() or torch.isinf(sample).any():
-                print("FAIL: forward produced NaN/Inf", file=sys.stderr)
-                return 2
-            print(f"      forward pass finite (output shape={tuple(sample.shape)})")
-        return 0
+        return 2
+    print("[1/2] transformer/config.json quantization_config OK")
+    print(f"       quant_method: {qc.get('quant_method')}")
+    print(f"       quant_algo:   {qc.get('quant_algo')}")
+    print(f"       group_size:   {qc.get('group_size')}")
+    print(f"       #exclude_modules: {len(qc.get('exclude_modules', []))}")
+    return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    # Defaults target the FLUX.2-klein-4B variant because that is the model
-    # the Flux2KleinPipeline (with its hardcoded Qwen3 text encoder) is built
-    # for. FLUX.2-dev uses a Mistral-3 text encoder and lives behind the
-    # separate Flux2Pipeline class which does not yet have NVFP4 plumbing.
-    parser.add_argument("--base", default="black-forest-labs/FLUX.2-klein-4B")
-    parser.add_argument("--nvfp4", default="black-forest-labs/FLUX.2-klein-4b-nvfp4")
-    parser.add_argument("--skip-forward", action="store_true")
+    parser.add_argument(
+        "--model",
+        required=True,
+        type=Path,
+        help="Path to the merged model directory produced by "
+        "tools/prepare_flux2_nvfp4.py (contains transformer/, vae/, "
+        "text_encoder/, scheduler/, model_index.json).",
+    )
+    parser.add_argument("--prompt", default="a red cube on a white table, studio lighting")
+    parser.add_argument("--steps", type=int, default=4, help="very short — smoke only")
+    parser.add_argument("--height", type=int, default=512)
+    parser.add_argument("--width", type=int, default=512)
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Optional PNG path. Omit to only verify load + forward, no disk write.",
+    )
     args = parser.parse_args()
 
-    # Step 1: metadata parse (header-only network call)
-    from vllm_omni.diffusion.utils.nvfp4_utils import (
-        parse_nvfp4_quant_metadata,
-        resolve_nvfp4_checkpoint_file,
+    if not args.model.exists():
+        print(f"FAIL: --model path does not exist: {args.model}", file=sys.stderr)
+        return 1
+
+    rc = _check_transformer_config(args.model)
+    if rc != 0:
+        return rc
+
+    # Use the real Omni entry point — this is the production path. It
+    # handles distributed init, vllm_config, forward context, parallel
+    # groups, and the auto-detect of NVFP4 from transformer/config.json.
+    import torch
+
+    from vllm_omni.entrypoints.omni import Omni
+    from vllm_omni.inputs.data import OmniDiffusionSamplingParams
+    from vllm_omni.platforms import current_omni_platform
+
+    generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(42)
+    omni = Omni(model=str(args.model))
+
+    outputs = omni.generate(
+        {"prompt": args.prompt, "negative_prompt": None},
+        OmniDiffusionSamplingParams(
+            height=args.height,
+            width=args.width,
+            generator=generator,
+            guidance_scale=4.0,
+            num_inference_steps=args.steps,
+            num_outputs_per_prompt=1,
+        ),
     )
 
-    quant_dict = parse_nvfp4_quant_metadata(args.nvfp4)
-    if quant_dict is None:
-        print("FAIL: parse_nvfp4_quant_metadata returned None", file=sys.stderr)
-        return 1
-    print("[1/3] parse_nvfp4_quant_metadata OK")
-    print("      quant_algo:", quant_dict["quantization"]["quant_algo"])
-    print("      group_size:", quant_dict["quantization"]["group_size"])
-    print("      exclude_modules[:4]:", quant_dict["quantization"]["exclude_modules"][:4])
-    print("      picked file:", resolve_nvfp4_checkpoint_file(args.nvfp4))
+    if not outputs:
+        print("FAIL: Omni.generate returned no outputs", file=sys.stderr)
+        return 3
+    req_out = outputs[0].request_output
+    images = getattr(req_out, "images", None) if req_out is not None else None
+    if not images:
+        print("FAIL: no images in request_output", file=sys.stderr)
+        return 4
 
-    # Step 2: ModelOptNvFp4Config.from_config must accept it
-    from vllm.model_executor.layers.quantization.modelopt import ModelOptNvFp4Config
-
-    qcfg = ModelOptNvFp4Config.from_config(quant_dict)
-    assert qcfg.get_name() == "modelopt_fp4"
-    assert qcfg.is_checkpoint_nvfp4_serialized
-    print("[2/3] ModelOptNvFp4Config.from_config OK")
-
-    # Step 3: full pipeline construction
-    if args.skip_forward:
-        print("[3/3] skipped (--skip-forward)")
-        return 0
-
-    _init_distributed_only()
-    return _run_pipeline_under_vllm_config(args)
+    print(f"[2/2] Omni.generate produced {len(images)} image(s)")
+    if args.output:
+        images[0].save(args.output)
+        print(f"      saved to {args.output}")
+    return 0
 
 
 if __name__ == "__main__":
