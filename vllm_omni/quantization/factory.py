@@ -30,67 +30,72 @@ from .component_config import ComponentQuantizationConfig
 logger = init_logger(__name__)
 
 
+def _round_up(x: int, m: int) -> int:
+    return ((x + m - 1) // m) * m
+
+
 class FluxNvFp4LinearMethod(ModelOptNvFp4LinearMethod):
     """ModelOpt NVFP4 LinearMethod variant for NVIDIA/BFL FLUX.2 checkpoints.
 
-    NVIDIA's BFL-released FLUX.2 NVFP4 safetensors pack FP4 nibbles in the
-    opposite byte order to what vLLM upstream's FlashInfer CUTLASS path
-    expects for LLM ModelOpt checkpoints. Loading such a checkpoint through
-    the stock path produces numerically-stable but semantically garbage
-    output (pure noise images). This subclass adds a single per-byte nibble
-    swap before delegating to the upstream
-    ``process_weights_after_loading``. Everything else (weight shape,
-    weight_scale padding, kernel dispatch, forward path) is inherited.
+    NVIDIA's BFL-released FLUX.2 NVFP4 safetensors need two layout fixes on
+    top of the upstream LLM ModelOpt path before the CUTLASS TMA kernel
+    produces correct results:
 
-    Confirmed by sgl-project/sglang#20137, which added the same one-line
-    workaround for the same checkpoint family.
+    1. **FP4 nibble swap** — BFL packs the high/low nibble in the opposite
+       byte order to what upstream expects. Without the swap the kernel
+       reads bogus FP4 values (pure noise image).
+
+    2. **weight_scale padding + blockwise swizzle** — the CUTLASS TMA
+       kernel wants the per-block scales in a specific interleaved layout:
+       reshape ``[M, K] → [M/128, 4, 32, K/4, 4]`` then permute axes
+       ``(0, 3, 2, 1, 4)`` (i.e. swap the ``M``-inner and ``K``-major
+       groups). Without this, CUTLASS silently produces wrong results and
+       accuracy drops ~5% cos-sim vs cuDNN.
+
+    Both are confirmed by SGLang's diffusion-side fixes:
+    - sgl-project/sglang#20137 (nibble swap)
+    - sgl-project/sglang#22064 (scale swizzle — the 5% cos-sim fix)
+
+    We apply both *before* delegating to upstream's
+    ``process_weights_after_loading``. Upstream's kernel.process then
+    reformats for its dispatch, expecting the standardized layout that our
+    pre-swap produces. Everything downstream (alpha, input_global_scale,
+    apply(), kernel dispatch) is inherited.
 
     Defined at module level so ``multiprocessing.spawn`` can pickle it by
     qualified name when the ``OmniDiffusionConfig`` is sent to a worker
     subprocess.
     """
 
-    # Log only the first few layers to avoid spamming for ~144 linears.
-    _debug_log_budget: int = 4
-
     def process_weights_after_loading(self, layer):  # type: ignore[override]
         import torch
 
-        w_before = layer.weight.data
-        before_shape = tuple(w_before.shape)
-        before_dtype = w_before.dtype
-        # Sample a few bytes so we can see whether upstream's kernel re-layout
-        # leaves our swap in place or rewrites the weight tensor.
-        before_sample = w_before.flatten()[:8].tolist() if w_before.numel() >= 8 else w_before.flatten().tolist()
+        # -- (1) FP4 nibble swap on the packed weight bytes ---------------
+        w = layer.weight.data
+        layer.weight.data = ((w >> 4) | ((w & 0x0F) << 4)).to(torch.uint8).contiguous()
 
-        # Swap high/low nibbles.
-        swapped = ((w_before >> 4) | ((w_before & 0x0F) << 4)).to(torch.uint8).contiguous()
-        layer.weight.data = swapped
-        after_swap_sample = swapped.flatten()[:8].tolist() if swapped.numel() >= 8 else swapped.flatten().tolist()
+        # -- (2) weight_scale pad + blockwise swizzle for CUTLASS TMA ----
+        scales = layer.weight_scale.data
+        if scales.ndim != 2:
+            raise RuntimeError(f"FluxNvFp4LinearMethod expects weight_scale of ndim 2, got {scales.shape}")
+        M, K = scales.shape
+        M_padded = _round_up(M, 128)
+        K_padded = _round_up(K, 4)
+        if M_padded != M or K_padded != K:
+            padded = torch.zeros((M_padded, K_padded), dtype=scales.dtype, device=scales.device)
+            padded[:M, :K] = scales
+        else:
+            padded = scales
+        # Blockwise interleave. Ported from sgl-project/sglang#22064.
+        # Reshape [M, K] → [M/128, 4, 32, K/4, 4], permute to [M/128, K/4, 32, 4, 4],
+        # then flatten back to [M, K]. This mirrors the layout the CUTLASS
+        # TMA kernel wants the scales in.
+        swizzled = padded.reshape(M_padded // 128, 4, 32, K_padded // 4, 4)
+        swizzled = swizzled.permute(0, 3, 2, 1, 4).contiguous()
+        layer.weight_scale.data = swizzled.reshape(M_padded, K_padded).contiguous()
 
+        # -- (3) Delegate to upstream for global_scale / alpha / kernel ---
         super().process_weights_after_loading(layer)
-
-        w_after = layer.weight.data
-        after_shape = tuple(w_after.shape)
-        after_dtype = w_after.dtype
-        after_sample = w_after.flatten()[:8].tolist() if w_after.numel() >= 8 else w_after.flatten().tolist()
-
-        if FluxNvFp4LinearMethod._debug_log_budget > 0:
-            FluxNvFp4LinearMethod._debug_log_budget -= 1
-            logger.info(
-                "[FluxNvFp4] process_weights_after_loading: prefix=%s\n"
-                "  before swap:  shape=%s dtype=%s sample=%s\n"
-                "  after swap:   sample=%s\n"
-                "  after super:  shape=%s dtype=%s sample=%s",
-                getattr(layer, "prefix", "<no-prefix>"),
-                before_shape,
-                before_dtype,
-                before_sample,
-                after_swap_sample,
-                after_shape,
-                after_dtype,
-                after_sample,
-            )
 
 
 def _build_gguf(**kw: Any) -> QuantizationConfig:
