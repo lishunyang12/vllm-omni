@@ -30,95 +30,56 @@ from .component_config import ComponentQuantizationConfig
 logger = init_logger(__name__)
 
 
-def _round_up(x: int, m: int) -> int:
-    return ((x + m - 1) // m) * m
-
-
 class FluxNvFp4LinearMethod(ModelOptNvFp4LinearMethod):
     """ModelOpt NVFP4 LinearMethod variant for NVIDIA/BFL FLUX.2 checkpoints.
 
-    NVIDIA's BFL-released FLUX.2 NVFP4 safetensors need two layout fixes on
-    top of the upstream LLM ModelOpt path before the CUTLASS TMA kernel
-    produces correct results:
+    NVIDIA's BFL-released FLUX.2 NVFP4 safetensors pack FP4 nibbles in the
+    opposite byte order to what vLLM upstream's FlashInfer CUTLASS path
+    expects. Without a per-byte nibble swap the kernel reads bogus FP4
+    values (pure noise image). Upstream's
+    ``prepare_weights_for_nvfp4_cutlass`` already handles the weight_scale
+    swizzle + weight padding (``swizzle_blockscale`` + ``pad_nvfp4_weight_for_cutlass``)
+    so we only need the nibble swap on top.
 
-    1. **FP4 nibble swap** — BFL packs the high/low nibble in the opposite
-       byte order to what upstream expects. Without the swap the kernel
-       reads bogus FP4 values (pure noise image).
-
-    2. **weight_scale padding + blockwise swizzle** — the CUTLASS TMA
-       kernel wants the per-block scales in a specific interleaved layout:
-       reshape ``[M, K] → [M/128, 4, 32, K/4, 4]`` then permute axes
-       ``(0, 3, 2, 1, 4)`` (i.e. swap the ``M``-inner and ``K``-major
-       groups). Without this, CUTLASS silently produces wrong results and
-       accuracy drops ~5% cos-sim vs cuDNN.
-
-    Both are confirmed by SGLang's diffusion-side fixes:
-    - sgl-project/sglang#20137 (nibble swap)
-    - sgl-project/sglang#22064 (scale swizzle — the 5% cos-sim fix)
-
-    We apply both *before* delegating to upstream's
-    ``process_weights_after_loading``. Upstream's kernel.process then
-    reformats for its dispatch, expecting the standardized layout that our
-    pre-swap produces. Everything downstream (alpha, input_global_scale,
-    apply(), kernel dispatch) is inherited.
+    Confirmed by sgl-project/sglang#20137, which added the same nibble
+    swap for the same checkpoint family.
 
     Defined at module level so ``multiprocessing.spawn`` can pickle it by
     qualified name when the ``OmniDiffusionConfig`` is sent to a worker
     subprocess.
     """
 
+    # Budget-limited log so we can confirm this override is actually being
+    # invoked from vllm-omni's diffusion loader.
+    _call_count: int = 0
+
     def process_weights_after_loading(self, layer):  # type: ignore[override]
         import torch
 
-        # Delegate to upstream FIRST — it builds global scales / alpha /
-        # input_scale_inv and runs the kernel backend's own layout conversion
-        # on layer.weight / layer.weight_scale. Then we apply the FLUX.2
-        # BFL-specific nibble swap + swizzle on whatever attributes the
-        # kernel path left us with. Doing this post-super means we have the
-        # final word on the layout that the apply() path actually reads.
-        super().process_weights_after_loading(layer)
+        FluxNvFp4LinearMethod._call_count += 1
+        if FluxNvFp4LinearMethod._call_count <= 3:
+            logger.warning(
+                "[FluxNvFp4] process_weights_after_loading call #%d, "
+                "prefix=%s, weight.shape=%s, weight.dtype=%s, "
+                "weight_scale.shape=%s, weight_scale.dtype=%s",
+                FluxNvFp4LinearMethod._call_count,
+                getattr(layer, "prefix", "<no-prefix>"),
+                tuple(layer.weight.data.shape),
+                layer.weight.data.dtype,
+                tuple(layer.weight_scale.data.shape) if hasattr(layer, "weight_scale") else "<none>",
+                layer.weight_scale.data.dtype if hasattr(layer, "weight_scale") else "<none>",
+            )
 
-        # -- (1) FP4 nibble swap on the packed weight bytes ---------------
+        # Nibble swap BEFORE super() — upstream's
+        # prepare_weights_for_nvfp4_cutlass pads + swizzles, but does NOT
+        # rewrite the packed FP4 bytes. So we only need to fix the byte
+        # order, and upstream's swizzle of weight_scale is the right one.
+        # See sgl-project/sglang#20137.
         w = layer.weight.data
         if w.dtype == torch.uint8:
             layer.weight.data = ((w >> 4) | ((w & 0x0F) << 4)).to(torch.uint8).contiguous()
-        else:
-            logger.debug(
-                "[FluxNvFp4] weight dtype is %s, skipping nibble swap on layer %s",
-                w.dtype,
-                getattr(layer, "prefix", "<no-prefix>"),
-            )
 
-        # -- (2) weight_scale pad + blockwise swizzle for CUTLASS TMA ----
-        # After super(), the per-block scales may live under a renamed
-        # attribute (e.g. weight_scale_interleaved) depending on which
-        # kernel backend init_nvfp4_linear_kernel selected. We probe both.
-        scale_attr = None
-        for attr in ("weight_scale", "weight_scale_interleaved"):
-            candidate = getattr(layer, attr, None)
-            if candidate is not None and hasattr(candidate, "data") and candidate.data.ndim == 2:
-                scale_attr = attr
-                break
-        if scale_attr is None:
-            logger.warning(
-                "[FluxNvFp4] could not find a 2D weight_scale attribute on layer %s",
-                getattr(layer, "prefix", "<no-prefix>"),
-            )
-            return
-
-        scales = getattr(layer, scale_attr).data
-        M, K = scales.shape
-        M_padded = _round_up(M, 128)
-        K_padded = _round_up(K, 4)
-        if M_padded != M or K_padded != K:
-            padded = torch.zeros((M_padded, K_padded), dtype=scales.dtype, device=scales.device)
-            padded[:M, :K] = scales
-        else:
-            padded = scales
-        # Blockwise interleave. Ported from sgl-project/sglang#22064.
-        swizzled = padded.reshape(M_padded // 128, 4, 32, K_padded // 4, 4)
-        swizzled = swizzled.permute(0, 3, 2, 1, 4).contiguous()
-        getattr(layer, scale_attr).data = swizzled.reshape(M_padded, K_padded).contiguous()
+        super().process_weights_after_loading(layer)
 
 
 def _build_gguf(**kw: Any) -> QuantizationConfig:
