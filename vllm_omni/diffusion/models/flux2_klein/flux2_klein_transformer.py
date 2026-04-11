@@ -1028,6 +1028,23 @@ class Flux2Transformer2DModel(nn.Module):
             param = params_dict.get(name)
             if param is None:
                 continue
+
+            # BFL-style NVFP4 ckps store a single scalar per-tensor scale
+            # for every linear — fused or not (to_qkv has one scalar for
+            # the whole Q+K+V; to_out has one scalar too). vLLM's
+            # PerTensorScaleParameter allocates shape [N] where N equals
+            # len(output_partition_sizes): 3 for QKVParallelLinear, 2 for
+            # MergedColumnParallelLinear gate+up, 1 for plain
+            # ColumnParallel/RowParallel. The stock weight_loader falls
+            # through to a strict shape assert without a shard_id, so we
+            # broadcast the scalar to [N] before handing off.
+            if (
+                loaded_weight.ndim == 0
+                and param.data.ndim == 1
+                and (name.endswith(".input_scale") or name.endswith(".weight_scale_2"))
+            ):
+                loaded_weight = loaded_weight.expand(param.data.shape[0]).contiguous()
+
             weight_loader = getattr(param, "weight_loader", default_weight_loader)
             try:
                 weight_loader(param, loaded_weight)
