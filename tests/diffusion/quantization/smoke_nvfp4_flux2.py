@@ -27,6 +27,20 @@ import os
 import sys
 
 
+def _make_minimal_vllm_config():
+    """Build a minimal VllmConfig sufficient for parallel-linear construction."""
+    from vllm.config import VllmConfig
+    from vllm.config.parallel import ParallelConfig
+
+    # ParallelConfig has all the size knobs (tp_size, pp_size, dp_size, ...).
+    # Defaulting to 1 across the board gives us a single-rank world.
+    parallel_config = ParallelConfig(
+        tensor_parallel_size=1,
+        pipeline_parallel_size=1,
+    )
+    return VllmConfig(parallel_config=parallel_config)
+
+
 def _init_single_rank_distributed() -> None:
     """Bring up a 1-rank tensor-parallel group so vLLM parallel linears work.
 
@@ -35,8 +49,15 @@ def _init_single_rank_distributed() -> None:
     which asserts that the TP group exists. The normal vllm-omni entry point
     sets this up; this smoke script bypasses it, so we have to initialize a
     minimal single-process world ourselves.
+
+    Since vLLM 0.19, ``initialize_model_parallel`` also requires a
+    ``set_current_vllm_config(...)`` context to be active, otherwise
+    ``get_current_vllm_config()`` asserts. We don't tear that context down
+    after init — the same vllm_config must remain set while the pipeline is
+    being constructed and used (custom ops dispatch reads it on every call).
     """
     import torch.distributed as dist
+    from vllm.config import set_current_vllm_config
     from vllm.distributed import (
         ensure_model_parallel_initialized,
         init_distributed_environment,
@@ -58,6 +79,13 @@ def _init_single_rank_distributed() -> None:
         distributed_init_method="env://",
         backend="nccl",
     )
+
+    vllm_config = _make_minimal_vllm_config()
+    # Manually enter the context manager and never exit it — the global
+    # _current_vllm_config must stay set for the lifetime of the smoke run.
+    cm = set_current_vllm_config(vllm_config)
+    cm.__enter__()
+
     ensure_model_parallel_initialized(
         tensor_model_parallel_size=1,
         pipeline_model_parallel_size=1,
