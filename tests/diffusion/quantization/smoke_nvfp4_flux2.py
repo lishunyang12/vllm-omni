@@ -32,8 +32,6 @@ def _make_minimal_vllm_config():
     from vllm.config import VllmConfig
     from vllm.config.parallel import ParallelConfig
 
-    # ParallelConfig has all the size knobs (tp_size, pp_size, dp_size, ...).
-    # Defaulting to 1 across the board gives us a single-rank world.
     parallel_config = ParallelConfig(
         tensor_parallel_size=1,
         pipeline_parallel_size=1,
@@ -41,27 +39,17 @@ def _make_minimal_vllm_config():
     return VllmConfig(parallel_config=parallel_config)
 
 
-def _init_single_rank_distributed() -> None:
-    """Bring up a 1-rank tensor-parallel group so vLLM parallel linears work.
+def _init_distributed_only() -> None:
+    """Bring up torch.distributed in single-rank mode (no model-parallel yet).
 
     Flux2 transformer linears (QKVParallelLinear / ColumnParallelLinear / ...)
     call ``get_tensor_model_parallel_world_size()`` in their ``__init__``,
-    which asserts that the TP group exists. The normal vllm-omni entry point
-    sets this up; this smoke script bypasses it, so we have to initialize a
-    minimal single-process world ourselves.
-
-    Since vLLM 0.19, ``initialize_model_parallel`` also requires a
-    ``set_current_vllm_config(...)`` context to be active, otherwise
-    ``get_current_vllm_config()`` asserts. We don't tear that context down
-    after init — the same vllm_config must remain set while the pipeline is
-    being constructed and used (custom ops dispatch reads it on every call).
+    which asserts that the TP group exists. We split this from the
+    model-parallel init because the latter must run *inside* a
+    ``set_current_vllm_config(...)`` context.
     """
     import torch.distributed as dist
-    from vllm.config import set_current_vllm_config
-    from vllm.distributed import (
-        ensure_model_parallel_initialized,
-        init_distributed_environment,
-    )
+    from vllm.distributed import init_distributed_environment
 
     if dist.is_available() and dist.is_initialized():
         return
@@ -80,16 +68,54 @@ def _init_single_rank_distributed() -> None:
         backend="nccl",
     )
 
-    vllm_config = _make_minimal_vllm_config()
-    # Manually enter the context manager and never exit it — the global
-    # _current_vllm_config must stay set for the lifetime of the smoke run.
-    cm = set_current_vllm_config(vllm_config)
-    cm.__enter__()
 
-    ensure_model_parallel_initialized(
-        tensor_model_parallel_size=1,
-        pipeline_model_parallel_size=1,
-    )
+def _run_pipeline_under_vllm_config(args: argparse.Namespace) -> int:
+    """Step 3 body: must run entirely inside the set_current_vllm_config ctx.
+
+    vLLM custom ops (RMSNorm, NVFP4 linear, ...) read the global vllm_config
+    in their ``__init__`` and again on every forward call, so the context
+    has to stay alive for the entire pipeline construction *and* the smoke
+    forward pass.
+    """
+    from vllm.config import set_current_vllm_config
+    from vllm.distributed import ensure_model_parallel_initialized
+
+    vllm_config = _make_minimal_vllm_config()
+    with set_current_vllm_config(vllm_config):
+        # Model-parallel init must run inside the context — it reads the
+        # current vllm_config to wire up DP/PP/TP/EP groups.
+        ensure_model_parallel_initialized(
+            tensor_model_parallel_size=1,
+            pipeline_model_parallel_size=1,
+        )
+
+        from vllm_omni.diffusion.data import OmniDiffusionConfig
+        from vllm_omni.diffusion.models.flux2_klein.pipeline_flux2_klein import (
+            Flux2KleinPipeline,
+        )
+
+        od = OmniDiffusionConfig(
+            model=args.base,
+            transformer_weights_path=args.nvfp4,
+        )
+        pipe = Flux2KleinPipeline(od_config=od)
+        print("[3/3] Flux2KleinPipeline construct + load_weights OK")
+
+        # Quick NaN check on the transformer with a zero input.
+        import torch
+
+        device = next(pipe.transformer.parameters()).device
+        dtype = next(pipe.transformer.parameters()).dtype
+        with torch.inference_mode():
+            x = torch.zeros(1, 1024, pipe.transformer.config.in_channels, device=device, dtype=dtype)
+            t = torch.zeros(1, device=device, dtype=dtype)
+            out = pipe.transformer(hidden_states=x, timestep=t)
+            sample = out.sample if hasattr(out, "sample") else out[0]
+            if torch.isnan(sample).any():
+                print("FAIL: forward produced NaN", file=sys.stderr)
+                return 2
+        print("      forward pass finite")
+        return 0
 
 
 def main() -> int:
@@ -132,36 +158,8 @@ def main() -> int:
         print("[3/3] skipped (--skip-forward)")
         return 0
 
-    # vLLM parallel linears require a TP group at construction time.
-    _init_single_rank_distributed()
-
-    from vllm_omni.diffusion.data import OmniDiffusionConfig
-    from vllm_omni.diffusion.models.flux2_klein.pipeline_flux2_klein import (
-        Flux2KleinPipeline,
-    )
-
-    od = OmniDiffusionConfig(
-        model=args.base,
-        transformer_weights_path=args.nvfp4,
-    )
-    pipe = Flux2KleinPipeline(od_config=od)
-    print("[3/3] Flux2KleinPipeline construct + load_weights OK")
-
-    # Quick NaN check on the transformer with a zero input.
-    import torch
-
-    device = next(pipe.transformer.parameters()).device
-    dtype = next(pipe.transformer.parameters()).dtype
-    with torch.inference_mode():
-        x = torch.zeros(1, 1024, pipe.transformer.config.in_channels, device=device, dtype=dtype)
-        t = torch.zeros(1, device=device, dtype=dtype)
-        out = pipe.transformer(hidden_states=x, timestep=t)
-        sample = out.sample if hasattr(out, "sample") else out[0]
-        if torch.isnan(sample).any():
-            print("FAIL: forward produced NaN", file=sys.stderr)
-            return 2
-    print("      forward pass finite ✓")
-    return 0
+    _init_distributed_only()
+    return _run_pipeline_under_vllm_config(args)
 
 
 if __name__ == "__main__":
