@@ -77,7 +77,8 @@ def _run_pipeline_under_vllm_config(args: argparse.Namespace) -> int:
     has to stay alive for the entire pipeline construction *and* the smoke
     forward pass.
     """
-    from vllm.config import set_current_vllm_config
+    import torch
+    from vllm.config import LoadConfig, set_current_vllm_config
     from vllm.distributed import ensure_model_parallel_initialized
 
     vllm_config = _make_minimal_vllm_config()
@@ -90,16 +91,32 @@ def _run_pipeline_under_vllm_config(args: argparse.Namespace) -> int:
         )
 
         from vllm_omni.diffusion.data import OmniDiffusionConfig
-        from vllm_omni.diffusion.models.flux2_klein.pipeline_flux2_klein import (
-            Flux2KleinPipeline,
+        from vllm_omni.diffusion.model_loader.diffusers_loader import (
+            DiffusersPipelineLoader,
         )
 
         od = OmniDiffusionConfig(
             model=args.base,
             transformer_weights_path=args.nvfp4,
         )
-        pipe = Flux2KleinPipeline(od_config=od)
-        print("[3/3] Flux2KleinPipeline construct + load_weights OK")
+
+        # The diffusers loader is what wires together:
+        #   1. pipeline construction (Flux2KleinPipeline.__init__)
+        #   2. load_weights — streams the NVFP4 safetensors into the
+        #      transformer's parameter slots
+        #   3. process_weights_after_loading — turns weight_scale_2/input_scale
+        #      into the runtime weight_global_scale/alpha that NvFp4LinearMethod
+        #      expects on .apply(). Without this step the forward path
+        #      crashes with AttributeError: 'weight_global_scale'.
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        loader = DiffusersPipelineLoader(load_config=LoadConfig(), od_config=od)
+        pipe = loader.load_model(
+            od_config=od,
+            load_device=device.type,
+            load_format="default",
+            device=device,
+        )
+        print("[3/3] DiffusersPipelineLoader.load_model OK (weights + post-load processed)")
 
         # Quick NaN check on the transformer with a zero input. Shapes are
         # derived from the actual loaded model so this works for klein-4B,
