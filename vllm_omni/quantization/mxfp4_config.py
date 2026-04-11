@@ -178,7 +178,10 @@ class Mxfp4OnlineLinearMethod(LinearMethodBase):
         **extra_weight_attrs,
     ):
         output_size_per_partition = sum(output_partition_sizes)
-        weight_loader = extra_weight_attrs.get("weight_loader")
+        # ModelWeightParameter sets weight_loader itself, so pop it from
+        # extra_weight_attrs to avoid the "Overwriting existing tensor
+        # attribute: weight_loader" assertion in set_weight_attrs.
+        weight_loader = extra_weight_attrs.pop("weight_loader", None)
         layer.logical_widths = output_partition_sizes
         layer.input_size_per_partition = input_size_per_partition
         layer.output_size_per_partition = output_size_per_partition
@@ -196,7 +199,8 @@ class Mxfp4OnlineLinearMethod(LinearMethodBase):
             weight_loader=weight_loader,
         )
         layer.register_parameter("weight", weight)
-        set_weight_attrs(weight, extra_weight_attrs)
+        if extra_weight_attrs:
+            set_weight_attrs(weight, extra_weight_attrs)
 
     def process_weights_after_loading(self, layer: Module) -> None:
         packed, scales = quantize_weight_mxfp4(layer.weight.data)
