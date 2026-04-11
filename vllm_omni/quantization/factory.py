@@ -70,14 +70,43 @@ class FluxNvFp4LinearMethod(ModelOptNvFp4LinearMethod):
     def process_weights_after_loading(self, layer):  # type: ignore[override]
         import torch
 
+        # Delegate to upstream FIRST — it builds global scales / alpha /
+        # input_scale_inv and runs the kernel backend's own layout conversion
+        # on layer.weight / layer.weight_scale. Then we apply the FLUX.2
+        # BFL-specific nibble swap + swizzle on whatever attributes the
+        # kernel path left us with. Doing this post-super means we have the
+        # final word on the layout that the apply() path actually reads.
+        super().process_weights_after_loading(layer)
+
         # -- (1) FP4 nibble swap on the packed weight bytes ---------------
         w = layer.weight.data
-        layer.weight.data = ((w >> 4) | ((w & 0x0F) << 4)).to(torch.uint8).contiguous()
+        if w.dtype == torch.uint8:
+            layer.weight.data = ((w >> 4) | ((w & 0x0F) << 4)).to(torch.uint8).contiguous()
+        else:
+            logger.debug(
+                "[FluxNvFp4] weight dtype is %s, skipping nibble swap on layer %s",
+                w.dtype,
+                getattr(layer, "prefix", "<no-prefix>"),
+            )
 
         # -- (2) weight_scale pad + blockwise swizzle for CUTLASS TMA ----
-        scales = layer.weight_scale.data
-        if scales.ndim != 2:
-            raise RuntimeError(f"FluxNvFp4LinearMethod expects weight_scale of ndim 2, got {scales.shape}")
+        # After super(), the per-block scales may live under a renamed
+        # attribute (e.g. weight_scale_interleaved) depending on which
+        # kernel backend init_nvfp4_linear_kernel selected. We probe both.
+        scale_attr = None
+        for attr in ("weight_scale", "weight_scale_interleaved"):
+            candidate = getattr(layer, attr, None)
+            if candidate is not None and hasattr(candidate, "data") and candidate.data.ndim == 2:
+                scale_attr = attr
+                break
+        if scale_attr is None:
+            logger.warning(
+                "[FluxNvFp4] could not find a 2D weight_scale attribute on layer %s",
+                getattr(layer, "prefix", "<no-prefix>"),
+            )
+            return
+
+        scales = getattr(layer, scale_attr).data
         M, K = scales.shape
         M_padded = _round_up(M, 128)
         K_padded = _round_up(K, 4)
@@ -87,15 +116,9 @@ class FluxNvFp4LinearMethod(ModelOptNvFp4LinearMethod):
         else:
             padded = scales
         # Blockwise interleave. Ported from sgl-project/sglang#22064.
-        # Reshape [M, K] → [M/128, 4, 32, K/4, 4], permute to [M/128, K/4, 32, 4, 4],
-        # then flatten back to [M, K]. This mirrors the layout the CUTLASS
-        # TMA kernel wants the scales in.
         swizzled = padded.reshape(M_padded // 128, 4, 32, K_padded // 4, 4)
         swizzled = swizzled.permute(0, 3, 2, 1, 4).contiguous()
-        layer.weight_scale.data = swizzled.reshape(M_padded, K_padded).contiguous()
-
-        # -- (3) Delegate to upstream for global_scale / alpha / kernel ---
-        super().process_weights_after_loading(layer)
+        getattr(layer, scale_attr).data = swizzled.reshape(M_padded, K_padded).contiguous()
 
 
 def _build_gguf(**kw: Any) -> QuantizationConfig:
