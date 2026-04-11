@@ -90,7 +90,9 @@ def _run_pipeline_under_vllm_config(args: argparse.Namespace) -> int:
             pipeline_model_parallel_size=1,
         )
 
-        from vllm_omni.diffusion.data import OmniDiffusionConfig
+        from vllm.transformers_utils.config import get_hf_file_to_dict
+
+        from vllm_omni.diffusion.data import OmniDiffusionConfig, TransformerConfig
         from vllm_omni.diffusion.model_loader.diffusers_loader import (
             DiffusersPipelineLoader,
         )
@@ -100,6 +102,20 @@ def _run_pipeline_under_vllm_config(args: argparse.Namespace) -> int:
             model_class_name="Flux2KleinPipeline",
             transformer_weights_path=args.nvfp4,
         )
+
+        # vllm-omni's normal entry point runs _enrich_config() which reads
+        # transformer/config.json from the HF repo and populates
+        # tf_model_config with the model-specific dims (num_attention_heads,
+        # attention_head_dim, mlp_ratio, ...). Without this, Flux2Transformer2DModel
+        # falls back to its 48-head defaults (inner_dim=6144), which mismatches
+        # klein-4B's actual 24-head architecture (inner_dim=3072) and produces
+        # an "Attempted to load weight ([18432, 3072]) into parameter ([36864, 6144])"
+        # error during weight load.
+        tf_config_dict = get_hf_file_to_dict("transformer/config.json", od.model)
+        if tf_config_dict is None:
+            print("FAIL: could not fetch transformer/config.json from", od.model, file=sys.stderr)
+            return 3
+        od.tf_model_config = TransformerConfig.from_dict(tf_config_dict)
 
         # The diffusers loader is what wires together:
         #   1. pipeline construction (Flux2KleinPipeline.__init__)
