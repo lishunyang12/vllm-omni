@@ -97,6 +97,7 @@ def _run_pipeline_under_vllm_config(args: argparse.Namespace) -> int:
 
         od = OmniDiffusionConfig(
             model=args.base,
+            model_class_name="Flux2KleinPipeline",
             transformer_weights_path=args.nvfp4,
         )
 
