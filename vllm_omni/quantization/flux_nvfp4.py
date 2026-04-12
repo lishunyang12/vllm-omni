@@ -24,6 +24,9 @@ from typing import Any
 import torch
 from torch.nn import Parameter
 from vllm.logger import init_logger
+from vllm.model_executor.layers.quantization.base_config import (
+    QuantizeMethodBase,
+)
 from vllm.model_executor.layers.quantization.utils.nvfp4_utils import (
     apply_nvfp4_linear,
     pad_nvfp4_weight_for_cutlass,
@@ -38,7 +41,7 @@ from vllm.model_executor.parameter import (
 logger = init_logger(__name__)
 
 
-class FluxNvFp4LinearMethod:
+class FluxNvFp4LinearMethod(QuantizeMethodBase):
     """Standalone NVFP4 linear method for BFL FLUX.2 checkpoints.
 
     This is NOT a subclass of upstream's ``ModelOptNvFp4LinearMethod`` — it
