@@ -21,73 +21,10 @@ from vllm.model_executor.layers.quantization import (
 from vllm.model_executor.layers.quantization.base_config import (
     QuantizationConfig,
 )
-from vllm.model_executor.layers.quantization.modelopt import (
-    ModelOptNvFp4LinearMethod,
-)
 
 from .component_config import ComponentQuantizationConfig
 
 logger = init_logger(__name__)
-
-
-class FluxNvFp4LinearMethod(ModelOptNvFp4LinearMethod):
-    """ModelOpt NVFP4 LinearMethod variant for NVIDIA/BFL FLUX.2 checkpoints.
-
-    NVIDIA's BFL-released FLUX.2 NVFP4 safetensors pack FP4 nibbles in the
-    opposite byte order to what vLLM upstream's FlashInfer CUTLASS path
-    expects. Without a per-byte nibble swap the kernel reads bogus FP4
-    values (pure noise image). Upstream's
-    ``prepare_weights_for_nvfp4_cutlass`` already handles the weight_scale
-    swizzle + weight padding (``swizzle_blockscale`` + ``pad_nvfp4_weight_for_cutlass``)
-    so we only need the nibble swap on top.
-
-    Confirmed by sgl-project/sglang#20137, which added the same nibble
-    swap for the same checkpoint family.
-
-    Defined at module level so ``multiprocessing.spawn`` can pickle it by
-    qualified name when the ``OmniDiffusionConfig`` is sent to a worker
-    subprocess.
-    """
-
-    # Budget-limited log so we can confirm this override is actually being
-    # invoked from vllm-omni's diffusion loader.
-    _call_count: int = 0
-
-    def process_weights_after_loading(self, layer):  # type: ignore[override]
-        import os
-
-        # Let us flip the nibble swap on/off at runtime via an env var for
-        # quick experimentation — SGLang's swap was validated on
-        # FLUX.2-dev-NVFP4 specifically, and it's possible klein-4b-nvfp4
-        # ships the bytes in upstream-vLLM's expected order already.
-        #
-        #   VLLM_OMNI_NVFP4_FLUX_SWAP=0  → disable swap
-        #   VLLM_OMNI_NVFP4_FLUX_SWAP=1  → enable swap (default)
-        import torch
-
-        swap_enabled = os.environ.get("VLLM_OMNI_NVFP4_FLUX_SWAP", "1") == "1"
-
-        FluxNvFp4LinearMethod._call_count += 1
-        if FluxNvFp4LinearMethod._call_count <= 3:
-            logger.warning(
-                "[FluxNvFp4] call #%d swap=%s prefix=%s "
-                "weight.shape=%s weight.dtype=%s "
-                "weight_scale.shape=%s weight_scale.dtype=%s",
-                FluxNvFp4LinearMethod._call_count,
-                swap_enabled,
-                getattr(layer, "prefix", "<no-prefix>"),
-                tuple(layer.weight.data.shape),
-                layer.weight.data.dtype,
-                tuple(layer.weight_scale.data.shape) if hasattr(layer, "weight_scale") else "<none>",
-                layer.weight_scale.data.dtype if hasattr(layer, "weight_scale") else "<none>",
-            )
-
-        if swap_enabled:
-            w = layer.weight.data
-            if w.dtype == torch.uint8:
-                layer.weight.data = ((w >> 4) | ((w & 0x0F) << 4)).to(torch.uint8).contiguous()
-
-        super().process_weights_after_loading(layer)
 
 
 def _build_gguf(**kw: Any) -> QuantizationConfig:
@@ -137,18 +74,16 @@ def _build_modelopt_nvfp4(**kw: Any) -> QuantizationConfig:
 def _build_modelopt_nvfp4_flux(**kw: Any) -> QuantizationConfig:
     """ModelOpt NVFP4 variant for NVIDIA/BFL FLUX.2 checkpoints.
 
-    Takes the stock ``ModelOptNvFp4Config`` built via ``from_config``, then
-    installs ``FluxNvFp4LinearMethod`` as the per-instance
-    ``LinearMethodCls`` so our nibble-swap override runs on each quantized
-    layer at load time. See ``FluxNvFp4LinearMethod`` for why the swap is
-    needed.
+    Uses a standalone ``FluxNvFp4LinearMethod`` (in ``flux_nvfp4.py``)
+    that handles the full weight pipeline (nibble swap, pad, swizzle,
+    apply) independently of upstream's kernel backend. Ported from
+    sgl-project/sglang#20137 + #22064.
     """
     from vllm.model_executor.layers.quantization.modelopt import ModelOptNvFp4Config
 
+    from .flux_nvfp4 import FluxNvFp4LinearMethod
+
     config = ModelOptNvFp4Config.from_config({"quantization": kw})
-    # Instance-level override — ModelOptQuantConfigBase.get_quant_method
-    # looks up ``self.LinearMethodCls``, which resolves the instance
-    # attribute before the class attribute.
     config.LinearMethodCls = FluxNvFp4LinearMethod  # type: ignore[assignment]
     return config
 
