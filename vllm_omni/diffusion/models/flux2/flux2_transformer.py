@@ -26,6 +26,14 @@ from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
 from vllm_omni.diffusion.attention.layer import Attention
 from vllm_omni.diffusion.layers.rope import RotaryEmbedding
+from vllm_omni.diffusion.utils.bfl_mapping import (
+    apply_bfl_mapping,
+    peek_bfl_format,
+)
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Flux2SwiGLU(nn.Module):
@@ -728,6 +736,10 @@ class Flux2Transformer2DModel(nn.Module):
 
         return Transformer2DModelOutput(sample=output)
 
+    # BFL checkpoint format detection and remapping; shared with flux2_klein.
+    _peek_bfl_format = staticmethod(peek_bfl_format)
+    _apply_bfl_mapping = staticmethod(apply_bfl_mapping)
+
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         stacked_params_mapping = [
             (".to_qkv.", ".to_q.", "q"),
@@ -739,6 +751,12 @@ class Flux2Transformer2DModel(nn.Module):
         ]
         # Expose packed shard mappings for LoRA handling of fused projections.
         self.stacked_params_mapping = stacked_params_mapping
+
+        # Detect and remap BFL checkpoint format (e.g., NVFP4 checkpoints).
+        is_bfl, weights = self._peek_bfl_format(weights)
+        if is_bfl:
+            logger.info("Detected BFL checkpoint format, remapping weight names")
+            weights = self._apply_bfl_mapping(weights)
 
         params_dict = dict(self.named_parameters())
 
@@ -768,12 +786,36 @@ class Flux2Transformer2DModel(nn.Module):
             name = original_name
             if name not in params_dict and ".to_out.0." in name:
                 name = name.replace(".to_out.0.", ".to_out.")
-            # Some GGUF checkpoints include quantized tensors for modules that
-            # are intentionally left unquantized in this model.
+            # Some checkpoints (GGUF, NVFP4) include quantized tensors for
+            # modules that are intentionally left unquantized in this model.
             param = params_dict.get(name)
             if param is None:
                 continue
+
+            # BFL-style NVFP4 ckps store a single scalar per-tensor scale
+            # for every linear — fused or not (to_qkv has one scalar for
+            # the whole Q+K+V; to_out has one scalar too). vLLM's
+            # PerTensorScaleParameter allocates shape [N] where N equals
+            # len(output_partition_sizes): 3 for QKVParallelLinear, 2 for
+            # MergedColumnParallelLinear gate+up, 1 for plain
+            # ColumnParallel/RowParallel. The stock weight_loader falls
+            # through to a strict shape assert without a shard_id, so we
+            # broadcast the scalar to [N] before handing off.
+            if (
+                loaded_weight.ndim == 0
+                and param.data.ndim == 1
+                and (name.endswith(".input_scale") or name.endswith(".weight_scale_2"))
+            ):
+                loaded_weight = loaded_weight.expand(param.data.shape[0]).contiguous()
+
             weight_loader = getattr(param, "weight_loader", default_weight_loader)
-            weight_loader(param, loaded_weight)
+            try:
+                weight_loader(param, loaded_weight)
+            except AssertionError as e:
+                raise AssertionError(
+                    f"Shape mismatch loading weight '{original_name}' → '{name}': "
+                    f"loaded={tuple(loaded_weight.shape)} dtype={loaded_weight.dtype}, "
+                    f"param={tuple(param.data.shape)} dtype={param.data.dtype}"
+                ) from e
             loaded_params.add(name)
         return loaded_params

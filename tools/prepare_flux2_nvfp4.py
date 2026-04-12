@@ -159,8 +159,12 @@ def main() -> int:
         if src.is_dir():
             continue
         rel = src.relative_to(base_dir)
-        if rel.parts[0] == "transformer" and rel.name.endswith(".safetensors"):
-            # Handled in step 4
+        if rel.parts[0] == "transformer" and (
+            rel.name.endswith(".safetensors")
+            or rel.name.endswith(".safetensors.index.json")
+        ):
+            # Handled in step 4; the index JSON references the sharded
+            # BF16 files which are replaced by the single NVFP4 weight.
             continue
         _copy_or_link(src, out / rel, use_symlink=not args.copy)
 
