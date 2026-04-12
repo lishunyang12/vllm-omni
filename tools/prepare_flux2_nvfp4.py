@@ -199,9 +199,18 @@ def main() -> int:
         raise FileNotFoundError(
             f"Expected {tf_config_path} from the base repo. Does --base ({args.base}) point to a diffusers-layout repo?"
         )
-    with open(tf_config_path) as f:
+
+    # CRITICAL: if tf_config_path is a symlink into the HF cache, writing
+    # through it would corrupt the cached base model's config (adding the
+    # quantization_config block to the BF16 repo permanently). We resolve
+    # the symlink first, read the original content, unlink the symlink,
+    # then write a standalone file at the same path.
+    resolved = tf_config_path.resolve()
+    with open(resolved) as f:
         tf_cfg = json.load(f)
     tf_cfg["quantization_config"] = _parse_quant_metadata(nvfp4_file)
+    if tf_config_path.is_symlink():
+        tf_config_path.unlink()
     with open(tf_config_path, "w") as f:
         json.dump(tf_cfg, f, indent=2)
 
