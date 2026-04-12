@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
-_HANDSHAKE_POLL_TIMEOUT_S = 600
+_HANDSHAKE_POLL_TIMEOUT_S = 1200
 
 
 class StageDiffusionProc:
