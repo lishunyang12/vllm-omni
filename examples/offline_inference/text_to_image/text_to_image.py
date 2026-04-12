@@ -341,7 +341,7 @@ def main():
     if use_nextstep:
         # NextStep-1.1 requires explicit pipeline class
         omni_kwargs["model_class_name"] = "NextStep11Pipeline"
-    omni = Omni(**omni_kwargs)
+    omni = Omni(init_timeout=1200, **omni_kwargs)
 
     if profiler_enabled:
         print("[Profiler] Starting profiling...")
