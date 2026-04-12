@@ -2,61 +2,111 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Standalone NVFP4 LinearMethod for BFL FLUX.2 checkpoints.
 
-Ported from sgl-project/sglang#20137 + #22064. The upstream vLLM
-``ModelOptNvFp4LinearMethod`` is designed for LLM ModelOpt checkpoints and
-makes assumptions about weight/scale layout that don't hold for BFL's
-FLUX.2-NVFP4 family. Rather than patching upstream, this module implements
-the full create → process → apply cycle independently, calling vLLM's
-low-level CUTLASS/FlashInfer FP4 ops directly.
+Ported 1:1 from sgl-project/sglang main branch (PR #20137 + #22064).
+Uses flashinfer's raw FP4 APIs (fp4_quantize + mm_fp4) directly instead
+of vLLM's wrappers, because the two frameworks have different conventions
+for transpose and scale layout:
 
-Key differences from upstream:
-  1. **FP4 nibble swap** — BFL packs nibbles in opposite byte order.
-  2. **Scale swizzle source** — BFL ships scales in cuBLAS-tiled layout;
-     we must re-swizzle for the FlashInfer CUTLASS kernel.
-  3. **No delegation to ``self.kernel``** — we handle weight reformatting
-     ourselves and call ``apply_nvfp4_linear`` from upstream's utils.
+  - SGLang / flashinfer.mm_fp4: weight and weight_scale are TRANSPOSED
+  - vLLM / flashinfer_scaled_fp4_mm: weight and weight_scale are NOT transposed
+
+Using the wrong convention produces numerically-stable but semantically
+garbage output (orange textured squares).
 """
 
 from __future__ import annotations
 
+import logging
+from functools import lru_cache
 from typing import Any
 
 import torch
 from torch.nn import Parameter
-from vllm.logger import init_logger
 from vllm.model_executor.layers.quantization.base_config import (
     QuantizeMethodBase,
-)
-from vllm.model_executor.layers.quantization.utils.nvfp4_utils import (
-    apply_nvfp4_linear,
-    pad_nvfp4_weight_for_cutlass,
-    select_nvfp4_linear_backend,
-    swizzle_blockscale,
 )
 from vllm.model_executor.parameter import (
     ModelWeightParameter,
     PerTensorScaleParameter,
 )
 
-logger = init_logger(__name__)
+logger = logging.getLogger(__name__)
+
+
+def _round_up(x: int, m: int) -> int:
+    return ((x + m - 1) // m) * m
+
+
+def _pad_nvfp4_weight(
+    weight: torch.Tensor,
+    alignment: int = 32,
+) -> tuple[torch.Tensor, int]:
+    """Pad packed NVFP4 weight [N, K//2] to alignment boundaries.
+
+    Ported from SGLang's ``pad_nvfp4_weight``.
+    """
+    n_rows = weight.shape[0]
+    k_bytes = weight.shape[1]
+    k_elements = k_bytes * 2
+
+    pad_rows = 0
+    if n_rows % alignment != 0:
+        pad_rows = _round_up(n_rows, alignment) - n_rows
+
+    pad_cols_bytes = 0
+    if k_elements % alignment != 0:
+        pad_cols = _round_up(k_elements, alignment) - k_elements
+        pad_cols_bytes = pad_cols // 2
+
+    if pad_rows > 0 or pad_cols_bytes > 0:
+        weight = torch.nn.functional.pad(weight, (0, pad_cols_bytes, 0, pad_rows)).contiguous()
+
+    return weight, pad_cols_bytes
+
+
+def _pad_nvfp4_activation(x_fp4: torch.Tensor, padding_cols: int) -> torch.Tensor:
+    """Pad activation to match weight K-dimension padding."""
+    if padding_cols > 0:
+        x_fp4 = torch.nn.functional.pad(x_fp4, (0, padding_cols)).contiguous()
+    return x_fp4
+
+
+def _slice_output(out: torch.Tensor, output_size: int) -> torch.Tensor:
+    """Remove N-dimension padding from output."""
+    if out.shape[-1] != output_size:
+        out = out[..., :output_size]
+    return out
+
+
+@lru_cache(maxsize=1)
+def _get_flashinfer_ops():
+    """Get flashinfer's raw FP4 quantize and GEMM ops.
+
+    Returns (fp4_quantize, mm_fp4, backend_str).
+    """
+    try:
+        from flashinfer import fp4_quantize, mm_fp4
+
+        # On Blackwell (SM120), cuDNN backend is preferred by SGLang.
+        # For safety, use "cutlass" which works across SM100/SM120.
+        backend = "cutlass"
+        return fp4_quantize, mm_fp4, backend
+    except ImportError:
+        logger.error("flashinfer not available — cannot run NVFP4 inference")
+        return None, None, None
 
 
 class FluxNvFp4LinearMethod(QuantizeMethodBase):
     """Standalone NVFP4 linear method for BFL FLUX.2 checkpoints.
 
-    This is NOT a subclass of upstream's ``ModelOptNvFp4LinearMethod`` — it
-    implements the same interface (``create_weights``, ``process_weights_after_loading``,
-    ``apply``) but controls the entire weight pipeline so there are no
-    hidden interactions with upstream's kernel backend.
+    Ported from SGLang's ``ModelOptFp4LinearMethod``. Uses flashinfer's
+    raw ``fp4_quantize`` + ``mm_fp4`` APIs with the SGLang calling
+    convention (transposed weight/scale for the flashinfer backend).
     """
 
     def __init__(self, quant_config: Any) -> None:
         self.quant_config = quant_config
-        self.backend = select_nvfp4_linear_backend()
 
-    # ------------------------------------------------------------------
-    # create_weights — allocate parameter slots matching the on-disk layout
-    # ------------------------------------------------------------------
     def create_weights(
         self,
         layer: torch.nn.Module,
@@ -79,7 +129,6 @@ class FluxNvFp4LinearMethod(QuantizeMethodBase):
         layer.input_size_per_partition = input_size_per_partition
         layer.output_size_per_partition = output_size_per_partition
 
-        # Packed FP4 weight: 2 values per byte → input_dim // 2.
         weight = ModelWeightParameter(
             data=torch.empty(
                 output_size_per_partition,
@@ -92,21 +141,18 @@ class FluxNvFp4LinearMethod(QuantizeMethodBase):
         )
         layer.register_parameter("weight", weight)
 
-        # Per-tensor input activation scale (one per output partition).
         input_scale = PerTensorScaleParameter(
             data=torch.empty(len(output_partition_sizes), dtype=torch.float32),
             weight_loader=weight_loader,
         )
         layer.register_parameter("input_scale", input_scale)
 
-        # Per-tensor weight global scale (one per output partition).
         weight_scale_2 = PerTensorScaleParameter(
             data=torch.empty(len(output_partition_sizes), dtype=torch.float32),
             weight_loader=weight_loader,
         )
         layer.register_parameter("weight_scale_2", weight_scale_2)
 
-        # Per-block FP8 weight scale: one E4M3 value per group of 16 elements.
         weight_scale = ModelWeightParameter(
             data=torch.empty(
                 output_size_per_partition,
@@ -119,49 +165,58 @@ class FluxNvFp4LinearMethod(QuantizeMethodBase):
         )
         layer.register_parameter("weight_scale", weight_scale)
 
-    # ------------------------------------------------------------------
-    # process_weights_after_loading — full standalone processing
-    # ------------------------------------------------------------------
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
-        # 1. Global scales → alpha + input_scale_inv.
-        input_global_scale = layer.input_scale.max().to(torch.float32)
-        weight_global_scale = layer.weight_scale_2.max().to(torch.float32)
+        """Exact port of SGLang's ModelOptFp4LinearMethod.process_weights_after_loading."""
 
-        layer.input_global_scale = Parameter(input_global_scale, requires_grad=False)
-        layer.weight_global_scale = Parameter(weight_global_scale, requires_grad=False)
+        # 1. Global scales → alpha + input_scale_inv
+        input_scale_2 = layer.input_scale.max().to(torch.float32)
+        weight_scale_2 = layer.weight_scale_2.max().to(torch.float32)
+
         layer.alpha = Parameter(
-            (input_global_scale * weight_global_scale).to(torch.float32),
+            (input_scale_2 * weight_scale_2).to(torch.float32),
             requires_grad=False,
         )
-        layer.input_global_scale_inv = Parameter(
-            (1.0 / input_global_scale).to(torch.float32),
+        layer.input_scale_inv = Parameter(
+            (1.0 / input_scale_2).to(torch.float32),
             requires_grad=False,
         )
 
-        # Clean up raw per-partition scales (upstream convention).
         del layer.input_scale
         del layer.weight_scale_2
 
-        # 2. FP4 nibble swap — BFL packs high/low nibble in opposite order.
-        #    Confirmed needed by sgl-project/sglang#20137.
+        layer.output_size_per_partition = layer.weight.shape[0]
+
+        # 2. Nibble swap (BFL packs high/low nibble in opposite order)
         w = layer.weight.data
-        w_swapped = ((w >> 4) | ((w & 0x0F) << 4)).to(torch.uint8).contiguous()
+        w_swapped = ((w >> 4) | (w << 4)).contiguous()
 
-        # 3. Pad weight + swizzle block-scales for CUTLASS/FlashInfer kernel.
-        #    We call the SAME vLLM utility functions that upstream uses — the
-        #    only delta is our pre-swap of the weight bytes in step 2.
-        padded_weight, weights_padding_cols = pad_nvfp4_weight_for_cutlass(w_swapped)
-        swizzled_weight_scale = swizzle_blockscale(layer.weight_scale.data)
-
-        layer.weight = Parameter(padded_weight, requires_grad=False)
-        layer.weight_scale = Parameter(swizzled_weight_scale, requires_grad=False)
+        # 3. Pad weight to 32-element alignment
+        weight, weights_padding_cols = _pad_nvfp4_weight(w_swapped)
         layer.weights_padding_cols = weights_padding_cols
-        layer.output_size_per_partition = padded_weight.shape[0]
+        layer.weight = Parameter(weight, requires_grad=False)
 
-    # ------------------------------------------------------------------
-    # apply — forward pass via upstream's apply_nvfp4_linear
-    # ------------------------------------------------------------------
-    _log_budget: int = 3
+        # 4. Pad + blockwise-interleave weight_scale for CUTLASS TMA
+        scales = layer.weight_scale
+        scale_ndim = scales.ndim
+        if scale_ndim == 2:
+            scales = scales.unsqueeze(0)
+        assert scales.ndim == 3
+        B, M, K = scales.shape
+        M_padded = _round_up(M, 128)
+        K_padded = _round_up(K, 4)
+        padded_scales = torch.zeros((B, M_padded, K_padded), dtype=scales.dtype)
+        padded_scales[:B, :M, :K] = scales
+        # Blockwise interleave for CUTLASS TMA layout (from SGLang #22064)
+        padded_scales = padded_scales.reshape(B, M_padded // 128, 4, 32, K_padded // 4, 4)
+        padded_scales = padded_scales.permute(0, 1, 4, 3, 2, 5)
+        padded_scales = padded_scales.contiguous().cuda()
+        padded_scales = (
+            padded_scales.reshape(M_padded, K_padded)
+            if scale_ndim == 2
+            else padded_scales.reshape(B, M_padded, K_padded)
+        )
+        # Store as separate attribute (SGLang convention)
+        layer.weight_scale_interleaved = Parameter(padded_scales, requires_grad=False)
 
     def apply(
         self,
@@ -169,18 +224,50 @@ class FluxNvFp4LinearMethod(QuantizeMethodBase):
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        if FluxNvFp4LinearMethod._log_budget > 0:
-            FluxNvFp4LinearMethod._log_budget -= 1
-            logger.warning(
-                "[FluxNvFp4 apply] alpha=%.6f input_scale_inv=%.6f weight.shape=%s weight_scale.shape=%s",
-                layer.alpha.item(),
-                layer.input_global_scale_inv.item(),
-                tuple(layer.weight.shape),
-                tuple(layer.weight_scale.shape),
-            )
-        return apply_nvfp4_linear(
-            backend=self.backend,
-            layer=layer,
-            x=x,
-            bias=bias,
+        """Exact port of SGLang's ModelOptFp4LinearMethod.apply."""
+
+        fp4_quantize, mm_fp4, backend = _get_flashinfer_ops()
+        if fp4_quantize is None or mm_fp4 is None:
+            raise RuntimeError("flashinfer FP4 ops not available")
+
+        output_dtype = x.dtype
+        input_shape = x.shape
+        x = x.view(-1, input_shape[-1])
+
+        output_size = layer.output_size_per_partition
+        output_shape = list(input_shape[:-1]) + [output_size]
+
+        # Quantize activations to FP4 using flashinfer's native op
+        x_fp4, x_scale_interleaved = fp4_quantize(x, layer.input_scale_inv)
+
+        # Pad activations to match weight K-dimension padding
+        weights_padding_cols = getattr(layer, "weights_padding_cols", 0)
+        x_fp4 = _pad_nvfp4_activation(x_fp4, weights_padding_cols)
+
+        w = layer.weight
+        w_scale_interleaved = layer.weight_scale_interleaved
+
+        # Cast block scales to FP8 if needed
+        if x_scale_interleaved.dtype == torch.uint8:
+            x_scale_interleaved = x_scale_interleaved.view(torch.float8_e4m3fn)
+        if w_scale_interleaved.dtype == torch.uint8:
+            w_scale_interleaved = w_scale_interleaved.view(torch.float8_e4m3fn)
+
+        # flashinfer.mm_fp4 expects TRANSPOSED weight and weight_scale
+        # (SGLang convention, different from vLLM's flashinfer_scaled_fp4_mm)
+        out = mm_fp4(
+            x_fp4,
+            w.T,
+            x_scale_interleaved,
+            w_scale_interleaved.T,
+            layer.alpha,
+            output_dtype,
+            backend=backend,
         )
+
+        out = _slice_output(out, output_size)
+
+        if bias is not None:
+            out = out + bias
+
+        return out.view(*output_shape)
