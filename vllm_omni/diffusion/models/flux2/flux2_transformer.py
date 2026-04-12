@@ -811,11 +811,13 @@ class Flux2Transformer2DModel(nn.Module):
             weight_loader = getattr(param, "weight_loader", default_weight_loader)
             try:
                 weight_loader(param, loaded_weight)
-            except AssertionError as e:
-                raise AssertionError(
-                    f"Shape mismatch loading weight '{original_name}' → '{name}': "
+            except (AssertionError, RuntimeError) as e:
+                raise type(e)(
+                    f"Failed loading weight '{original_name}' → '{name}': "
                     f"loaded={tuple(loaded_weight.shape)} dtype={loaded_weight.dtype}, "
-                    f"param={tuple(param.data.shape)} dtype={param.data.dtype}"
+                    f"param={tuple(param.data.shape)} dtype={param.data.dtype}, "
+                    f"param_class={type(param).__name__}, "
+                    f"underlying: {e}"
                 ) from e
             loaded_params.add(name)
         return loaded_params
