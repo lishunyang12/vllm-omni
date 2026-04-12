@@ -205,9 +205,9 @@ class FluxNvFp4LinearMethod(QuantizeMethodBase):
             backend_name = backend_name[len("flashinfer-") :]
         out = flashinfer_scaled_fp4_mm(
             x_fp4,
-            w.T,
+            w.T.contiguous(),
             x_blockscale,
-            w_scale.T,
+            w_scale.T.contiguous(),
             layer.alpha,
             output_dtype,
             backend=backend_name,
