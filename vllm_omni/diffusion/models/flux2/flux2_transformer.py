@@ -33,6 +33,10 @@ from vllm_omni.diffusion.utils.bfl_mapping import (
     apply_bfl_mapping,
     peek_bfl_format,
 )
+from vllm_omni.quantization.comfy_nvfp4_linear import (
+    NVFP4Linear,
+    wrap_all_nvfp4_weights,
+)
 
 import logging
 
@@ -61,30 +65,41 @@ class Flux2FeedForward(nn.Module):
         bias: bool = False,
         quant_config: "QuantizationConfig | None" = None,
         prefix: str = "",
+        use_comfy_nvfp4: bool = False,
     ):
         super().__init__()
         if inner_dim is None:
             inner_dim = int(dim * mult)
         dim_out = dim_out or dim
 
-        self.linear_in = MergedColumnParallelLinear(
-            dim,
-            [inner_dim, inner_dim],
-            bias=bias,
-            return_bias=False,
-            quant_config=quant_config,
-            prefix=f"{prefix}.linear_in",
-        )
+        if use_comfy_nvfp4:
+            # BFL NVFP4 ckp stores linear_in as a single fused [2*inner_dim, dim]
+            # gate+up weight. Load it directly into one NVFP4Linear.
+            self.linear_in = NVFP4Linear(
+                dim, inner_dim * 2, bias=bias, return_bias=False
+            )
+            self.linear_out = NVFP4Linear(
+                inner_dim, dim_out, bias=bias, return_bias=False
+            )
+        else:
+            self.linear_in = MergedColumnParallelLinear(
+                dim,
+                [inner_dim, inner_dim],
+                bias=bias,
+                return_bias=False,
+                quant_config=quant_config,
+                prefix=f"{prefix}.linear_in",
+            )
+            self.linear_out = RowParallelLinear(
+                inner_dim,
+                dim_out,
+                bias=bias,
+                input_is_parallel=True,
+                return_bias=False,
+                quant_config=quant_config,
+                prefix=f"{prefix}.linear_out",
+            )
         self.act_fn = Flux2SwiGLU()
-        self.linear_out = RowParallelLinear(
-            inner_dim,
-            dim_out,
-            bias=bias,
-            input_is_parallel=True,
-            return_bias=False,
-            quant_config=quant_config,
-            prefix=f"{prefix}.linear_out",
-        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.linear_in(x)
@@ -108,6 +123,7 @@ class Flux2Attention(nn.Module):
         elementwise_affine: bool = True,
         quant_config: "QuantizationConfig | None" = None,
         prefix: str = "",
+        use_comfy_nvfp4: bool = False,
     ):
         super().__init__()
         self.head_dim = dim_head
@@ -118,57 +134,87 @@ class Flux2Attention(nn.Module):
         self.dropout = dropout
         self.added_kv_proj_dim = added_kv_proj_dim
 
-        self.to_qkv = QKVParallelLinear(
-            hidden_size=query_dim,
-            head_size=self.head_dim,
-            total_num_heads=self.heads,
-            bias=bias,
-            quant_config=quant_config,
-            prefix=f"{prefix}.to_qkv",
-        )
-        self.query_num_heads = self.to_qkv.num_heads
-        self.kv_num_heads = self.to_qkv.num_kv_heads
+        if use_comfy_nvfp4:
+            # BFL ckp has one fused QKV weight [3 * heads * head_dim, query_dim].
+            # At TP=1, QKVParallelLinear.num_heads == heads and
+            # num_kv_heads == heads (MHA, not GQA), so qkv out = 3 * heads * head_dim.
+            self.to_qkv = NVFP4Linear(
+                query_dim,
+                self.heads * dim_head * 3,
+                bias=bias,
+                return_bias=True,
+            )
+            self.query_num_heads = self.heads
+            self.kv_num_heads = self.heads
+        else:
+            self.to_qkv = QKVParallelLinear(
+                hidden_size=query_dim,
+                head_size=self.head_dim,
+                total_num_heads=self.heads,
+                bias=bias,
+                quant_config=quant_config,
+                prefix=f"{prefix}.to_qkv",
+            )
+            self.query_num_heads = self.to_qkv.num_heads
+            self.kv_num_heads = self.to_qkv.num_kv_heads
 
         self.norm_q = RMSNorm(dim_head, eps=eps)
         self.norm_k = RMSNorm(dim_head, eps=eps)
 
-        self.to_out = nn.ModuleList(
-            [
-                RowParallelLinear(
-                    self.inner_dim,
-                    self.out_dim,
-                    bias=out_bias,
-                    input_is_parallel=True,
-                    return_bias=False,
-                    quant_config=quant_config,
-                    prefix=f"{prefix}.to_out.0",
-                ),
-                nn.Dropout(dropout),
-            ]
-        )
-
-        if added_kv_proj_dim is not None:
-            self.norm_added_q = RMSNorm(dim_head, eps=eps)
-            self.norm_added_k = RMSNorm(dim_head, eps=eps)
-            self.add_kv_proj = QKVParallelLinear(
-                hidden_size=added_kv_proj_dim,
-                head_size=self.head_dim,
-                total_num_heads=self.heads,
-                bias=added_proj_bias,
-                quant_config=quant_config,
-                prefix=f"{prefix}.add_kv_proj",
+        if use_comfy_nvfp4:
+            to_out_linear = NVFP4Linear(
+                self.inner_dim, self.out_dim, bias=out_bias, return_bias=False
             )
-            self.add_query_num_heads = self.add_kv_proj.num_heads
-            self.add_kv_num_heads = self.add_kv_proj.num_kv_heads
-            self.to_add_out = RowParallelLinear(
+        else:
+            to_out_linear = RowParallelLinear(
                 self.inner_dim,
-                query_dim,
+                self.out_dim,
                 bias=out_bias,
                 input_is_parallel=True,
                 return_bias=False,
                 quant_config=quant_config,
-                prefix=f"{prefix}.to_add_out",
+                prefix=f"{prefix}.to_out.0",
             )
+        self.to_out = nn.ModuleList([to_out_linear, nn.Dropout(dropout)])
+
+        if added_kv_proj_dim is not None:
+            self.norm_added_q = RMSNorm(dim_head, eps=eps)
+            self.norm_added_k = RMSNorm(dim_head, eps=eps)
+            if use_comfy_nvfp4:
+                self.add_kv_proj = NVFP4Linear(
+                    added_kv_proj_dim,
+                    self.heads * dim_head * 3,
+                    bias=added_proj_bias,
+                    return_bias=True,
+                )
+                self.add_query_num_heads = self.heads
+                self.add_kv_num_heads = self.heads
+                self.to_add_out = NVFP4Linear(
+                    self.inner_dim,
+                    query_dim,
+                    bias=out_bias,
+                    return_bias=False,
+                )
+            else:
+                self.add_kv_proj = QKVParallelLinear(
+                    hidden_size=added_kv_proj_dim,
+                    head_size=self.head_dim,
+                    total_num_heads=self.heads,
+                    bias=added_proj_bias,
+                    quant_config=quant_config,
+                    prefix=f"{prefix}.add_kv_proj",
+                )
+                self.add_query_num_heads = self.add_kv_proj.num_heads
+                self.add_kv_num_heads = self.add_kv_proj.num_kv_heads
+                self.to_add_out = RowParallelLinear(
+                    self.inner_dim,
+                    query_dim,
+                    bias=out_bias,
+                    input_is_parallel=True,
+                    return_bias=False,
+                    quant_config=quant_config,
+                    prefix=f"{prefix}.to_add_out",
+                )
 
         self.rope = RotaryEmbedding(is_neox_style=False)
         self.attn = Attention(
@@ -267,6 +313,7 @@ class Flux2ParallelSelfAttention(nn.Module):
         mlp_mult_factor: int = 2,
         quant_config: "QuantizationConfig | None" = None,
         prefix: str = "",
+        use_comfy_nvfp4: bool = False,
     ):
         super().__init__()
         self.head_dim = dim_head
@@ -280,27 +327,36 @@ class Flux2ParallelSelfAttention(nn.Module):
         self.mlp_hidden_dim = int(query_dim * self.mlp_ratio)
         self.mlp_mult_factor = mlp_mult_factor
 
-        self.to_qkv_mlp_proj = ColumnParallelLinear(
-            self.query_dim,
-            self.inner_dim * 3 + self.mlp_hidden_dim * self.mlp_mult_factor,
-            bias=bias,
-            gather_output=True,
-            quant_config=quant_config,
-            prefix=f"{prefix}.to_qkv_mlp_proj",
-        )
+        qkv_mlp_out = self.inner_dim * 3 + self.mlp_hidden_dim * self.mlp_mult_factor
+        to_out_in = self.inner_dim + self.mlp_hidden_dim
+        if use_comfy_nvfp4:
+            self.to_qkv_mlp_proj = NVFP4Linear(
+                self.query_dim, qkv_mlp_out, bias=bias, return_bias=True
+            )
+            self.to_out = NVFP4Linear(
+                to_out_in, self.out_dim, bias=out_bias, return_bias=True
+            )
+        else:
+            self.to_qkv_mlp_proj = ColumnParallelLinear(
+                self.query_dim,
+                qkv_mlp_out,
+                bias=bias,
+                gather_output=True,
+                quant_config=quant_config,
+                prefix=f"{prefix}.to_qkv_mlp_proj",
+            )
+            self.to_out = ColumnParallelLinear(
+                to_out_in,
+                self.out_dim,
+                bias=out_bias,
+                gather_output=True,
+                quant_config=quant_config,
+                prefix=f"{prefix}.to_out",
+            )
         self.mlp_act_fn = Flux2SwiGLU()
 
         self.norm_q = RMSNorm(dim_head, eps=eps)
         self.norm_k = RMSNorm(dim_head, eps=eps)
-
-        self.to_out = ColumnParallelLinear(
-            self.inner_dim + self.mlp_hidden_dim,
-            self.out_dim,
-            bias=out_bias,
-            gather_output=True,
-            quant_config=quant_config,
-            prefix=f"{prefix}.to_out",
-        )
         self.rope = RotaryEmbedding(is_neox_style=False)
         self.attn = Attention(
             num_heads=self.heads,
@@ -364,6 +420,7 @@ class Flux2SingleTransformerBlock(nn.Module):
         bias: bool = False,
         quant_config: "QuantizationConfig | None" = None,
         prefix: str = "",
+        use_comfy_nvfp4: bool = False,
     ):
         super().__init__()
         self.norm = nn.LayerNorm(dim, elementwise_affine=False, eps=eps)
@@ -379,6 +436,7 @@ class Flux2SingleTransformerBlock(nn.Module):
             mlp_mult_factor=2,
             quant_config=quant_config,
             prefix=f"{prefix}.attn",
+            use_comfy_nvfp4=use_comfy_nvfp4,
         )
 
     def forward(
@@ -428,6 +486,7 @@ class Flux2TransformerBlock(nn.Module):
         bias: bool = False,
         quant_config: "QuantizationConfig | None" = None,
         prefix: str = "",
+        use_comfy_nvfp4: bool = False,
     ):
         super().__init__()
         self.mlp_hidden_dim = int(dim * mlp_ratio)
@@ -447,6 +506,7 @@ class Flux2TransformerBlock(nn.Module):
             eps=eps,
             quant_config=quant_config,
             prefix=f"{prefix}.attn",
+            use_comfy_nvfp4=use_comfy_nvfp4,
         )
 
         self.norm2 = nn.LayerNorm(dim, elementwise_affine=False, eps=eps)
@@ -457,6 +517,7 @@ class Flux2TransformerBlock(nn.Module):
             bias=bias,
             quant_config=quant_config,
             prefix=f"{prefix}.ff",
+            use_comfy_nvfp4=use_comfy_nvfp4,
         )
 
         self.norm2_context = nn.LayerNorm(dim, elementwise_affine=False, eps=eps)
@@ -467,6 +528,7 @@ class Flux2TransformerBlock(nn.Module):
             bias=bias,
             quant_config=quant_config,
             prefix=f"{prefix}.ff_context",
+            use_comfy_nvfp4=use_comfy_nvfp4,
         )
 
     def forward(
@@ -632,8 +694,10 @@ class Flux2Transformer2DModel(nn.Module):
         eps: float = 1e-6,
         guidance_embeds: bool = True,
         quant_config: "QuantizationConfig | None" = None,
+        use_comfy_nvfp4: bool = False,
     ):
         super().__init__()
+        self.use_comfy_nvfp4 = use_comfy_nvfp4
         self.guidance_embeds = guidance_embeds
         self.stacked_params_mapping = None
         self.out_channels = out_channels or in_channels
@@ -682,6 +746,7 @@ class Flux2Transformer2DModel(nn.Module):
                     bias=False,
                     quant_config=quant_config,
                     prefix=f"transformer_blocks.{i}",
+                    use_comfy_nvfp4=use_comfy_nvfp4,
                 )
                 for i in range(num_layers)
             ]
@@ -698,6 +763,7 @@ class Flux2Transformer2DModel(nn.Module):
                     bias=False,
                     quant_config=quant_config,
                     prefix=f"single_transformer_blocks.{i}",
+                    use_comfy_nvfp4=use_comfy_nvfp4,
                 )
                 for i in range(num_single_layers)
             ]
@@ -872,4 +938,15 @@ class Flux2Transformer2DModel(nn.Module):
                     f"underlying: {e}"
                 ) from e
             loaded_params.add(name)
+
+        # In comfy-kitchen NVFP4 mode, finalize each quantized linear by
+        # wrapping its raw uint8 weight as a QuantizedTensor so that
+        # F.linear dispatches to the comfy-kitchen cuBLAS kernel.
+        if getattr(self, "use_comfy_nvfp4", False):
+            n = wrap_all_nvfp4_weights(self)
+            logger.info(
+                "comfy-kitchen NVFP4: wrapped %d linear weights as QuantizedTensor",
+                n,
+            )
+
         return loaded_params
