@@ -23,23 +23,20 @@ from typing import Any
 
 import torch
 from torch.nn import Parameter
-from vllm._custom_ops import scaled_fp4_quant
 from vllm.logger import init_logger
 from vllm.model_executor.layers.quantization.base_config import (
     QuantizeMethodBase,
 )
 from vllm.model_executor.layers.quantization.utils.nvfp4_utils import (
-    pad_nvfp4_activation_for_cutlass,
+    apply_nvfp4_linear,
     pad_nvfp4_weight_for_cutlass,
     select_nvfp4_linear_backend,
-    slice_nvfp4_output,
     swizzle_blockscale,
 )
 from vllm.model_executor.parameter import (
     ModelWeightParameter,
     PerTensorScaleParameter,
 )
-from vllm.utils.flashinfer import flashinfer_scaled_fp4_mm
 
 logger = init_logger(__name__)
 
@@ -162,60 +159,28 @@ class FluxNvFp4LinearMethod(QuantizeMethodBase):
         layer.output_size_per_partition = padded_weight.shape[0]
 
     # ------------------------------------------------------------------
-    # apply — forward pass calling flashinfer directly (SGLang style)
+    # apply — forward pass via upstream's apply_nvfp4_linear
     # ------------------------------------------------------------------
+    _log_budget: int = 3
+
     def apply(
         self,
         layer: torch.nn.Module,
         x: torch.Tensor,
         bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        output_dtype = x.dtype
-        output_size = layer.output_size_per_partition
-        output_shape = [*x.shape[:-1], output_size]
-
-        x = x.view(-1, x.shape[-1])
-
-        # Quantize activations to FP4 with swizzled block scales.
-        x_fp4, x_blockscale = scaled_fp4_quant(
-            x,
-            layer.input_global_scale_inv,
-            is_sf_swizzled_layout=True,
-            backend=self.backend.value,
+        if FluxNvFp4LinearMethod._log_budget > 0:
+            FluxNvFp4LinearMethod._log_budget -= 1
+            logger.warning(
+                "[FluxNvFp4 apply] alpha=%.6f input_scale_inv=%.6f weight.shape=%s weight_scale.shape=%s",
+                layer.alpha.item(),
+                layer.input_global_scale_inv.item(),
+                tuple(layer.weight.shape),
+                tuple(layer.weight_scale.shape),
+            )
+        return apply_nvfp4_linear(
+            backend=self.backend,
+            layer=layer,
+            x=x,
+            bias=bias,
         )
-
-        # Pad activations to match weight K-dimension padding.
-        weights_padding_cols = getattr(layer, "weights_padding_cols", 0)
-        x_fp4 = pad_nvfp4_activation_for_cutlass(x_fp4, weights_padding_cols)
-
-        w = layer.weight
-        w_scale = layer.weight_scale
-
-        # Cast block scales to the expected dtype if needed.
-        if x_blockscale.dtype == torch.uint8:
-            x_blockscale = x_blockscale.view(torch.float8_e4m3fn)
-        if w_scale.dtype == torch.uint8:
-            w_scale = w_scale.view(torch.float8_e4m3fn)
-
-        # SGLang discovered that flashinfer's scaled_fp4_mm expects
-        # transposed weight + weight_scale for the CUTLASS backend.
-        # See sgl-project/sglang#20137.
-        backend_name = self.backend.value
-        if backend_name.startswith("flashinfer-"):
-            backend_name = backend_name[len("flashinfer-") :]
-        out = flashinfer_scaled_fp4_mm(
-            x_fp4,
-            w.T.contiguous(),
-            x_blockscale,
-            w_scale.T.contiguous(),
-            layer.alpha,
-            output_dtype,
-            backend=backend_name,
-        )
-
-        out = slice_nvfp4_output(out, output_size)
-
-        if bias is not None:
-            out = out + bias
-
-        return out.view(*output_shape)
