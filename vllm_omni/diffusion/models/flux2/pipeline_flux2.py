@@ -378,24 +378,26 @@ class Flux2Pipeline(nn.Module, SupportImageInput, ProgressBarMixin, DiffusionPip
         transformer_kwargs = get_transformer_config_kwargs(od_config.tf_model_config, Flux2Transformer2DModel)
         # BFL's FLUX.2-dev-NVFP4 is only compatible with comfy-kitchen
         # kernels (per BFL HF model card + SGLang PR #20137 discussion).
-        # Detect ``modelopt_fp4_flux`` and route the transformer to our
-        # NVFP4Linear path, which wraps weights as comfy-kitchen
-        # QuantizedTensors and dispatches F.linear to scaled_mm_nvfp4.
+        # Detect ``modelopt_fp4_flux`` by reading the transformer's
+        # config.json directly — independent of tf_model_config shape.
         use_comfy_nvfp4 = False
-        tf_cfg = od_config.tf_model_config
         try:
-            disk_qc = None
-            if hasattr(tf_cfg, "params"):
-                disk_qc = tf_cfg.params.get("quantization_config")
-            elif isinstance(tf_cfg, dict):
-                disk_qc = tf_cfg.get("quantization_config")
-            if (
-                isinstance(disk_qc, dict)
-                and disk_qc.get("quant_method") == "modelopt_fp4_flux"
-            ):
-                use_comfy_nvfp4 = True
-        except Exception:
-            pass
+            import json as _json
+            import os as _os
+            tf_cfg_path = _os.path.join(model, "transformer", "config.json")
+            if _os.path.isfile(tf_cfg_path):
+                with open(tf_cfg_path) as _f:
+                    _cfg = _json.load(_f)
+                _qc = _cfg.get("quantization_config") or {}
+                if _qc.get("quant_method") == "modelopt_fp4_flux":
+                    use_comfy_nvfp4 = True
+        except Exception as _e:
+            logger.warning("NVFP4 detection from config.json failed: %s", _e)
+        logger.info(
+            "Flux2Pipeline: use_comfy_nvfp4=%s (model=%s)",
+            use_comfy_nvfp4,
+            model,
+        )
         self.transformer = Flux2Transformer2DModel(
             quant_config=od_config.quantization_config,
             use_comfy_nvfp4=use_comfy_nvfp4,
