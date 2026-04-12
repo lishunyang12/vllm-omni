@@ -43,6 +43,30 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _plain_copy_loader(param: nn.Parameter, loaded: torch.Tensor) -> None:
+    """weight_loader for plain nn.Linear params (used for BF16-excluded
+    layers in NVFP4 mode like txt_attn's add_kv_proj / to_add_out)."""
+    param.data.copy_(loaded)
+
+
+class _TupleLinear(nn.Linear):
+    """``nn.Linear`` that returns ``(output, None)`` — keeps the
+    tuple-return convention of ``QKVParallelLinear`` so call sites
+    like ``encoder_qkv, _ = self.add_kv_proj(x)`` still work.
+    The param path is ``.weight`` / ``.bias`` directly (unlike a
+    wrapped module), so BFL name mapping still hits them.
+    """
+
+    def forward(self, x):
+        return super().forward(x), None
+
+
+def _attach_plain_loader(linear: nn.Linear) -> None:
+    linear.weight.weight_loader = _plain_copy_loader
+    if linear.bias is not None:
+        linear.bias.weight_loader = _plain_copy_loader
+
+
 class Flux2SwiGLU(nn.Module):
     """SwiGLU activation used by Flux2."""
 
@@ -181,20 +205,21 @@ class Flux2Attention(nn.Module):
             self.norm_added_q = RMSNorm(dim_head, eps=eps)
             self.norm_added_k = RMSNorm(dim_head, eps=eps)
             if use_comfy_nvfp4:
-                self.add_kv_proj = NVFP4Linear(
+                # FLUX.2-dev-NVFP4's exclude_modules keeps txt_attn
+                # (add_kv_proj, to_add_out) in BF16, so we must NOT
+                # allocate these as NVFP4. Use plain nn.Linear.
+                self.add_kv_proj = _TupleLinear(
                     added_kv_proj_dim,
                     self.heads * dim_head * 3,
-                    bias=added_proj_bias,
-                    return_bias=True,
+                    bias=bool(added_proj_bias),
                 )
+                _attach_plain_loader(self.add_kv_proj)
                 self.add_query_num_heads = self.heads
                 self.add_kv_num_heads = self.heads
-                self.to_add_out = NVFP4Linear(
-                    self.inner_dim,
-                    query_dim,
-                    bias=out_bias,
-                    return_bias=False,
+                self.to_add_out = nn.Linear(
+                    self.inner_dim, query_dim, bias=bool(out_bias)
                 )
+                _attach_plain_loader(self.to_add_out)
             else:
                 self.add_kv_proj = QKVParallelLinear(
                     hidden_size=added_kv_proj_dim,
