@@ -1,16 +1,5 @@
-# Production deploy config for Qwen3-Omni-MoE — CUDA defaults + platform
-# overrides. Loaded automatically by the model registry when a user runs
-# ``vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni`` without an
-# explicit ``--deploy-config`` flag.
-#
-# Verified on 2x H100-80G GPUs (stage 0 on cuda:0, stages 1+2 on cuda:1).
-#
-# CI tests use ``vllm_omni/deploy/ci/qwen3_omni_moe.yaml``, which inherits
-# from this file via ``base_config:`` and only overrides the bits that
-# need to be smaller for fast CI runs (load_format=dummy, smaller
-# max_num_seqs / max_model_len, etc.). The two files are intentionally
-# separate so the production default isn't polluted with CI noise; users
-# get the real model defaults, CI gets the dummy-weight overrides.
+# Qwen3-Omni-MoE production deploy, verified on 2x H100 (stage 0 on cuda:0,
+# stages 1+2 on cuda:1).
 
 async_chunk: true
 

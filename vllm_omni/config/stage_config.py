@@ -29,7 +29,7 @@ logger = init_logger(__name__)
 _STAGE_OVERRIDE_PATTERN = re.compile(r"^stage_(\d+)_(.+)$")
 
 
-# Orchestrator-only kwargs that must not flow into per-stage engine args.
+# Orchestrator-only kwargs; never forwarded to per-stage engine args.
 INTERNAL_STAGE_OVERRIDE_KEYS: frozenset[str] = frozenset(
     {
         "model",
@@ -43,14 +43,12 @@ INTERNAL_STAGE_OVERRIDE_KEYS: frozenset[str] = frozenset(
         "batch_timeout",
         "log_stats",
         "parallel_config",
-        # Pipeline-wide; applied once in _create_from_registry.
         "async_chunk",
     }
 )
 
-# Server/uvicorn/OpenAI-API kwargs that reach this module via ``vars(args)``
-# in the serve path and would otherwise raise unexpected-keyword errors
-# inside ``AsyncOmniEngineArgs``.
+# Server/uvicorn kwargs that reach this module via ``vars(args)`` in the
+# serve path and would raise unexpected-keyword errors in AsyncOmniEngineArgs.
 SERVER_ONLY_KEYS: frozenset[str] = frozenset(
     {
         "host",
@@ -303,9 +301,7 @@ class DeployConfig:
     edges: list[dict[str, Any]] | None = None
     stages: list[StageDeployConfig] = field(default_factory=list)
     platforms: dict[str, Any] | None = None
-    # Overrides the auto-detected pipeline registry key. Only used for
-    # structural variants (different stage count / wiring) — e.g. the
-    # thinker-only test harness for Qwen2.5-Omni.
+    # Overrides the auto-detected pipeline registry key for structural variants.
     pipeline: str | None = None
 
 

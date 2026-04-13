@@ -60,12 +60,7 @@ QWEN2_5_OMNI_PIPELINE = PipelineConfig(
 register_pipeline(QWEN2_5_OMNI_PIPELINE)
 
 
-# ---------------------------------------------------------------------------
-# Variant: thinker-only single-stage topology
-# ---------------------------------------------------------------------------
-# Used by tests/engine/test_async_omni_engine_abort.py to exercise abort
-# behavior on the AR thinker stage in isolation. Selected via the
-# ``qwen2_5_omni_thinker_only`` entry in ``tests/utils.py:_CI_OVERLAYS``.
+# Single-stage thinker-only variant for the abort test.
 QWEN2_5_OMNI_THINKER_ONLY_PIPELINE = PipelineConfig(
     model_type="qwen2_5_omni_thinker_only",
     model_arch="Qwen2_5OmniForConditionalGeneration",

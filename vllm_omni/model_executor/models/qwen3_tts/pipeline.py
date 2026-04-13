@@ -1,13 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Qwen3-TTS pipeline topology (frozen).
+"""Qwen3-TTS pipeline: Talker (text → RVQ codec) → Code2Wav (codec → audio).
 
-Stage 0: Talker   — text → 8-layer RVQ codec codes
-Stage 1: Code2Wav — RVQ codes → audio waveform
-
-Chunked-streaming vs end-to-end mode is dispatched from
-``deploy.async_chunk`` in ``merge_pipeline_deploy`` — no separate
-pipeline registration is needed for the sync variant.
+Chunked vs end-to-end mode is dispatched from ``deploy.async_chunk``.
 """
 
 from vllm_omni.config.stage_config import (

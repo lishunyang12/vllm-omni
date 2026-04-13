@@ -195,13 +195,7 @@ class OmniServeCommand(CLISubcommand):
             "--async-chunk",
             action=argparse.BooleanOptionalAction,
             default=None,
-            help="Enable (--async-chunk) or disable (--no-async-chunk) pipeline-wide "
-            "async chunked streaming between stages. Overrides the deploy YAML's "
-            "top-level ``async_chunk:`` field. Default (unset) leaves the YAML value "
-            "in force. To run a topology variant that uses different processor "
-            "functions, author a deploy YAML whose top-level ``pipeline:`` field "
-            "selects the variant (e.g. ``pipeline: qwen3_tts_no_async_chunk``) and "
-            "point to it with ``--deploy-config``.",
+            help="Override the deploy YAML's ``async_chunk:`` bool. Unset leaves the YAML value in force.",
         )
         omni_config_group.add_argument(
             "--stage-id",

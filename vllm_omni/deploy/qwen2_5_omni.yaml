@@ -1,17 +1,7 @@
-# Deploy config for Qwen2.5-Omni — CUDA defaults + platform overrides.
-# Verified on 2x H100-80G GPUs (stages 0/1 on separate GPUs, stage 2
-# colocated with stage 0).
-#
-# Stage 2 (token2wav) sets ``enable_flashinfer_autotune: false`` because
-# its DiT block does not use any flashinfer kernels — vLLM's autotune
-# would still run a full ``_dummy_run`` of token2wav at
-# ``max_num_batched_tokens`` shape, which spikes ~27 GiB transient memory
-# in the DiT attention mask and OOMs the shared cuda:0 device. Disabling
-# autotune skips that wasted dummy forward; flashinfer is never invoked
-# in this stage so there is nothing to autotune.
-
-# Qwen2.5-Omni has no chunk-streaming wiring; loader default is True so pin to False.
-async_chunk: false
+# Qwen2.5-Omni deploy: CUDA defaults + platform overrides, verified on 2x H100.
+# Stage 2 disables flashinfer autotune because its DiT block never invokes
+# flashinfer; the autotune dummy run OOMs the shared cuda:0 device otherwise.
+async_chunk: false  # no chunk-streaming wiring on this model
 
 stages:
   - stage_id: 0

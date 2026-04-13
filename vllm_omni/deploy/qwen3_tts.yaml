@@ -1,6 +1,5 @@
-# Deploy config for Qwen3-TTS — async-chunk streaming layout.
-# 2 stages: talker (text → 8-layer RVQ codec) → code2wav (codec → audio).
-# Verified on 1x H100-80G GPU (both stages on cuda:0).
+# Qwen3-TTS deploy: talker → code2wav via shared-memory chunk streaming.
+# Verified on 1x H100.
 
 async_chunk: true
 
@@ -9,14 +8,11 @@ connectors:
     name: SharedMemoryConnector
     extra:
       shm_threshold_bytes: 65536
-      # Frame-aligned codec streaming transport.
       codec_streaming: true
-      # Connector polling / timeout (loop count, sleep seconds).
       connector_get_sleep_s: 0.01
       connector_get_max_wait_first_chunk: 3000
       connector_get_max_wait: 300
-      # Match the decoder sliding attention window to avoid
-      # chunk-boundary noise.
+      # Must match the decoder sliding attention window.
       codec_chunk_frames: 25
       codec_left_context_frames: 72
 

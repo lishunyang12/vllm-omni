@@ -30,9 +30,8 @@ _DEPLOY_DIR = _REPO_ROOT / "vllm_omni" / "deploy"
 _CI_GENERATED_DIR = _REPO_ROOT / "tests" / ".ci_generated"
 
 
-# CI overlays kept as Python dicts so IDE LSP works when debugging tests.
-# Materialized to ``tests/.ci_generated/<model>.yaml`` on demand and layered
-# on top of the production deploy via ``base_config:``.
+# CI overlays as Python dicts (LSP-friendly). Materialized on demand to
+# tests/.ci_generated/<model>.yaml via get_deploy_config_path("ci/<name>.yaml").
 _CI_OVERLAYS: dict[str, dict[str, Any]] = {
     "qwen2_5_omni": {
         "base_config": "qwen2_5_omni.yaml",
@@ -181,9 +180,7 @@ _CI_OVERLAYS: dict[str, dict[str, Any]] = {
             },
         },
     },
-    # Single-stage thinker-only topology for the abort test. Selects the
-    # qwen2_5_omni_thinker_only pipeline registration; no base_config (the
-    # single-stage shape is intentionally self-contained).
+    # Single-stage thinker-only topology for the abort test.
     "qwen2_5_omni_thinker_only": {
         "pipeline": "qwen2_5_omni_thinker_only",
         "stages": [
