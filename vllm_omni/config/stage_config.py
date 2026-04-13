@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import re
 import warnings
 from dataclasses import asdict, dataclass, field, fields
@@ -23,6 +24,140 @@ def get_pipeline_path(model_dir: str, filename: str) -> Path:
 
 
 logger = init_logger(__name__)
+
+
+_STAGE_OVERRIDE_PATTERN = re.compile(r"^stage_(\d+)_(.+)$")
+
+
+# Orchestrator-only kwargs that must not flow into per-stage engine args.
+INTERNAL_STAGE_OVERRIDE_KEYS: frozenset[str] = frozenset(
+    {
+        "model",
+        "stage_configs_path",
+        "stage_id",
+        "stage_init_timeout",
+        "init_timeout",
+        "shm_threshold_bytes",
+        "worker_backend",
+        "ray_address",
+        "batch_timeout",
+        "log_stats",
+        "parallel_config",
+        # Pipeline-wide; applied once in _create_from_registry.
+        "async_chunk",
+    }
+)
+
+# Server/uvicorn/OpenAI-API kwargs that reach this module via ``vars(args)``
+# in the serve path and would otherwise raise unexpected-keyword errors
+# inside ``AsyncOmniEngineArgs``.
+SERVER_ONLY_KEYS: frozenset[str] = frozenset(
+    {
+        "host",
+        "port",
+        "uds",
+        "uvicorn_log_level",
+        "allow_credentials",
+        "allowed_origins",
+        "allowed_methods",
+        "allowed_headers",
+        "api_key",
+        "lora_modules",
+        "prompt_adapters",
+        "chat_template",
+        "chat_template_content_format",
+        "response_role",
+        "ssl_keyfile",
+        "ssl_certfile",
+        "ssl_ca_certs",
+        "ssl_cert_reqs",
+        "root_path",
+        "middleware",
+        "return_tokens_as_token_ids",
+        "disable_frontend_multiprocessing",
+        "enable_request_id_headers",
+        "enable_auto_tool_choice",
+        "tool_call_parser",
+        "tool_parser_plugin",
+        "max_log_len",
+        "disable_fastapi_docs",
+        "enable_prompt_tokens_details",
+        "enable_server_load_tracking",
+        "config_format",
+        "served_model_name",
+        "disable_log_requests",
+        "disable_log_stats",
+        "max_parallel_loading_workers",
+        "deploy_config",
+        "stage_overrides",
+    }
+)
+
+
+def build_stage_runtime_overrides(
+    stage_id: int,
+    cli_overrides: dict[str, Any],
+    *,
+    internal_keys: set[str] | frozenset[str] = INTERNAL_STAGE_OVERRIDE_KEYS,
+) -> dict[str, Any]:
+    """Build per-stage runtime overrides from global and ``stage_<id>_*`` kwargs."""
+    result: dict[str, Any] = {}
+
+    for key, value in cli_overrides.items():
+        if value is None or key in internal_keys:
+            continue
+
+        match = _STAGE_OVERRIDE_PATTERN.match(key)
+        if match is not None:
+            override_stage_id = int(match.group(1))
+            param_name = match.group(2)
+            if override_stage_id == stage_id and param_name not in internal_keys:
+                result[param_name] = value
+            continue
+
+        result[key] = value
+
+    return result
+
+
+def strip_parent_engine_args(
+    kwargs: dict[str, Any],
+    *,
+    parent_fields: dict[str, dataclasses.Field],
+    keep_keys: set[str] | frozenset[str] = frozenset(),
+    strip_keys: set[str] | frozenset[str] = frozenset(),
+    no_warn_keys: set[str] | frozenset[str] = frozenset(),
+) -> tuple[dict[str, Any], list[str]]:
+    """Strip parent ``EngineArgs`` fields before merging into stage YAML."""
+    overridden: list[str] = []
+    result: dict[str, Any] = {}
+
+    for key, value in kwargs.items():
+        if key in strip_keys:
+            continue
+
+        if key not in parent_fields or key in keep_keys:
+            result[key] = value
+            continue
+
+        field_def = parent_fields[key]
+        if field_def.default is not dataclasses.MISSING:
+            default = field_def.default
+        elif field_def.default_factory is not dataclasses.MISSING:
+            default = field_def.default_factory()
+        else:
+            default = dataclasses.MISSING
+
+        if default is dataclasses.MISSING or value is None:
+            continue
+
+        if dataclasses.is_dataclass(default) and not isinstance(default, type):
+            default = asdict(default)
+
+        if value != default and key not in no_warn_keys:
+            overridden.append(key)
+
+    return result, sorted(overridden)
 
 
 class StageType(str, Enum):
@@ -795,9 +930,16 @@ class StageConfigFactory:
                 continue
             engine_args[key] = value
 
-        # Serialize parallel_config as dict for OmegaConf compatibility
+        # Serialize parallel_config as dict for OmegaConf. Test helpers
+        # sometimes pass SimpleNamespace rather than a dataclass instance.
         if "parallel_config" in kwargs:
-            engine_args["parallel_config"] = asdict(kwargs["parallel_config"])
+            parallel_config = kwargs["parallel_config"]
+            if dataclasses.is_dataclass(parallel_config) and not isinstance(parallel_config, type):
+                engine_args["parallel_config"] = asdict(parallel_config)
+            elif hasattr(parallel_config, "__dict__"):
+                engine_args["parallel_config"] = dict(vars(parallel_config))
+            else:
+                engine_args["parallel_config"] = parallel_config
 
         engine_args.setdefault("cache_backend", "none")
         engine_args["model_stage"] = "diffusion"
@@ -1015,67 +1157,10 @@ class StageConfigFactory:
 
         return None, None
 
-    # Orchestrator-only kwargs that must not flow into per-stage engine args.
-    _INTERNAL_KEYS: set[str] = {
-        "model",
-        "stage_configs_path",
-        "stage_id",
-        "stage_init_timeout",
-        "init_timeout",
-        "shm_threshold_bytes",
-        "worker_backend",
-        "ray_address",
-        "batch_timeout",
-        "log_stats",
-        "parallel_config",
-        # Pipeline-wide; applied once in ``_create_from_registry``.
-        "async_chunk",
-    }
-
-    # Server/uvicorn/OpenAI-API kwargs that reach this module via
-    # ``vars(args)`` in the serve path and would otherwise raise
-    # unexpected-keyword errors inside ``AsyncOmniEngineArgs``.
-    _SERVER_ONLY_KEYS: frozenset[str] = frozenset(
-        {
-            "host",
-            "port",
-            "uds",
-            "uvicorn_log_level",
-            "allow_credentials",
-            "allowed_origins",
-            "allowed_methods",
-            "allowed_headers",
-            "api_key",
-            "lora_modules",
-            "prompt_adapters",
-            "chat_template",
-            "chat_template_content_format",
-            "response_role",
-            "ssl_keyfile",
-            "ssl_certfile",
-            "ssl_ca_certs",
-            "ssl_cert_reqs",
-            "root_path",
-            "middleware",
-            "return_tokens_as_token_ids",
-            "disable_frontend_multiprocessing",
-            "enable_request_id_headers",
-            "enable_auto_tool_choice",
-            "tool_call_parser",
-            "tool_parser_plugin",
-            "max_log_len",
-            "disable_fastapi_docs",
-            "enable_prompt_tokens_details",
-            "enable_server_load_tracking",
-            "config_format",
-            "served_model_name",
-            "disable_log_requests",
-            "disable_log_stats",
-            "max_parallel_loading_workers",
-            "deploy_config",
-            "stage_overrides",
-        }
-    )
+    # Delegates to module-level constants; preserved as class attrs for
+    # back-compat with external subclasses and tests.
+    _INTERNAL_KEYS: frozenset[str] = INTERNAL_STAGE_OVERRIDE_KEYS
+    _SERVER_ONLY_KEYS: frozenset[str] = SERVER_ONLY_KEYS
 
     @classmethod
     def _merge_cli_overrides(
@@ -1084,22 +1169,8 @@ class StageConfigFactory:
         cli_overrides: dict[str, Any],
     ) -> dict[str, Any]:
         """Merge global and per-stage (``stage_N_*``) CLI overrides."""
-        result: dict[str, Any] = {}
-
-        for key, value in cli_overrides.items():
-            if key in cls._INTERNAL_KEYS or key in cls._SERVER_ONLY_KEYS:
-                continue
-            if re.match(r"stage_\d+_", key):
-                continue
-            if value is not None:
-                result[key] = value
-
-        stage_prefix = f"stage_{stage.stage_id}_"
-        for key, value in cli_overrides.items():
-            if key.startswith(stage_prefix) and value is not None:
-                param_name = key[len(stage_prefix) :]
-                if param_name in cls._INTERNAL_KEYS or param_name in cls._SERVER_ONLY_KEYS:
-                    continue
-                result[param_name] = value
-
-        return result
+        return build_stage_runtime_overrides(
+            stage.stage_id,
+            cli_overrides,
+            internal_keys=cls._INTERNAL_KEYS | cls._SERVER_ONLY_KEYS,
+        )
