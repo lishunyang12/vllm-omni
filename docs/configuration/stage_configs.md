@@ -11,7 +11,7 @@ The new deploy schema lives under `vllm_omni/deploy/` and is paired with a froze
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `base_config` | str (path) | Optional. Resolve an overlay against another deploy YAML (relative to the overlay's directory). ``stages:`` and ``platforms:`` are deep-merged by stage_id; scalar top-level fields follow overlay-wins. |
+| `base_config` | str (path) | Optional. Resolve an overlay against another deploy YAML (relative to the overlay's directory, or absolute). ``stages:`` and ``platforms:`` are deep-merged by stage_id; scalar top-level fields follow overlay-wins. **Intended for user-authored overlays** (multi-node, custom connectors) — the bundled production yamls stay flat and self-contained. CI overlays live as Python dicts in ``tests/utils.py:_CI_OVERLAYS`` (not yaml) so IDE LSP works when debugging test failures. |
 | `async_chunk` | bool | Pipeline-wide: enable chunked async streaming between stages. Defaults to ``True`` in the loader — pin to ``false`` if your pipeline runs end-to-end. |
 | `pipeline` | str | Optional. Pipeline registry key. Overrides the auto-detected ``model_type`` so a variant topology (e.g. ``qwen3_tts_no_async_chunk``) can be selected from an overlay YAML. |
 | `connectors` | dict | Named connector specs (``{name, extra}``). Referenced by each stage's ``input_connectors`` / ``output_connectors``. |
@@ -48,7 +48,7 @@ Each entry under `stages:` accepts any `StageDeployConfig` field directly (no ne
 | `--deploy-config PATH` | Load a new-schema deploy YAML. Takes precedence over `--stage-configs-path`. |
 | `--stage-overrides JSON` | Per-stage JSON overrides, e.g. `'{"0":{"gpu_memory_utilization":0.5}}'`. Per-stage values always win over global flags. |
 | `--async-chunk` / `--no-async-chunk` | Flip the deploy YAML's `async_chunk:` bool. Unset (default) leaves the YAML value in force. |
-| `--stage-configs-path` | **Deprecated.** Accepts both legacy `stage_args` YAMLs and new-schema deploy YAMLs (auto-detected). Users pointing at deleted paths under `vllm_omni/model_executor/stage_configs/` / `tests/e2e/stage_configs/` will see a migration error — switch to `--deploy-config` with `vllm_omni/deploy/<model>.yaml` (or `vllm_omni/deploy/ci/<model>.yaml` for CI). |
+| `--stage-configs-path` | **Deprecated.** Accepts both legacy `stage_args` YAMLs and new-schema deploy YAMLs (auto-detected). Users pointing at deleted paths under `vllm_omni/model_executor/stage_configs/` / `tests/e2e/stage_configs/` will see a migration error — switch to `--deploy-config` with `vllm_omni/deploy/<model>.yaml`. |
 
 ### Precedence
 
