@@ -168,6 +168,10 @@ class DeployConfig:
     edges: list[dict[str, Any]] | None = None
     stages: list[StageDeployConfig] = field(default_factory=list)
     platforms: dict[str, Any] | None = None
+    # Overrides the auto-detected pipeline registry key. Only used for
+    # structural variants (different stage count / wiring) — e.g. the
+    # thinker-only test harness for Qwen2.5-Omni.
+    pipeline: str | None = None
 
 
 _STAGE_NON_ENGINE_KEYS = frozenset(
@@ -292,6 +296,7 @@ def load_deploy_config(path: str | Path) -> DeployConfig:
         edges=raw_dict.get("edges", None),
         stages=stages,
         platforms=raw_dict.get("platforms", None),
+        pipeline=raw_dict.get("pipeline", None),
     )
 
 
@@ -730,13 +735,14 @@ class StageConfigFactory:
         if cli_async_chunk is not None and (cli_explicit_keys is None or "async_chunk" in cli_explicit_keys):
             deploy_cfg.async_chunk = bool(cli_async_chunk)
 
-        if model_type not in _PIPELINE_REGISTRY:
+        pipeline_key = deploy_cfg.pipeline or model_type
+        if pipeline_key not in _PIPELINE_REGISTRY:
             raise KeyError(
-                f"Pipeline {model_type!r} not in registry "
+                f"Pipeline {pipeline_key!r} not in registry "
                 f"(resolved from {deploy_path.name!r}). Available: "
                 f"{sorted(_PIPELINE_REGISTRY.keys())}"
             )
-        pipeline_cfg = _PIPELINE_REGISTRY[model_type]
+        pipeline_cfg = _PIPELINE_REGISTRY[pipeline_key]
 
         stages = merge_pipeline_deploy(pipeline_cfg, deploy_cfg, cli_overrides)
 
