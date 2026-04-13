@@ -139,34 +139,39 @@ def _load_lora_state_dict(
 
 def _remap_state_dict_keys(sd, rules):
     """
-    Remap keys in a state_dict based on a priority list of substring substitution rules.
+    Remap keys in a state_dict by sequentially applying a list of substring substitution rules.
 
     This utility function transforms parameter names by applying a sequence of
-    (old_substring, new_substring) pairs.
+    (old_substring, new_substring) pairs. For each key in the input dictionary,
+    **all rules are evaluated in the given order**, and every rule whose
+    `old_substring` is found within the current key triggers a replacement.
+    Substitutions are cumulative: the key is updated after each match, and
+    subsequent rules operate on the result of previous replacements.
 
-    For each key in the input dictionary, the `rules` are evaluated in the given order.
-    The **first** rule whose `old_substring` is found within the key triggers a
-    replacement. Once a match occurs, the search stops and no further rules are
-    considered for that key. Keys that do not match any rule are copied unchanged.
+    The order of rules matters; users are responsible for arranging them to
+    achieve the desired final key. Keys that do not match any rule are copied
+    unchanged.
 
     Args:
         sd (dict[str, Any]): Original state_dict mapping parameter names to tensors.
         rules (List[Tuple[str, str]]): A list of (old_substring, new_substring) pairs.
-            Rules are applied sequentially with first-match precedence.
+            Rules are applied sequentially, and **all matching rules are executed**.
 
     Returns:
         dict[str, Any]: A new state_dict with remapped keys. Values are unchanged.
     """
     new_sd = OrderedDict()
     for k, v in sd.items():
+        new_key = k
         matched = False
         for p1, p2 in rules:
             if p1 not in k:
                 continue
-            new_sd[k.replace(p1, p2)] = v
+            new_key = new_key.replace(p1, p2)
             matched = True
-            break
-        if not matched:
+        if matched:
+            new_sd[new_key] = v
+        else:
             new_sd[k] = v
     return new_sd
 
