@@ -12,8 +12,7 @@ The new deploy schema lives under `vllm_omni/deploy/` and is paired with a froze
 | Field | Type | Description |
 |-------|------|-------------|
 | `base_config` | str (path) | Optional. Resolve an overlay against another deploy YAML (relative to the overlay's directory, or absolute). ``stages:`` and ``platforms:`` are deep-merged by stage_id; scalar top-level fields follow overlay-wins. **Intended for user-authored overlays** (multi-node, custom connectors) — the bundled production yamls stay flat and self-contained. CI overlays live as Python dicts in ``tests/utils.py:_CI_OVERLAYS`` (not yaml) so IDE LSP works when debugging test failures. |
-| `async_chunk` | bool | Pipeline-wide: enable chunked async streaming between stages. Defaults to ``True`` in the loader — pin to ``false`` if your pipeline runs end-to-end. |
-| `pipeline` | str | Optional. Pipeline registry key. Overrides the auto-detected ``model_type`` so a variant topology (e.g. ``qwen3_tts_no_async_chunk``) can be selected from an overlay YAML. |
+| `async_chunk` | bool | Pipeline-wide: enable chunked async streaming between stages. Defaults to ``True`` in the loader — pin to ``false`` if your pipeline runs end-to-end. Pipelines that implement alternate processor functions for chunked vs end-to-end modes dispatch automatically from this bool. |
 | `connectors` | dict | Named connector specs (``{name, extra}``). Referenced by each stage's ``input_connectors`` / ``output_connectors``. |
 | `edges` | list | Optional explicit edge list for the KV transfer graph. Auto-derived from stage inputs if omitted. |
 | `stages` | list | Per-stage engine args + wiring (see below). |

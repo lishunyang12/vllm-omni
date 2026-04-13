@@ -1161,28 +1161,35 @@ class TestCLIExplicitPrecedence:
         for stage in stages:
             assert stage.runtime_overrides.get("enable_prefix_caching") is True
 
-    def test_variant_deploy_selects_variant_pipeline(self):
-        """A deploy YAML whose top-level ``pipeline:`` field names a variant
-        registration (e.g. ``qwen3_tts_no_async_chunk``) makes
-        ``_create_from_registry`` resolve the variant instead of the default
-        for the same model_type."""
+    def test_async_chunk_dispatches_processors(self):
+        """A single ``qwen3_tts`` pipeline picks per-chunk vs end-to-end
+        processors based on ``deploy.async_chunk``, without needing a
+        separate variant pipeline registration."""
         import vllm_omni.model_executor.models.qwen3_tts.pipeline  # noqa: F401
-
-        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_tts_no_async_chunk.yaml"
-        if not deploy_path.exists():
-            pytest.skip("Variant deploy yaml not found")
-
-        stages = StageConfigFactory._create_from_registry(
-            "qwen3_tts",
-            cli_overrides={},
-            cli_explicit_keys=set(),
-            deploy_config_path=str(deploy_path),
+        from vllm_omni.config.stage_config import (
+            _PIPELINE_REGISTRY,
+            DeployConfig,
+            merge_pipeline_deploy,
         )
-        # The variant pipeline has 2 stages, same as the default qwen3_tts.
-        assert len(stages) == 2
-        # The variant uses Qwen3TTSCode2Wav for stage 1 with a sync input
-        # processor — verify by checking model_arch on the merged stages.
-        assert stages[1].yaml_engine_args.get("model_arch") == "Qwen3TTSCode2Wav"
+
+        pipeline = _PIPELINE_REGISTRY["qwen3_tts"]
+
+        # async_chunk=True → stage 0's per-chunk processor wires up, stage 1
+        # has no sync input processor.
+        async_stages = merge_pipeline_deploy(pipeline, DeployConfig(async_chunk=True))
+        assert (
+            async_stages[0]
+            .yaml_engine_args.get("custom_process_next_stage_input_func", "")
+            .endswith("talker2code2wav_async_chunk")
+        )
+        assert async_stages[1].custom_process_input_func is None
+
+        # async_chunk=False → stage 0 has no streaming processor, stage 1's
+        # batch-end processor wires up.
+        sync_stages = merge_pipeline_deploy(pipeline, DeployConfig(async_chunk=False))
+        assert "custom_process_next_stage_input_func" not in sync_stages[0].yaml_engine_args
+        assert sync_stages[1].custom_process_input_func is not None
+        assert sync_stages[1].custom_process_input_func.endswith("talker2code2wav")
 
 
 class TestSamplingConstraintsPrecedence:

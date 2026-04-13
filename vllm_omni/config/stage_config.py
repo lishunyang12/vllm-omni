@@ -77,6 +77,20 @@ class StagePipelineConfig:
     sampling_constraints: dict[str, Any] = field(default_factory=dict)
     custom_process_input_func: str | None = None
     custom_process_next_stage_input_func: str | None = None
+    # Mode-dispatched processors. When a pipeline needs different processor
+    # behavior for chunked streaming vs end-to-end generation (e.g. qwen3_tts
+    # code2wav), declare the alternates here instead of registering a second
+    # pipeline. ``merge_pipeline_deploy`` selects one based on
+    # ``deploy.async_chunk``:
+    #
+    # * ``async_chunk_process_next_stage_input_func``: on the sender stage;
+    #   invoked per chunk when ``async_chunk=True``. Falls back to
+    #   ``custom_process_next_stage_input_func`` when unset.
+    # * ``sync_process_input_func``: on the receiver stage; invoked at batch
+    #   end when ``async_chunk=False``. Falls back to
+    #   ``custom_process_input_func`` when unset.
+    async_chunk_process_next_stage_input_func: str | None = None
+    sync_process_input_func: str | None = None
     prompt_expand_func: str | None = None
     cfg_kv_collect_func: str | None = None
     omni_kv_config: dict[str, Any] | None = None
@@ -176,13 +190,6 @@ class DeployConfig:
     edges: list[dict[str, Any]] | None = None
     stages: list[StageDeployConfig] = field(default_factory=list)
     platforms: dict[str, Any] | None = None
-    # Optional explicit pipeline registration key. When set, overrides the
-    # auto-detected ``model_type`` lookup in the pipeline registry. Used by
-    # variant deploys whose topology differs from the default for the same
-    # HuggingFace model_type — e.g. ``qwen3_tts_no_async_chunk`` reuses the
-    # qwen3_tts model classes but registers a different pipeline (different
-    # processor functions, no SharedMemoryConnector).
-    pipeline: str | None = None
 
 
 _STAGE_NON_ENGINE_KEYS = frozenset(
@@ -314,7 +321,6 @@ def load_deploy_config(path: str | Path) -> DeployConfig:
         edges=raw_dict.get("edges", None),
         stages=stages,
         platforms=raw_dict.get("platforms", None),
-        pipeline=raw_dict.get("pipeline", None),
     )
 
 
@@ -409,8 +415,19 @@ def merge_pipeline_deploy(
         yaml_engine_args["model_arch"] = ps.model_arch or pipeline.model_arch
         if ps.engine_output_type:
             yaml_engine_args["engine_output_type"] = ps.engine_output_type
-        if ps.custom_process_next_stage_input_func:
-            yaml_engine_args["custom_process_next_stage_input_func"] = ps.custom_process_next_stage_input_func
+
+        # Mode dispatch for chunked-streaming vs end-to-end processors.
+        # When the pipeline declares mode-specific alternates, pick the one
+        # that matches ``deploy.async_chunk``; otherwise fall back to the
+        # unconditional processor fields.
+        next_stage_proc = ps.custom_process_next_stage_input_func
+        input_proc = ps.custom_process_input_func
+        if deploy.async_chunk and ps.async_chunk_process_next_stage_input_func:
+            next_stage_proc = ps.async_chunk_process_next_stage_input_func
+        elif not deploy.async_chunk and ps.sync_process_input_func:
+            input_proc = ps.sync_process_input_func
+        if next_stage_proc:
+            yaml_engine_args["custom_process_next_stage_input_func"] = next_stage_proc
 
         if ds is not None:
             for k, v in asdict(ds).items():
@@ -426,7 +443,7 @@ def merge_pipeline_deploy(
         if ds is not None:
             yaml_runtime["devices"] = ds.devices
 
-        custom_process_input_func = ps.custom_process_input_func
+        custom_process_input_func = input_proc
 
         yaml_extras: dict[str, Any] = {}
 
@@ -728,13 +745,6 @@ class StageConfigFactory:
         and is only used to fill fields YAML doesn't already cover. When the
         set is ``None`` (programmatic ``Omni()`` callers, which have no
         argparse layer), every kwarg is treated as explicit.
-
-        If the loaded deploy YAML has a ``pipeline:`` field set, it
-        overrides the auto-detected ``model_type`` for the pipeline
-        registry lookup. This lets variant deploys (e.g.
-        ``qwen3_tts_no_async_chunk``) reuse the model classes of a
-        different HuggingFace ``model_type`` while running a different
-        topology (different processor functions, different connectors).
         """
         # Resolve deploy config path
         if deploy_config_path is None:
@@ -758,19 +768,13 @@ class StageConfigFactory:
         if cli_async_chunk is not None and (cli_explicit_keys is None or "async_chunk" in cli_explicit_keys):
             deploy_cfg.async_chunk = bool(cli_async_chunk)
 
-        # Resolve which pipeline registration to use. The deploy YAML's
-        # explicit ``pipeline:`` field (if set) wins over the auto-detected
-        # model_type so variant topologies can be selected by pointing
-        # ``--deploy-config`` at a YAML that sets ``pipeline:``.
-        pipeline_key = deploy_cfg.pipeline or model_type
-        if pipeline_key not in _PIPELINE_REGISTRY:
+        if model_type not in _PIPELINE_REGISTRY:
             raise KeyError(
-                f"Pipeline {pipeline_key!r} not in registry "
-                f"(deploy {deploy_path.name!r} requested it via 'pipeline:' field "
-                f"or via auto-detected model_type). Available: "
+                f"Pipeline {model_type!r} not in registry "
+                f"(resolved from {deploy_path.name!r}). Available: "
                 f"{sorted(_PIPELINE_REGISTRY.keys())}"
             )
-        pipeline_cfg = _PIPELINE_REGISTRY[pipeline_key]
+        pipeline_cfg = _PIPELINE_REGISTRY[model_type]
 
         stages = merge_pipeline_deploy(pipeline_cfg, deploy_cfg, cli_overrides)
 

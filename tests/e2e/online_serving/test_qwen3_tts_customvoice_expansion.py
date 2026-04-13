@@ -49,13 +49,14 @@ tts_server_params = [
         ),
         id="async_chunk",
     ),
-    # Synchronous (no async-chunk) variant — the dedicated overlay inherits
-    # from qwen3_tts.yaml and selects the synchronous pipeline registration.
+    # Synchronous (no async-chunk) variant — ``--no-async-chunk`` alone
+    # flips the deploy yaml's bool and the pipeline dispatches to the
+    # end-to-end codec processor. No variant yaml / pipeline needed.
     pytest.param(
         OmniServerParams(
             model=MODEL,
-            stage_config_path=get_stage_config("qwen3_tts_no_async_chunk.yaml"),
-            server_args=["--trust-remote-code", "--disable-log-stats"],
+            stage_config_path=get_stage_config("qwen3_tts.yaml"),
+            server_args=["--trust-remote-code", "--disable-log-stats", "--no-async-chunk"],
         ),
         id="no_async_chunk",
     ),

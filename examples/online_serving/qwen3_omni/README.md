@@ -58,25 +58,21 @@ vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
 vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
     --no-async-chunk
 
-# Switch to a variant topology (e.g. qwen3_tts has a synchronous codec
-# variant with different processor functions). Variants ship as dedicated
-# deploy overlays that inherit from the prod YAML and set ``pipeline:``:
+# qwen3_tts supports both chunked streaming (default) and synchronous
+# end-to-end modes from the same deploy yaml. ``--no-async-chunk`` flips
+# the bool and the pipeline dispatches to the end-to-end codec processor.
 vllm serve Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice --omni --port 8091 \
-    --deploy-config vllm_omni/deploy/qwen3_tts_no_async_chunk.yaml
+    --no-async-chunk
 ```
 
 Explicit CLI flags **override** the deploy YAML (which itself overrides the
 parser defaults). If you don't pass a flag, the YAML value wins.
 
-> **Note on `--no-async-chunk` vs variant pipelines**: `--no-async-chunk` only
-> flips the deploy-level `async_chunk:` bool. When a model ships a topology
-> variant whose *processor functions* or *stage wiring* differ from the
-> default (e.g. `qwen3_tts_no_async_chunk` runs a sync codec processor on
-> stage 1 and drops the `SharedMemoryConnector`), use `--deploy-config` with
-> the dedicated overlay YAML — the overlay's top-level `pipeline:` field
-> tells the loader which pipeline registration to resolve. For models like
-> `qwen3_omni_moe` and `qwen2_5_omni` that don't have a separate variant
-> pipeline, the `--no-async-chunk` bool flip alone is enough.
+> **Note on `--no-async-chunk`**: Flips the deploy yaml's `async_chunk:`
+> bool. Pipelines that implement alternate processor functions for
+> chunked vs end-to-end modes (e.g. qwen3_tts code2wav) dispatch
+> automatically based on that bool — no extra flag or variant yaml is
+> needed.
 
 > ⚠️ **For multi-stage models that share GPUs (qwen3_omni_moe by default
 > shares cuda:1 between stages 1 and 2), avoid using global memory flags.**

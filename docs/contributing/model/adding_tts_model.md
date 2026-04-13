@@ -122,14 +122,16 @@ vllm_omni/model_executor/stage_configs/
 | `models/qwen3_tts/qwen3_tts_code2wav.py` | Stage 1 - decoder |
 | `deploy/qwen3_tts.yaml` (new schema) | Deploy config (async_chunk enabled) — paired with `models/qwen3_tts/pipeline.py` for the frozen topology |
 
-> **Variant topologies**: Batch-mode tuning is reachable from the bundled
-> `qwen3_tts.yaml` via `--stage-overrides`. The synchronous
-> (no-async-chunk) variant, which rewires stage 1 with a different
-> processor and drops the `SharedMemoryConnector`, ships as a dedicated
-> overlay at `deploy/qwen3_tts_no_async_chunk.yaml` that inherits from
-> `qwen3_tts.yaml` via `base_config:` and sets the top-level `pipeline:`
-> field to select the alternate registration. Launch it with
-> `--deploy-config vllm_omni/deploy/qwen3_tts_no_async_chunk.yaml`.
+> **Chunked vs end-to-end modes**: `qwen3_tts` registers a single
+> pipeline whose stage 1 declares alternate processor functions — an
+> `async_chunk_process_next_stage_input_func` (per-chunk streaming, used
+> when `deploy.async_chunk=True`) and a `sync_process_input_func`
+> (batch-end, used when `deploy.async_chunk=False`). The loader selects
+> one at merge time based on the bool, so `--no-async-chunk` alone
+> switches modes — no variant yaml or variant pipeline registration is
+> needed. Pipelines that only make sense in one mode (e.g.
+> `qwen3_omni_moe` is always chunked) can keep using the unconditional
+> `custom_process_*` fields.
 | `stage_input_processors/qwen3_tts.py` | Stage transition processors |
 
 ## Step-by-Step Implementation
