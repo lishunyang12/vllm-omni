@@ -9,6 +9,7 @@ from vllm.logger import init_logger
 from vllm.transformers_utils.config import get_config, get_hf_file_to_dict
 from vllm.transformers_utils.repo_utils import file_or_path_exists
 
+from vllm_omni.config.stage_config import StageConfigFactory
 from vllm_omni.config.yaml_util import create_config, load_yaml_config, merge_configs
 from vllm_omni.entrypoints.stage_utils import _to_dict
 from vllm_omni.platforms import current_omni_platform
@@ -315,8 +316,6 @@ def load_stage_configs_from_model(
                 if explicit is not None:
                     explicit.add(stage_key)
 
-    from vllm_omni.config.stage_config import StageConfigFactory
-
     stages = StageConfigFactory.create_from_model(
         model,
         cli_overrides=cli_overrides,
@@ -505,11 +504,33 @@ def load_and_resolve_stage_configs(
     if stage_configs_path is not None and deploy_config_path is None:
         import yaml
 
+        if not os.path.exists(stage_configs_path):
+            # Common case after the config refactor: users still reference
+            # deleted legacy paths like
+            # ``vllm_omni/model_executor/stage_configs/qwen3_omni_moe.yaml``
+            # or ``tests/e2e/stage_configs/qwen2_5_omni_ci.yaml``. Give a
+            # pointed error instead of a bare FileNotFoundError so the
+            # upgrade path is obvious.
+            raise FileNotFoundError(
+                f"--stage-configs-path {stage_configs_path!r} does not exist. "
+                "The legacy per-platform `stage_configs/` YAMLs have been replaced by "
+                "the unified deploy schema under `vllm_omni/deploy/` (with platform "
+                "overrides in-place). Migrate by pointing `--deploy-config` at "
+                "`vllm_omni/deploy/<model>.yaml` (or, for CI, `vllm_omni/deploy/ci/<model>.yaml`). "
+                "See docs/configuration/stage_configs.md for the new schema."
+            )
         with open(stage_configs_path, encoding="utf-8") as f:
             _peek = yaml.safe_load(f) or {}
         if "stages" in _peek and "stage_args" not in _peek:
             deploy_config_path = stage_configs_path
             stage_configs_path = None
+        else:
+            logger.warning(
+                "`--stage-configs-path` is deprecated and will be removed in a future "
+                "release. Migrate `%s` to the new deploy schema and use `--deploy-config`. "
+                "See docs/configuration/stage_configs.md.",
+                stage_configs_path,
+            )
 
     if deploy_config_path is not None:
         config_path = deploy_config_path

@@ -198,20 +198,10 @@ class OmniServeCommand(CLISubcommand):
             help="Enable (--async-chunk) or disable (--no-async-chunk) pipeline-wide "
             "async chunked streaming between stages. Overrides the deploy YAML's "
             "top-level ``async_chunk:`` field. Default (unset) leaves the YAML value "
-            "in force. To switch to a topology variant that uses different processor "
-            "functions (e.g. qwen3_tts vs qwen3_tts_no_async_chunk), pair this with "
-            "``--pipeline``.",
-        )
-        omni_config_group.add_argument(
-            "--pipeline",
-            type=str,
-            default=None,
-            help="Select a non-default pipeline registration by name (e.g. "
-            "``qwen3_tts_no_async_chunk``). Overrides the deploy YAML's top-level "
-            "``pipeline:`` field, which in turn overrides the auto-detected model_type. "
-            "Use this to switch between variant topologies (different processor "
-            "functions, different stage wiring) for the same HuggingFace model without "
-            "writing a custom deploy YAML.",
+            "in force. To run a topology variant that uses different processor "
+            "functions, author a deploy YAML whose top-level ``pipeline:`` field "
+            "selects the variant (e.g. ``pipeline: qwen3_tts_no_async_chunk``) and "
+            "point to it with ``--deploy-config``.",
         )
         omni_config_group.add_argument(
             "--stage-id",

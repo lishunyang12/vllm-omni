@@ -1,0 +1,26 @@
+# Deploy config for Qwen3-TTS — synchronous codec layout.
+# Same talker + code2wav stages as qwen3_tts.yaml, but runs them
+# end-to-end without SharedMemoryConnector streaming. Selects the
+# ``qwen3_tts_no_async_chunk`` pipeline registration so the loader
+# wires up the synchronous processor functions.
+
+base_config: qwen3_tts.yaml
+
+async_chunk: false
+pipeline: qwen3_tts_no_async_chunk
+
+# No chunk streaming → no connectors wired between stages.
+connectors: null
+edges: null
+
+stages:
+  - stage_id: 0
+    max_num_seqs: 1
+    gpu_memory_utilization: 0.2
+    enforce_eager: true
+    async_scheduling: false
+    output_connectors: null
+  - stage_id: 1
+    gpu_memory_utilization: 0.2
+    async_scheduling: false
+    input_connectors: null

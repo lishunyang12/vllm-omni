@@ -58,24 +58,25 @@ vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
 vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
     --no-async-chunk
 
-# Switch to a variant pipeline registration (e.g. qwen3_tts has a
-# synchronous codec topology with different processor functions)
+# Switch to a variant topology (e.g. qwen3_tts has a synchronous codec
+# variant with different processor functions). Variants ship as dedicated
+# deploy overlays that inherit from the prod YAML and set ``pipeline:``:
 vllm serve Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice --omni --port 8091 \
-    --no-async-chunk \
-    --pipeline qwen3_tts_no_async_chunk
+    --deploy-config vllm_omni/deploy/qwen3_tts_no_async_chunk.yaml
 ```
 
 Explicit CLI flags **override** the deploy YAML (which itself overrides the
 parser defaults). If you don't pass a flag, the YAML value wins.
 
-> **Note on `--no-async-chunk` vs `--pipeline`**: `--no-async-chunk` flips
-> the deploy-level `async_chunk:` bool. `--pipeline <name>` switches which
-> entry in the pipeline registry the loader resolves — that's how you select
-> a topology variant whose processor functions / stage wiring differ from
-> the default (e.g. `qwen3_tts_no_async_chunk` ships its own sync codec
-> processor on stage 1). For models like `qwen3_omni_moe` and `qwen2_5_omni`
-> that don't have a separate variant pipeline, the bool flip alone is
-> enough. For `qwen3_tts`, pair both flags to fully switch topologies.
+> **Note on `--no-async-chunk` vs variant pipelines**: `--no-async-chunk` only
+> flips the deploy-level `async_chunk:` bool. When a model ships a topology
+> variant whose *processor functions* or *stage wiring* differ from the
+> default (e.g. `qwen3_tts_no_async_chunk` runs a sync codec processor on
+> stage 1 and drops the `SharedMemoryConnector`), use `--deploy-config` with
+> the dedicated overlay YAML — the overlay's top-level `pipeline:` field
+> tells the loader which pipeline registration to resolve. For models like
+> `qwen3_omni_moe` and `qwen2_5_omni` that don't have a separate variant
+> pipeline, the `--no-async-chunk` bool flip alone is enough.
 
 > ⚠️ **For multi-stage models that share GPUs (qwen3_omni_moe by default
 > shares cuda:1 between stages 1 and 2), avoid using global memory flags.**

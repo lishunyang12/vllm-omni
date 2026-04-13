@@ -122,13 +122,14 @@ vllm_omni/model_executor/stage_configs/
 | `models/qwen3_tts/qwen3_tts_code2wav.py` | Stage 1 - decoder |
 | `deploy/qwen3_tts.yaml` (new schema) | Deploy config (async_chunk enabled) — paired with `models/qwen3_tts/pipeline.py` for the frozen topology |
 
-> **Variant topologies (no separate yaml needed)**: Both the batch-mode and the
-> synchronous (no-async-chunk) variants are reachable from the bundled
-> `qwen3_tts.yaml` via CLI flags — `--stage-overrides` for the batch settings,
-> and `--no-async-chunk --pipeline qwen3_tts_no_async_chunk` to switch to the
-> synchronous pipeline registration. The `pipeline:` selector mechanism in
-> `vllm_omni/config/stage_config.py` is what makes a single deploy yaml able
-> to host multiple registered topologies for the same HuggingFace model.
+> **Variant topologies**: Batch-mode tuning is reachable from the bundled
+> `qwen3_tts.yaml` via `--stage-overrides`. The synchronous
+> (no-async-chunk) variant, which rewires stage 1 with a different
+> processor and drops the `SharedMemoryConnector`, ships as a dedicated
+> overlay at `deploy/qwen3_tts_no_async_chunk.yaml` that inherits from
+> `qwen3_tts.yaml` via `base_config:` and sets the top-level `pipeline:`
+> field to select the alternate registration. Launch it with
+> `--deploy-config vllm_omni/deploy/qwen3_tts_no_async_chunk.yaml`.
 | `stage_input_processors/qwen3_tts.py` | Stage transition processors |
 
 ## Step-by-Step Implementation

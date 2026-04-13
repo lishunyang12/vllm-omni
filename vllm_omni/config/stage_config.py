@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import re
 import warnings
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -58,7 +58,14 @@ class StagePipelineConfig:
     input_sources: tuple[int, ...] = ()
     final_output: bool = False
     final_output_type: str | None = None
-    is_comprehension: bool = False
+    # True for stages that own the tokenizer, receive the user-facing
+    # sampling params, and register ``generate`` as a supported task. Kept
+    # in sync with the legacy ``StageConfig.is_comprehension`` field
+    # downstream (see ``merge_pipeline_deploy``) — the legacy YAML-driven
+    # path reads that name directly from YAML and many consumers still
+    # reference it. A broader rename across all consumers is tracked as a
+    # follow-up.
+    owns_tokenizer: bool = False
     requires_multimodal_data: bool = False
     hf_config_name: str | None = None
     engine_output_type: str | None = None
@@ -190,9 +197,7 @@ _STAGE_NON_ENGINE_KEYS = frozenset(
 )
 
 # Fields on StageDeployConfig that are populated from engine_args dict
-_STAGE_DEPLOY_FIELDS = {
-    f.name: f for f in __import__("dataclasses").fields(StageDeployConfig) if f.name not in _STAGE_NON_ENGINE_KEYS
-}
+_STAGE_DEPLOY_FIELDS = {f.name: f for f in fields(StageDeployConfig) if f.name not in _STAGE_NON_ENGINE_KEYS}
 
 
 def _parse_stage_deploy(stage_data: dict[str, Any]) -> StageDeployConfig:
@@ -216,11 +221,21 @@ def _parse_stage_deploy(stage_data: dict[str, Any]) -> StageDeployConfig:
     return StageDeployConfig(**kwargs)
 
 
+_DEEP_MERGE_KEYS = frozenset({"default_sampling_params", "engine_extras", "engine_args"})
+
+
 def _deep_merge_stage(base: dict, overlay: dict) -> dict:
-    """Deep-merge overlay stage dict onto base, matching by stage_id."""
+    """Deep-merge overlay stage dict onto base, matching by stage_id.
+
+    Nested dicts in ``_DEEP_MERGE_KEYS`` (``default_sampling_params``,
+    ``engine_extras``, ``engine_args``) are merged key-by-key so that a
+    thin overlay — e.g. a multi-node deploy that only sets
+    ``engine_extras.devices`` — doesn't drop unrelated extras from the
+    base config. All other keys follow overlay-wins replacement.
+    """
     merged = dict(base)
     for k, v in overlay.items():
-        if k == "default_sampling_params" and k in merged and isinstance(v, dict):
+        if k in _DEEP_MERGE_KEYS and isinstance(v, dict) and isinstance(merged.get(k), dict):
             merged[k] = {**merged[k], **v}
         else:
             merged[k] = v
@@ -315,8 +330,8 @@ def _detect_platform() -> str | None:
             return "rocm"
         if "xpu" in name:
             return "xpu"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Platform auto-detect failed, falling back to CUDA: %s", e)
     return None
 
 
@@ -440,7 +455,7 @@ def merge_pipeline_deploy(
             worker_type=worker_type,
             scheduler_cls=scheduler_cls,
             hf_config_name=ps.hf_config_name,
-            is_comprehension=ps.is_comprehension,
+            is_comprehension=ps.owns_tokenizer,
             yaml_engine_args=yaml_engine_args,
             yaml_runtime=yaml_runtime,
             yaml_extras=yaml_extras,
@@ -743,15 +758,10 @@ class StageConfigFactory:
         if cli_async_chunk is not None and (cli_explicit_keys is None or "async_chunk" in cli_explicit_keys):
             deploy_cfg.async_chunk = bool(cli_async_chunk)
 
-        cli_pipeline = cli_overrides.get("pipeline")
-        if cli_pipeline is not None and (cli_explicit_keys is None or "pipeline" in cli_explicit_keys):
-            deploy_cfg.pipeline = str(cli_pipeline)
-
         # Resolve which pipeline registration to use. The deploy YAML's
         # explicit ``pipeline:`` field (if set) wins over the auto-detected
-        # model_type so variant topologies can be selected without renaming
-        # the model. The CLI ``--pipeline`` flag above lets users override
-        # the YAML's choice as well.
+        # model_type so variant topologies can be selected by pointing
+        # ``--deploy-config`` at a YAML that sets ``pipeline:``.
         pipeline_key = deploy_cfg.pipeline or model_type
         if pipeline_key not in _PIPELINE_REGISTRY:
             raise KeyError(
@@ -1038,6 +1048,13 @@ class StageConfigFactory:
 
     # Keys that should never be forwarded as engine overrides (internal /
     # orchestrator-only knobs, complex objects, etc.).
+    #
+    # NOTE: ``tokenizer`` is intentionally *not* listed — users passing
+    # ``--tokenizer`` expect it to reach every stage's engine args.
+    # Server/uvicorn keys (host, port, ssl_*, api_key, uds, etc.) enter via
+    # ``vars(args)`` in the OpenAI serve path; they're filtered in
+    # :meth:`_merge_cli_overrides` below via an allowlist derived from the
+    # engine arg classes, not by listing them here.
     _INTERNAL_KEYS: set[str] = {
         "model",
         "stage_configs_path",
@@ -1049,18 +1066,59 @@ class StageConfigFactory:
         "ray_address",
         "batch_timeout",
         "log_stats",
-        "tokenizer",
         "parallel_config",
         # ``async_chunk`` is a pipeline-wide DeployConfig field, applied at
         # the deploy level by ``_create_from_registry`` and re-injected into
         # every stage by ``merge_pipeline_deploy``. Don't forward it again as
         # a per-stage CLI override.
         "async_chunk",
-        # ``pipeline`` selects which entry in the pipeline registry to load
-        # (variant topology). It's consumed before stage merging happens and
-        # has no meaning as a per-stage engine arg.
-        "pipeline",
     }
+
+    # Server/uvicorn/OpenAI-API kwargs that leak into engine kwargs via
+    # ``vars(args)`` in the serve path. They must not flow into
+    # ``AsyncOmniEngineArgs`` (which would raise unexpected-keyword errors).
+    _SERVER_ONLY_KEYS: frozenset[str] = frozenset(
+        {
+            "host",
+            "port",
+            "uds",
+            "uvicorn_log_level",
+            "allow_credentials",
+            "allowed_origins",
+            "allowed_methods",
+            "allowed_headers",
+            "api_key",
+            "lora_modules",
+            "prompt_adapters",
+            "chat_template",
+            "chat_template_content_format",
+            "response_role",
+            "ssl_keyfile",
+            "ssl_certfile",
+            "ssl_ca_certs",
+            "ssl_cert_reqs",
+            "root_path",
+            "middleware",
+            "return_tokens_as_token_ids",
+            "disable_frontend_multiprocessing",
+            "enable_request_id_headers",
+            "enable_auto_tool_choice",
+            "tool_call_parser",
+            "tool_parser_plugin",
+            "max_log_len",
+            "disable_fastapi_docs",
+            "enable_prompt_tokens_details",
+            "enable_server_load_tracking",
+            "config_format",
+            "served_model_name",
+            "disable_log_requests",
+            "disable_log_stats",
+            "max_parallel_loading_workers",
+            # New in this PR: orchestrator-only
+            "deploy_config",
+            "stage_overrides",
+        }
+    )
 
     @classmethod
     def _merge_cli_overrides(
@@ -1087,10 +1145,11 @@ class StageConfigFactory:
         """
         result: dict[str, Any] = {}
 
-        # Apply global overrides – any key not in the internal blocklist
-        # is forwarded so that engine-registered params work out of the box.
+        # Apply global overrides – any key not in the internal blocklist or
+        # server-only set is forwarded so engine-registered params work out
+        # of the box without manually enumerating each flag.
         for key, value in cli_overrides.items():
-            if key in cls._INTERNAL_KEYS:
+            if key in cls._INTERNAL_KEYS or key in cls._SERVER_ONLY_KEYS:
                 continue
             if re.match(r"stage_\d+_", key):
                 # Per-stage keys handled below
@@ -1103,7 +1162,7 @@ class StageConfigFactory:
         for key, value in cli_overrides.items():
             if key.startswith(stage_prefix) and value is not None:
                 param_name = key[len(stage_prefix) :]
-                if param_name in cls._INTERNAL_KEYS:
+                if param_name in cls._INTERNAL_KEYS or param_name in cls._SERVER_ONLY_KEYS:
                     continue
                 result[param_name] = value
 

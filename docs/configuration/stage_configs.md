@@ -5,6 +5,61 @@ In vLLM-Omni, the target model is separated into multiple stages, which are proc
 !!! note
     Default deploy config YAMLs (for example, `vllm_omni/deploy/qwen2_5_omni.yaml`, `vllm_omni/deploy/qwen3_omni_moe.yaml`, and `vllm_omni/deploy/qwen3_tts.yaml`) are bundled and loaded automatically when neither `--stage-configs-path` nor `--deploy-config` is provided — the model registry resolves the right pipeline + deploy YAML by `model_type`. The bundled defaults have been verified on 1xH100 for Qwen2.5-Omni and 2xH100 for Qwen3-Omni. Models that have not yet migrated to the new schema continue to use the legacy `vllm_omni/model_executor/stage_configs/<model>.yaml` files via `--stage-configs-path`.
 
+## New deploy schema reference
+
+The new deploy schema lives under `vllm_omni/deploy/` and is paired with a frozen `PipelineConfig` registered by the model's `pipeline.py`. Each deploy YAML has these top-level fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `base_config` | str (path) | Optional. Resolve an overlay against another deploy YAML (relative to the overlay's directory). ``stages:`` and ``platforms:`` are deep-merged by stage_id; scalar top-level fields follow overlay-wins. |
+| `async_chunk` | bool | Pipeline-wide: enable chunked async streaming between stages. Defaults to ``True`` in the loader — pin to ``false`` if your pipeline runs end-to-end. |
+| `pipeline` | str | Optional. Pipeline registry key. Overrides the auto-detected ``model_type`` so a variant topology (e.g. ``qwen3_tts_no_async_chunk``) can be selected from an overlay YAML. |
+| `connectors` | dict | Named connector specs (``{name, extra}``). Referenced by each stage's ``input_connectors`` / ``output_connectors``. |
+| `edges` | list | Optional explicit edge list for the KV transfer graph. Auto-derived from stage inputs if omitted. |
+| `stages` | list | Per-stage engine args + wiring (see below). |
+| `platforms` | dict | Optional. Keyed by ``npu``/``rocm``/``xpu``, each contains a ``stages:`` list with per-platform overrides applied on top of the CUDA defaults. |
+
+Each entry under `stages:` accepts any `StageDeployConfig` field directly (no nested `engine_args:`). Unknown keys fall through to `engine_extras:` and are forwarded to the engine:
+
+| Stage field | Default | Description |
+|-------------|---------|-------------|
+| `stage_id` | required | Stage identity; matched against `PipelineConfig.stages[*].stage_id`. |
+| `max_num_seqs` | `64` | Max concurrent sequences per stage. |
+| `gpu_memory_utilization` | `0.9` | Per-stage memory budget. |
+| `tensor_parallel_size` | `1` | TP degree for this stage. |
+| `enforce_eager` | `false` | Disable CUDA graphs. |
+| `enable_prefix_caching` | `false` | Prefix cache toggle. |
+| `enable_chunked_prefill` | `None` | Chunked prefill toggle. |
+| `max_num_batched_tokens` | `32768` | Prefill budget. |
+| `max_model_len` | `None` | Per-stage context (auto-sets `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1` when larger than HF default). |
+| `distributed_executor_backend` | `"mp"` | Executor backend. |
+| `async_scheduling` | `None` | Per-stage async scheduling toggle. |
+| `quantization` / `dtype` | `None` | Quant method / model dtype. |
+| `data_parallel_size` / `pipeline_parallel_size` | `1` | Parallelism dimensions. |
+| `devices` | `"0"` | `CUDA_VISIBLE_DEVICES`-style device list. |
+| `output_connectors` / `input_connectors` | `None` | Dict keyed by `to_stage_<n>` / `from_stage_<n>`, values are names registered under top-level `connectors:`. |
+| `default_sampling_params` | `None` | Baseline sampling params. Deep-merged with pipeline ``sampling_constraints`` (pipeline wins). |
+| `engine_extras` | `{}` | Catch-all for keys not listed above; deep-merged across overlays. |
+
+### CLI flags introduced in this refactor
+
+| Flag | Description |
+|------|-------------|
+| `--deploy-config PATH` | Load a new-schema deploy YAML. Takes precedence over `--stage-configs-path`. |
+| `--stage-overrides JSON` | Per-stage JSON overrides, e.g. `'{"0":{"gpu_memory_utilization":0.5}}'`. Per-stage values always win over global flags. |
+| `--async-chunk` / `--no-async-chunk` | Flip the deploy YAML's `async_chunk:` bool. Unset (default) leaves the YAML value in force. |
+| `--stage-configs-path` | **Deprecated.** Accepts both legacy `stage_args` YAMLs and new-schema deploy YAMLs (auto-detected). Users pointing at deleted paths under `vllm_omni/model_executor/stage_configs/` / `tests/e2e/stage_configs/` will see a migration error — switch to `--deploy-config` with `vllm_omni/deploy/<model>.yaml` (or `vllm_omni/deploy/ci/<model>.yaml` for CI). |
+
+### Precedence
+
+From highest to lowest:
+
+1. Per-stage flags (`--stage-overrides` JSON, `--stage-<id>-<key>` if registered)
+2. Explicit global CLI flags (`--gpu-memory-utilization 0.85`, etc.)
+3. Platform section (`platforms.npu.stages`, etc.) on top of the base `stages:`
+4. Overlay YAML (via `base_config:`) on top of the base YAML
+5. Parser defaults
+
 Therefore, as a core part of vLLM-Omni, the stage configs for a model have several main functions:
 
 - Claim partition of stages and their corresponding class implementation in `model_executor/models`.

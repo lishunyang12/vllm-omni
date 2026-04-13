@@ -759,7 +759,7 @@ class TestQwen3OmniPipeline:
         s = _PIPELINE_REGISTRY["qwen3_omni_moe"].get_stage(0)
         assert s.model_stage == "thinker"
         assert s.execution_type == StageExecutionType.LLM_AR
-        assert s.is_comprehension is True
+        assert s.owns_tokenizer is True
         assert s.engine_output_type == "latent"
         assert s.sampling_constraints["detokenize"] is True
 
@@ -797,7 +797,7 @@ class TestQwen2_5OmniPipeline:
         s = _PIPELINE_REGISTRY["qwen2_5_omni"].get_stage(0)
         assert s.model_stage == "thinker"
         assert s.execution_type == StageExecutionType.LLM_AR
-        assert s.is_comprehension is True
+        assert s.owns_tokenizer is True
         assert s.engine_output_type == "latent"
         assert s.requires_multimodal_data is True
 
@@ -834,7 +834,7 @@ class TestQwen3TTSPipeline:
         s = _PIPELINE_REGISTRY["qwen3_tts"].get_stage(0)
         assert s.model_stage == "qwen3_tts"
         assert s.execution_type == StageExecutionType.LLM_AR
-        assert s.is_comprehension is True
+        assert s.owns_tokenizer is True
         assert s.engine_output_type == "latent"
         assert s.sampling_constraints["stop_token_ids"] == [2150]
         # Stage 0 inherits the pipeline-level model_arch
@@ -1161,30 +1161,28 @@ class TestCLIExplicitPrecedence:
         for stage in stages:
             assert stage.runtime_overrides.get("enable_prefix_caching") is True
 
-    def test_explicit_pipeline_override_selects_variant(self):
-        """``--pipeline qwen3_tts_no_async_chunk`` switches the pipeline
-        registration that ``_create_from_registry`` resolves, even when the
-        deploy YAML doesn't set the ``pipeline:`` field. Verifies the new
-        CLI flag mirrors the deploy-yaml ``pipeline:`` selector and that
-        ``pipeline`` does not leak into per-stage ``runtime_overrides`` (it's
-        in ``_INTERNAL_KEYS``)."""
+    def test_variant_deploy_selects_variant_pipeline(self):
+        """A deploy YAML whose top-level ``pipeline:`` field names a variant
+        registration (e.g. ``qwen3_tts_no_async_chunk``) makes
+        ``_create_from_registry`` resolve the variant instead of the default
+        for the same model_type."""
         import vllm_omni.model_executor.models.qwen3_tts.pipeline  # noqa: F401
+
+        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_tts_no_async_chunk.yaml"
+        if not deploy_path.exists():
+            pytest.skip("Variant deploy yaml not found")
 
         stages = StageConfigFactory._create_from_registry(
             "qwen3_tts",
-            cli_overrides={"pipeline": "qwen3_tts_no_async_chunk"},
-            cli_explicit_keys={"pipeline"},
+            cli_overrides={},
+            cli_explicit_keys=set(),
+            deploy_config_path=str(deploy_path),
         )
         # The variant pipeline has 2 stages, same as the default qwen3_tts.
         assert len(stages) == 2
         # The variant uses Qwen3TTSCode2Wav for stage 1 with a sync input
         # processor — verify by checking model_arch on the merged stages.
         assert stages[1].yaml_engine_args.get("model_arch") == "Qwen3TTSCode2Wav"
-        # ``pipeline`` must not leak into runtime_overrides (it's an internal
-        # key). If it did, _merge_cli_overrides would forward it as an engine
-        # arg, which vLLM would reject.
-        for stage in stages:
-            assert "pipeline" not in stage.runtime_overrides
 
 
 class TestSamplingConstraintsPrecedence:

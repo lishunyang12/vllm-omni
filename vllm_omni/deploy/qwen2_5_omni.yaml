@@ -10,6 +10,11 @@
 # autotune skips that wasted dummy forward; flashinfer is never invoked
 # in this stage so there is nothing to autotune.
 
+# Qwen2.5-Omni runs end-to-end (no chunk streaming between stages). The
+# loader defaults ``async_chunk`` to True, so pin it to False explicitly
+# to match the legacy ``stage_configs/qwen2_5_omni.yaml`` behavior.
+async_chunk: false
+
 stages:
   - stage_id: 0
     max_num_seqs: 1
