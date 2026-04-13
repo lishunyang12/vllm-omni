@@ -1,2 +1,0 @@
-# DFX performance testing deploy.
-base_config: ../../../../vllm_omni/deploy/qwen3_omni_moe.yaml
