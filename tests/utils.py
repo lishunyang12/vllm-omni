@@ -181,6 +181,34 @@ _CI_OVERLAYS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    # Single-stage thinker-only topology for the abort test. Selects the
+    # qwen2_5_omni_thinker_only pipeline registration; no base_config (the
+    # single-stage shape is intentionally self-contained).
+    "qwen2_5_omni_thinker_only": {
+        "pipeline": "qwen2_5_omni_thinker_only",
+        "stages": [
+            {
+                "stage_id": 0,
+                "max_num_seqs": 1,
+                "gpu_memory_utilization": 0.9,
+                "enforce_eager": True,
+                "max_num_batched_tokens": 16384,
+                "max_model_len": 16384,
+                "skip_mm_profiling": True,
+                "mm_processor_cache_gb": 0,
+                "load_format": "dummy",
+                "devices": "0",
+                "default_sampling_params": {
+                    "temperature": 0.0,
+                    "top_p": 1.0,
+                    "top_k": -1,
+                    "max_tokens": 128,
+                    "seed": 42,
+                    "repetition_penalty": 1.1,
+                },
+            },
+        ],
+    },
 }
 
 
