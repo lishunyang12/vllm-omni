@@ -211,10 +211,20 @@ class LoraLoaderMixin:
                 lora_loaded_keys.add(lora_b_key)
 
         for name, params in module.named_parameters(prefix):
-            if not name.endswith(".weight"):
+            if name.endswith(".weight"):
+                base_key = name[: -len(".weight")]
+            elif name.endswith(".bias"):
+                base_key = name[: -len(".bias")]
+                diff_bias_key = f"{base_key}.diff_b" if name not in state_dict else name
+                if diff_bias_key not in state_dict:
+                    continue
+                bias = state_dict[diff_bias_key]
+                params.add_(bias)
+                lora_key_loaded_count += 1
+                continue
+            else:
                 continue
 
-            base_key = name[: -len(".weight")]
             if base_key not in lora_deltas:
                 continue
 
