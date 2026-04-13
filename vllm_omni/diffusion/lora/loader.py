@@ -286,7 +286,7 @@ class LoraLoaderMixin:
 
         num_unloaded_keys = 0
         for k in lora_unloaded_keys:
-            if k not in lora_unloaded_keys:
+            if k not in state_dict:
                 logger.warning(f"Missing unloading lora key: {k}")
             else:
                 num_unloaded_keys += 1
@@ -330,13 +330,15 @@ class QwenImageLoraLoaderMixin(LoraLoaderMixin):
         if adapter_name not in self.lora_loaded:
             return
 
+        state_dict = self.lora_loaded[adapter_name]
+
         transformer = get_transformer_from_pipeline(self)
-        self.unload_module_lora(transformer, prefix=self.transformer_name)
+        self.unload_module_lora(state_dict, transformer, prefix=self.transformer_name)
 
         del self.lora_loaded[adapter_name]
 
 
-class LTX2LoraLoaderMinxin(LoraLoaderMixin):
+class LTX2LoraLoaderMixin(LoraLoaderMixin):
     connectors_name = "connectors"
     lora_loaded = dict()
 
