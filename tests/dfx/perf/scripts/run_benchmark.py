@@ -26,8 +26,8 @@ BENCHMARK_CONFIGS = load_configs(CONFIG_FILE_PATH)
 STAGE_INIT_TIMEOUT = 600
 
 
-STAGE_CONFIGS_DIR = Path(__file__).parent.parent / "stage_configs"
-test_params = create_unique_server_params(BENCHMARK_CONFIGS, STAGE_CONFIGS_DIR)
+DEPLOY_CONFIGS_DIR = Path(__file__).parent.parent / "deploy"
+test_params = create_unique_server_params(BENCHMARK_CONFIGS, DEPLOY_CONFIGS_DIR)
 server_to_benchmark_mapping = create_test_parameter_mapping(BENCHMARK_CONFIGS)
 
 _omni_server_lock = threading.Lock()
@@ -46,7 +46,7 @@ def omni_server(request):
 
         server_args = ["--stage-init-timeout", str(STAGE_INIT_TIMEOUT), "--init-timeout", "900"]
         if stage_config_path:
-            server_args = ["--stage-configs-path", stage_config_path] + server_args
+            server_args = ["--deploy-config", stage_config_path] + server_args
         with OmniServer(model, server_args) as server:
             server.test_name = test_name
             print("OmniServer started successfully")

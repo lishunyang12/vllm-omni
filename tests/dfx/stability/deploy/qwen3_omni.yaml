@@ -1,0 +1,6 @@
+# DFX stability testing deploy.
+base_config: ../../../../vllm_omni/deploy/qwen3_omni_moe.yaml
+
+stages:
+  - stage_id: 2
+    max_num_batched_tokens: 1000000

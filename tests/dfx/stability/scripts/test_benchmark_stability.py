@@ -35,7 +35,7 @@ from tests.dfx.conftest import (
 from tests.dfx.perf.scripts.run_benchmark import run_benchmark
 
 STABILITY_DIR = Path(__file__).resolve().parent.parent
-STAGE_CONFIGS_DIR = STABILITY_DIR / "stage_configs"
+DEPLOY_CONFIGS_DIR = STABILITY_DIR / "deploy"
 CONFIG_FILE_PATH = str(STABILITY_DIR / "tests" / "test.json")
 DEFAULT_NUM_PROMPTS_PER_BATCH = 20
 
@@ -45,7 +45,7 @@ try:
 except FileNotFoundError:
     BENCHMARK_CONFIGS = []
 
-test_params = create_unique_server_params(BENCHMARK_CONFIGS, STAGE_CONFIGS_DIR) if BENCHMARK_CONFIGS else []
+test_params = create_unique_server_params(BENCHMARK_CONFIGS, DEPLOY_CONFIGS_DIR) if BENCHMARK_CONFIGS else []
 server_to_benchmark_mapping = create_test_parameter_mapping(BENCHMARK_CONFIGS) if BENCHMARK_CONFIGS else {}
 
 _omni_server_lock = threading.Lock()
@@ -221,7 +221,7 @@ def omni_server(request):
 
         print(f"Starting OmniServer with test: {test_name}, model: {model}")
 
-        with OmniServer(model, ["--stage-configs-path", stage_config_path, "--stage-init-timeout", "120"]) as server:
+        with OmniServer(model, ["--deploy-config", stage_config_path, "--stage-init-timeout", "120"]) as server:
             server.test_name = test_name
             print("OmniServer started successfully")
             yield server
