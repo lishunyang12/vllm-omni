@@ -1,8 +1,9 @@
 import copy
 import pprint
+from collections.abc import Callable
 from dataclasses import dataclass, field, fields
 from functools import wraps
-from typing import TYPE_CHECKING, Any, TypeAlias, TypedDict, TypeVar
+from typing import Any, TypeAlias, TypedDict, TypeVar
 
 from vllm.inputs import PromptType
 from vllm.sampling_params import SamplingParams
@@ -25,15 +26,22 @@ _T = TypeVar("_T")
 def track_init_args(cls: type[_T]) -> type[_T]:
     """Decorator that wraps __init__ to track which kwargs were explicitly
     passed by the caller, so that merge_with_def_params can distinguish
-    'caller set this to 0' from 'caller never touched this'."""
-    original_init = cls.__init__
+    'caller set this to 0' from 'caller never touched this'.
+
+    NOTE: This decorator preserves the original __init__ signature for
+    type checkers while adding runtime tracking of explicitly-passed kwargs.
+    """
+    original_init: Callable[..., None] = cls.__init__
 
     @wraps(original_init)
-    def new_init(self, **kwargs):
-        self._init_kwargs = set(kwargs.keys())
-        original_init(self, **kwargs)
+    def new_init(self: _T, *args: Any, **kwargs: Any) -> None:
+        # Call the original init first (which sets _init_kwargs to empty set)
+        original_init(self, *args, **kwargs)
+        # Then track which keyword arguments were explicitly passed
+        self._init_kwargs: set[str] = set(kwargs.keys())  # type: ignore[attr-defined]
 
-    cls.__init__ = new_init
+    # Replace __init__ - type: ignore needed due to limitations in typing dynamic method replacement
+    cls.__init__ = new_init  # type: ignore[method-assign]
     return cls
 
 
@@ -203,8 +211,8 @@ class OmniDiffusionSamplingParams:
     fields the caller never touched.
     """
 
-    if TYPE_CHECKING:
-        _init_kwargs: set[str]
+    # Set by the @track_init_args decorator at runtime; excluded from __init__
+    _init_kwargs: set[str] = field(init=False, default_factory=set)
 
     # Additional text-related parameters
     max_sequence_length: int | None = None
@@ -272,7 +280,7 @@ class OmniDiffusionSamplingParams:
     eta: float = 0.0
     sigmas: list[float] | None = None
 
-    true_cfg_scale: float | None = None
+    true_cfg_scale: float | None = None  # qwen-image specific for now
 
     n_tokens: int | None = None
     extra_step_kwargs: dict[str, Any] = field(default_factory=dict)
