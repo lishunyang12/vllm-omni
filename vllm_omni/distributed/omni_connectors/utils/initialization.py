@@ -201,11 +201,8 @@ def load_omni_transfer_config(
     if config_dict is None:
         return None
 
-    # Back-compat shim: the new deploy schema puts connectors at the top
-    # level and stages under ``stages:`` (not under ``runtime.connectors``
-    # + ``stage_args`` like the legacy stage-configs format). Normalize
-    # new-schema dicts into the legacy shape the parser below consumes so
-    # that both formats work through the same code path.
+    # Normalize new-schema (top-level ``connectors`` + ``stages``) into the
+    # legacy ``runtime.connectors`` + ``stage_args`` shape the parser reads.
     if "stages" in config_dict and "stage_args" not in config_dict:
         normalized: dict[str, Any] = dict(config_dict)
         runtime = dict(normalized.get("runtime") or {})

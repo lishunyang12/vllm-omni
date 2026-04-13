@@ -5,21 +5,9 @@
 Stage 0: Talker   — text → 8-layer RVQ codec codes
 Stage 1: Code2Wav — RVQ codes → audio waveform
 
-The talker uses ``Qwen3TTSTalkerForConditionalGeneration`` and the
-code2wav stage uses ``Qwen3TTSCode2Wav``. Both are AR-style stages.
-
-A single pipeline registration handles both the async-chunk streaming
-topology and the synchronous end-to-end topology; which processor runs
-is dispatched at merge time from ``deploy.async_chunk``:
-
-* ``async_chunk=True``:  Stage 0's ``talker2code2wav_async_chunk``
-  processor streams per-chunk codec windows to Stage 1 via the
-  ``SharedMemoryConnector`` wired in ``deploy/qwen3_tts.yaml``.
-* ``async_chunk=False``: Stage 1's ``talker2code2wav`` processor runs
-  on the full codec output at batch end; no shm connector is needed.
-
-To run the synchronous variant, set ``async_chunk: false`` in your deploy
-yaml (or pass ``--no-async-chunk``).
+Chunked-streaming vs end-to-end mode is dispatched from
+``deploy.async_chunk`` in ``merge_pipeline_deploy`` — no separate
+pipeline registration is needed for the sync variant.
 """
 
 from vllm_omni.config.stage_config import (
@@ -43,8 +31,6 @@ QWEN3_TTS_PIPELINE = PipelineConfig(
             input_sources=(),
             owns_tokenizer=True,
             engine_output_type="latent",
-            # Per-chunk codec streaming processor — fires only when
-            # deploy.async_chunk=True.
             async_chunk_process_next_stage_input_func=(f"{_PROC}.talker2code2wav_async_chunk"),
             sampling_constraints={
                 "detokenize": False,
@@ -59,17 +45,10 @@ QWEN3_TTS_PIPELINE = PipelineConfig(
             final_output=True,
             final_output_type="audio",
             engine_output_type="audio",
-            # Code2Wav has its own model class, distinct from the talker.
             model_arch="Qwen3TTSCode2Wav",
-            # Batch-end codec processor — fires only when
-            # deploy.async_chunk=False.
             sync_process_input_func=f"{_PROC}.talker2code2wav",
             sampling_constraints={"detokenize": True},
-            extras={
-                # tts_args block — passed through to the code2wav stage
-                # at runtime; not part of StageDeployConfig.
-                "tts_args": {"max_instructions_length": 500},
-            },
+            extras={"tts_args": {"max_instructions_length": 500}},
         ),
     ),
 )

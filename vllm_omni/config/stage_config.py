@@ -58,37 +58,15 @@ class StagePipelineConfig:
     input_sources: tuple[int, ...] = ()
     final_output: bool = False
     final_output_type: str | None = None
-    # True for stages that own the tokenizer, receive the user-facing
-    # sampling params, and register ``generate`` as a supported task. Kept
-    # in sync with the legacy ``StageConfig.is_comprehension`` field
-    # downstream (see ``merge_pipeline_deploy``) — the legacy YAML-driven
-    # path reads that name directly from YAML and many consumers still
-    # reference it. A broader rename across all consumers is tracked as a
-    # follow-up.
     owns_tokenizer: bool = False
     requires_multimodal_data: bool = False
     hf_config_name: str | None = None
     engine_output_type: str | None = None
-    # Optional per-stage architecture override. When ``None`` (the common
-    # case), the stage uses the pipeline-level ``model_arch``. Used by
-    # multi-arch pipelines like Qwen3-TTS where the talker and code2wav
-    # stages have different model classes.
     model_arch: str | None = None
     sampling_constraints: dict[str, Any] = field(default_factory=dict)
     custom_process_input_func: str | None = None
     custom_process_next_stage_input_func: str | None = None
-    # Mode-dispatched processors. When a pipeline needs different processor
-    # behavior for chunked streaming vs end-to-end generation (e.g. qwen3_tts
-    # code2wav), declare the alternates here instead of registering a second
-    # pipeline. ``merge_pipeline_deploy`` selects one based on
-    # ``deploy.async_chunk``:
-    #
-    # * ``async_chunk_process_next_stage_input_func``: on the sender stage;
-    #   invoked per chunk when ``async_chunk=True``. Falls back to
-    #   ``custom_process_next_stage_input_func`` when unset.
-    # * ``sync_process_input_func``: on the receiver stage; invoked at batch
-    #   end when ``async_chunk=False``. Falls back to
-    #   ``custom_process_input_func`` when unset.
+    # Alternates picked by ``merge_pipeline_deploy`` based on ``deploy.async_chunk``.
     async_chunk_process_next_stage_input_func: str | None = None
     sync_process_input_func: str | None = None
     prompt_expand_func: str | None = None
@@ -232,14 +210,7 @@ _DEEP_MERGE_KEYS = frozenset({"default_sampling_params", "engine_extras", "engin
 
 
 def _deep_merge_stage(base: dict, overlay: dict) -> dict:
-    """Deep-merge overlay stage dict onto base, matching by stage_id.
-
-    Nested dicts in ``_DEEP_MERGE_KEYS`` (``default_sampling_params``,
-    ``engine_extras``, ``engine_args``) are merged key-by-key so that a
-    thin overlay — e.g. a multi-node deploy that only sets
-    ``engine_extras.devices`` — doesn't drop unrelated extras from the
-    base config. All other keys follow overlay-wins replacement.
-    """
+    """Deep-merge ``_DEEP_MERGE_KEYS`` so thin overlays don't drop base keys."""
     merged = dict(base)
     for k, v in overlay.items():
         if k in _DEEP_MERGE_KEYS and isinstance(v, dict) and isinstance(merged.get(k), dict):
@@ -410,16 +381,10 @@ def merge_pipeline_deploy(
         scheduler_cls = _EXECUTION_TYPE_TO_SCHEDULER.get(ps.execution_type)
 
         yaml_engine_args: dict[str, Any] = {}
-        # Per-stage model_arch override (e.g. Qwen3-TTS code2wav stage)
-        # falls back to the pipeline-level model_arch when not set.
         yaml_engine_args["model_arch"] = ps.model_arch or pipeline.model_arch
         if ps.engine_output_type:
             yaml_engine_args["engine_output_type"] = ps.engine_output_type
 
-        # Mode dispatch for chunked-streaming vs end-to-end processors.
-        # When the pipeline declares mode-specific alternates, pick the one
-        # that matches ``deploy.async_chunk``; otherwise fall back to the
-        # unconditional processor fields.
         next_stage_proc = ps.custom_process_next_stage_input_func
         input_proc = ps.custom_process_input_func
         if deploy.async_chunk and ps.async_chunk_process_next_stage_input_func:
@@ -761,9 +726,6 @@ class StageConfigFactory:
         else:
             deploy_cfg = load_deploy_config(deploy_path)
 
-        # Top-level CLI overrides for fields that live on DeployConfig itself
-        # (not on per-stage StageDeployConfig). The user-typed value wins over
-        # the YAML's value; an unset (default-None) flag leaves the YAML alone.
         cli_async_chunk = cli_overrides.get("async_chunk")
         if cli_async_chunk is not None and (cli_explicit_keys is None or "async_chunk" in cli_explicit_keys):
             deploy_cfg.async_chunk = bool(cli_async_chunk)
@@ -778,9 +740,8 @@ class StageConfigFactory:
 
         stages = merge_pipeline_deploy(pipeline_cfg, deploy_cfg, cli_overrides)
 
-        # Split CLI overrides by explicitness. Per-stage `stage_<id>_*` keys
-        # are always treated as explicit (the user typed them, either as a
-        # flag or via --stage-overrides JSON).
+        # Precedence: explicit CLI > yaml > parser-default CLI.
+        # Per-stage (``stage_N_*``) keys are always treated as explicit.
         explicit_overrides: dict[str, Any] = {}
         default_overrides: dict[str, Any] = {}
         for key, value in cli_overrides.items():
@@ -794,8 +755,6 @@ class StageConfigFactory:
                 default_overrides[key] = value
 
         for stage in stages:
-            # Default CLI values fill only fields YAML doesn't already set.
-            # Explicit CLI values override YAML on top of that.
             yaml_keys = set(stage.yaml_engine_args)
             fallback = {k: v for k, v in default_overrides.items() if k not in yaml_keys}
             merged = {**fallback, **explicit_overrides}
@@ -1050,15 +1009,7 @@ class StageConfigFactory:
 
         return None, None
 
-    # Keys that should never be forwarded as engine overrides (internal /
-    # orchestrator-only knobs, complex objects, etc.).
-    #
-    # NOTE: ``tokenizer`` is intentionally *not* listed — users passing
-    # ``--tokenizer`` expect it to reach every stage's engine args.
-    # Server/uvicorn keys (host, port, ssl_*, api_key, uds, etc.) enter via
-    # ``vars(args)`` in the OpenAI serve path; they're filtered in
-    # :meth:`_merge_cli_overrides` below via an allowlist derived from the
-    # engine arg classes, not by listing them here.
+    # Orchestrator-only kwargs that must not flow into per-stage engine args.
     _INTERNAL_KEYS: set[str] = {
         "model",
         "stage_configs_path",
@@ -1071,16 +1022,13 @@ class StageConfigFactory:
         "batch_timeout",
         "log_stats",
         "parallel_config",
-        # ``async_chunk`` is a pipeline-wide DeployConfig field, applied at
-        # the deploy level by ``_create_from_registry`` and re-injected into
-        # every stage by ``merge_pipeline_deploy``. Don't forward it again as
-        # a per-stage CLI override.
+        # Pipeline-wide; applied once in ``_create_from_registry``.
         "async_chunk",
     }
 
-    # Server/uvicorn/OpenAI-API kwargs that leak into engine kwargs via
-    # ``vars(args)`` in the serve path. They must not flow into
-    # ``AsyncOmniEngineArgs`` (which would raise unexpected-keyword errors).
+    # Server/uvicorn/OpenAI-API kwargs that reach this module via
+    # ``vars(args)`` in the serve path and would otherwise raise
+    # unexpected-keyword errors inside ``AsyncOmniEngineArgs``.
     _SERVER_ONLY_KEYS: frozenset[str] = frozenset(
         {
             "host",
@@ -1118,7 +1066,6 @@ class StageConfigFactory:
             "disable_log_requests",
             "disable_log_stats",
             "max_parallel_loading_workers",
-            # New in this PR: orchestrator-only
             "deploy_config",
             "stage_overrides",
         }
@@ -1130,38 +1077,17 @@ class StageConfigFactory:
         stage: StageConfig,
         cli_overrides: dict[str, Any],
     ) -> dict[str, Any]:
-        """Merge CLI overrides into stage runtime config.
-
-        All CLI arguments registered by engine config classes (e.g.
-        EngineArgs / OmniDiffusionConfig) are accepted as overrides
-        unless they appear in ``_INTERNAL_KEYS``.
-
-        Handles:
-        - Global overrides (apply to all stages)
-        - Per-stage overrides (--stage-N-* format, take precedence)
-
-        Args:
-            stage: The stage to merge overrides into.
-            cli_overrides: CLI arguments from VllmConfig/OmniDiffusionConfig.
-
-        Returns:
-            Dict of runtime overrides for this stage.
-        """
+        """Merge global and per-stage (``stage_N_*``) CLI overrides."""
         result: dict[str, Any] = {}
 
-        # Apply global overrides – any key not in the internal blocklist or
-        # server-only set is forwarded so engine-registered params work out
-        # of the box without manually enumerating each flag.
         for key, value in cli_overrides.items():
             if key in cls._INTERNAL_KEYS or key in cls._SERVER_ONLY_KEYS:
                 continue
             if re.match(r"stage_\d+_", key):
-                # Per-stage keys handled below
                 continue
             if value is not None:
                 result[key] = value
 
-        # Apply per-stage overrides (--stage-N-* format, take precedence)
         stage_prefix = f"stage_{stage.stage_id}_"
         for key, value in cli_overrides.items():
             if key.startswith(stage_prefix) and value is not None:

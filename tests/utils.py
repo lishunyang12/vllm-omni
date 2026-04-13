@@ -30,17 +30,11 @@ _DEPLOY_DIR = _REPO_ROOT / "vllm_omni" / "deploy"
 _CI_GENERATED_DIR = _REPO_ROOT / "tests" / ".ci_generated"
 
 
-# CI overlays live as Python dicts (not yaml files) so that IDE LSP features
-# — go-to-definition, find-references, hover type info — work when debugging
-# test failures. Each entry is merged on top of the production deploy yaml
-# via the same ``base_config:`` mechanism users author overlays with; the
-# only difference is the overlay itself is generated from this dict at test
-# setup time rather than being checked in as yaml.
+# CI overlays kept as Python dicts so IDE LSP works when debugging tests.
+# Materialized to ``tests/.ci_generated/<model>.yaml`` on demand and layered
+# on top of the production deploy via ``base_config:``.
 _CI_OVERLAYS: dict[str, dict[str, Any]] = {
     "qwen2_5_omni": {
-        # ``base_config`` is filled in with the absolute prod yaml path at
-        # materialization time — see ``_materialize_ci_overlay``. The literal
-        # here is just a placeholder the dumper overwrites.
         "base_config": "qwen2_5_omni.yaml",
         "stages": [
             {
@@ -191,51 +185,26 @@ _CI_OVERLAYS: dict[str, dict[str, Any]] = {
 
 
 def _materialize_ci_overlay(model_type: str) -> Path:
-    """Dump a Python CI overlay dict to a temporary YAML and return its path.
-
-    Keeps the overlay source-of-truth in Python (``_CI_OVERLAYS``) so IDE LSP
-    works for debugging, but still routes loading through the normal
-    ``base_config:`` mechanism so the production deploy path is exercised.
-    """
     import yaml
 
     if model_type not in _CI_OVERLAYS:
-        raise KeyError(
-            f"No CI overlay registered for model_type {model_type!r}. "
-            f"Add one to tests.utils._CI_OVERLAYS. "
-            f"Available: {sorted(_CI_OVERLAYS)}"
-        )
+        raise KeyError(f"No CI overlay registered for {model_type!r}. Available: {sorted(_CI_OVERLAYS)}")
 
     _CI_GENERATED_DIR.mkdir(parents=True, exist_ok=True)
     out = _CI_GENERATED_DIR / f"{model_type}.yaml"
 
-    # Make ``base_config`` absolute so the loader doesn't have to resolve it
-    # against the temp directory.
     overlay = {**_CI_OVERLAYS[model_type]}
     base = overlay.get("base_config")
     if base:
         overlay["base_config"] = str(_DEPLOY_DIR / base)
 
-    # Always rewrite so edits to _CI_OVERLAYS take effect on the next run
-    # without requiring a `git clean`.
     with open(out, "w", encoding="utf-8") as f:
         yaml.safe_dump(overlay, f, sort_keys=False)
     return out
 
 
 def get_deploy_config_path(rel_path: str) -> str:
-    """Resolve a deploy config path for tests.
-
-    Paths of the form ``ci/<model>.yaml`` are materialized on demand from the
-    Python overlay dict in ``_CI_OVERLAYS`` — the CI config source of truth
-    lives in this module, not in a checked-in yaml file (so IDE LSP works
-    for debugging). Other paths (the production deploy yamls) are resolved
-    relative to ``vllm_omni/deploy/``.
-
-    Args:
-        rel_path: Either ``"<model>.yaml"`` (prod) or ``"ci/<model>.yaml"``
-            (resolved from ``_CI_OVERLAYS``).
-    """
+    """Resolve a deploy yaml; ``ci/<model>.yaml`` materializes from ``_CI_OVERLAYS``."""
     if rel_path.startswith("ci/") and rel_path.endswith(".yaml"):
         model_type = rel_path[len("ci/") : -len(".yaml")]
         if model_type in _CI_OVERLAYS:

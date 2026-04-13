@@ -499,25 +499,14 @@ def load_and_resolve_stage_configs(
     Returns:
         Tuple of (config_path, stage_configs)
     """
-    # Auto-detect: if --stage-configs-path points to a new-format deploy YAML,
-    # treat it as --deploy-config.
     if stage_configs_path is not None and deploy_config_path is None:
         import yaml
 
         if not os.path.exists(stage_configs_path):
-            # Common case after the config refactor: users still reference
-            # deleted legacy paths like
-            # ``vllm_omni/model_executor/stage_configs/qwen3_omni_moe.yaml``
-            # or ``tests/e2e/stage_configs/qwen2_5_omni_ci.yaml``. Give a
-            # pointed error instead of a bare FileNotFoundError so the
-            # upgrade path is obvious.
             raise FileNotFoundError(
                 f"--stage-configs-path {stage_configs_path!r} does not exist. "
-                "The legacy per-platform `stage_configs/` YAMLs have been replaced by "
-                "the unified deploy schema under `vllm_omni/deploy/` (with platform "
-                "overrides in-place). Migrate by pointing `--deploy-config` at "
-                "`vllm_omni/deploy/<model>.yaml` (or, for CI, `vllm_omni/deploy/ci/<model>.yaml`). "
-                "See docs/configuration/stage_configs.md for the new schema."
+                "Legacy `stage_configs/` yamls were replaced by `vllm_omni/deploy/<model>.yaml`; "
+                "use --deploy-config. See docs/configuration/stage_configs.md."
             )
         with open(stage_configs_path, encoding="utf-8") as f:
             _peek = yaml.safe_load(f) or {}
@@ -526,9 +515,7 @@ def load_and_resolve_stage_configs(
             stage_configs_path = None
         else:
             logger.warning(
-                "`--stage-configs-path` is deprecated and will be removed in a future "
-                "release. Migrate `%s` to the new deploy schema and use `--deploy-config`. "
-                "See docs/configuration/stage_configs.md.",
+                "--stage-configs-path is deprecated; migrate %r and use --deploy-config.",
                 stage_configs_path,
             )
 
