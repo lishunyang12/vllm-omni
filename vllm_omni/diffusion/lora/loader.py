@@ -32,59 +32,71 @@ def get_converter_by_pipeline(pipeline):
     return lora_convert_mapping.get(pipeline.__class__.__name__, None)
 
 
-def _prepare_lora_deltas(lora_sd, module, lora_a_suffix="lora_A.weight", lora_b_suffix="lora_B.weight"):
-    lora_deltas = {}
-
-    # prepare stacked parameters mapping for later use
+def _prepare_lora_deltas(
+    lora_sd,
+    base_key: str,
+    param_to_weight_names: dict[str, list[str]],
+    lora_matched_keys: set[str],
+    is_bias: bool = False,
+    lora_a_suffix: str = "lora_A.weight",
+    lora_b_suffix: str = "lora_B.weight",
+    lora_bias_suffix: str = ".bias",
+):
     # stacked_params_mapping                       param_to_weight_names
     # [(".to_qkv", ".to_q.", "q")
     # (".to_qkv", ".to_k.", "k")  ========> {".to_qkv": [".to_q", ".to_k", ".to_v"]}
     # (".to_qkv", ".to_v.", "v")]
 
-    weight_to_param_name = {}
-    if hasattr(module, "stacked_params_mapping"):
-        weight_to_param_name = {weight_name: param_name for param_name, weight_name, _ in module.stacked_params_mapping}
-
     # stacked_sd is to store packed parameter deltas (format: [str, list[torch.Tensor]])
     # example: {".to_qkv": [delta_q, delta_k, delta_v]}
-    stacked_sd = defaultdict(list)
-    for key, param in lora_sd.items():
-        base_key = key[: -len(f".{lora_a_suffix}")]
-
-        is_stacked_param = False
-        for weight_name, param_name in weight_to_param_name.items():
-            if weight_name not in key:
-                continue
-            is_stacked_param = True
-            # handle lora_a_key and lora_b_key together
-            if key.endswith(lora_a_suffix):
-                a = param
-                b = lora_sd[f"{base_key}.{lora_b_suffix}"]
-                delta = torch.matmul(b, a)
-                stacked_base_key = key.replace(weight_name, param_name)[: -len(f".{lora_a_suffix}")]
-                stacked_sd[stacked_base_key].append(delta)
-            else:
-                # lora_b_key was already handled, skip
-                continue
-
-        if is_stacked_param:
-            # already handled, skip
+    stacked_deltas = []
+    is_stacked_param = False
+    for param_name, weight_names in param_to_weight_names.items():
+        if param_name not in base_key:
             continue
-
-        if key.endswith(lora_a_suffix):
-            a = param
-            b = lora_sd[f"{base_key}.{lora_b_suffix}"]
-            delta = torch.matmul(b, a)
-            lora_deltas[base_key] = delta
+        is_stacked_param = True
+        # handle lora_a_key and lora_b_key together
+        if is_bias:
+            for weight_name in weight_names:
+                lora_bias_key = f"{base_key.replace(param_name, weight_name)}.{lora_bias_suffix}"
+                if lora_bias_key not in lora_sd:
+                    return None
+                delta = lora_sd[lora_bias_key]
+                stacked_deltas.append(delta)
+                lora_matched_keys.add(lora_bias_key)
         else:
-            # same as above
-            continue
+            for weight_name in weight_names:
+                lora_a_key = f"{base_key.replace(param_name, weight_name)}.{lora_a_suffix}"
+                lora_b_key = lora_a_key.replace(lora_a_suffix, lora_b_suffix)
+                if lora_a_key not in lora_sd or lora_b_key not in lora_sd:
+                    return None
+                a = lora_sd[lora_a_key]
+                b = lora_sd[lora_b_key]
+                delta = torch.matmul(b, a)
+                stacked_deltas.append(delta)
+                lora_matched_keys.add(lora_a_key)
+                lora_matched_keys.add(lora_b_key)
+        continue
 
-    for stacked_base_key, delta_list in stacked_sd.items():
-        stacked_delta = torch.concat(delta_list)
-        lora_deltas[stacked_base_key] = stacked_delta
+    if is_stacked_param:
+        return torch.concat(stacked_deltas)
 
-    return lora_deltas
+    if is_bias:
+        lora_bias_key = f"{base_key}.{lora_bias_suffix}"
+        if lora_bias_key not in lora_sd:
+            return None
+        lora_matched_keys.add(lora_bias_key)
+        return lora_sd[lora_bias_key]
+
+    lora_a_key = f"{base_key}.{lora_a_suffix}"
+    lora_b_key = f"{base_key}.{lora_b_suffix}"
+    if lora_a_key not in lora_sd or lora_b_key not in lora_sd:
+        return None
+    a = lora_sd[lora_a_key]
+    b = lora_sd[lora_b_key]
+    lora_matched_keys.add(lora_a_key)
+    lora_matched_keys.add(lora_b_key)
+    return torch.matmul(b, a)
 
 
 def _load_lora_state_dict(
@@ -161,8 +173,7 @@ def _remap_state_dict_keys(sd, rules):
 
 class LoraLoaderMixin:
     transformer_name = "transformer"
-    lora_loaded = set()
-    lora_loaded_deltas = {}
+    lora_loaded = dict()
 
     @classmethod
     def load_lora_into_module(
@@ -172,98 +183,111 @@ class LoraLoaderMixin:
         prefix: str = "transformer",
         lora_a_suffix: str = "lora_A.weight",
         lora_b_suffix: str = "lora_B.weight",
+        lora_bias_suffix: str = "bias",
     ):
-        lora_deltas = _prepare_lora_deltas(state_dict, module, lora_a_suffix, lora_b_suffix)
         lora_loaded_keys = set()
-        lora_key_loaded_count = 0
+
+        # prepare stacked parameters mapping for later use
+        # stacked_params_mapping                       param_to_weight_names
+        # [(".to_qkv", ".to_q.", "q")
+        # (".to_qkv", ".to_k.", "k")  ========> {".to_qkv": [".to_q", ".to_k", ".to_v"]}
+        # (".to_qkv", ".to_v.", "v")]
+        param_to_weight_names = defaultdict(list)
+        if hasattr(module, "stacked_params_mapping"):
+            for param_name, weight_name, _ in module.stacked_params_mapping:
+                param_to_weight_names[param_name].append(weight_name)
+
+        for name, params in module.named_parameters(prefix):
+            is_bias = False
+            if name.endswith(".bias"):
+                base_key = name[: -len(".bias")]
+                is_bias = True
+            elif name.endswith(".weight"):
+                base_key = name[: -len(".weight")]
+            else:
+                continue
+
+            delta = _prepare_lora_deltas(
+                state_dict,
+                base_key,
+                param_to_weight_names,
+                lora_loaded_keys,
+                is_bias,
+                lora_a_suffix,
+                lora_b_suffix,
+                lora_bias_suffix,
+            )
+            if delta is None:
+                continue
+
+            delta = delta.to(device=params.device, dtype=params.dtype)
+            with torch.no_grad():
+                params.add_(delta)
+            del delta
+
+        num_loaded_keys = 0
+        for k in state_dict:
+            if k not in lora_loaded_keys:
+                logger.warning(f"Missing loading lora key: {k}")
+            else:
+                num_loaded_keys += 1
+
+        assert num_loaded_keys == len(lora_loaded_keys)
+
+        logger.info(f"{num_loaded_keys} lora keys loaded into {module.__class__.__name__}.")
+
+    @classmethod
+    def unload_module_lora(
+        cls,
+        state_dict,
+        module,
+        prefix: str = "transformer",
+        lora_a_suffix: str = "lora_A.weight",
+        lora_b_suffix: str = "lora_B.weight",
+        lora_bias_suffix: str = "bias",
+    ):
+        lora_unloaded_keys = set()
 
         param_to_weight_names = defaultdict(list)
         if hasattr(module, "stacked_params_mapping"):
             for param_name, weight_name, _ in module.stacked_params_mapping:
                 param_to_weight_names[param_name].append(weight_name)
 
-        def update_loaded_keys(base_key):
-            """
-            This function updates lora_loaded_keys. It must be called after the parameter
-            of base_key is merged into module.
-            """
-            lora_a_key = f"{base_key}.{lora_a_suffix}"
-            lora_b_key = f"{base_key}.{lora_b_suffix}"
-
-            is_stacked_param = False
-            for param_name, weight_names in param_to_weight_names.items():
-                if param_name not in base_key:
-                    continue
-                is_stacked_param = True
-                for weight_name in weight_names:
-                    lora_a_key = f"{base_key.replace(param_name, weight_name)}.{lora_a_suffix}"
-                    lora_b_key = f"{base_key.replace(param_name, weight_name)}.{lora_b_suffix}"
-                    for k in (lora_a_key, lora_b_key):
-                        if k in state_dict:
-                            lora_loaded_keys.add(k)
-                        else:
-                            logger.warning(f"Failed to index lora key {k}")
-                break
-
-            if not is_stacked_param:
-                # sanity check is no need, as lora_deltas already checked
-                lora_loaded_keys.add(lora_a_key)
-                lora_loaded_keys.add(lora_b_key)
-
-        for name, params in module.named_parameters(prefix):
-            if name.endswith(".weight"):
-                base_key = name[: -len(".weight")]
-            elif name.endswith(".bias"):
+        for name, param in module.named_parameters(prefix):
+            is_bias = False
+            if name.endswith(".bias"):
                 base_key = name[: -len(".bias")]
-                diff_bias_key = f"{base_key}.diff_b" if name not in state_dict else name
-                if diff_bias_key not in state_dict:
-                    continue
-                bias = state_dict[diff_bias_key]
-                params.add_(bias)
-                lora_key_loaded_count += 1
-                continue
+                is_bias = True
+            elif name.endswith(".weight"):
+                base_key = name[: -len(".weight")]
             else:
                 continue
 
-            if base_key not in lora_deltas:
+            delta = _prepare_lora_deltas(
+                state_dict,
+                base_key,
+                param_to_weight_names,
+                lora_unloaded_keys,
+                is_bias,
+                lora_a_suffix,
+                lora_b_suffix,
+                lora_bias_suffix,
+            )
+            if delta is None:
                 continue
 
-            delta = lora_deltas[base_key].to(device=params.device, dtype=params.dtype)
-            params.add_(delta)
-            lora_key_loaded_count += 1
+            delta = delta.to(device=param.device, dtype=param.dtype)
+            param.sub_(delta)
             del delta
 
-            update_loaded_keys(base_key)
+        num_unloaded_keys = 0
+        for k in lora_unloaded_keys:
+            if k not in lora_unloaded_keys:
+                logger.warning(f"Missing unloading lora key: {k}")
+            else:
+                num_unloaded_keys += 1
 
-        for k in state_dict:
-            if k not in lora_loaded_keys:
-                logger.warning(f"Missing loading lora key: {k}")
-
-        logger.info(f"{lora_key_loaded_count} lora keys loaded into {module.__class__.__name__}.")
-
-        return lora_deltas
-
-    @classmethod
-    def unload_module_lora(
-        cls,
-        module,
-        lora_deltas,
-        prefix: str = "transformer",
-    ):
-        lora_key_unload_count = 0
-        for name, param in module.named_parameters(prefix):
-            if not name.endswith(".weight"):
-                continue
-
-            base_key = name[: -len(".weight")]
-            if base_key not in lora_deltas:
-                continue
-
-            delta = lora_deltas[base_key].to(device=param.device, dtype=param.dtype)
-            param.sub_(delta)
-            lora_key_unload_count += 1
-
-        logger.info(f"Unload {lora_key_unload_count} lora keys from {module.__class__.__name__}.")
+        logger.info(f"Unload {num_unloaded_keys} lora keys from {module.__class__.__name__}.")
 
 
 class QwenImageLoraLoaderMixin(LoraLoaderMixin):
@@ -274,7 +298,6 @@ class QwenImageLoraLoaderMixin(LoraLoaderMixin):
     ):
         if adapter_name in self.lora_loaded:
             return
-        self.lora_loaded.add(adapter_name)
 
         state_dict = _load_lora_state_dict(pretrained_model_name_or_path)
 
@@ -289,24 +312,22 @@ class QwenImageLoraLoaderMixin(LoraLoaderMixin):
 
         state_dict = _remap_state_dict_keys(state_dict, [(".to_out.0.", ".to_out.")])
 
-        lora_deltas = self.load_lora_into_module(
+        self.load_lora_into_module(
             state_dict,
             self.transformer,
             prefix=self.transformer_name,
         )
 
-        self.lora_loaded_deltas[adapter_name] = lora_deltas
+        self.lora_loaded[adapter_name] = state_dict
 
     def unload_lora_weights(self, adapter_name: str):
         if adapter_name not in self.lora_loaded:
             return
-        lora_deltas = self.lora_loaded_deltas[adapter_name]
 
         transformer = get_transformer_from_pipeline(self)
-        self.unload_module_lora(transformer, lora_deltas, prefix=self.transformer_name)
+        self.unload_module_lora(transformer, prefix=self.transformer_name)
 
-        self.lora_loaded.remove(adapter_name)
-        del self.lora_loaded_deltas[adapter_name]
+        del self.lora_loaded[adapter_name]
 
 
 class LTX2LoraLoaderMinxin(LoraLoaderMixin):
@@ -319,7 +340,6 @@ class LTX2LoraLoaderMinxin(LoraLoaderMixin):
     ):
         if adapter_name in self.lora_loaded:
             return
-        self.lora_loaded.add(adapter_name)
 
         state_dict = _load_lora_state_dict(pretrained_model_name_or_path)
 
@@ -342,7 +362,7 @@ class LTX2LoraLoaderMinxin(LoraLoaderMixin):
         connectors_sd = {k: v for k, v in lora_state_dict.items() if k.startswith(self.connectors_name)}
 
         transformer = get_transformer_from_pipeline(self)
-        lora_deltas = self.load_lora_into_module(
+        self.load_lora_into_module(
             transformer_sd,
             transformer,
             prefix=self.transformer_name,
@@ -350,29 +370,28 @@ class LTX2LoraLoaderMinxin(LoraLoaderMixin):
 
         connectors = find_module_with_attr(self, self.connectors_name).connectors
         if connectors_sd:
-            lora_deltas.update(
-                self.load_lora_into_module(
-                    connectors_sd,
-                    connectors,
-                    prefix=self.connectors_name,
-                )
+            self.load_lora_into_module(
+                connectors_sd,
+                connectors,
+                prefix=self.connectors_name,
             )
 
-        self.lora_loaded_deltas[adapter_name] = lora_deltas
+        self.lora_loaded[adapter_name] = lora_state_dict
 
     def unload_lora_weights(self, adapter_name: str):
         if adapter_name not in self.lora_loaded:
             return
-        lora_deltas = self.lora_loaded_deltas[adapter_name]
+        state_dict = self.lora_loaded[adapter_name]
+        transformer_sd = {k: v for k, v in state_dict.items() if k.startswith(self.transformer_name)}
+        connectors_sd = {k: v for k, v in state_dict.items() if k.startswith(self.connectors_name)}
 
         transformer = get_transformer_from_pipeline(self)
-        self.unload_module_lora(transformer, lora_deltas, prefix=self.transformer_name)
+        self.unload_module_lora(transformer_sd, transformer, prefix=self.transformer_name)
 
         connectors = find_module_with_attr(self, self.connectors_name).connectors
-        self.unload_module_lora(connectors, lora_deltas, prefix=self.connectors_name)
+        self.unload_module_lora(connectors_sd, connectors, prefix=self.connectors_name)
 
-        self.lora_loaded.remove(adapter_name)
-        del self.lora_loaded_deltas[adapter_name]
+        del self.lora_loaded[adapter_name]
 
 
 class WanLoraLoaderMixin(LoraLoaderMixin):
@@ -392,7 +411,6 @@ class WanLoraLoaderMixin(LoraLoaderMixin):
     ):
         if adapter_name in self.lora_loaded:
             return
-        self.lora_loaded.add(adapter_name)
 
         cls_name = self.__class__.__name__
         task = "i2v" if "I2V" in cls_name else "t2v"
@@ -417,6 +435,9 @@ class WanLoraLoaderMixin(LoraLoaderMixin):
                         ".to_out.0.",
                         ".to_out.",
                     ),
+                    # '.bias_B.bias' is a horrible name in diffuser's.
+                    # So we remap it to '.bias'
+                    (".lora_B.bias", ".bias"),
                 ],
             )
 
@@ -425,21 +446,22 @@ class WanLoraLoaderMixin(LoraLoaderMixin):
                 filename = os.path.basename(lora_path)
                 target_module_name = self.supported_ckpt_mapping[filename]
                 module = getattr(find_module_with_attr(self, target_module_name), target_module_name)
-                self.load_lora_into_module(state_dict, module, prefix=self.transformer_name)
+                self.load_lora_into_module(state_dict, module, prefix=self.transformer_name, lora_bias_suffix="bias")
             else:
                 # wan21 load path
                 self.load_lora_into_module(state_dict, self.transformer, prefix=self.transformer_name)
 
+            self.lora_loaded[adapter_name] = state_dict
+
     def unload_lora_weights(self, adapter_name: str):
         if adapter_name not in self.lora_loaded:
             return
-        lora_deltas = self.lora_loaded_deltas[adapter_name]
+        state_dict = self.lora_loaded[adapter_name]
 
         transformer = get_transformer_from_pipeline(self)
-        self.unload_module_lora(transformer, lora_deltas, prefix=self.transformer_name)
+        self.unload_module_lora(state_dict, transformer, prefix=self.transformer_name)
 
-        self.lora_loaded.remove(adapter_name)
-        del self.lora_loaded_deltas[adapter_name]
+        del self.lora_loaded[adapter_name]
 
     def _get_target_lora_paths(
         self,
