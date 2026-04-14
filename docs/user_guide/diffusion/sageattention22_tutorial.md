@@ -6,21 +6,17 @@ vLLM-Omni can override the diffusion attention backend with the
 `DIFFUSION_ATTENTION_BACKEND` environment variable. When SageAttention is
 installed in the same Python environment as vLLM-Omni, setting
 `DIFFUSION_ATTENTION_BACKEND=SAGE_ATTN` routes Wan2.2 DiT attention through
-`vllm_omni/diffusion/attention/backends/sage_attn.py`.
+`vllm_omni/diffusion/attention/backends/sage_attn.py`, which currently calls
+the generic `sageattn(...)` API.
 
-This tutorial focuses on the practical path:
-
-1. Confirm SageAttention is importable.
-2. Start Wan2.2 with and without `SAGE_ATTN`.
-3. Compare steady-state latency on the same request.
+The key question is not only whether SageAttention is faster, but whether it
+preserves output quality on a real Wan2.2 workload.
 
 ## Quick Check
 
 ```bash
 python -c "import sageattention; print(sageattention.__file__)"
 ```
-
-If this import succeeds, vLLM-Omni can load the SageAttention backend.
 
 ## Start Wan2.2 Without SageAttention
 
@@ -52,96 +48,7 @@ vllm serve \
   --log-stats
 ```
 
-With SageAttention enabled, startup logs should contain:
-
-```text
-Using diffusion attention backend 'SAGE_ATTN'
-```
-
-Without the override, the current default on this machine is:
-
-```text
-Defaulting to diffusion attention backend FLASH_ATTN
-```
-
-## Benchmark Request Script
-
-The comparison below used the same async request flow in both runs and reported:
-
-- `server_inference_time_s`: value returned by `GET /v1/videos/{video_id}`
-- `artifact_ready_wall_s`: end-to-end wall time from submit to downloaded MP4
-
-```python
-import json
-import os
-import pathlib
-import time
-
-import requests
-
-base = "http://127.0.0.1:8099"
-image_path = "/tmp/rabbit.png"
-out_path = "/tmp/wan22_bench_out.mp4"
-prompt = "same fixed prompt for both runs"
-negative = "same fixed negative prompt for both runs"
-
-data = {
-    "prompt": prompt,
-    "negative_prompt": negative,
-    "size": "1280x720",
-    "seconds": "5",
-    "fps": "16",
-    "num_inference_steps": "1",
-    "guidance_scale": "3.5",
-    "guidance_scale_2": "3.5",
-    "boundary_ratio": "0.875",
-    "flow_shift": "5.0",
-    "seed": "42",
-}
-
-with open(image_path, "rb") as img:
-    t0 = time.perf_counter()
-    create = requests.post(
-        f"{base}/v1/videos",
-        headers={"Accept": "application/json"},
-        data=data,
-        files={"input_reference": (os.path.basename(image_path), img, "image/png")},
-        timeout=120,
-    )
-
-create.raise_for_status()
-video_id = create.json()["id"]
-
-while True:
-    resp = requests.get(f"{base}/v1/videos/{video_id}", timeout=30)
-    resp.raise_for_status()
-    payload = resp.json()
-    if payload.get("status") in ("completed", "failed"):
-        final_json = payload
-        break
-    time.sleep(1.0)
-
-download = requests.get(f"{base}/v1/videos/{video_id}/content", timeout=120)
-download.raise_for_status()
-pathlib.Path(out_path).write_bytes(download.content)
-t3 = time.perf_counter()
-
-print(
-    json.dumps(
-        {
-            "artifact_ready_wall_s": round(t3 - t0, 3),
-            "server_inference_time_s": final_json.get("inference_time_s"),
-            "final_status": final_json.get("status"),
-        },
-        ensure_ascii=False,
-        indent=2,
-    )
-)
-```
-
-## Wan2.2 Measured Result
-
-### Test Setup
+## Benchmark Setup
 
 - vLLM server version: `0.19.0`
 - PyTorch: `2.10.0+cu128`
@@ -149,34 +56,71 @@ print(
 - GPUs: `NVIDIA H20-3e` x2 (`CUDA_VISIBLE_DEVICES=6,7`)
 - Model: local Wan2.2 I2V snapshot at the path above
 - Serving mode: `--tensor-parallel-size 2 --omni --log-stats`
-- Request: `1280x720`, `5s`, `16 fps`, `num_inference_steps=1`, fixed prompt, fixed negative prompt, `seed=42`
+- Input image: `https://vllm-public-assets.s3.us-west-2.amazonaws.com/omni-assets/rabbit.png`
+- Request: `1280x720`, `5s`, `16 fps`, `num_inference_steps=8`, fixed prompt, fixed negative prompt, `seed=42`
 - Method: start a fresh server for each backend, wait for `/health`, run one warm-up request, then record the second request
 
-### Result Table
+## Performance Result
 
-| Backend | Warm-up `server_inference_time_s` | Measured `server_inference_time_s` | Measured `artifact_ready_wall_s` |
-|---------|----------------------------------:|-----------------------------------:|---------------------------------:|
-| Default `FLASH_ATTN` | 70.364 s | 70.209 s | 71.225 s |
-| `SAGE_ATTN` | 40.185 s | 36.987 s | 38.001 s |
+### Measured Request Latency
+
+| Backend | Warm-up `server_inference_time_s` | Measured `server_inference_time_s` | Measured `artifact_ready_wall_s` | Measured MP4 Size |
+|---------|----------------------------------:|-----------------------------------:|---------------------------------:|------------------:|
+| Default `FLASH_ATTN` | 400.487 s | 409.379 s | 410.418 s | 4.1 MB |
+| `SAGE_ATTN` | 146.054 s | 141.638 s | 142.672 s | 20 KB |
 
 ### Speedup
 
-- Steady-state server inference: `70.209 / 36.987 = 1.90x`
-- End-to-end artifact-ready latency: `71.225 / 38.001 = 1.87x`
-- Relative reduction: about `47.3%` lower server inference time and `46.6%` lower end-to-end wall time
+- Steady-state server inference: `409.379 / 141.638 = 2.89x`
+- End-to-end artifact-ready latency: `410.418 / 142.672 = 2.88x`
 
-For this Wan2.2 I2V workload on two H20 GPUs, enabling SageAttention was a
-clear win.
+Pure latency numbers make SageAttention look substantially faster.
 
-## Notes
+## Effect Comparison
 
-- The first server-side dummy warm-up during initialization was slower with
-  SageAttention than with FlashAttention on this machine, because
-  `torch.compile` emitted graph-break warnings around SageAttention custom ops.
-  That did not prevent serving, and steady-state request latency was still much
-  better with `SAGE_ATTN`.
-- The current vLLM-Omni SageAttention backend calls the generic `sageattn(...)`
-  function. The numbers above are therefore the real behavior of the current
-  mainline integration, not an estimate from upstream microbenchmarks.
-- Re-run the comparison if you change GPU type, Torch/CUDA version, model
-  resolution, frame count, or inference step count.
+### Metric Definition
+
+- **PSNR**: computed per frame on decoded RGB frames, then averaged across all 81 aligned frames
+- **SSIM**: computed per frame with an 11x11 Gaussian window on each RGB channel, then averaged across channels and frames
+
+### Cross-Backend Quality
+
+| Comparison | Avg PSNR | Avg SSIM | Interpretation |
+|------------|---------:|---------:|----------------|
+| `FLASH_ATTN measured` vs `SAGE_ATTN warm-up` | 8.5283 dB | 0.177464 | Sage warm-up output already differs heavily from baseline |
+| `FLASH_ATTN measured` vs `SAGE_ATTN measured` | 3.5492 dB | 0.001058 | Sage measured output is effectively unusable relative to baseline |
+
+### Backend Self-Consistency
+
+| Comparison | Avg PSNR | Avg SSIM | Interpretation |
+|------------|---------:|---------:|----------------|
+| `FLASH_ATTN warm-up` vs `FLASH_ATTN measured` | `inf` | 1.000000 | Baseline is fully deterministic for repeated identical requests |
+| `SAGE_ATTN warm-up` vs `SAGE_ATTN measured` | 7.0682 dB | 0.000583 | SageAttention output is not stable across repeated identical requests |
+
+### Additional Observations
+
+- `wan22_real_steps8_sage_measured.mp4` is only about `20 KB`, while the baseline measured file is about `4.1 MB`
+- Both videos decode as `1280x720`, `16 fps`, `81 frames`, so the mismatch is not due to shape or frame-count differences
+- The decoded pixel statistics for `wan22_real_steps8_sage_measured.mp4` are:
+  - mean pixel average: `0.0`
+  - frame std average: `0.0`
+- In other words, the measured SageAttention output collapsed to all-black frames
+
+## Conclusion
+
+For Wan2.2 I2V with the real `rabbit.png` input and `num_inference_steps=8` on
+two H20 GPUs:
+
+- **Performance**: enabling `SAGE_ATTN` improves latency by about `2.9x`
+- **Quality / correctness**: enabling `SAGE_ATTN` is currently **not safe**
+
+The current mainline SageAttention integration is faster, but it introduces a
+serious correctness problem on this workload. The baseline backend is perfectly
+repeatable under the same seed, while SageAttention produces a drastically
+different warm-up result and then collapses to an all-black measured video on
+the second identical request.
+
+The practical conclusion is:
+
+- use `FLASH_ATTN` for Wan2.2 I2V production validation in the current state
+- do not enable `SAGE_ATTN` for this workload until the correctness issue is fixed
