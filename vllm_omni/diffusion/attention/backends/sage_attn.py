@@ -13,7 +13,7 @@ from vllm_omni.diffusion.attention.backends.abstract import (
 logger = init_logger(__name__)
 
 try:
-    from sageattention import sageattn
+    from sageattention import sageattn_qk_int8_pv_fp16_cuda
 except ImportError:
     logger.warning(
         "SageAttentionBackend is not available. You may install sage-attention"
@@ -22,6 +22,31 @@ except ImportError:
     raise ImportError
 
 # TODO add sage3 attention backend
+
+
+@torch.compiler.disable
+def _run_sageattn(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    causal: bool,
+    softmax_scale: float,
+) -> torch.Tensor:
+    # SageAttention relies on custom pybind/CUDA entrypoints that torch.compile
+    # does not trace correctly in Wan2.2 TP serving. Keeping the kernel eager
+    # avoids the second-request corruption that can collapse outputs to black.
+    # The upstream Wan integration uses HND layout. Match that path here
+    # instead of SageAttention's NHD branch to minimize backend drift.
+    output = sageattn_qk_int8_pv_fp16_cuda(
+        query.transpose(1, 2),
+        key.transpose(1, 2),
+        value.transpose(1, 2),
+        tensor_layout="HND",
+        is_causal=causal,
+        sm_scale=softmax_scale,
+        pv_accum_dtype="fp32",
+    )
+    return output.transpose(1, 2)
 
 
 class SageAttentionBackend(AttentionBackend):
@@ -61,12 +86,11 @@ class SageAttentionImpl(AttentionImpl):
         value: torch.Tensor,
         attn_metadata: AttentionMetadata = None,
     ) -> torch.Tensor:
-        output = sageattn(
-            query,
-            key,
-            value,
-            tensor_layout="NHD",
-            is_causal=self.causal,
-            sm_scale=self.softmax_scale,
+        output = _run_sageattn(
+            query=query,
+            key=key,
+            value=value,
+            causal=self.causal,
+            softmax_scale=self.softmax_scale,
         )
         return output
