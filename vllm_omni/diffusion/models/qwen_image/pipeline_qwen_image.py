@@ -245,9 +245,7 @@ def apply_rotary_emb_qwen(
         return x_out.type_as(x)
 
 
-class QwenImagePipeline(
-    nn.Module, QwenImageCFGParallelMixin, DiffusionPipelineProfilerMixin, QwenImageLoraLoaderMixin
-):
+class QwenImagePipeline(nn.Module, QwenImageCFGParallelMixin, DiffusionPipelineProfilerMixin, QwenImageLoraLoaderMixin):
     supports_step_execution: ClassVar[bool] = True
 
     def __init__(
