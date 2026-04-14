@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Fast interface checks for all Diffusion pipelines."""
 
+from typing import cast
+
 import pytest
 
 from vllm_omni.diffusion.models.interface import VllmDiffusionPipeline
@@ -56,3 +58,31 @@ def test_pipeline_sampling_params_are_valid(pipeline_type):
     for attr_name, val in defaults.validated_overrides.items():
         assert hasattr(params, attr_name)
         assert getattr(params, attr_name) == val
+
+
+@pytest.mark.parametrize("pipeline_type", TEST_PIPELINES)
+def test_merge_sampling_params(pipeline_type):
+    """Test sampling param / override merging."""
+    USER_STEPS = 999  # overrides all pipeline defaults
+    pipe_class = DiffusionModelRegistry._try_load_model_cls(pipeline_type)
+    params = OmniDiffusionSamplingParams(num_inference_steps=USER_STEPS)
+    assert pipe_class is not None
+
+    # Create an uninitialized instance; this is easier than going through init/model load
+    # since the vast majority of models do not use instance vars in their default params
+    pipe_instance = cast(VllmDiffusionPipeline, object.__new__(pipe_class))
+
+    # Patch instance variables for any pipelines that do need it
+    if pipeline_type in INSTANCE_VAR_MOCKS:
+        for attr_name, attr_value in INSTANCE_VAR_MOCKS[pipeline_type].items():
+            setattr(pipe_instance, attr_name, attr_value)
+
+    defaults = pipe_instance.sampling_param_defaults
+    params.merge_with_def_params(defaults)
+
+    # Ensure the user override is prioritized for all models
+    assert params.num_inference_steps == USER_STEPS
+    # For every other property, it should match the pipeline defaults since user didn't pass it
+    for attr_name, val in defaults.validated_overrides.items():
+        if attr_name != "num_inference_steps":
+            assert getattr(params, attr_name) == val
