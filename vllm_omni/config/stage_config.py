@@ -29,76 +29,24 @@ logger = init_logger(__name__)
 _STAGE_OVERRIDE_PATTERN = re.compile(r"^stage_(\d+)_(.+)$")
 
 
-# Orchestrator-only kwargs; never forwarded to per-stage engine args.
-INTERNAL_STAGE_OVERRIDE_KEYS: frozenset[str] = frozenset(
-    {
-        "model",
-        "stage_configs_path",
-        "stage_id",
-        "stage_init_timeout",
-        "init_timeout",
-        "shm_threshold_bytes",
-        "worker_backend",
-        "ray_address",
-        "batch_timeout",
-        "log_stats",
-        "parallel_config",
-        "async_chunk",
-    }
-)
-
-# Server/uvicorn kwargs that reach this module via ``vars(args)`` in the
-# serve path and would raise unexpected-keyword errors in AsyncOmniEngineArgs.
-SERVER_ONLY_KEYS: frozenset[str] = frozenset(
-    {
-        "host",
-        "port",
-        "uds",
-        "uvicorn_log_level",
-        "allow_credentials",
-        "allowed_origins",
-        "allowed_methods",
-        "allowed_headers",
-        "api_key",
-        "lora_modules",
-        "prompt_adapters",
-        "chat_template",
-        "chat_template_content_format",
-        "response_role",
-        "ssl_keyfile",
-        "ssl_certfile",
-        "ssl_ca_certs",
-        "ssl_cert_reqs",
-        "root_path",
-        "middleware",
-        "return_tokens_as_token_ids",
-        "disable_frontend_multiprocessing",
-        "enable_request_id_headers",
-        "enable_auto_tool_choice",
-        "tool_call_parser",
-        "tool_parser_plugin",
-        "max_log_len",
-        "disable_fastapi_docs",
-        "enable_prompt_tokens_details",
-        "enable_server_load_tracking",
-        "config_format",
-        "served_model_name",
-        "disable_log_requests",
-        "disable_log_stats",
-        "max_parallel_loading_workers",
-        "deploy_config",
-        "stage_overrides",
-    }
-)
-
-
 def build_stage_runtime_overrides(
     stage_id: int,
     cli_overrides: dict[str, Any],
     *,
-    internal_keys: set[str] | frozenset[str] = INTERNAL_STAGE_OVERRIDE_KEYS,
+    internal_keys: set[str] | frozenset[str] | None = None,
 ) -> dict[str, Any]:
-    """Build per-stage runtime overrides from global and ``stage_<id>_*`` kwargs."""
+    """Build per-stage runtime overrides from global and ``stage_<id>_*`` kwargs.
+
+    ``internal_keys`` defaults to the set derived from ``OrchestratorArgs``
+    (via ``arg_classification.internal_blacklist_keys``) so that orchestrator
+    fields are never forwarded as per-stage engine args. Callers can pass an
+    explicit set for tests or specialized flows.
+    """
+    if internal_keys is None:
+        from vllm_omni.engine.arg_classification import internal_blacklist_keys
+
+        internal_keys = internal_blacklist_keys()
+
     result: dict[str, Any] = {}
 
     for key, value in cli_overrides.items():
@@ -1153,20 +1101,17 @@ class StageConfigFactory:
 
         return None, None
 
-    # Delegates to module-level constants; preserved as class attrs for
-    # back-compat with external subclasses and tests.
-    _INTERNAL_KEYS: frozenset[str] = INTERNAL_STAGE_OVERRIDE_KEYS
-    _SERVER_ONLY_KEYS: frozenset[str] = SERVER_ONLY_KEYS
-
     @classmethod
     def _merge_cli_overrides(
         cls,
         stage: StageConfig,
         cli_overrides: dict[str, Any],
     ) -> dict[str, Any]:
-        """Merge global and per-stage (``stage_N_*``) CLI overrides."""
-        return build_stage_runtime_overrides(
-            stage.stage_id,
-            cli_overrides,
-            internal_keys=cls._INTERNAL_KEYS | cls._SERVER_ONLY_KEYS,
-        )
+        """Merge global and per-stage (``stage_N_*``) CLI overrides.
+
+        Orchestrator-owned keys are filtered by ``build_stage_runtime_overrides``
+        using ``OrchestratorArgs`` as the single source of truth; unknown
+        server/uvicorn keys are dropped downstream by
+        ``filter_dataclass_kwargs(OmniEngineArgs, ...)``.
+        """
+        return build_stage_runtime_overrides(stage.stage_id, cli_overrides)
