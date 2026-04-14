@@ -1281,6 +1281,7 @@ class LTX2TwoStagesPipeline(nn.Module):
         stage_2_req = copy.copy(req)
         stage_2_req.sampling_params = req.sampling_params.clone()
         stage_2_req.sampling_params.num_inference_steps = 3
+        stage_2_req.guidance_scale = 1.0
 
         video, audio = self.pipe(
             req=stage_2_req,
@@ -1290,7 +1291,6 @@ class LTX2TwoStagesPipeline(nn.Module):
             negative_prompt=negative_prompt,
             noise_scale=STAGE_2_DISTILLED_SIGMA_VALUES[0],
             sigmas=STAGE_2_DISTILLED_SIGMA_VALUES,
-            guidance_scale=1.0,
             generator=generator,
             output_type="np",
             return_dict=False,
