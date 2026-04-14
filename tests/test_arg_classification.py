@@ -294,3 +294,60 @@ def test_internal_blacklist_keys_derived_from_orchestrator():
     # Shared fields must NOT appear — they flow to both orchestrator and engine
     assert "model" not in blacklist
     assert "log_stats" not in blacklist
+
+
+# ============================================================================
+# Boundary value analysis — edge cases around split_kwargs.
+# ============================================================================
+
+
+def test_split_empty_kwargs():
+    """Empty kwargs yields default OrchestratorArgs and empty engine dict."""
+    orch, engine = split_kwargs({}, engine_cls=_FakeEngineArgs)
+    assert orch.stage_init_timeout == 300  # dataclass default
+    assert orch.worker_backend == "multi_process"  # dataclass default
+    assert engine == {}
+
+
+def test_split_all_none_values_preserved_on_orchestrator():
+    """None values for orchestrator fields are kept (represents 'not set')."""
+    raw = {"ray_address": None, "deploy_config": None, "max_num_seqs": None}
+    orch, engine = split_kwargs(raw, engine_cls=_FakeEngineArgs)
+    assert orch.ray_address is None
+    assert orch.deploy_config is None
+    # Engine-side None still passes through; caller decides semantics downstream.
+    assert engine.get("max_num_seqs") is None
+
+
+def test_split_user_typed_with_empty_kwargs_no_warn(caplog):
+    """user_typed non-empty but kwargs empty — no warnings emitted."""
+    with caplog.at_level(logging.WARNING, logger="vllm_omni.engine.arg_classification"):
+        split_kwargs({}, engine_cls=_FakeEngineArgs, user_typed={"nothing"})
+    assert not caplog.records
+
+
+def test_ambiguous_field_strict_raises():
+    """strict=True raises ValueError on overlap outside SHARED_FIELDS."""
+
+    # deploy_config is on OrchestratorArgs; declaring it on the engine class
+    # too (without adding to SHARED_FIELDS) creates an ambiguous route.
+    @dataclass
+    class _AmbiguousEngine:
+        deploy_config: str | None = None
+
+    with pytest.raises(ValueError, match="both OrchestratorArgs and"):
+        split_kwargs({"deploy_config": "x"}, engine_cls=_AmbiguousEngine, strict=True)
+
+
+def test_ambiguous_field_non_strict_routes_to_orchestrator(caplog):
+    """strict=False logs ERROR but routes the ambiguous field to orchestrator."""
+
+    @dataclass
+    class _AmbiguousEngine:
+        deploy_config: str | None = None
+
+    with caplog.at_level(logging.ERROR, logger="vllm_omni.engine.arg_classification"):
+        orch, engine = split_kwargs({"deploy_config": "x"}, engine_cls=_AmbiguousEngine, strict=False)
+    assert orch.deploy_config == "x"
+    assert "deploy_config" not in engine
+    assert any("both OrchestratorArgs" in r.message for r in caplog.records)

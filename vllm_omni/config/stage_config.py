@@ -402,6 +402,18 @@ def _detect_platform() -> str | None:
     return None
 
 
+def _extract_platform_overrides(ps: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    """Return ``(overrides, devices)`` from a platform stage entry.
+
+    Handles both the nested layout (``engine_args:`` / ``runtime.devices``) and
+    the flat layout. ``devices`` is ``None`` when no override is set.
+    """
+    if "engine_args" in ps:
+        return dict(ps["engine_args"]), ps.get("runtime", {}).get("devices")
+    overrides = {k: v for k, v in ps.items() if k not in ("stage_id", "devices")}
+    return overrides, ps.get("devices")
+
+
 def _apply_platform_overrides(
     deploy: DeployConfig,
     platform: str | None = None,
@@ -422,14 +434,9 @@ def _apply_platform_overrides(
         base = base_by_id.get(ps["stage_id"])
         if base is None:
             continue
-        if "engine_args" in ps:
-            overrides = dict(ps["engine_args"])
-            if "devices" in ps.get("runtime", {}):
-                base.devices = ps["runtime"]["devices"]
-        else:
-            overrides = {k: v for k, v in ps.items() if k not in ("stage_id", "devices")}
-            if "devices" in ps:
-                base.devices = ps["devices"]
+        overrides, devices = _extract_platform_overrides(ps)
+        if devices is not None:
+            base.devices = devices
         for key, val in overrides.items():
             if hasattr(base, key):
                 setattr(base, key, val)
@@ -437,6 +444,79 @@ def _apply_platform_overrides(
                 base.engine_extras[key] = val
 
     return deploy
+
+
+_EXECUTION_TYPE_TO_STAGE_WORKER: dict[StageExecutionType, tuple[StageType, str | None]] = {
+    StageExecutionType.LLM_AR: (StageType.LLM, "ar"),
+    StageExecutionType.LLM_GENERATION: (StageType.LLM, "generation"),
+    StageExecutionType.DIFFUSION: (StageType.DIFFUSION, None),
+}
+
+
+def _resolve_execution_mode(
+    execution_type: StageExecutionType,
+) -> tuple[StageType, str | None]:
+    """Map ``execution_type`` → ``(stage_type, worker_type)`` legacy tuple."""
+    return _EXECUTION_TYPE_TO_STAGE_WORKER.get(execution_type, (StageType.LLM, None))
+
+
+def _select_processor_funcs(
+    ps: StagePipelineConfig,
+    async_chunk: bool,
+) -> tuple[str | None, str | None]:
+    """Pick ``(input_proc, next_stage_proc)`` based on the async_chunk mode."""
+    next_stage_proc = ps.custom_process_next_stage_input_func
+    input_proc = ps.custom_process_input_func
+    if async_chunk and ps.async_chunk_process_next_stage_input_func:
+        next_stage_proc = ps.async_chunk_process_next_stage_input_func
+    elif not async_chunk and ps.sync_process_input_func:
+        input_proc = ps.sync_process_input_func
+    return input_proc, next_stage_proc
+
+
+def _build_engine_args(
+    ps: StagePipelineConfig,
+    ds: StageDeployConfig | None,
+    pipeline: PipelineConfig,
+    async_chunk: bool,
+    next_stage_proc: str | None,
+) -> dict[str, Any]:
+    """Assemble the flat ``yaml_engine_args`` dict for one stage."""
+    engine_args: dict[str, Any] = {"model_arch": ps.model_arch or pipeline.model_arch}
+    if ps.engine_output_type:
+        engine_args["engine_output_type"] = ps.engine_output_type
+    if next_stage_proc:
+        engine_args["custom_process_next_stage_input_func"] = next_stage_proc
+    if ds is not None:
+        for k, v in asdict(ds).items():
+            if k in _STAGE_NON_ENGINE_KEYS or v is None:
+                continue
+            engine_args[k] = v
+        engine_args.update(ds.engine_extras)
+    if async_chunk:
+        engine_args["async_chunk"] = True
+    return engine_args
+
+
+def _build_extras(
+    ps: StagePipelineConfig,
+    ds: StageDeployConfig | None,
+) -> dict[str, Any]:
+    """Assemble ``yaml_extras`` (sampling + connectors + pipeline extras)."""
+    extras: dict[str, Any] = {}
+    sampling: dict[str, Any] = {}
+    if ds is not None and ds.default_sampling_params:
+        sampling.update(ds.default_sampling_params)
+    sampling.update(ps.sampling_constraints)
+    if sampling:
+        extras["default_sampling_params"] = sampling
+    if ds is not None and ds.output_connectors:
+        extras["output_connectors"] = dict(ds.output_connectors)
+    if ds is not None and ds.input_connectors:
+        extras["input_connectors"] = dict(ds.input_connectors)
+    if ps.extras:
+        extras.update(ps.extras)
+    return extras
 
 
 def merge_pipeline_deploy(
@@ -454,86 +534,32 @@ def merge_pipeline_deploy(
     result: list[StageConfig] = []
     for ps in pipeline.stages:
         ds = deploy_by_id.get(ps.stage_id)
-
-        if ps.execution_type == StageExecutionType.LLM_AR:
-            stage_type = StageType.LLM
-            worker_type = "ar"
-        elif ps.execution_type == StageExecutionType.LLM_GENERATION:
-            stage_type = StageType.LLM
-            worker_type = "generation"
-        elif ps.execution_type == StageExecutionType.DIFFUSION:
-            stage_type = StageType.DIFFUSION
-            worker_type = None
-        else:
-            stage_type = StageType.LLM
-            worker_type = None
-
-        scheduler_cls = _EXECUTION_TYPE_TO_SCHEDULER.get(ps.execution_type)
-
-        yaml_engine_args: dict[str, Any] = {}
-        yaml_engine_args["model_arch"] = ps.model_arch or pipeline.model_arch
-        if ps.engine_output_type:
-            yaml_engine_args["engine_output_type"] = ps.engine_output_type
-
-        next_stage_proc = ps.custom_process_next_stage_input_func
-        input_proc = ps.custom_process_input_func
-        if deploy.async_chunk and ps.async_chunk_process_next_stage_input_func:
-            next_stage_proc = ps.async_chunk_process_next_stage_input_func
-        elif not deploy.async_chunk and ps.sync_process_input_func:
-            input_proc = ps.sync_process_input_func
-        if next_stage_proc:
-            yaml_engine_args["custom_process_next_stage_input_func"] = next_stage_proc
-
+        stage_type, worker_type = _resolve_execution_mode(ps.execution_type)
+        input_proc, next_stage_proc = _select_processor_funcs(ps, deploy.async_chunk)
+        engine_args = _build_engine_args(ps, ds, pipeline, deploy.async_chunk, next_stage_proc)
+        extras = _build_extras(ps, ds)
+        runtime: dict[str, Any] = {"process": True}
         if ds is not None:
-            for k, v in asdict(ds).items():
-                if k in _STAGE_NON_ENGINE_KEYS or v is None:
-                    continue
-                yaml_engine_args[k] = v
-            yaml_engine_args.update(ds.engine_extras)
+            runtime["devices"] = ds.devices
 
-        if deploy.async_chunk:
-            yaml_engine_args["async_chunk"] = True
-
-        yaml_runtime: dict[str, Any] = {"process": True}
-        if ds is not None:
-            yaml_runtime["devices"] = ds.devices
-
-        custom_process_input_func = input_proc
-
-        yaml_extras: dict[str, Any] = {}
-
-        sampling: dict[str, Any] = {}
-        if ds is not None and ds.default_sampling_params:
-            sampling.update(ds.default_sampling_params)
-        sampling.update(ps.sampling_constraints)
-        if sampling:
-            yaml_extras["default_sampling_params"] = sampling
-
-        if ds is not None and ds.output_connectors:
-            yaml_extras["output_connectors"] = dict(ds.output_connectors)
-        if ds is not None and ds.input_connectors:
-            yaml_extras["input_connectors"] = dict(ds.input_connectors)
-        if ps.extras:
-            yaml_extras.update(ps.extras)
-
-        stage = StageConfig(
-            stage_id=ps.stage_id,
-            model_stage=ps.model_stage,
-            stage_type=stage_type,
-            input_sources=list(ps.input_sources),
-            custom_process_input_func=custom_process_input_func,
-            final_output=ps.final_output,
-            final_output_type=ps.final_output_type,
-            worker_type=worker_type,
-            scheduler_cls=scheduler_cls,
-            hf_config_name=ps.hf_config_name,
-            is_comprehension=ps.owns_tokenizer,
-            yaml_engine_args=yaml_engine_args,
-            yaml_runtime=yaml_runtime,
-            yaml_extras=yaml_extras,
+        result.append(
+            StageConfig(
+                stage_id=ps.stage_id,
+                model_stage=ps.model_stage,
+                stage_type=stage_type,
+                input_sources=list(ps.input_sources),
+                custom_process_input_func=input_proc,
+                final_output=ps.final_output,
+                final_output_type=ps.final_output_type,
+                worker_type=worker_type,
+                scheduler_cls=_EXECUTION_TYPE_TO_SCHEDULER.get(ps.execution_type),
+                hf_config_name=ps.hf_config_name,
+                is_comprehension=ps.owns_tokenizer,
+                yaml_engine_args=engine_args,
+                yaml_runtime=runtime,
+                yaml_extras=extras,
+            )
         )
-        result.append(stage)
-
     return result
 
 
