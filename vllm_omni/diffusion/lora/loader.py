@@ -363,9 +363,9 @@ class LTX2LoraLoaderMixin(LoraLoaderMixin):
 
             lora_state_dict = converter(state_dict)
 
-        if has_connector:
-            connector_state_dict = converter(state_dict, "text_embedding_projection")
-            lora_state_dict.update(connector_state_dict)
+            if has_connector:
+                connector_state_dict = converter(state_dict, "text_embedding_projection")
+                lora_state_dict.update(connector_state_dict)
 
         transformer_sd = {k: v for k, v in lora_state_dict.items() if k.startswith(self.transformer_name)}
         connectors_sd = {k: v for k, v in lora_state_dict.items() if k.startswith(self.connectors_name)}
