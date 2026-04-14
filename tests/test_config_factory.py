@@ -12,7 +12,6 @@ import pytest
 from vllm_omni.config.stage_config import (
     _EXECUTION_TYPE_TO_SCHEDULER,
     _PIPELINE_REGISTRY,
-    INTERNAL_STAGE_OVERRIDE_KEYS,
     ModelPipeline,
     PipelineConfig,
     StageConfig,
@@ -24,6 +23,7 @@ from vllm_omni.config.stage_config import (
     register_pipeline,
     strip_parent_engine_args,
 )
+from vllm_omni.engine.arg_classification import internal_blacklist_keys
 
 
 class TestStageType:
@@ -285,7 +285,7 @@ class TestStageConfigFactory:
         stage = StageConfig(stage_id=0, model_stage="thinker", input_sources=[])
         cli_overrides = {
             "gpu_memory_utilization": 0.9,  # Well-known param
-            "custom_engine_flag": True,  # Not in _INTERNAL_KEYS, so forwarded
+            "custom_engine_flag": True,  # Not orchestrator-owned, so forwarded
         }
 
         overrides = StageConfigFactory._merge_cli_overrides(stage, cli_overrides)
@@ -339,7 +339,7 @@ class TestStageResolutionHelpers:
                 "stage_0_model": "should_be_ignored",
                 "parallel_config": {"world_size": 2},
             },
-            internal_keys=INTERNAL_STAGE_OVERRIDE_KEYS,
+            internal_keys=internal_blacklist_keys(),
         )
 
         assert overrides["gpu_memory_utilization"] == 0.9
