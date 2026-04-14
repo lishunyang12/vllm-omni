@@ -1312,10 +1312,14 @@ class AsyncOmniEngine:
         # Parse --stage-overrides JSON string if provided
         stage_overrides = None
         if stage_overrides_json:
-            import json
-
             if isinstance(stage_overrides_json, str):
-                stage_overrides = json.loads(stage_overrides_json)
+                try:
+                    stage_overrides = json.loads(stage_overrides_json)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"--stage-overrides is not valid JSON: {exc}. "
+                        f"Got: {stage_overrides_json!r}"
+                    ) from exc
             else:
                 stage_overrides = stage_overrides_json
 

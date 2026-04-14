@@ -14,7 +14,7 @@ vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091
 
 The default deploy config at `vllm_omni/deploy/qwen3_omni_moe.yaml` is loaded
 automatically by the model registry — no `--deploy-config` flag needed for the
-common case. Async-chunk streaming is **on by default** in the bundled config.
+common case. Async-chunk streaming is **enabled by default** in the bundled config.
 NPU / ROCm / XPU per-platform deltas are merged in automatically from the
 `platforms:` section of the same YAML.
 
