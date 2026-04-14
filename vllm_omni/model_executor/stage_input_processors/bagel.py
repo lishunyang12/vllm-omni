@@ -82,6 +82,8 @@ def expand_cfg_prompts(
     neg_prompt = _get_negative_prompt(prompt, sampling_params)
 
     if "image" in modalities:
+        if not neg_prompt:
+            return []
         neg_prompt_dict = {
             "prompt": neg_prompt,
             "modalities": prompt.get("modalities", []),
@@ -166,6 +168,8 @@ def expand_cfg_prompts_think(
     companion_params = {"max_tokens": 1}
 
     if "image" in modalities:
+        if not neg_prompt:
+            return []
         neg_prompt_dict = {
             "prompt": neg_prompt,
             "modalities": prompt.get("modalities", []),
@@ -300,4 +304,4 @@ def _get_negative_prompt(
         if neg:
             return neg
 
-    return "<|im_start|><|im_end|>"
+    return ""
