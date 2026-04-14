@@ -424,6 +424,7 @@ class WanLoraLoaderMixin(LoraLoaderMixin):
 
         cls_name = self.__class__.__name__
         task = "i2v" if "I2V" in cls_name else "t2v"
+        module_to_lora_sd = dict()
 
         lora_paths = self._get_target_lora_paths(pretrained_model_name_or_path, self.has_transformer_2, task=task)
         for lora_path in lora_paths:
@@ -457,19 +458,22 @@ class WanLoraLoaderMixin(LoraLoaderMixin):
                 target_module_name = self.supported_ckpt_mapping[filename]
                 module = getattr(find_module_with_attr(self, target_module_name), target_module_name)
                 self.load_lora_into_module(state_dict, module, prefix=self.transformer_name, lora_bias_suffix="bias")
+                module_to_lora_sd[target_module_name] = state_dict
             else:
                 # wan21 load path
                 self.load_lora_into_module(state_dict, self.transformer, prefix=self.transformer_name)
+                module_to_lora_sd[self.transformer_name] = state_dict
 
-            self.lora_loaded[adapter_name] = state_dict
+        self.lora_loaded[adapter_name] = module_to_lora_sd
 
     def unload_lora_weights(self, adapter_name: str):
         if adapter_name not in self.lora_loaded:
             return
-        state_dict = self.lora_loaded[adapter_name]
 
-        transformer = get_transformer_from_pipeline(self)
-        self.unload_module_lora(state_dict, transformer, prefix=self.transformer_name)
+        module_to_lora_sd = self.lora_loaded[adapter_name]
+        for module_name, lora_sd in module_to_lora_sd.items():
+            module = getattr(find_module_with_attr(self, module_name), module_name)
+            self.unload_module_lora(lora_sd, module, prefix=self.transformer_name)
 
         del self.lora_loaded[adapter_name]
 
