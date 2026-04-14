@@ -19,6 +19,9 @@ _PROC = "vllm_omni.model_executor.stage_input_processors.qwen3_omni"
 QWEN3_OMNI_PIPELINE = PipelineConfig(
     model_type="qwen3_omni_moe",
     model_arch="Qwen3OmniMoeForConditionalGeneration",
+    # HF model_type is "qwen3_omni_moe"; deploy YAML is "qwen3_omni.yaml"
+    # to keep naming consistent with qwen2_5_omni / qwen3_tts.
+    deploy_name="qwen3_omni",
     stages=(
         StagePipelineConfig(
             stage_id=0,

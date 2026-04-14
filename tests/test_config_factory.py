@@ -414,7 +414,7 @@ stages:
     final_output: true
     final_output_type: audio
 """
-        yaml_file = tmp_path / "qwen3_omni_moe.yaml"
+        yaml_file = tmp_path / "qwen3_omni.yaml"
         yaml_file.write_text(yaml_content)
 
         pipeline = StageConfigFactory._parse_pipeline_yaml(yaml_file, "qwen3_omni_moe")
@@ -770,7 +770,7 @@ class TestDeployConfigLoading:
 
         from vllm_omni.config.stage_config import load_deploy_config
 
-        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni.yaml"
         if not deploy_path.exists():
             pytest.skip("Deploy config not found")
 
@@ -787,7 +787,7 @@ class TestDeployConfigLoading:
         from vllm_omni.config.stage_config import load_deploy_config, merge_pipeline_deploy
 
         pipeline = _PIPELINE_REGISTRY["qwen3_omni_moe"]
-        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni.yaml"
         if not deploy_path.exists():
             pytest.skip("Deploy config not found")
 
@@ -937,7 +937,7 @@ class TestBaseConfigInheritance:
         from tests.utils import get_deploy_config_path
         from vllm_omni.config.stage_config import load_deploy_config
 
-        ci_path = Path(get_deploy_config_path("ci/qwen3_omni_moe.yaml"))
+        ci_path = Path(get_deploy_config_path("ci/qwen3_omni.yaml"))
         if not ci_path.exists():
             pytest.skip("CI deploy config not found")
 
@@ -956,7 +956,7 @@ class TestBaseConfigInheritance:
         from tests.utils import get_deploy_config_path
         from vllm_omni.config.stage_config import load_deploy_config
 
-        ci_path = Path(get_deploy_config_path("ci/qwen3_omni_moe.yaml"))
+        ci_path = Path(get_deploy_config_path("ci/qwen3_omni.yaml"))
         if not ci_path.exists():
             pytest.skip("CI deploy config not found")
 
@@ -972,7 +972,7 @@ class TestBaseConfigInheritance:
         """An overlay with only ``base_config`` inherits everything."""
         from vllm_omni.config.stage_config import load_deploy_config
 
-        base = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        base = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni.yaml"
         if not base.exists():
             pytest.skip("Base deploy config not found")
 
@@ -987,7 +987,7 @@ class TestBaseConfigInheritance:
         """An overlay overriding one stage field merges with the base."""
         from vllm_omni.config.stage_config import load_deploy_config
 
-        base = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        base = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni.yaml"
         if not base.exists():
             pytest.skip("Base deploy config not found")
 
@@ -1008,7 +1008,7 @@ class TestPlatformOverrides:
 
         from vllm_omni.config.stage_config import _apply_platform_overrides, load_deploy_config
 
-        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni.yaml"
         if not deploy_path.exists():
             pytest.skip("Deploy config not found")
 
@@ -1026,7 +1026,7 @@ class TestPlatformOverrides:
 
         from vllm_omni.config.stage_config import _apply_platform_overrides, load_deploy_config
 
-        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni.yaml"
         if not deploy_path.exists():
             pytest.skip("Deploy config not found")
 
@@ -1042,7 +1042,7 @@ class TestPlatformOverrides:
 
         from vllm_omni.config.stage_config import _apply_platform_overrides, load_deploy_config
 
-        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni.yaml"
         if not deploy_path.exists():
             pytest.skip("Deploy config not found")
 
@@ -1095,7 +1095,7 @@ class TestCLIOverrideFlow:
         from vllm_omni.config.stage_config import load_deploy_config, merge_pipeline_deploy
 
         pipeline = _PIPELINE_REGISTRY["qwen3_omni_moe"]
-        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni.yaml"
         if not deploy_path.exists():
             pytest.skip("Deploy config not found")
 
@@ -1114,7 +1114,7 @@ class TestCLIOverrideFlow:
         from vllm_omni.config.stage_config import load_deploy_config, merge_pipeline_deploy
 
         pipeline = _PIPELINE_REGISTRY["qwen3_omni_moe"]
-        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni.yaml"
         if not deploy_path.exists():
             pytest.skip("Deploy config not found")
 
@@ -1192,7 +1192,7 @@ class TestCLIExplicitPrecedence:
             cli_overrides={"async_chunk": False},
             cli_explicit_keys={"async_chunk"},
         )
-        # qwen3_omni_moe.yaml has `async_chunk: true`, so by default every
+        # qwen3_omni.yaml has `async_chunk: true`, so by default every
         # stage's engine_args would carry it. With the explicit override, it
         # must NOT show up.
         for stage in stages:
@@ -1206,7 +1206,7 @@ class TestCLIExplicitPrecedence:
             cli_overrides={"async_chunk": None},
             cli_explicit_keys=set(),
         )
-        # qwen3_omni_moe.yaml: `async_chunk: true` → injected on every stage.
+        # qwen3_omni.yaml: `async_chunk: true` → injected on every stage.
         for stage in stages:
             assert stage.yaml_engine_args.get("async_chunk") is True
 
@@ -1261,7 +1261,7 @@ class TestSamplingConstraintsPrecedence:
         from vllm_omni.config.stage_config import load_deploy_config, merge_pipeline_deploy
 
         pipeline = _PIPELINE_REGISTRY["qwen3_omni_moe"]
-        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni_moe.yaml"
+        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "qwen3_omni.yaml"
         if not deploy_path.exists():
             pytest.skip("Deploy config not found")
 

@@ -24,7 +24,7 @@ os.environ["VLLM_TEST_CLEAN_GPU_MEMORY"] = "0"
 models = ["Qwen/Qwen3-Omni-30B-A3B-Instruct"]
 
 
-_CI_DEPLOY = get_deploy_config_path("ci/qwen3_omni_moe.yaml")
+_CI_DEPLOY = get_deploy_config_path("ci/qwen3_omni.yaml")
 
 
 def get_chunk_config():

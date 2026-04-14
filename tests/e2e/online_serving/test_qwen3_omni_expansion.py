@@ -46,7 +46,7 @@ def get_batch_token_config(default_path):
 # async_chunk is enabled by default in the YAML, so the previous separate
 # ``async_chunk`` test case is now identical to ``default`` and has been
 # dropped to avoid running every test twice.
-default_path = get_deploy_config_path("ci/qwen3_omni_moe.yaml")
+default_path = get_deploy_config_path("ci/qwen3_omni.yaml")
 
 test_params = [
     pytest.param(

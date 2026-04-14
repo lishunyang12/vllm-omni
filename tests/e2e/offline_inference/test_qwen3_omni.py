@@ -21,7 +21,7 @@ models = ["Qwen/Qwen3-Omni-30B-A3B-Instruct"]
 
 # Single CI deploy YAML; rocm/xpu deltas are picked automatically via the
 # platforms: section. Only CUDA needs an extra enforce_eager tweak.
-_CI_DEPLOY = get_deploy_config_path("ci/qwen3_omni_moe.yaml")
+_CI_DEPLOY = get_deploy_config_path("ci/qwen3_omni.yaml")
 
 
 def get_cuda_graph_config():

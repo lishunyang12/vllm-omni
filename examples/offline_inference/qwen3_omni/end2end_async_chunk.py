@@ -182,7 +182,7 @@ def clone_prompt_for_request(template: dict) -> dict:
 def _default_deploy_config_path() -> str | None:
     """Best-effort default deploy config for running Qwen3-Omni with async_chunk.
 
-    The default ``vllm_omni/deploy/qwen3_omni_moe.yaml`` ships with
+    The default ``vllm_omni/deploy/qwen3_omni.yaml`` ships with
     ``async_chunk: true`` at the top level, so loading it is enough to
     enable async-chunk semantics. To disable it, copy the YAML and set
     ``async_chunk: false`` (or pass ``--deploy-config`` to a YAML that
@@ -198,7 +198,7 @@ def _default_deploy_config_path() -> str | None:
         repo_root,
         "vllm_omni",
         "deploy",
-        "qwen3_omni_moe.yaml",
+        "qwen3_omni.yaml",
     )
     return candidate if os.path.exists(candidate) else None
 
@@ -384,7 +384,7 @@ async def run_all(args):
     async_omni = None
     try:
         # ``deploy_config=None`` is the normal case — falls through to the
-        # bundled ``vllm_omni/deploy/qwen3_omni_moe.yaml`` via the model
+        # bundled ``vllm_omni/deploy/qwen3_omni.yaml`` via the model
         # registry. Pass an explicit path only to override.
         async_omni = AsyncOmni(
             model=args.model,

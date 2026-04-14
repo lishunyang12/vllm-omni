@@ -71,7 +71,7 @@ start **before** the upstream stage (Thinker) finishes -- use the async_chunk
 example. This requires:
 
 1. A deploy config YAML with ``async_chunk: true`` (e.g.
-   ``qwen3_omni_moe.yaml``).
+   ``qwen3_omni.yaml``).
 2. Hardware that matches the config (e.g. 2x H100 for the default 3-stage
    config).
 
