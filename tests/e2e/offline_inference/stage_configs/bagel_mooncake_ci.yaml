@@ -50,6 +50,7 @@ stage_args:
       enforce_eager: true
       trust_remote_code: true
       distributed_executor_backend: mp
+      load_format: dummy
       omni_kv_config:
         need_recv_cache: true
     engine_input_source: [0]
