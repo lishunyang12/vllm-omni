@@ -425,14 +425,14 @@ def _apply_platform_overrides(
         if "engine_args" in ps:
             overrides = dict(ps["engine_args"])
             if "devices" in ps.get("runtime", {}):
-                object.__setattr__(base, "devices", ps["runtime"]["devices"])
+                base.devices = ps["runtime"]["devices"]
         else:
             overrides = {k: v for k, v in ps.items() if k not in ("stage_id", "devices")}
             if "devices" in ps:
-                object.__setattr__(base, "devices", ps["devices"])
+                base.devices = ps["devices"]
         for key, val in overrides.items():
             if hasattr(base, key):
-                object.__setattr__(base, key, val)
+                setattr(base, key, val)
             else:
                 base.engine_extras[key] = val
 

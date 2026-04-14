@@ -87,6 +87,13 @@ class OrchestratorArgs:
     # === Pre-built Objects ===
     parallel_config: Any = None
 
+    # === Multi-stage guards ===
+    # --tokenizer is captured here so it does not propagate to every stage
+    # uniformly (different stages often need different tokenizers, e.g.
+    # qwen3_omni thinker vs talker). Users wanting a per-stage tokenizer
+    # should set it in the deploy YAML.
+    tokenizer: str | None = None
+
 
 # Fields that live in BOTH OrchestratorArgs and OmniEngineArgs by design.
 # Changes to this set are a review red flag — revisit the contract.
