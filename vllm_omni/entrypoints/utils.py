@@ -5,6 +5,7 @@ from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any, get_args, get_origin
 
+import yaml
 from vllm.logger import init_logger
 from vllm.transformers_utils.config import get_config, get_hf_file_to_dict
 from vllm.transformers_utils.repo_utils import file_or_path_exists
@@ -500,8 +501,6 @@ def load_and_resolve_stage_configs(
         Tuple of (config_path, stage_configs)
     """
     if stage_configs_path is not None and deploy_config_path is None:
-        import yaml
-
         if not os.path.exists(stage_configs_path):
             raise FileNotFoundError(
                 f"--stage-configs-path {stage_configs_path!r} does not exist. "

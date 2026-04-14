@@ -79,7 +79,7 @@ from vllm_omni.engine.stage_init_utils import (
     setup_stage_devices,
     terminate_alive_proc,
 )
-from vllm_omni.entrypoints.utils import load_and_resolve_stage_configs
+from vllm_omni.entrypoints.utils import inject_omni_kv_config, load_and_resolve_stage_configs
 from vllm_omni.inputs.preprocess import OmniInputPreprocessor
 from vllm_omni.platforms import current_omni_platform
 
@@ -769,8 +769,6 @@ class AsyncOmniEngine:
                                 setup_stage_devices(configured_stage_id, metadata.runtime_cfg)
                                 omni_conn_cfg, omni_from, omni_to = omni_kv_connector
                                 if omni_conn_cfg:
-                                    from vllm_omni.entrypoints.utils import inject_omni_kv_config
-
                                     inject_omni_kv_config(stage_cfg, omni_conn_cfg, omni_from, omni_to)
                                 inject_kv_stage_info(stage_cfg, configured_stage_id)
                                 if self.single_stage_mode:
@@ -1317,8 +1315,7 @@ class AsyncOmniEngine:
                     stage_overrides = json.loads(stage_overrides_json)
                 except json.JSONDecodeError as exc:
                     raise ValueError(
-                        f"--stage-overrides is not valid JSON: {exc}. "
-                        f"Got: {stage_overrides_json!r}"
+                        f"--stage-overrides is not valid JSON: {exc}. Got: {stage_overrides_json!r}"
                     ) from exc
             else:
                 stage_overrides = stage_overrides_json
