@@ -57,13 +57,10 @@ vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
 # (yaml default for qwen3_omni_moe: on)
 vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 \
     --no-async-chunk
-
-# qwen3_tts supports both chunked streaming (default) and synchronous
-# end-to-end modes from the same deploy yaml. ``--no-async-chunk`` flips
-# the bool and the pipeline dispatches to the end-to-end codec processor.
-vllm serve Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice --omni --port 8091 \
-    --no-async-chunk
 ```
+
+For the TTS counterpart (synchronous codec variant), see
+[qwen3_tts README](../qwen3_tts/README.md#sync-vs-async-chunk-mode).
 
 Explicit CLI flags **override** the deploy YAML (which itself overrides the
 parser defaults). If you don't pass a flag, the YAML value wins.

@@ -383,9 +383,12 @@ async def run_all(args):
     print(f"[Info] Creating AsyncOmni with deploy_config={args.deploy_config}")
     async_omni = None
     try:
+        # ``deploy_config=None`` is the normal case — falls through to the
+        # bundled ``vllm_omni/deploy/qwen3_omni_moe.yaml`` via the model
+        # registry. Pass an explicit path only to override.
         async_omni = AsyncOmni(
             model=args.model,
-            stage_configs_path=args.deploy_config,
+            deploy_config=args.deploy_config,
             log_stats=args.log_stats,
             stage_init_timeout=args.stage_init_timeout,
         )

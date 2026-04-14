@@ -517,7 +517,7 @@ for result in response.json()["results"]:
 
 All items are fanned out to `generate()` concurrently. The engine's stage worker automatically batches them up to the configured `max_batch_size` and queues the rest — no client-side throttling needed.
 
-For best throughput, raise both stages' `max_num_seqs` to ≥4 via `--stage-overrides`:
+For best throughput, set both stages' `max_num_seqs` to ≥4 via `--stage-overrides`:
 
 ```bash
 vllm serve Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice \
