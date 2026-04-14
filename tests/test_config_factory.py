@@ -671,19 +671,28 @@ stages:
         assert pipeline.async_chunk is False
 
 
-class TestArchitectureFallback:
-    """Tests for architecture-based model detection fallback."""
+class TestPipelineDiscovery:
+    """Tests for auto-discovery of pipelines from models/*/pipeline.py."""
 
-    def test_architecture_models_mapping_exists(self):
-        """Test that _ARCHITECTURE_MODELS contains expected entries."""
-        assert "MiMoAudioForConditionalGeneration" in StageConfigFactory._ARCHITECTURE_MODELS
-        assert StageConfigFactory._ARCHITECTURE_MODELS["MiMoAudioForConditionalGeneration"] == "mimo_audio"
-        assert "HunyuanImage3ForCausalMM" in StageConfigFactory._ARCHITECTURE_MODELS
-        assert StageConfigFactory._ARCHITECTURE_MODELS["HunyuanImage3ForCausalMM"] == "hunyuan_image3"
+    def test_discover_populates_registry_with_known_models(self):
+        """``_discover_all_pipelines`` imports every pipeline.py so the
+        registry is populated with the built-in models after one call."""
+        from vllm_omni.config.stage_config import _discover_all_pipelines
 
-    def test_mimo_audio_in_pipeline_models(self):
-        """Test that mimo_audio is registered in PIPELINE_MODELS."""
-        assert "mimo_audio" in StageConfigFactory.PIPELINE_MODELS
+        _discover_all_pipelines()
+        # These models have a pipeline.py in-tree and must be registered.
+        assert "qwen2_5_omni" in _PIPELINE_REGISTRY
+        assert "qwen3_omni_moe" in _PIPELINE_REGISTRY
+        assert "qwen3_tts" in _PIPELINE_REGISTRY
+
+    def test_pipeline_config_supports_hf_architectures(self):
+        """PipelineConfig accepts hf_architectures for HF-arch fallback
+        (replaces the old _ARCHITECTURE_MODELS dict)."""
+        p = PipelineConfig(
+            model_type="custom_collide",
+            hf_architectures=("SomeCollidingArch",),
+        )
+        assert p.hf_architectures == ("SomeCollidingArch",)
 
 
 class TestStagePipelineConfig:

@@ -163,6 +163,12 @@ class PipelineConfig:
     model_type: str
     model_arch: str = ""
     stages: tuple[StagePipelineConfig, ...] = ()
+    # HF architecture aliases: used by StageConfigFactory when the model's
+    # HF config reports a generic model_type that collides with a different
+    # model (e.g. MiMo Audio reports model_type="qwen2"). The factory
+    # matches ``hf_config.architectures[*]`` against this tuple to route
+    # to the correct pipeline. Leave empty for models with unique model_type.
+    hf_architectures: tuple[str, ...] = ()
 
     def get_stage(self, stage_id: int) -> StagePipelineConfig | None:
         """Look up a stage by its ID."""
@@ -687,32 +693,42 @@ class ModelPipeline:
         return errors
 
 
+def _discover_all_pipelines() -> None:
+    """Import every ``models/<dir>/pipeline.py`` once to populate the registry.
+
+    Each pipeline.py is expected to call ``register_pipeline(PipelineConfig(...))``
+    at import time. This function walks the models directory and imports any
+    pipeline.py it finds — contributors only need to drop a new pipeline.py
+    in their model's directory for the factory to pick it up.
+
+    Idempotent: Python's module cache ensures subsequent calls are no-ops.
+    """
+    if not _MODELS_DIR.exists():
+        return
+    for subdir in sorted(_MODELS_DIR.iterdir()):
+        if not subdir.is_dir():
+            continue
+        if not (subdir / "pipeline.py").exists():
+            continue
+        module_path = f"vllm_omni.model_executor.models.{subdir.name}.pipeline"
+        try:
+            __import__(module_path)
+        except Exception as exc:
+            logger.debug("Skipping pipeline module %s: %s", module_path, exc)
+
+
 class StageConfigFactory:
     """Factory that loads pipeline YAML and merges CLI overrides.
 
     Handles both single-stage and multi-stage models.
+
+    Pipelines are auto-discovered from ``models/<dir>/pipeline.py`` modules;
+    no hardcoded model-type → directory mapping is maintained here. Models
+    with generic HF ``model_type`` collisions (e.g. MiMo Audio reports
+    ``qwen2``) should declare ``hf_architectures=(...)`` on their
+    ``PipelineConfig`` so the factory can disambiguate via
+    ``hf_config.architectures``.
     """
-
-    # Mapping of model types to directories under model_executor/models/.
-    PIPELINE_MODELS: dict[str, str] = {
-        "qwen3_omni_moe": "qwen3_omni",
-        "qwen2_5_omni": "qwen2_5_omni",
-        "bagel": "bagel",
-        "qwen3_tts": "qwen3_tts",
-        "voxtral_tts": "voxtral_tts",
-        "mimo_audio": "mimo_audio",
-        "glm-image": "glm_image",
-        "cosyvoice3": "cosyvoice3",
-        "mammothmoda2": "mammoth_moda2",
-    }
-
-    # Fallback: map HF architecture class names to pipeline dirs.
-    # Used when model_type collides with another model (e.g. MiMo Audio
-    # reports model_type="qwen2" which matches plain Qwen2, not our pipeline).
-    _ARCHITECTURE_MODELS: dict[str, str] = {
-        "MiMoAudioForConditionalGeneration": "mimo_audio",
-        "HunyuanImage3ForCausalMM": "hunyuan_image3",
-    }
 
     @classmethod
     def create_from_model(
@@ -736,16 +752,25 @@ class StageConfigFactory:
 
         trust_remote_code = cli_overrides.get("trust_remote_code", True)
 
-        # --- New path: check pipeline registry first ---
-        model_type, _ = cls._auto_detect_model_type(model, trust_remote_code=trust_remote_code)
-        if model_type and model_type in cls.PIPELINE_MODELS:
-            pipeline_dir = cls.PIPELINE_MODELS[model_type]
-            try:
-                __import__(f"vllm_omni.model_executor.models.{pipeline_dir}.pipeline")
-            except ImportError:
-                pass
+        # Ensure every pipeline.py has been imported so the registry is populated.
+        _discover_all_pipelines()
+
+        # --- New path: check pipeline registry by model_type first ---
+        model_type, hf_config = cls._auto_detect_model_type(model, trust_remote_code=trust_remote_code)
         if model_type and model_type in _PIPELINE_REGISTRY:
             return cls._create_from_registry(model_type, cli_overrides, deploy_config_path, cli_explicit_keys)
+
+        # --- HF architecture fallback: some models report a generic
+        # model_type that collides with another model. Match by the
+        # hf_architectures declared on each registered PipelineConfig.
+        if hf_config is not None:
+            hf_archs = set(getattr(hf_config, "architectures", []) or [])
+            if hf_archs:
+                for registered in _PIPELINE_REGISTRY.values():
+                    if hf_archs.intersection(registered.hf_architectures):
+                        return cls._create_from_registry(
+                            registered.model_type, cli_overrides, deploy_config_path, cli_explicit_keys
+                        )
 
         # --- Legacy path: load from pipeline YAML ---
         pipeline = cls._load_pipeline(model, trust_remote_code=trust_remote_code)
@@ -910,40 +935,49 @@ class StageConfigFactory:
 
     @classmethod
     def _load_pipeline(cls, model: str, trust_remote_code: bool = True) -> ModelPipeline | None:
-        """Load pipeline YAML for the model.
+        """Load a legacy ``pipeline.yaml`` for the model.
 
-        Args:
-            model: Model name or path.
-            trust_remote_code: Whether to trust remote code for HF config loading.
+        Searches ``model_executor/models/<dir>/pipeline.yaml`` by trying
+        (a) the raw ``model_type`` as the directory name, then
+        (b) ``model_type`` with hyphens replaced by underscores,
+        and finally (c) scanning every ``pipeline.yaml`` for one that
+        declares a matching ``model_type`` or ``hf_architectures``.
 
-        Returns:
-            ModelPipeline if found, None otherwise.
+        Returns None if no pipeline.yaml is found — caller handles the
+        ``resolve_model_config_path`` fallback via stage_configs/ YAMLs.
         """
         model_type, hf_config = cls._auto_detect_model_type(model, trust_remote_code=trust_remote_code)
         if model_type is None:
             return None
 
-        pipeline_dir = cls.PIPELINE_MODELS.get(model_type)
+        # Direct lookups by convention
+        candidates = [model_type, model_type.replace("-", "_")]
+        for dir_name in candidates:
+            pipeline_path = get_pipeline_path(dir_name, "pipeline.yaml")
+            if pipeline_path.exists():
+                return cls._parse_pipeline_yaml(pipeline_path, model_type)
 
-        # Fallback: check HF architectures when model_type doesn't match
-        if pipeline_dir is None and hf_config is not None:
-            for arch in getattr(hf_config, "architectures", []) or []:
-                pipeline_dir = cls._ARCHITECTURE_MODELS.get(arch)
-                if pipeline_dir is not None:
-                    model_type = pipeline_dir
-                    break
+        # Scan fallback: read every pipeline.yaml and match on declared fields
+        hf_archs = set(getattr(hf_config, "architectures", []) or []) if hf_config else set()
+        if _MODELS_DIR.exists():
+            for subdir in sorted(_MODELS_DIR.iterdir()):
+                if not subdir.is_dir():
+                    continue
+                pipeline_path = subdir / "pipeline.yaml"
+                if not pipeline_path.exists():
+                    continue
+                try:
+                    cfg = load_yaml_config(pipeline_path)
+                except Exception as exc:
+                    logger.debug("Skip %s: %s", pipeline_path, exc)
+                    continue
+                declared_type = getattr(cfg, "model_type", None)
+                declared_archs = set(getattr(cfg, "hf_architectures", None) or [])
+                if declared_type == model_type or (hf_archs and hf_archs.intersection(declared_archs)):
+                    return cls._parse_pipeline_yaml(pipeline_path, declared_type or model_type)
 
-        if pipeline_dir is None:
-            logger.debug(f"No pipeline mapping for model_type: {model_type}")
-            return None
-
-        pipeline_path = get_pipeline_path(pipeline_dir, "pipeline.yaml")
-
-        if not pipeline_path.exists():
-            logger.debug(f"Pipeline file not found: {pipeline_path}")
-            return None
-
-        return cls._parse_pipeline_yaml(pipeline_path, model_type)
+        logger.debug("No pipeline.yaml found for model_type %s (archs=%s)", model_type, sorted(hf_archs))
+        return None
 
     # Keys consumed as explicit StageConfig fields — everything else is
     # passed through via yaml_extras.

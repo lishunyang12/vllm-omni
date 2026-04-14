@@ -89,6 +89,27 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 
+# ============================================================================
+# Parent-EngineArgs field-routing contracts (consumed by
+# AsyncOmniEngine._strip_parent_engine_args when ``stage_configs_path`` is set).
+# ============================================================================
+
+# Fields that must survive the "equal to default → strip" filter because
+# diffusion stages need them even when equal to vllm's default value
+# (e.g. colocate worker setup relies on worker_extension_cls being forwarded).
+_PARENT_ARGS_KEEP: frozenset[str] = frozenset({"worker_extension_cls"})
+
+# Omni orchestrator-level fields consumed by ``_resolve_stage_configs`` that
+# must never leak into per-stage EngineArgs (``stage_configs_path`` would
+# trigger the ``create_model_config`` guard).
+_PARENT_ARGS_STRIP: frozenset[str] = frozenset({"stage_configs_path"})
+
+# Fields always populated by callers (via ``from_cli_args`` / ``asdict``) so
+# their presence as an override is never a surprise — suppress the
+# "override ignored" warning for these.
+_PARENT_ARGS_NO_WARN: frozenset[str] = frozenset({"model"})
+
+
 def _patch_generation_config_if_needed(model_config: Any) -> None:
     """Ensure try_get_generation_config won't crash for models whose HF
     config.json lacks model_type (e.g. CosyVoice3). We probe it once;
@@ -1245,26 +1266,16 @@ class AsyncOmniEngine:
 
         Logs a warning for any parent field whose value differs from the
         dataclass default, so users know their explicit overrides are ignored.
+        See the module-level ``_PARENT_ARGS_*`` constants for the routing
+        contracts this method enforces.
         """
-        # worker_extension_cls is a parent field but must pass through to
-        # diffusion stages for colocate worker setup.
-        _keep = {"worker_extension_cls"}
-        # Orchestrator-level OmniEngineArgs fields that are consumed by
-        # _resolve_stage_configs and must not leak into per-stage configs
-        # (stage_configs_path would trigger the create_model_config guard).
-        _strip_omni = {"stage_configs_path"}
-        # Fields that are always set by callers (via from_cli_args / asdict)
-        # and would always appear as overridden — suppress from the warning
-        # so it only surfaces genuinely surprising overrides.
-        _no_warn = {"model"}
-
         parent_fields: dict[str, dataclasses.Field] = {f.name: f for f in dataclasses.fields(EngineArgs)}
         result, overridden = strip_parent_engine_args(
             kwargs,
             parent_fields=parent_fields,
-            keep_keys=_keep,
-            strip_keys=_strip_omni,
-            no_warn_keys=_no_warn,
+            keep_keys=_PARENT_ARGS_KEEP,
+            strip_keys=_PARENT_ARGS_STRIP,
+            no_warn_keys=_PARENT_ARGS_NO_WARN,
         )
 
         if overridden:
