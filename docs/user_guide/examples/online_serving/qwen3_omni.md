@@ -18,7 +18,7 @@ vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091
 If you want to open async chunking for qwen3-omni, launch the server with command below
 
 ```bash
-vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 --deploy-config /vllm_omni/deploy/qwen3_omni.yaml
+vllm serve Qwen/Qwen3-Omni-30B-A3B-Instruct --omni --port 8091 --deploy-config /vllm_omni/deploy/qwen3_omni_moe.yaml
 ```
 
 If you have custom stage configs file, launch the server with command below

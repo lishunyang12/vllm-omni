@@ -96,7 +96,7 @@ _CI_OVERLAYS: dict[str, dict[str, Any]] = {
         },
     },
     "qwen3_omni_moe": {
-        "base_config": "qwen3_omni.yaml",
+        "base_config": "qwen3_omni_moe.yaml",
         "stages": [
             {
                 "stage_id": 0,

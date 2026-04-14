@@ -24,7 +24,7 @@ pytestmark = [pytest.mark.advanced_model, pytest.mark.example]
 models = ["Qwen/Qwen3-Omni-30B-A3B-Instruct"]
 
 
-stage_configs = [get_deploy_config_path("ci/qwen3_omni.yaml")]
+stage_configs = [get_deploy_config_path("ci/qwen3_omni_moe.yaml")]
 
 
 example_dir = str(Path(__file__).parent.parent.parent.parent / "examples" / "online_serving")

@@ -169,11 +169,6 @@ class PipelineConfig:
     # matches ``hf_config.architectures[*]`` against this tuple to route
     # to the correct pipeline. Leave empty for models with unique model_type.
     hf_architectures: tuple[str, ...] = ()
-    # Default deploy YAML basename (without extension) under
-    # ``vllm_omni/deploy/``. When None, falls back to ``model_type``. Useful
-    # when the registry key (HF ``model_type``) differs from the preferred
-    # deploy filename (e.g. ``qwen3_omni_moe`` → ``qwen3_omni.yaml``).
-    deploy_name: str | None = None
 
     def get_stage(self, stage_id: int) -> StagePipelineConfig | None:
         """Look up a stage by its ID."""
@@ -825,13 +820,9 @@ class StageConfigFactory:
         set is ``None`` (programmatic ``Omni()`` callers, which have no
         argparse layer), every kwarg is treated as explicit.
         """
-        # Resolve deploy config path. Respects PipelineConfig.deploy_name so
-        # the deploy YAML basename can differ from the HF model_type
-        # (e.g. qwen3_omni_moe model_type → qwen3_omni.yaml).
+        # Resolve deploy config path
         if deploy_config_path is None:
-            pipeline_cfg = _PIPELINE_REGISTRY.get(model_type)
-            deploy_name = (pipeline_cfg.deploy_name if pipeline_cfg else None) or model_type
-            deploy_path = _DEPLOY_DIR / f"{deploy_name}.yaml"
+            deploy_path = _DEPLOY_DIR / f"{model_type}.yaml"
         else:
             deploy_path = Path(deploy_config_path)
 

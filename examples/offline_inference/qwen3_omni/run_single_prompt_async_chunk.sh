@@ -6,7 +6,7 @@
 # achieving true stage-level concurrency via chunk-level streaming.
 #
 # Prerequisites:
-#   - A deploy config YAML (e.g. qwen3_omni.yaml)
+#   - A deploy config YAML (e.g. qwen3_omni_moe.yaml)
 #   - Hardware matching the config (e.g. 2x H100 for the default 3-stage config)
 #
 # Usage:
@@ -21,6 +21,6 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
 python "${SCRIPT_DIR}/end2end_async_chunk.py" \
     --query-type use_audio \
-    --deploy-config "${REPO_ROOT}/vllm_omni/deploy/qwen3_omni.yaml" \
+    --deploy-config "${REPO_ROOT}/vllm_omni/deploy/qwen3_omni_moe.yaml" \
     --output-dir output_audio_async_chunk \
     "$@"
