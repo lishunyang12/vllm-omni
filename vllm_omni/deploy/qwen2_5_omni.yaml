@@ -1,7 +1,7 @@
 # Qwen2.5-Omni deploy: CUDA defaults + platform overrides, verified on 2x H100.
 # Stage 2 disables flashinfer autotune because its DiT block never invokes
 # flashinfer; the autotune dummy run OOMs the shared cuda:0 device otherwise.
-async_chunk: false  # no chunk-streaming wiring on this model
+async_chunk: true
 
 stages:
   - stage_id: 0
