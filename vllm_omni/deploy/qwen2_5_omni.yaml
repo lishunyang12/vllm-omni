@@ -1,6 +1,20 @@
 # Qwen2.5-Omni deploy: CUDA defaults + platform overrides, verified on 2x H100.
 # Stage 2 disables flashinfer autotune because its DiT block never invokes
 # flashinfer; the autotune dummy run OOMs the shared cuda:0 device otherwise.
+#
+# Fields omitted from a stage fall back to StageDeployConfig dataclass
+# defaults (see vllm_omni/config/stage_config.py). For instance, every
+# stage here uses vLLM's default max_num_batched_tokens=32768 because
+# chat-sized prefill comfortably fits; only models with codec prefill
+# (Qwen3-Omni, Qwen3-TTS) need to bump it above 32k.
+#
+# enforce_eager policy across the three deploy YAMLs:
+#   * code2wav / generation stages:  always true (cudagraph incompatible with
+#     the custom generation loop — set explicitly everywhere).
+#   * AR stages (thinker, talker):   model-dependent. Qwen2.5-Omni runs eager
+#     on CUDA (thinker uses custom ops that don't trace cleanly); NPU / XPU
+#     platform overrides flip back to false where cudagraph is verified.
+#     Qwen3-Omni / Qwen3-TTS AR stages use the default (false = cudagraph on).
 async_chunk: true
 
 stages:

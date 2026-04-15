@@ -1,6 +1,16 @@
 # Qwen3-Omni-MoE production deploy, verified on 2x H100 (stage 0 on cuda:0,
 # stages 1+2 on cuda:1).
-
+#
+# Fields omitted from a stage fall back to StageDeployConfig defaults (see
+# vllm_omni/config/stage_config.py). Notable implicit defaults for this
+# model:
+#   * Stages 0/1 (thinker, talker) do not set max_num_batched_tokens —
+#     chat-sized prefill fits in the 32768 default.
+#   * Stages 0/1 do not set enforce_eager — cudagraph runs by default
+#     (false). Stage 2 (code2wav) sets true because its generation loop
+#     is cudagraph-incompatible.
+#   * Platform sections flip enforce_eager per-stage where platform
+#     cudagraph support differs.
 async_chunk: true
 
 connectors:

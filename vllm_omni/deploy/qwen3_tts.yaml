@@ -1,6 +1,17 @@
 # Qwen3-TTS deploy: talker → code2wav via shared-memory chunk streaming.
 # Verified on 1x H100.
-
+#
+# Fields omitted from a stage fall back to StageDeployConfig defaults (see
+# vllm_omni/config/stage_config.py). Notable choices for this model:
+#   * Stage 0 (talker) sets max_num_batched_tokens=512 for async-chunk
+#     latency tuning (not correctness) — small per-step batches keep
+#     first-chunk latency low.
+#   * Stage 1 (code2wav) sets max_num_batched_tokens=65536 for correctness:
+#     codec prefill length (Q * num_frames) exceeds the 32k default.
+#   * Stage 0 does not set enforce_eager — talker runs cudagraph by default.
+#     Stage 1 sets true because its codec generation loop is not
+#     cudagraph-compatible. NPU platform flips stage 0 to true where
+#     cudagraph is not yet verified.
 async_chunk: true
 
 connectors:
