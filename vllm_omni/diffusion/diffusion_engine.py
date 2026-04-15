@@ -337,11 +337,16 @@ class DiffusionEngine:
         return DiffusionEngine(config, scheduler=scheduler)
 
     def add_req_and_wait_for_response(self, request: OmniDiffusionRequest) -> DiffusionOutput:
+        # Lock is held only around scheduler state mutations (add, schedule,
+        # update, abort processing, finalize) and released during GPU
+        # execution so that collective_rpc calls (e.g. profiling) are not
+        # blocked by long-running inference.
         with self._rpc_lock:
             target_sched_req_id = self.scheduler.add_request(request)
 
-            # keep scheduling and executing until the target request is finished
-            while True:
+        # keep scheduling and executing until the target request is finished
+        while True:
+            with self._rpc_lock:
                 self._process_aborts_queue()
                 sched_output = self.scheduler.schedule()
                 if sched_output.is_empty:
@@ -351,22 +356,26 @@ class DiffusionEngine:
                         raise RuntimeError("Diffusion scheduler has no runnable requests.")
                     continue
 
-                # NOTE: add_req_and_wait_for_response() is synchronous, and
-                # the scheduler currently enforces _max_batch_size = 1 (see
-                # vllm_omni/diffusion/sched/base_scheduler.py), so we directly
-                # take the single scheduled request here.
-                sched_req_id = sched_output.scheduled_req_ids[0]
-                try:
-                    runner_output = self.execute_fn(sched_output)
-                except Exception as exc:
-                    logger.error("Execution failed for diffusion request %s", sched_req_id, exc_info=True)
-                    runner_output = RunnerOutput(
-                        req_id=sched_req_id,
-                        step_index=None,
-                        finished=True,
-                        result=DiffusionOutput(error=str(exc)),
-                    )
+            # NOTE: add_req_and_wait_for_response() is synchronous, and
+            # the scheduler currently enforces _max_batch_size = 1 (see
+            # vllm_omni/diffusion/sched/base_scheduler.py), so we directly
+            # take the single scheduled request here.
+            #
+            # Lock is released here so collective_rpc (profiling, etc.)
+            # can proceed during GPU execution.
+            sched_req_id = sched_output.scheduled_req_ids[0]
+            try:
+                runner_output = self.execute_fn(sched_output)
+            except Exception as exc:
+                logger.error("Execution failed for diffusion request %s", sched_req_id, exc_info=True)
+                runner_output = RunnerOutput(
+                    req_id=sched_req_id,
+                    step_index=None,
+                    finished=True,
+                    result=DiffusionOutput(error=str(exc)),
+                )
 
+            with self._rpc_lock:
                 self._process_aborts_queue()
 
                 finished_req_ids = self.scheduler.update_from_output(sched_output, runner_output)
