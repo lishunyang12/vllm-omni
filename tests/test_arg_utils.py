@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Tests for vllm_omni.engine.arg_routing — invariants that must
+"""Tests for vllm_omni.engine.arg_utils — invariants that must
 hold for the orchestrator/engine/server CLI flag partition."""
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from dataclasses import dataclass, fields
 
 import pytest
 
-from vllm_omni.engine.arg_routing import (
+from vllm_omni.engine.arg_utils import (
     SHARED_FIELDS,
     derive_server_dests_from_vllm_parser,
     internal_blacklist_keys,
@@ -175,7 +175,7 @@ def test_split_mixed_real_world():
 def test_user_typed_unclassified_warns(caplog):
     """If the user types a flag we can't route, warn — don't silently drop."""
     raw = {"bogus_flag": "value", "max_num_seqs": 64}
-    with caplog.at_level(logging.WARNING, logger="vllm_omni.engine.arg_routing"):
+    with caplog.at_level(logging.WARNING, logger="vllm_omni.engine.arg_utils"):
         split_kwargs(raw, engine_cls=_FakeEngineArgs, user_typed={"bogus_flag"})
     assert any("bogus_flag" in rec.message for rec in caplog.records), (
         f"Expected warning mentioning 'bogus_flag', got: {[rec.message for rec in caplog.records]}"
@@ -186,7 +186,7 @@ def test_unclassified_without_user_typed_silent(caplog):
     """Without user_typed, unclassified keys drop silently (argparse defaults
     for server flags shouldn't spam logs on every launch)."""
     raw = {"host": "0.0.0.0", "port": 8091, "max_num_seqs": 64}
-    with caplog.at_level(logging.WARNING, logger="vllm_omni.engine.arg_routing"):
+    with caplog.at_level(logging.WARNING, logger="vllm_omni.engine.arg_utils"):
         split_kwargs(raw, engine_cls=_FakeEngineArgs, user_typed=None)
     # No warnings because we don't know these were user-typed.
     assert not any("host" in rec.message or "port" in rec.message for rec in caplog.records)
@@ -321,7 +321,7 @@ def test_split_all_none_values_preserved_on_orchestrator():
 
 def test_split_user_typed_with_empty_kwargs_no_warn(caplog):
     """user_typed non-empty but kwargs empty — no warnings emitted."""
-    with caplog.at_level(logging.WARNING, logger="vllm_omni.engine.arg_routing"):
+    with caplog.at_level(logging.WARNING, logger="vllm_omni.engine.arg_utils"):
         split_kwargs({}, engine_cls=_FakeEngineArgs, user_typed={"nothing"})
     assert not caplog.records
 
@@ -346,7 +346,7 @@ def test_ambiguous_field_non_strict_routes_to_orchestrator(caplog):
     class _AmbiguousEngine:
         deploy_config: str | None = None
 
-    with caplog.at_level(logging.ERROR, logger="vllm_omni.engine.arg_routing"):
+    with caplog.at_level(logging.ERROR, logger="vllm_omni.engine.arg_utils"):
         orch, engine = split_kwargs({"deploy_config": "x"}, engine_cls=_AmbiguousEngine, strict=False)
     assert orch.deploy_config == "x"
     assert "deploy_config" not in engine
