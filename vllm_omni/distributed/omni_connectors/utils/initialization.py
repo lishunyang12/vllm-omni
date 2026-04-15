@@ -214,14 +214,9 @@ def load_omni_transfer_config(
         normalized["stage_args"] = normalized["stages"]
         config_dict = normalized
 
-    # Parse connectors
     connectors = {}
     runtime_config = config_dict.get("runtime", {})
-
-    # Parse global connectors (from runtime.connectors)
     global_connectors = runtime_config.get("connectors", {})
-
-    # Parse stage-level connectors
     stage_args = config_dict.get("stage_args", [])
     expected_edges: set[tuple[str, str]] = set()
     for stage_config in stage_args:
