@@ -23,7 +23,7 @@ from vllm_omni.config.stage_config import (
     register_pipeline,
     strip_parent_engine_args,
 )
-from vllm_omni.engine.arg_classification import internal_blacklist_keys
+from vllm_omni.engine.arg_routing import internal_blacklist_keys
 
 
 class TestStageType:

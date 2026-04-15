@@ -38,12 +38,12 @@ def build_stage_runtime_overrides(
     """Build per-stage runtime overrides from global and ``stage_<id>_*`` kwargs.
 
     ``internal_keys`` defaults to the set derived from ``OrchestratorArgs``
-    (via ``arg_classification.internal_blacklist_keys``) so that orchestrator
+    (via ``arg_routing.internal_blacklist_keys``) so that orchestrator
     fields are never forwarded as per-stage engine args. Callers can pass an
     explicit set for tests or specialized flows.
     """
     if internal_keys is None:
-        from vllm_omni.engine.arg_classification import internal_blacklist_keys
+        from vllm_omni.engine.arg_routing import internal_blacklist_keys
 
         internal_keys = internal_blacklist_keys()
 

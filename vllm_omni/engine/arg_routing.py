@@ -22,7 +22,7 @@ vLLM-Omni's CLI flags live in three buckets:
 Fields in ``SHARED_FIELDS`` (e.g. ``model``, ``log_stats``) flow to BOTH
 orchestrator and engine by design.
 
-Invariants enforced by ``tests/test_arg_classification.py``:
+Invariants enforced by ``tests/test_arg_routing.py``:
 
   1. ``OrchestratorArgs`` ∩ ``OmniEngineArgs`` ⊆ ``SHARED_FIELDS``
   2. Every CLI flag is classifiable into one of the three buckets
