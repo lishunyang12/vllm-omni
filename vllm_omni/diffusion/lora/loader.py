@@ -16,8 +16,6 @@ from vllm_omni.diffusion.utils.tf_utils import find_module_with_attr, get_transf
 
 logger = init_logger(__name__)
 
-LORA_DIFFUSERS_CONVERTER_REGISTRY = {}
-
 lora_convert_mapping: dict[str, Callable] = {
     "LTX2Pipeline": _convert_non_diffusers_ltx2_lora_to_diffusers,
     "QwenImagePipeline": _convert_non_diffusers_qwen_lora_to_diffusers,
