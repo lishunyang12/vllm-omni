@@ -149,6 +149,13 @@ def assert_video_diffusion_response(
     expected_width = _maybe_int(form_data.get("width"))
     expected_height = _maybe_int(form_data.get("height"))
     expected_fps = _maybe_int(form_data.get("fps"))
+    # check for LTX-2 two-stages pipeline
+    model_class_name = request_config.get("model_class_name", None)
+    if model_class_name is not None and (
+        model_class_name == "LTX2TwoStagesPipeline" or model_class_name == "LTX2ImageToVideoTwoStagesPipeline"
+    ):
+        expected_height *= 2
+        expected_width *= 2
 
     for vid_bytes in response.videos:
         assert_video_valid(
