@@ -1605,9 +1605,7 @@ class OmniServerStageCli(OmniServer):
         with open(stage_config_path, encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
 
-        stage_ids = [
-            stage["stage_id"] for stage in OmniServerStageCli._stage_entries(cfg) if "stage_id" in stage
-        ]
+        stage_ids = [stage["stage_id"] for stage in OmniServerStageCli._stage_entries(cfg) if "stage_id" in stage]
         if not stage_ids:
             raise ValueError(f"No stage IDs found in config: {stage_config_path}")
         return stage_ids
@@ -1793,10 +1791,18 @@ def omni_server(request: pytest.FixtureRequest, run_level: str, model_prefix: st
         if run_level == "advanced_model" and stage_config_path is not None:
             with open(stage_config_path, encoding="utf-8") as f:
                 cfg = yaml.safe_load(f) or {}
-            stage_ids = [stage["stage_id"] for stage in cfg.get("stage_args", []) if "stage_id" in stage]
+            # Strip ``load_format: dummy`` (CI overlay default) so advanced_model
+            # tests use real weights. New schema (``stages:``) writes the field
+            # flat at stage level; legacy schema (``stage_args:``) nests it as
+            # ``engine_args.load_format``. Handle both.
+            new_schema_stages = cfg.get("stages")
+            stage_key = "stages" if new_schema_stages is not None else "stage_args"
+            delete_path = "load_format" if new_schema_stages is not None else "engine_args.load_format"
+            stage_entries = cfg.get(stage_key, [])
+            stage_ids = [stage["stage_id"] for stage in stage_entries if "stage_id" in stage]
             stage_config_path = modify_stage_config(
                 stage_config_path,
-                deletes={"stage_args": {stage_id: ["engine_args.load_format"] for stage_id in stage_ids}},
+                deletes={stage_key: {stage_id: [delete_path] for stage_id in stage_ids}},
             )
 
         server_args = params.server_args or []
