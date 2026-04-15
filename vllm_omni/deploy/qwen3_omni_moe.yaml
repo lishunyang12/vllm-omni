@@ -12,6 +12,8 @@ connectors:
 
 stages:
   - stage_id: 0
+    gpu_memory_utilization: 0.9
+    devices: "0"
     output_connectors:
       to_stage_1: connector_of_shared_memory
     default_sampling_params:
