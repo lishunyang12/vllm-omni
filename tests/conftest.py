@@ -1741,9 +1741,7 @@ class OmniServerStageCli(OmniServer):
                         )
                     except Exception as exc:  # pragma: no cover - diagnostic only
                         tail = f"\n<failed to read stage log {log_path}: {exc}>"
-                raise RuntimeError(
-                    f"Stage {stage_id} exited with code {ret} before API server became ready.{tail}"
-                )
+                raise RuntimeError(f"Stage {stage_id} exited with code {ret} before API server became ready.{tail}")
 
     def _start_server(self) -> None:
         ordered_stage_ids = [0, *[stage_id for stage_id in self.stage_ids if stage_id != 0]]
