@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import os
+import sys
 import time
 import types
 import weakref
@@ -14,7 +16,7 @@ from vllm.v1.engine.exceptions import EngineDeadError
 
 from vllm_omni.engine.async_omni_engine import AsyncOmniEngine
 from vllm_omni.entrypoints.client_request_state import ClientRequestState
-from vllm_omni.entrypoints.utils import get_final_stage_id_for_e2e
+from vllm_omni.entrypoints.utils import detect_explicit_cli_keys, get_final_stage_id_for_e2e
 from vllm_omni.metrics.stats import OrchestratorAggregator as OrchestratorMetrics
 from vllm_omni.model_executor.model_loader.weight_utils import download_weights_from_hf_specific
 from vllm_omni.outputs import OmniRequestOutput
@@ -67,6 +69,53 @@ OutputMessageHandleResult = tuple[Literal[True], None, None, None] | tuple[Liter
 
 class OmniBase:
     """Shared runtime foundation for AsyncOmni and Omni."""
+
+    @classmethod
+    def from_args(
+        cls,
+        args: argparse.Namespace,
+        argv: list[str] | None = None,
+        **overrides: Any,
+    ) -> OmniBase:
+        """Construct an ``Omni`` / ``AsyncOmni`` from an ``argparse.Namespace``.
+
+        This is the **recommended** entry point for any argparse-based caller
+        (offline scripts, tests, CI). It expands ``vars(args)`` into kwargs
+        and automatically captures which flags the user typed on the command
+        line via ``detect_explicit_cli_keys`` so that argparse defaults do
+        not silently override deploy YAML values.
+
+        Args:
+            args: Parsed argparse namespace. Typically from
+                ``parser.parse_args()``.
+            argv: List of argv tokens to scan for explicit flags. Defaults to
+                ``sys.argv[1:]`` which is correct for a script's ``main()``.
+                Override for tests that construct a fake ``args`` without a
+                matching ``sys.argv``.
+            **overrides: Extra keyword arguments that take precedence over
+                attributes on ``args`` (useful for programmatic tweaks on
+                top of a CLI namespace).
+
+        Example::
+
+            parser = FlexibleArgumentParser()
+            parser.add_argument("--model", required=True)
+            parser.add_argument("--max-num-seqs", type=int, default=64)
+            args = parser.parse_args()
+
+            omni = Omni.from_args(args)                   # preferred
+            # Equivalent but verbose and easy to get wrong:
+            # omni = Omni(
+            #     model=args.model,
+            #     max_num_seqs=args.max_num_seqs,
+            #     _cli_explicit_keys=detect_explicit_cli_keys(sys.argv[1:]),
+            # )
+        """
+        kwargs: dict[str, Any] = {**vars(args), **overrides}
+        kwargs["_cli_explicit_keys"] = detect_explicit_cli_keys(
+            sys.argv[1:] if argv is None else argv
+        )
+        return cls(**kwargs)
 
     def __init__(
         self,

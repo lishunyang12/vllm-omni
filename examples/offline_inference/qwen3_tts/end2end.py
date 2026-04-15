@@ -7,7 +7,6 @@ tasks, then runs Omni generation and saves output wav files.
 import asyncio
 import logging
 import os
-import sys
 import time
 from typing import Any, NamedTuple
 
@@ -19,7 +18,6 @@ os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 from vllm_omni import AsyncOmni, Omni
-from vllm_omni.entrypoints.utils import detect_explicit_cli_keys
 
 logger = logging.getLogger(__name__)
 
@@ -368,13 +366,7 @@ def main(args):
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    omni = Omni(
-        model=model_name,
-        stage_configs_path=args.stage_configs_path,
-        log_stats=args.log_stats,
-        stage_init_timeout=args.stage_init_timeout,
-        _cli_explicit_keys=detect_explicit_cli_keys(sys.argv[1:]),
-    )
+    omni = Omni.from_args(args, model=model_name)
 
     batch_size = args.batch_size
     for batch_start in range(0, len(inputs), batch_size):
@@ -390,13 +382,7 @@ async def main_streaming(args):
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    omni = AsyncOmni(
-        model=model_name,
-        stage_configs_path=args.stage_configs_path,
-        log_stats=args.log_stats,
-        stage_init_timeout=args.stage_init_timeout,
-        _cli_explicit_keys=detect_explicit_cli_keys(sys.argv[1:]),
-    )
+    omni = AsyncOmni.from_args(args, model=model_name)
 
     for i, prompt in enumerate(inputs):
         request_id = str(i)

@@ -6,7 +6,6 @@ with the correct prompt format on Qwen2.5-Omni
 """
 
 import os
-import sys
 import time
 from typing import NamedTuple
 
@@ -22,7 +21,6 @@ from vllm.sampling_params import SamplingParams
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 from vllm_omni.entrypoints.omni import Omni
-from vllm_omni.entrypoints.utils import detect_explicit_cli_keys
 
 SEED = 42
 
@@ -322,15 +320,7 @@ def main(args):
         query_result = query_func(audio_path=audio_path, sampling_rate=sampling_rate)
     else:
         query_result = query_func()
-    omni = Omni(
-        model=model_name,
-        log_stats=args.log_stats,
-        stage_init_timeout=args.stage_init_timeout,
-        batch_timeout=args.batch_timeout,
-        init_timeout=args.init_timeout,
-        shm_threshold_bytes=args.shm_threshold_bytes,
-        _cli_explicit_keys=detect_explicit_cli_keys(sys.argv[1:]),
-    )
+    omni = Omni.from_args(args, model=model_name)
     thinker_sampling_params = SamplingParams(
         temperature=0.0,  # Deterministic - no randomness
         top_p=1.0,  # Disable nucleus sampling

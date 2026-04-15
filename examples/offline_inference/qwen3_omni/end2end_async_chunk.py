@@ -22,7 +22,6 @@ See ``--help`` for all options.
 import asyncio
 import logging
 import os
-import sys
 import time
 import uuid
 from typing import NamedTuple
@@ -43,7 +42,6 @@ from vllm.multimodal.media.audio import load_audio
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 from vllm_omni.entrypoints.async_omni import AsyncOmni
-from vllm_omni.entrypoints.utils import detect_explicit_cli_keys
 
 logger = logging.getLogger(__name__)
 
@@ -389,18 +387,11 @@ async def run_all(args):
         # bundled ``vllm_omni/deploy/qwen3_omni_moe.yaml`` via the model
         # registry. Pass an explicit path only to override.
         #
-        # ``_cli_explicit_keys`` tells the stage-config factory which flags
-        # the user actually typed on the command line, so parser defaults do
-        # not silently override deploy YAML values. Shared helper in
-        # ``vllm_omni.entrypoints.utils`` — works for any argparse-based
-        # offline entry point.
-        async_omni = AsyncOmni(
-            model=args.model,
-            deploy_config=args.deploy_config,
-            log_stats=args.log_stats,
-            stage_init_timeout=args.stage_init_timeout,
-            _cli_explicit_keys=detect_explicit_cli_keys(sys.argv[1:]),
-        )
+        # ``from_args`` automatically captures which CLI flags the user
+        # typed so argparse defaults do not silently override deploy YAML
+        # values. Prefer this over the manual constructor for any
+        # argparse-based offline entry point.
+        async_omni = AsyncOmni.from_args(args)
 
         # Use default sampling params from stage config (they are pre-configured
         # in the YAML for each stage).
