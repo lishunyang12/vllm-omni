@@ -383,15 +383,13 @@ async def run_all(args):
     print(f"[Info] Creating AsyncOmni with deploy_config={args.deploy_config}")
     async_omni = None
     try:
-        # ``deploy_config=None`` is the normal case — falls through to the
-        # bundled ``vllm_omni/deploy/qwen3_omni_moe.yaml`` via the model
-        # registry. Pass an explicit path only to override.
-        #
-        # ``from_args`` automatically captures which CLI flags the user
-        # typed so argparse defaults do not silently override deploy YAML
-        # values. Prefer this over the manual constructor for any
-        # argparse-based offline entry point.
-        async_omni = AsyncOmni.from_args(args)
+        # ``from_cli_args`` expands vars(args) into kwargs and auto-captures
+        # ``_cli_explicit_keys`` from ``sys.argv[1:]`` so argparse defaults
+        # do not silently override deploy YAML values. Mirrors the
+        # ``EngineArgs.from_cli_args`` pattern used throughout vllm /
+        # vllm-omni. ``deploy_config=None`` (the default) falls through to
+        # the bundled ``vllm_omni/deploy/qwen3_omni_moe.yaml``.
+        async_omni = AsyncOmni.from_cli_args(args)
 
         # Use default sampling params from stage config (they are pre-configured
         # in the YAML for each stage).

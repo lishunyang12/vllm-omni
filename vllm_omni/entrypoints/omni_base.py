@@ -71,50 +71,36 @@ class OmniBase:
     """Shared runtime foundation for AsyncOmni and Omni."""
 
     @classmethod
-    def from_args(
+    def from_cli_args(
         cls,
         args: argparse.Namespace,
-        argv: list[str] | None = None,
         **overrides: Any,
     ) -> OmniBase:
         """Construct an ``Omni`` / ``AsyncOmni`` from an ``argparse.Namespace``.
 
-        This is the **recommended** entry point for any argparse-based caller
-        (offline scripts, tests, CI). It expands ``vars(args)`` into kwargs
-        and automatically captures which flags the user typed on the command
-        line via ``detect_explicit_cli_keys`` so that argparse defaults do
-        not silently override deploy YAML values.
+        Mirrors the ``EngineArgs.from_cli_args`` pattern used upstream and in
+        ``OmniEngineArgs.from_cli_args``. This is the recommended entry point
+        for any argparse-based caller (offline scripts, tests, CI): it
+        expands ``vars(args)`` into kwargs and automatically captures which
+        flags the user typed on the command line via
+        ``detect_explicit_cli_keys(sys.argv[1:])`` so that argparse defaults
+        do not silently override deploy YAML values.
 
         Args:
-            args: Parsed argparse namespace. Typically from
-                ``parser.parse_args()``.
-            argv: List of argv tokens to scan for explicit flags. Defaults to
-                ``sys.argv[1:]`` which is correct for a script's ``main()``.
-                Override for tests that construct a fake ``args`` without a
-                matching ``sys.argv``.
+            args: Parsed argparse namespace from ``parser.parse_args()``.
             **overrides: Extra keyword arguments that take precedence over
-                attributes on ``args`` (useful for programmatic tweaks on
-                top of a CLI namespace).
+                attributes on ``args``.
 
         Example::
 
             parser = FlexibleArgumentParser()
             parser.add_argument("--model", required=True)
-            parser.add_argument("--max-num-seqs", type=int, default=64)
             args = parser.parse_args()
-
-            omni = Omni.from_args(args)                   # preferred
-            # Equivalent but verbose and easy to get wrong:
-            # omni = Omni(
-            #     model=args.model,
-            #     max_num_seqs=args.max_num_seqs,
-            #     _cli_explicit_keys=detect_explicit_cli_keys(sys.argv[1:]),
-            # )
+            omni = Omni.from_cli_args(args)                 # preferred
+            omni = Omni.from_cli_args(args, model="other")  # with override
         """
         kwargs: dict[str, Any] = {**vars(args), **overrides}
-        kwargs["_cli_explicit_keys"] = detect_explicit_cli_keys(
-            sys.argv[1:] if argv is None else argv
-        )
+        kwargs["_cli_explicit_keys"] = detect_explicit_cli_keys(sys.argv[1:])
         return cls(**kwargs)
 
     def __init__(

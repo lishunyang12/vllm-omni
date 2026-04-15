@@ -320,7 +320,7 @@ def main(args):
         query_result = query_func(audio_path=audio_path, sampling_rate=sampling_rate)
     else:
         query_result = query_func()
-    omni = Omni.from_args(args, model=model_name)
+    omni = Omni.from_cli_args(args, model=model_name)
     thinker_sampling_params = SamplingParams(
         temperature=0.0,  # Deterministic - no randomness
         top_p=1.0,  # Disable nucleus sampling

@@ -294,7 +294,7 @@ def main(args):
     else:
         query_result = query_func()
 
-    omni = Omni.from_args(args, model=model_name)
+    omni = Omni.from_cli_args(args, model=model_name)
 
     thinker_sampling_params = SamplingParams(
         temperature=0.9,

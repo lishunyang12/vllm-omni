@@ -366,7 +366,7 @@ def main(args):
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    omni = Omni.from_args(args, model=model_name)
+    omni = Omni.from_cli_args(args, model=model_name)
 
     batch_size = args.batch_size
     for batch_start in range(0, len(inputs), batch_size):
@@ -382,7 +382,7 @@ async def main_streaming(args):
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    omni = AsyncOmni.from_args(args, model=model_name)
+    omni = AsyncOmni.from_cli_args(args, model=model_name)
 
     for i, prompt in enumerate(inputs):
         request_id = str(i)
