@@ -1595,11 +1595,19 @@ class OmniServerStageCli(OmniServer):
         self.proc = None
 
     @staticmethod
+    def _stage_entries(cfg: dict) -> list[dict]:
+        """Return the list of stage entries from either legacy (``stage_args``)
+        or new-schema (``stages``) deploy YAMLs."""
+        return cfg.get("stage_args") or cfg.get("stages") or []
+
+    @staticmethod
     def _load_stage_ids(stage_config_path: str) -> list[int]:
         with open(stage_config_path, encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
 
-        stage_ids = [stage["stage_id"] for stage in cfg.get("stage_args", []) if "stage_id" in stage]
+        stage_ids = [
+            stage["stage_id"] for stage in OmniServerStageCli._stage_entries(cfg) if "stage_id" in stage
+        ]
         if not stage_ids:
             raise ValueError(f"No stage IDs found in config: {stage_config_path}")
         return stage_ids
@@ -1610,9 +1618,11 @@ class OmniServerStageCli(OmniServer):
             cfg = yaml.safe_load(f) or {}
 
         runtime_devices: dict[int, str] = {}
-        for stage in cfg.get("stage_args", []):
+        for stage in OmniServerStageCli._stage_entries(cfg):
             stage_id = stage.get("stage_id")
-            devices = stage.get("runtime", {}).get("devices")
+            # New schema: stage.devices is flat at stage level.
+            # Legacy schema: stage.runtime.devices is nested.
+            devices = stage.get("devices") or stage.get("runtime", {}).get("devices")
             if stage_id is not None and devices:
                 runtime_devices[int(stage_id)] = str(devices)
         return runtime_devices
