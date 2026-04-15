@@ -25,6 +25,37 @@ _DIFFUSERS_CLASS_TO_CONFIG: dict[str, str] = {
 }
 
 
+def detect_explicit_cli_keys(argv: list[str]) -> set[str]:
+    """Walk ``argv`` and return the set of long-option attribute names the
+    user explicitly provided (e.g. ``--max-num-seqs 64`` → ``max_num_seqs``).
+
+    Used to distinguish user-typed CLI args from argparse default values so
+    deploy YAMLs are not silently overridden by parser defaults. Shared
+    across online (``vllm serve``) and offline (scripts, examples, tests,
+    CI) entry points — offline callers that parse CLI args via argparse
+    should invoke this on ``sys.argv[1:]`` and pass the result through to
+    ``AsyncOmni`` / ``Omni`` via the ``_cli_explicit_keys`` kwarg.
+
+    For ``argparse.BooleanOptionalAction`` flags (e.g.
+    ``--enable-prefix-caching`` / ``--no-enable-prefix-caching``), both
+    forms map to the same ``dest``, so the ``no_`` prefix is stripped here
+    to match what argparse records.
+    """
+    explicit: set[str] = set()
+    for tok in argv:
+        if not tok.startswith("--"):
+            continue
+        name = tok[2:].split("=", 1)[0]
+        if not name:
+            continue
+        attr = name.replace("-", "_")
+        explicit.add(attr)
+        # BooleanOptionalAction: --no-foo records as dest `foo`, not `no_foo`.
+        if attr.startswith("no_"):
+            explicit.add(attr[3:])
+    return explicit
+
+
 def inject_omni_kv_config(stage: Any, omni_conn_cfg: dict[str, Any], omni_from: str, omni_to: str) -> None:
     """Inject connector configuration into stage engine arguments."""
     # Prepare omni_kv_config dict

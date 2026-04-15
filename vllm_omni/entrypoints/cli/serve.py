@@ -22,6 +22,7 @@ from vllm.utils.argparse_utils import FlexibleArgumentParser
 
 from vllm_omni.entrypoints.cli.logo import log_logo
 from vllm_omni.entrypoints.openai.api_server import omni_run_server
+from vllm_omni.entrypoints.utils import detect_explicit_cli_keys
 
 logger = init_logger(__name__)
 
@@ -76,32 +77,6 @@ def _ensure_vllm_platform():
             )
 
 
-def _detect_explicit_cli_keys(argv: list[str]) -> set[str]:
-    """Walk ``argv`` and return the set of long-option attribute names the
-    user explicitly provided (e.g. ``--max-num-seqs 64`` → ``max_num_seqs``).
-
-    Used to distinguish user-typed CLI args from argparse default values, so
-    that deploy YAMLs are not silently overridden by parser defaults.
-
-    For ``argparse.BooleanOptionalAction`` flags (e.g. ``--enable-prefix-caching``
-    / ``--no-enable-prefix-caching``), both forms map to the same ``dest``, so
-    the ``no_`` prefix is stripped here to match what argparse records.
-    """
-    explicit: set[str] = set()
-    for tok in argv:
-        if not tok.startswith("--"):
-            continue
-        name = tok[2:].split("=", 1)[0]
-        if not name:
-            continue
-        attr = name.replace("-", "_")
-        explicit.add(attr)
-        # BooleanOptionalAction: --no-foo records as dest `foo`, not `no_foo`.
-        if attr.startswith("no_"):
-            explicit.add(attr[3:])
-    return explicit
-
-
 class OmniServeCommand(CLISubcommand):
     """The `serve` subcommand for the vLLM CLI."""
 
@@ -119,7 +94,7 @@ class OmniServeCommand(CLISubcommand):
 
         # Stash the set of long-option keys the user actually typed so the
         # stage-config factory can give YAML precedence over argparse defaults.
-        args._cli_explicit_keys = _detect_explicit_cli_keys(sys.argv[1:])
+        args._cli_explicit_keys = detect_explicit_cli_keys(sys.argv[1:])
 
         if args.headless:
             run_headless(args)
