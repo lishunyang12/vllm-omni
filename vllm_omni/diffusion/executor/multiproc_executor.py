@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import zmq
 from vllm.distributed.device_communicators.shm_broadcast import MessageQueue
 from vllm.logger import init_logger
+from vllm.utils.system_utils import get_mp_context
 
 from vllm_omni.diffusion.data import SHUTDOWN_MESSAGE, DiffusionOutput
 from vllm_omni.diffusion.executor.abstract import DiffusionExecutor
@@ -105,7 +106,7 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
         logger.info("Starting server...")
 
         num_gpus = od_config.num_gpus
-        mp.set_start_method("spawn", force=True)
+        ctx = get_mp_context()
         processes = []
 
         # Extract worker_extension_cls and custom_pipeline_args from od_config
@@ -117,9 +118,9 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
         scheduler_pipe_writers = []
 
         for i in range(num_gpus):
-            reader, writer = mp.Pipe(duplex=False)
+            reader, writer = ctx.Pipe(duplex=False)
             scheduler_pipe_writers.append(writer)
-            process = mp.Process(
+            process = ctx.Process(
                 target=WorkerProc.worker_main,
                 args=(
                     i,  # rank
