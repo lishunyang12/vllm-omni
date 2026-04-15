@@ -25,12 +25,9 @@ stages:
   - stage_id: 0
     max_num_seqs: 10
     gpu_memory_utilization: 0.3
-    enforce_eager: false
     async_scheduling: true
-    enable_prefix_caching: false
     max_num_batched_tokens: 512
     max_model_len: 4096
-    distributed_executor_backend: "mp"
     devices: "0"
     output_connectors:
       to_stage_1: connector_of_shared_memory
@@ -46,7 +43,6 @@ stages:
     gpu_memory_utilization: 0.3
     enforce_eager: true
     async_scheduling: true
-    enable_prefix_caching: false
     # Must be divisible by num_code_groups and cover (left_context + chunk).
     # Prefill length is Q * num_frames (e.g. 16 * 2148 = 34368); keep
     # headroom past 32k.
@@ -54,7 +50,6 @@ stages:
     # async_chunk appends windows per step; max_model_len must cover the
     # accumulated flat codec stream.
     max_model_len: 65536
-    distributed_executor_backend: "mp"
     devices: "0"
     input_connectors:
       from_stage_0: connector_of_shared_memory
