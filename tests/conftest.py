@@ -77,6 +77,7 @@ class OmniServerParams(NamedTuple):
     use_stage_cli: bool = False
     init_timeout: int | None = None
     stage_init_timeout: int | None = None  # None defers to the server's own default (300 s)
+    model_class_name: str | None = None
 
 
 def assert_image_diffusion_response(
@@ -1437,6 +1438,7 @@ class OmniServer:
         port: int | None = None,
         env_dict: dict[str, str] | None = None,
         use_omni: bool = True,
+        model_class_name: str | None = None,
     ) -> None:
         _run_pre_test_cleanup(enable_force=True)
         _run_post_test_cleanup(enable_force=True)
@@ -1446,6 +1448,7 @@ class OmniServer:
         self.env_dict = env_dict
         self.use_omni = use_omni
         self.proc: subprocess.Popen | None = None
+        self.model_class_name = model_class_name
         self.host = "127.0.0.1"
         if port is None:
             self.port = get_open_port()
@@ -1796,6 +1799,8 @@ def omni_server(request: pytest.FixtureRequest, run_level: str, model_prefix: st
             server_args = [*server_args, "--init-timeout", str(params.init_timeout)]
         else:
             server_args = [*server_args, "--init-timeout", "900"]
+        if params.model_class_name:
+            server_args = [*server_args, "--model-class-name", params.model_class_name]
         if params.use_stage_cli:
             if not params.use_omni:
                 raise ValueError("omni_server with use_stage_cli=True requires use_omni=True")
@@ -1823,6 +1828,7 @@ def omni_server(request: pytest.FixtureRequest, run_level: str, model_prefix: st
                     port=port,
                     env_dict=params.env_dict,
                     use_omni=params.use_omni,
+                    model_class_name=params.model_class_name,
                 )
                 if port
                 else OmniServer(
@@ -1830,6 +1836,7 @@ def omni_server(request: pytest.FixtureRequest, run_level: str, model_prefix: st
                     server_args,
                     env_dict=params.env_dict,
                     use_omni=params.use_omni,
+                    model_class_name=params.model_class_name,
                 )
             ) as server:
                 print("OmniServer started successfully")
