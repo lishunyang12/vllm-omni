@@ -10,14 +10,6 @@ connectors:
       codec_chunk_frames: 25
       codec_left_context_frames: 25
 
-edges:
-  - from: 0
-    to: 1
-    window_size: -1
-  - from: 1
-    to: 2
-    window_size: -1
-
 stages:
   - stage_id: 0
     gpu_memory_utilization: 0.9
