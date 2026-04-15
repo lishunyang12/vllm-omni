@@ -1706,10 +1706,21 @@ class OmniServerStageCli(OmniServer):
 
         cmd = self._build_stage_cmd(stage_id, headless=headless)
         print(f"Launching OmniServerStageCli stage {stage_id}: {' '.join(cmd)}")
+        # Capture each subprocess's stdout+stderr to a per-stage log file so
+        # debugging "Stage N exited before API server ready" doesn't rely on
+        # guessing; the file is surfaced in the RuntimeError message.
+        log_path = Path(tempfile.gettempdir()) / f"omni_stage_{stage_id}_{self.master_port}.log"
+        self._stage_log_paths = getattr(self, "_stage_log_paths", {})
+        self._stage_log_paths[stage_id] = log_path
+        log_fh = open(log_path, "w", buffering=1)  # noqa: SIM115 - closed in __exit__
+        self._stage_log_files = getattr(self, "_stage_log_files", {})
+        self._stage_log_files[stage_id] = log_fh
         proc = subprocess.Popen(
             cmd,
             env=env,
             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
         )
         self.stage_procs[stage_id] = proc
         if stage_id == 0:
@@ -1719,7 +1730,20 @@ class OmniServerStageCli(OmniServer):
         for stage_id, proc in self.stage_procs.items():
             ret = proc.poll()
             if ret is not None:
-                raise RuntimeError(f"Stage {stage_id} exited with code {ret} before API server became ready.")
+                log_path = getattr(self, "_stage_log_paths", {}).get(stage_id)
+                tail = ""
+                if log_path and log_path.exists():
+                    try:
+                        with open(log_path, encoding="utf-8", errors="replace") as f:
+                            lines = f.readlines()
+                        tail = "\n=== Last 60 lines of stage {} log ({}) ===\n{}".format(
+                            stage_id, log_path, "".join(lines[-60:]) or "<empty>"
+                        )
+                    except Exception as exc:  # pragma: no cover - diagnostic only
+                        tail = f"\n<failed to read stage log {log_path}: {exc}>"
+                raise RuntimeError(
+                    f"Stage {stage_id} exited with code {ret} before API server became ready.{tail}"
+                )
 
     def _start_server(self) -> None:
         ordered_stage_ids = [0, *[stage_id for stage_id in self.stage_ids if stage_id != 0]]
