@@ -32,11 +32,8 @@ from vllm_omni.diffusion.distributed.parallel_state import (
 from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.lora.manager import DiffusionLoRAManager
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
-<<<<<<< HEAD
-from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
-=======
 from vllm_omni.diffusion.models.interface import VllmDiffusionPipeline
->>>>>>> 3957749e (first pass at protocol)
+from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.inputs.data import DiffusionParamOverrides
 from vllm_omni.lora.request import LoRARequest
@@ -124,7 +121,6 @@ def calculate_shift(
     return mu
 
 
-<<<<<<< HEAD
 class _VideoAudioScheduler:
     """Composite scheduler dispatching to video and audio schedulers."""
 
@@ -150,10 +146,7 @@ class _VideoAudioScheduler:
         return ((video_out, audio_out),)
 
 
-class LTX2Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin):
-=======
-class LTX2Pipeline(VllmDiffusionPipeline, CFGParallelMixin):
->>>>>>> 3957749e (first pass at protocol)
+class LTX2Pipeline(VllmDiffusionPipeline, CFGParallelMixin, ProgressBarMixin):
     @property
     def sampling_param_defaults(self):
         return DiffusionParamOverrides(
@@ -1162,7 +1155,7 @@ class LTX2Pipeline(VllmDiffusionPipeline, CFGParallelMixin):
         return loader.load_weights(weights)
 
 
-class LTX2TwoStagesPipeline(nn.Module):
+class LTX2TwoStagesPipeline(VllmDiffusionPipeline):
     """LTX2TwoStagesPipeline is for two stages image to video generation"""
 
     def __init__(

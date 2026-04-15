@@ -36,12 +36,8 @@ from vllm_omni.diffusion.models.hunyuan_video.pipeline_hunyuan_video_1_5 import 
     get_hunyuan_video_15_post_process_func,
     retrieve_latents,
 )
-<<<<<<< HEAD
-from vllm_omni.diffusion.models.interface import SupportImageInput
-from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
-=======
 from vllm_omni.diffusion.models.interface import SupportImageInput, VllmDiffusionPipeline
->>>>>>> 3957749e (first pass at protocol)
+from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.models.t5_encoder import T5EncoderModel
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
@@ -104,13 +100,9 @@ def get_hunyuan_video_15_i2v_pre_process_func(od_config: OmniDiffusionConfig):
     return pre_process_func
 
 
-<<<<<<< HEAD
 class HunyuanVideo15I2VPipeline(
-    nn.Module, CFGParallelMixin, SupportImageInput, ProgressBarMixin, DiffusionPipelineProfilerMixin
+    VllmDiffusionPipeline, CFGParallelMixin, SupportImageInput, ProgressBarMixin, DiffusionPipelineProfilerMixin
 ):
-=======
-class HunyuanVideo15I2VPipeline(VllmDiffusionPipeline, CFGParallelMixin, SupportImageInput):
->>>>>>> 3957749e (first pass at protocol)
     support_image_input = True
     color_format = "RGB"
 

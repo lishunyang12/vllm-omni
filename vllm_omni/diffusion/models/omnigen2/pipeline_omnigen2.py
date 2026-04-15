@@ -620,11 +620,7 @@ def retrieve_timesteps(
     return timesteps, num_inference_steps
 
 
-<<<<<<< HEAD
-class OmniGen2Pipeline(CFGParallelMixin, nn.Module):
-=======
-class OmniGen2Pipeline(VllmDiffusionPipeline):
->>>>>>> 3957749e (first pass at protocol)
+class OmniGen2Pipeline(VllmDiffusionPipeline, CFGParallelMixin):
     """
     Pipeline for text-to-image generation using OmniGen2.
 

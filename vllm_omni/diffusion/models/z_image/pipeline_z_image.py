@@ -23,12 +23,7 @@ from typing import Any
 
 import PIL.Image
 import torch
-<<<<<<< HEAD
-import torch.nn as nn
 from diffusers.image_processor import PipelineImageInput, VaeImageProcessor
-=======
-from diffusers.image_processor import VaeImageProcessor
->>>>>>> 3957749e (first pass at protocol)
 from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
 from diffusers.utils import logging
 from diffusers.utils.torch_utils import randn_tensor
