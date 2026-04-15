@@ -109,9 +109,10 @@ def test_ltx2_diffusion_features(
     request_config = {
         "model": model_path,
         "form_data": form_data,
+        "model_class_name": model_class_name,  # use for validate diffusion response for two-stages pipeline
     }
 
     if is_i2v:
-        request_config["image_reference"] = f"data:image/jpeg;base64,{generate_synthetic_image(512, 512)['base64']}"
+        request_config["image_reference"] = f"data:image/jpeg;base64,{generate_synthetic_image(758, 512)['base64']}"
 
     openai_client.send_video_diffusion_request(request_config)
