@@ -221,24 +221,24 @@ _DEPLOY_DIR = Path(__file__).resolve().parent.parent / "deploy"
 
 @dataclass
 class StageDeployConfig:
-    """Per-stage deployment knobs (all CLI-overridable)."""
+    """Per-stage deployment knobs.
+
+    Only fields whose value legitimately varies across stages of the same
+    pipeline live here (e.g. ``max_num_seqs`` on thinker vs talker,
+    ``devices`` for GPU placement). Pipeline-wide settings
+    (``trust_remote_code``, ``distributed_executor_backend``, ``dtype``,
+    ``quantization``, prefix/chunked prefill, DP/PP sizes) are declared at
+    the top level of ``DeployConfig`` and propagated to every stage.
+    """
 
     stage_id: int
     max_num_seqs: int = 64
     gpu_memory_utilization: float = 0.9
     tensor_parallel_size: int = 1
     enforce_eager: bool = False
-    trust_remote_code: bool = True
-    enable_prefix_caching: bool = False
-    enable_chunked_prefill: bool | None = None
     max_num_batched_tokens: int = 32768
     max_model_len: int | None = None
-    distributed_executor_backend: str = "mp"
     async_scheduling: bool | None = None
-    quantization: str | None = None
-    dtype: str | None = None
-    data_parallel_size: int = 1
-    pipeline_parallel_size: int = 1
     devices: str = "0"
     output_connectors: dict[str, str] | None = None
     input_connectors: dict[str, str] | None = None
@@ -248,7 +248,15 @@ class StageDeployConfig:
 
 @dataclass
 class DeployConfig:
-    """Loaded from deploy/<model>.yaml — the only config file users edit."""
+    """Loaded from deploy/<model>.yaml — the only config file users edit.
+
+    Top-level fields (``trust_remote_code``, ``distributed_executor_backend``,
+    ``dtype``, ``quantization``, ``enable_prefix_caching``,
+    ``enable_chunked_prefill``, ``data_parallel_size``,
+    ``pipeline_parallel_size``) are pipeline-wide: they apply uniformly to
+    every stage. Fields that legitimately vary per stage live in the
+    individual ``StageDeployConfig`` entries under ``stages:``.
+    """
 
     async_chunk: bool = True
     connectors: dict[str, Any] | None = None
@@ -257,6 +265,16 @@ class DeployConfig:
     platforms: dict[str, Any] | None = None
     # Overrides the auto-detected pipeline registry key for structural variants.
     pipeline: str | None = None
+
+    # === Pipeline-wide engine settings (applied uniformly to every stage) ===
+    trust_remote_code: bool = True
+    distributed_executor_backend: str = "mp"
+    dtype: str | None = None
+    quantization: str | None = None
+    enable_prefix_caching: bool = False
+    enable_chunked_prefill: bool | None = None
+    data_parallel_size: int = 1
+    pipeline_parallel_size: int = 1
 
 
 _STAGE_NON_ENGINE_KEYS = frozenset(
@@ -375,14 +393,29 @@ def load_deploy_config(path: str | Path) -> DeployConfig:
 
     stages = [_parse_stage_deploy(s) for s in raw_dict.get("stages", [])]
 
-    return DeployConfig(
-        async_chunk=raw_dict.get("async_chunk", True),
-        connectors=raw_dict.get("connectors", None),
-        edges=raw_dict.get("edges", None),
-        stages=stages,
-        platforms=raw_dict.get("platforms", None),
-        pipeline=raw_dict.get("pipeline", None),
-    )
+    kwargs: dict[str, Any] = {
+        "async_chunk": raw_dict.get("async_chunk", True),
+        "connectors": raw_dict.get("connectors", None),
+        "edges": raw_dict.get("edges", None),
+        "stages": stages,
+        "platforms": raw_dict.get("platforms", None),
+        "pipeline": raw_dict.get("pipeline", None),
+    }
+    # Pipeline-wide engine settings: only set if explicitly present in YAML
+    # so the DeployConfig dataclass defaults take effect otherwise.
+    for name in (
+        "trust_remote_code",
+        "distributed_executor_backend",
+        "dtype",
+        "quantization",
+        "enable_prefix_caching",
+        "enable_chunked_prefill",
+        "data_parallel_size",
+        "pipeline_parallel_size",
+    ):
+        if name in raw_dict:
+            kwargs[name] = raw_dict[name]
+    return DeployConfig(**kwargs)
 
 
 def _detect_platform() -> str | None:
@@ -474,26 +507,53 @@ def _select_processor_funcs(
     return input_proc, next_stage_proc
 
 
+# Pipeline-wide DeployConfig fields that are propagated to every stage's
+# engine args during merge. These live at top level of the deploy YAML.
+_PIPELINE_WIDE_ENGINE_FIELDS: tuple[str, ...] = (
+    "trust_remote_code",
+    "distributed_executor_backend",
+    "dtype",
+    "quantization",
+    "enable_prefix_caching",
+    "enable_chunked_prefill",
+    "data_parallel_size",
+    "pipeline_parallel_size",
+)
+
+
 def _build_engine_args(
     ps: StagePipelineConfig,
     ds: StageDeployConfig | None,
     pipeline: PipelineConfig,
-    async_chunk: bool,
+    deploy: DeployConfig,
     next_stage_proc: str | None,
 ) -> dict[str, Any]:
-    """Assemble the flat ``yaml_engine_args`` dict for one stage."""
+    """Assemble the flat ``yaml_engine_args`` dict for one stage.
+
+    Pipeline-wide DeployConfig fields are applied uniformly to every stage;
+    per-stage StageDeployConfig overrides take precedence when present (e.g.
+    ``engine_extras`` can still carry a stage-specific ``dtype``).
+    """
     engine_args: dict[str, Any] = {"model_arch": ps.model_arch or pipeline.model_arch}
     if ps.engine_output_type:
         engine_args["engine_output_type"] = ps.engine_output_type
     if next_stage_proc:
         engine_args["custom_process_next_stage_input_func"] = next_stage_proc
+
+    # Pipeline-wide top-level DeployConfig settings, applied to every stage.
+    for name in _PIPELINE_WIDE_ENGINE_FIELDS:
+        value = getattr(deploy, name)
+        if value is not None:
+            engine_args[name] = value
+
+    # Per-stage StageDeployConfig values override pipeline-wide settings.
     if ds is not None:
         for k, v in asdict(ds).items():
             if k in _STAGE_NON_ENGINE_KEYS or v is None:
                 continue
             engine_args[k] = v
         engine_args.update(ds.engine_extras)
-    if async_chunk:
+    if deploy.async_chunk:
         engine_args["async_chunk"] = True
     return engine_args
 
@@ -536,7 +596,7 @@ def merge_pipeline_deploy(
         ds = deploy_by_id.get(ps.stage_id)
         stage_type, worker_type = _resolve_execution_mode(ps.execution_type)
         input_proc, next_stage_proc = _select_processor_funcs(ps, deploy.async_chunk)
-        engine_args = _build_engine_args(ps, ds, pipeline, deploy.async_chunk, next_stage_proc)
+        engine_args = _build_engine_args(ps, ds, pipeline, deploy, next_stage_proc)
         extras = _build_extras(ps, ds)
         runtime: dict[str, Any] = {"process": True}
         if ds is not None:

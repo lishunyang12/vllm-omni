@@ -18,10 +18,18 @@ The new deploy schema lives under `vllm_omni/deploy/` and is paired with a froze
 | `stages` | list | required | — | Per-stage engine args + wiring (see [Stage fields](#stage-fields)). |
 | `platforms` | dict | optional | `null` | Keyed by `npu` / `rocm` / `xpu`, each contains a `stages:` list with per-platform overrides applied on top of the CUDA defaults. |
 | `pipeline` | str | optional | `null` | Override the auto-detected pipeline registry key (used for structural variants like `qwen3_tts_no_async_chunk`). |
+| `trust_remote_code` | bool | optional | `true` | **Pipeline-wide.** Trust HF remote code on model load; applies to every stage. |
+| `distributed_executor_backend` | str | optional | `"mp"` | **Pipeline-wide.** Executor backend (`"mp"` or `"ray"`). |
+| `dtype` | str \| null | optional | `null` | **Pipeline-wide.** Model dtype for every stage. |
+| `quantization` | str \| null | optional | `null` | **Pipeline-wide.** Quantization method for every stage. |
+| `enable_prefix_caching` | bool | optional | `false` | **Pipeline-wide.** Prefix cache toggle applied to every stage. |
+| `enable_chunked_prefill` | bool \| null | optional | `null` | **Pipeline-wide.** Chunked prefill toggle applied to every stage. |
+| `data_parallel_size` | int | optional | `1` | **Pipeline-wide.** DP degree for every stage. |
+| `pipeline_parallel_size` | int | optional | `1` | **Pipeline-wide.** PP degree for every stage. |
 
 ### Stage fields
 
-Each entry under `stages:` accepts any `StageDeployConfig` field directly (no nested `engine_args:`). Unknown keys fall through to `engine_extras:` and are forwarded to the engine.
+Each entry under `stages:` accepts any `StageDeployConfig` field directly (no nested `engine_args:`). Only fields whose value legitimately varies across stages live here; pipeline-wide settings (trust_remote_code, distributed_executor_backend, dtype, quantization, prefix/chunked prefill, DP/PP sizes) are declared at the top level and applied to every stage. Unknown keys fall through to `engine_extras:` and are forwarded to the engine.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
@@ -30,22 +38,14 @@ Each entry under `stages:` accepts any `StageDeployConfig` field directly (no ne
 | `gpu_memory_utilization` | float | optional | `0.9` | Per-stage memory budget. |
 | `tensor_parallel_size` | int | optional | `1` | TP degree for this stage. |
 | `enforce_eager` | bool | optional | `false` | Disable CUDA graphs. |
-| `trust_remote_code` | bool | optional | `true` | Trust HF remote code on model load. |
-| `enable_prefix_caching` | bool | optional | `false` | Prefix cache toggle. |
-| `enable_chunked_prefill` | bool \| null | optional | `null` | Chunked prefill toggle. |
 | `max_num_batched_tokens` | int | optional | `32768` | Prefill budget. |
 | `max_model_len` | int \| null | optional | `null` | Per-stage context length (auto-sets `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1` when larger than HF default). |
-| `distributed_executor_backend` | str | optional | `"mp"` | Executor backend. |
 | `async_scheduling` | bool \| null | optional | `null` | Per-stage async scheduling toggle. |
-| `quantization` | str \| null | optional | `null` | Quantization method. |
-| `dtype` | str \| null | optional | `null` | Model dtype. |
-| `data_parallel_size` | int | optional | `1` | DP degree. |
-| `pipeline_parallel_size` | int | optional | `1` | PP degree. |
 | `devices` | str | optional | `"0"` | `CUDA_VISIBLE_DEVICES`-style device list. |
 | `output_connectors` | dict \| null | optional | `null` | Keyed by `to_stage_<n>`; values are names registered under top-level `connectors:`. |
 | `input_connectors` | dict \| null | optional | `null` | Keyed by `from_stage_<n>`; values are names registered under top-level `connectors:`. |
 | `default_sampling_params` | dict \| null | optional | `null` | Baseline sampling params. Deep-merged with pipeline `sampling_constraints` (pipeline wins). |
-| `engine_extras` | dict | optional | `{}` | Catch-all for keys not listed above; deep-merged across overlays. |
+| `engine_extras` | dict | optional | `{}` | Catch-all for keys not listed above; deep-merged across overlays. Also carries per-stage overrides of pipeline-wide settings (e.g. stage-specific `dtype`). |
 
 ### Connector schema
 
