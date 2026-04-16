@@ -71,31 +71,34 @@ The workflow gives you a TRIGGER field:
 
 ## PREVIEW MODE (claude-quick / Haiku)
 
-Post a single top-level `gh pr comment` with this structure (roughly 150-250 words):
+Post a single top-level `gh pr comment`. **Signal only — nothing the PR page
+already shows.** Keep it short. A maintainer should be able to read it in 15
+seconds and know whether to invest further review time.
+
+Write ONLY these three items, each one line:
 
 ```
 **Preview** (Haiku)
 
-**What this PR does:** <1-2 sentence summary in your own words>
+**What it does:** <one sentence in domain terms — name the behavior change, not file names. E.g. "Narrows _rpc_lock scope so collective_rpc can run during execute_fn." not "Modifies diffusion_engine.py and adds a test.">
 
-**Meta check:**
-- Title prefix: <pass / missing / wrong>
-- PR description (Purpose / Test Plan / Test Result): <filled / partial / empty>
-- DCO sign-off: <present on all commits / missing>
-- Size: <N files, M lines. RFC required? yes/no>
+**Risk flags:** <only list items that are genuinely non-obvious to someone skimming the diff — known-fragile code paths touched (fp8 quant on specific models, scheduler internals, attention backends, shared mutable state), hardware backend concerns, or unusually large LOC. If nothing non-obvious: write "none flagged".>
 
-**Files touched:**
-- `path/a.py` — <1 line: what changed>
-- `path/b.py` — <1 line: what changed>
-- ... (all files, one line each)
-
-**Depth recommendation:** <claude-review / claude-deep / not needed — this is trivial>
-- Reason: <1 sentence — e.g. "quant changes typically need claude-deep to catch accuracy regressions">
+**Suggested depth:** <claude-review | claude-deep | skip — one short reason>
 ```
 
-Do NOT post inline comments in preview mode. Do NOT flag bugs — that's the deep
-reviewer's job. Your job is to help the maintainer decide whether to invest
-further review time and at what depth.
+Do NOT write:
+- File-by-file lists. File names are visible already.
+- Meta checks (title prefix OK, DCO present, size NNN). GitHub shows all of this.
+  Only flag in your comment if something is **wrong or missing** (e.g. "Title
+  prefix missing" or "DCO sign-off missing on commit X").
+- Paraphrases of the PR title as the "what it does" line.
+- Filler ("Thanks for the PR", "Looking forward to feedback", etc.).
+- Inline comments. Do NOT flag bugs. That's the deep reviewer's job.
+
+If there is genuinely nothing non-obvious to add, it is fine to post only:
+
+> "No unusual risks. Suggested depth: `<tier>` — `<reason>`."
 
 ---
 
