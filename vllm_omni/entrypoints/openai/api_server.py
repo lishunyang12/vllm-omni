@@ -1476,7 +1476,10 @@ async def edit_images(
             detail = (
                 "Received multiple input images. Only a single image is supported by this model."
                 if max_input_images == 1
-                else f"Received {len(pil_images)} input images. At most {max_input_images} images are supported by this model."
+                else (
+                    f"Received {len(pil_images)} input images. "
+                    f"At most {max_input_images} images are supported by this model."
+                )
             )
             raise HTTPException(
                 status_code=HTTPStatus.BAD_REQUEST.value,
