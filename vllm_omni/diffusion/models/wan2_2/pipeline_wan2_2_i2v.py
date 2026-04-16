@@ -900,8 +900,7 @@ class Wan22I2VPipeline(
 
         if max_sequence_length is not None and max_sequence_length > self.tokenizer_max_length:
             raise ValueError(
-                f"`max_sequence_length` cannot be greater than {self.tokenizer_max_length} but is "
-                f"{max_sequence_length}"
+                f"`max_sequence_length` cannot be greater than {self.tokenizer_max_length} but is {max_sequence_length}"
             )
 
         if boundary_ratio is None and guidance_scale_2 is not None:

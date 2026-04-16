@@ -345,8 +345,7 @@ the image\n<|vision_start|><|image_pad|><|vision_end|><|im_end|>\n<|im_start|>as
 
         if max_sequence_length is not None and max_sequence_length > self.tokenizer_max_length:
             raise ValueError(
-                f"`max_sequence_length` cannot be greater than {self.tokenizer_max_length} but is "
-                f"{max_sequence_length}"
+                f"`max_sequence_length` cannot be greater than {self.tokenizer_max_length} but is {max_sequence_length}"
             )
 
     def _extract_masked_hidden(self, hidden_states: torch.Tensor, mask: torch.Tensor):
