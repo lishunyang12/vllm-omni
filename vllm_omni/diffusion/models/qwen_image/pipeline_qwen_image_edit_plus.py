@@ -53,6 +53,9 @@ logger = logging.getLogger(__name__)
 
 CONDITION_IMAGE_SIZE = 384 * 384
 VAE_IMAGE_SIZE = 1024 * 1024
+# Keep this in sync with the practical conditioning-token budget for
+# Qwen-Image-Edit-2511. Empirically, 4 images stays within the supported range
+# while 5 images overflows the prompt/conditioning path and fails downstream.
 MAX_QWEN_IMAGE_EDIT_PLUS_INPUT_IMAGES = 4
 
 
