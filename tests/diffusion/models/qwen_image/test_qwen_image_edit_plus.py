@@ -77,3 +77,21 @@ def test_qwen_image_edit_plus_prompt_encoding_skips_lm_head():
     assert tuple(attention_mask.shape) == (1, 2)
     assert torch.equal(prompt_embeds[0], torch.tensor([[2.0, 2.0, 2.0], [3.0, 3.0, 3.0]]))
     assert torch.equal(attention_mask[0], torch.tensor([1, 1]))
+
+
+def test_qwen_image_edit_plus_encode_prompt_applies_max_sequence_length():
+    pipeline = QwenImageEditPlusPipeline.__new__(QwenImageEditPlusPipeline)
+    pipeline._get_qwen_prompt_embeds = lambda *args, **kwargs: (
+        torch.arange(24, dtype=torch.float32).view(1, 4, 6),
+        torch.tensor([[1, 1, 1, 1]]),
+    )
+
+    prompt_embeds, attention_mask = pipeline.encode_prompt(
+        prompt="combine",
+        image=[object()],
+        max_sequence_length=2,
+    )
+
+    assert tuple(prompt_embeds.shape) == (1, 2, 6)
+    assert tuple(attention_mask.shape) == (1, 2)
+    assert torch.equal(attention_mask[0], torch.tensor([1, 1]))
