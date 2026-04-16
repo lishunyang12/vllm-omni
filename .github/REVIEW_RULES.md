@@ -4,19 +4,26 @@ This file is read by `.github/workflows/claude-review.yml` on every run. Edit th
 
 ## How to use this bot (for contributors and maintainers)
 
-The bot does NOT auto-review PRs. Trigger it explicitly:
+The bot does NOT auto-review PRs. Trigger it explicitly. Three tiers, picked by trigger:
 
-| How | What it does |
+| Trigger | Model | Use for |
+|---|---|---|
+| Label `claude-review` | **Opus 4.7** (deep) | Full review on non-trivial PRs — correctness, API design, perf, test gaps |
+| Label `claude-quick` | **Haiku 4.5** (cheap) | Fast triage — LGTM check on tiny PRs, obvious-issues-only scan |
+| `@claude <anything>` in a PR comment | **Sonnet 4.6** (balanced) | Conversation — follow-up questions, disagreement, re-review |
+
+### `@claude` command menu (all Sonnet)
+
+| Say | Bot does |
 |---|---|
-| Apply label `claude-review` to a PR | One-shot full review |
-| Post `@claude review` (or `take a look`, `ptal`) | Full review (same as label) |
-| Post `@claude why did you flag X?` | Bot answers your question |
-| Post `@claude I disagree — Y handles that` | Bot re-examines its prior comment |
-| Post `@claude look again after my fix` | Bot reviews only what changed |
-| Post `@claude LGTM?` | Bot gives a short verdict |
-| Post `@claude` alone / "thanks" / "👍" | 1-line reply, no review |
+| `@claude review` / `ptal` / `take a look` | Full review |
+| `@claude why did you flag X?` | Answer the question, no re-review |
+| `@claude I disagree — Y handles that` | Re-examine its prior comment |
+| `@claude look again after my fix` | Review only what changed |
+| `@claude LGTM?` | Short verdict |
+| `@claude` alone / "thanks" / "👍" | 1-line reply |
 
-Rule of thumb: **label = kick off review, `@claude` = talk to the reviewer**.
+Rule of thumb: **label = kick off review (pick tier by PR weight), `@claude` = talk to the reviewer**.
 
 ## Who you are
 
