@@ -1471,16 +1471,16 @@ async def edit_images(
         if not input_images_list:
             raise HTTPException(status_code=422, detail="Field 'image' or 'url' is required")
         pil_images = await _load_input_images(input_images_list)
-        if len(pil_images) > 1 and not _supports_multimodal_image_inputs(raw_request, engine_client):
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST.value,
-                detail="Received multiple input images. Only a single image is supported by this model.",
-            )
         max_input_images = _get_max_edit_input_images(raw_request, engine_client, model_name)
         if max_input_images is not None and len(pil_images) > max_input_images:
+            detail = (
+                "Received multiple input images. Only a single image is supported by this model."
+                if max_input_images == 1
+                else f"Received {len(pil_images)} input images. At most {max_input_images} images are supported by this model."
+            )
             raise HTTPException(
                 status_code=HTTPStatus.BAD_REQUEST.value,
-                detail=f"Received {len(pil_images)} input images. At most {max_input_images} images are supported by this model.",
+                detail=detail,
             )
         prompt["multi_modal_data"] = {}
         prompt["multi_modal_data"]["image"] = pil_images
@@ -1647,11 +1647,7 @@ def _get_engine_and_model(raw_request: Request):
 
 
 def _supports_multimodal_image_inputs(raw_request: Request, engine_client: Any) -> bool:
-    diffusion_engine = getattr(raw_request.app.state, "diffusion_engine", None) or engine_client
-    get_diffusion_od_config = getattr(diffusion_engine, "get_diffusion_od_config", None)
-    od_config = (
-        get_diffusion_od_config() if callable(get_diffusion_od_config) else getattr(diffusion_engine, "od_config", None)
-    )
+    od_config = _get_diffusion_od_config(raw_request, engine_client)
 
     if od_config is None:
         # Preserve the existing compatibility behavior when the diffusion
@@ -1660,16 +1656,20 @@ def _supports_multimodal_image_inputs(raw_request: Request, engine_client: Any) 
     return bool(getattr(od_config, "supports_multimodal_inputs", False))
 
 
-def _get_max_edit_input_images(raw_request: Request, engine_client: Any, model_name: str) -> int | None:
+def _get_diffusion_od_config(raw_request: Request, engine_client: Any) -> Any:
     diffusion_engine = getattr(raw_request.app.state, "diffusion_engine", None) or engine_client
     get_diffusion_od_config = getattr(diffusion_engine, "get_diffusion_od_config", None)
-    od_config = (
+    return (
         get_diffusion_od_config() if callable(get_diffusion_od_config) else getattr(diffusion_engine, "od_config", None)
     )
 
-    model_identifiers = [model_name]
-    if od_config is not None:
-        model_identifiers.append(getattr(od_config, "model", None))
+
+def _get_max_edit_input_images(raw_request: Request, engine_client: Any, model_name: str) -> int | None:
+    if not _supports_multimodal_image_inputs(raw_request, engine_client):
+        return 1
+
+    od_config = _get_diffusion_od_config(raw_request, engine_client)
+    model_identifiers = [model_name, getattr(od_config, "model", None)]
 
     if any(isinstance(identifier, str) and "Qwen-Image-Edit-2511" in identifier for identifier in model_identifiers):
         return 4
