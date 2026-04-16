@@ -39,11 +39,18 @@ class _FakeModelInputs:
 
 
 class _FakeTokenizer:
-    def __init__(self, total_sequence_length: int):
-        self.total_sequence_length = total_sequence_length
+    def __init__(self, total_sequence_length: int | list[int]):
+        if isinstance(total_sequence_length, list):
+            self.total_sequence_lengths = list(total_sequence_length)
+        else:
+            self.total_sequence_lengths = [total_sequence_length]
 
     def __call__(self, *args, **kwargs):
-        return _FakeModelInputs(self.total_sequence_length)
+        if len(self.total_sequence_lengths) > 1:
+            total_sequence_length = self.total_sequence_lengths.pop(0)
+        else:
+            total_sequence_length = self.total_sequence_lengths[0]
+        return _FakeModelInputs(total_sequence_length)
 
 
 class _FakeProcessor(_FakeTokenizer):
@@ -80,7 +87,7 @@ def _make_pipeline(
     pipeline.tokenizer_max_length = 1024
     pipeline.prompt_template_encode = "{}"
     pipeline.prompt_template_encode_start_idx = drop_idx
-    pipeline.tokenizer = _FakeTokenizer(total_sequence_length)
+    pipeline.tokenizer = _FakeTokenizer([total_sequence_length, 0])
     if input_kind == "processor":
         pipeline.processor = _FakeProcessor(total_sequence_length)
     return pipeline
@@ -94,7 +101,7 @@ def test_encode_prompt_rejects_prompt_longer_than_default_max_sequence_length(
 ):
     pipeline = _make_pipeline(
         pipeline_class,
-        total_sequence_length=drop_idx + 1025,
+        total_sequence_length=1025,
         drop_idx=drop_idx,
         input_kind=input_kind,
     )
@@ -111,7 +118,7 @@ def test_encode_prompt_rejects_prompt_longer_than_explicit_max_sequence_length(
 ):
     pipeline = _make_pipeline(
         pipeline_class,
-        total_sequence_length=drop_idx + 17,
+        total_sequence_length=17,
         drop_idx=drop_idx,
         input_kind=input_kind,
     )
@@ -188,8 +195,51 @@ def test_edit_pipelines_validate_text_prompt_length_before_image_token_expansion
     pipeline.tokenizer_max_length = 1024
     pipeline.prompt_template_encode = "{}"
     pipeline.prompt_template_encode_start_idx = drop_idx
-    pipeline.tokenizer = _FakeTokenizer(drop_idx + 8)
+    pipeline.tokenizer = _FakeTokenizer([8, 0])
     pipeline.processor = _FakeProcessor(drop_idx + 1500)
+
+    with pytest.raises(AssertionError, match="text encoder should not run"):
+        pipeline.encode_prompt(prompt="short prompt")
+
+
+@pytest.mark.parametrize(
+    "pipeline_class",
+    [
+        pytest.param(QwenImagePipeline, id="qwen-image"),
+        pytest.param(QwenImageLayeredPipeline, id="qwen-image-layered"),
+    ],
+)
+def test_qwen_generation_validator_excludes_template_suffix_from_budget(pipeline_class: type):
+    pipeline = object.__new__(pipeline_class)
+    nn.Module.__init__(pipeline)
+    pipeline.device = torch.device("cpu")
+    pipeline.text_encoder = _RejectingTextEncoder()
+    pipeline.tokenizer_max_length = 1024
+    pipeline.prompt_template_encode = "{}"
+    pipeline.prompt_template_encode_start_idx = 34
+    pipeline.tokenizer = _FakeTokenizer([1029, 5])
+
+    with pytest.raises(AssertionError, match="text encoder should not run"):
+        pipeline.encode_prompt(prompt="boundary prompt")
+
+
+@pytest.mark.parametrize(
+    "pipeline_class",
+    [
+        pytest.param(QwenImageEditPipeline, id="qwen-image-edit"),
+        pytest.param(QwenImageEditPlusPipeline, id="qwen-image-edit-plus"),
+    ],
+)
+def test_qwen_edit_validator_excludes_image_placeholders_from_budget(pipeline_class: type):
+    pipeline = object.__new__(pipeline_class)
+    nn.Module.__init__(pipeline)
+    pipeline.device = torch.device("cpu")
+    pipeline.text_encoder = _RejectingTextEncoder()
+    pipeline.tokenizer_max_length = 1024
+    pipeline.prompt_template_encode = "{}"
+    pipeline.prompt_template_encode_start_idx = 64
+    pipeline.tokenizer = _FakeTokenizer([30, 20])
+    pipeline.processor = _FakeProcessor(1500)
 
     with pytest.raises(AssertionError, match="text encoder should not run"):
         pipeline.encode_prompt(prompt="short prompt")

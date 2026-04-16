@@ -406,6 +406,12 @@ class QwenImageEditPipeline(nn.Module, SupportImageInput, QwenImageCFGParallelMi
             truncation=False,
             return_tensors="pt",
         ).to(self.device)
+        template_tokens = self.tokenizer(
+            [template.format("")],
+            padding=True,
+            truncation=False,
+            return_tensors="pt",
+        ).to(self.device)
         # Qwen-Image-Edit expands image placeholders into many vision tokens
         # inside the processor. `max_sequence_length` is meant to constrain the
         # prompt text length, so validate on the text template before image
@@ -415,7 +421,7 @@ class QwenImageEditPipeline(nn.Module, SupportImageInput, QwenImageCFGParallelMi
             max_sequence_length=max_sequence_length or self.tokenizer_max_length,
             supported_max_sequence_length=self.tokenizer_max_length,
             prompt_name=prompt_name,
-            length_offset=drop_idx,
+            baseline_attention_mask=template_tokens.attention_mask,
             error_context="after applying the Qwen prompt template",
         )
 

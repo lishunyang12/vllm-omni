@@ -399,12 +399,18 @@ class QwenImagePipeline(nn.Module, QwenImageCFGParallelMixin, DiffusionPipelineP
             truncation=False,
             return_tensors="pt",
         ).to(self.device)
+        template_tokens = self.tokenizer(
+            [template.format("")],
+            padding=True,
+            truncation=False,
+            return_tensors="pt",
+        ).to(self.device)
         validate_prompt_sequence_lengths(
             txt_tokens.attention_mask,
             max_sequence_length=max_sequence_length or self.tokenizer_max_length,
             supported_max_sequence_length=self.tokenizer_max_length,
             prompt_name=prompt_name,
-            length_offset=drop_idx,
+            baseline_attention_mask=template_tokens.attention_mask,
             error_context="after applying the Qwen prompt template",
         )
         encoder_hidden_states = self.text_encoder(

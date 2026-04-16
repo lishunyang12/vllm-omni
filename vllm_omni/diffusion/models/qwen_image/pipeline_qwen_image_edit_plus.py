@@ -332,6 +332,12 @@ class QwenImageEditPlusPipeline(
             truncation=False,
             return_tensors="pt",
         ).to(self.device)
+        template_tokens = self.tokenizer(
+            [template.format(base_img_prompt)],
+            padding=True,
+            truncation=False,
+            return_tensors="pt",
+        ).to(self.device)
         # The processor expands image placeholders into many vision tokens.
         # `max_sequence_length` should guard the prompt text length before that
         # multimodal expansion happens.
@@ -340,7 +346,7 @@ class QwenImageEditPlusPipeline(
             max_sequence_length=max_sequence_length or self.tokenizer_max_length,
             supported_max_sequence_length=self.tokenizer_max_length,
             prompt_name=prompt_name,
-            length_offset=drop_idx,
+            baseline_attention_mask=template_tokens.attention_mask,
             error_context="after applying the Qwen prompt template",
         )
 

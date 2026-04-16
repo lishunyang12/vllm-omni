@@ -8,9 +8,18 @@ def validate_prompt_sequence_lengths(
     supported_max_sequence_length: int,
     prompt_name: str = "prompt",
     length_offset: int = 0,
+    baseline_attention_mask: torch.Tensor | None = None,
     error_context: str,
 ) -> None:
-    sequence_lengths = torch.clamp(attention_mask.sum(dim=1) - length_offset, min=0)
+    sequence_lengths = attention_mask.sum(dim=1)
+    if baseline_attention_mask is not None:
+        baseline_lengths = baseline_attention_mask.sum(dim=1)
+        if baseline_lengths.shape[0] == 1 and sequence_lengths.shape[0] > 1:
+            baseline_lengths = baseline_lengths.expand(sequence_lengths.shape[0])
+        sequence_lengths = sequence_lengths - baseline_lengths
+    if length_offset:
+        sequence_lengths = sequence_lengths - length_offset
+    sequence_lengths = torch.clamp(sequence_lengths, min=0)
     too_long = torch.nonzero(sequence_lengths > max_sequence_length, as_tuple=False)
     if too_long.numel() == 0:
         return
