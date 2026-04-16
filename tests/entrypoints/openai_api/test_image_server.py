@@ -782,6 +782,30 @@ def test_image_edit_rejects_multiple_images_when_model_does_not_support_them(asy
     assert engine.captured_prompt is None
 
 
+def test_image_edit_rejects_too_many_images_for_qwen_image_edit_2511(async_omni_test_client):
+    engine = async_omni_test_client.app.state.engine_client
+    engine.get_diffusion_od_config = lambda: SimpleNamespace(
+        supports_multimodal_inputs=True,
+        model="Qwen/Qwen-Image-Edit-2511",
+    )
+
+    response = async_omni_test_client.post(
+        "/v1/images/edits",
+        files=[
+            ("image", make_test_image_bytes((16, 16))),
+            ("image", make_test_image_bytes((16, 16))),
+            ("image", make_test_image_bytes((16, 16))),
+            ("image", make_test_image_bytes((16, 16))),
+            ("image", make_test_image_bytes((16, 16))),
+        ],
+        data={"prompt": "hello world."},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Received 5 input images. At most 4 images are supported by this model."
+    assert engine.captured_prompt is None
+
+
 def test_image_edit_parameter_pass(async_omni_test_client):
     img_bytes_1 = make_test_image_bytes((16, 16))
 

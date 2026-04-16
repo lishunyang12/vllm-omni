@@ -1476,6 +1476,12 @@ async def edit_images(
                 status_code=HTTPStatus.BAD_REQUEST.value,
                 detail="Received multiple input images. Only a single image is supported by this model.",
             )
+        max_input_images = _get_max_edit_input_images(raw_request, engine_client, model_name)
+        if max_input_images is not None and len(pil_images) > max_input_images:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST.value,
+                detail=f"Received {len(pil_images)} input images. At most {max_input_images} images are supported by this model.",
+            )
         prompt["multi_modal_data"] = {}
         prompt["multi_modal_data"]["image"] = pil_images
 
@@ -1654,6 +1660,23 @@ def _supports_multimodal_image_inputs(raw_request: Request, engine_client: Any) 
     return bool(getattr(od_config, "supports_multimodal_inputs", False))
 
 
+def _get_max_edit_input_images(raw_request: Request, engine_client: Any, model_name: str) -> int | None:
+    diffusion_engine = getattr(raw_request.app.state, "diffusion_engine", None) or engine_client
+    get_diffusion_od_config = getattr(diffusion_engine, "get_diffusion_od_config", None)
+    od_config = (
+        get_diffusion_od_config() if callable(get_diffusion_od_config) else getattr(diffusion_engine, "od_config", None)
+    )
+
+    model_identifiers = [model_name]
+    if od_config is not None:
+        model_identifiers.append(getattr(od_config, "model", None))
+
+    if any(isinstance(identifier, str) and "Qwen-Image-Edit-2511" in identifier for identifier in model_identifiers):
+        return 4
+
+    return None
+
+
 def _get_lora_from_json_str(lora_body):
     if lora_body is None:
         return None
@@ -1721,17 +1744,11 @@ async def _generate_with_async_omni(
                 pass
         sampling_params_list.append(default_stage_params)
 
-    try:
-        async for output in engine_client.generate(
-            sampling_params_list=sampling_params_list,
-            **kwargs,
-        ):
-            result = output
-    except RuntimeError as e:
-        payload = e.args[0] if e.args else None
-        if isinstance(payload, dict) and "error" in payload:
-            raise ValueError(str(payload["error"])) from e
-        raise
+    async for output in engine_client.generate(
+        sampling_params_list=sampling_params_list,
+        **kwargs,
+    ):
+        result = output
 
     if result is None:
         raise HTTPException(
