@@ -1470,6 +1470,9 @@ async def edit_images(
             input_images_list.extend(urls)
         if not input_images_list:
             raise HTTPException(status_code=422, detail="Field 'image' or 'url' is required")
+        # Reject oversized multi-image edit requests before fetching or decoding
+        # any inputs. This keeps over-limit URL requests from burning network,
+        # CPU, and memory on work that will be rejected anyway.
         max_input_images = _get_max_edit_input_images(raw_request, engine_client, model_name)
         if max_input_images is not None and len(input_images_list) > max_input_images:
             detail = (
@@ -1671,6 +1674,10 @@ def _get_max_edit_input_images(raw_request: Request, engine_client: Any, model_n
     if not _supports_multimodal_image_inputs(raw_request, engine_client):
         return 1
 
+    # Keep the API-side limit model-specific: this helper should not hardcode a
+    # generic "multi-image means 4" rule because future edit pipelines may have
+    # different conditioning budgets. Query the serving model / OD config first,
+    # then defer to the owning pipeline constant.
     od_config = _get_diffusion_od_config(raw_request, engine_client)
     model_identifiers = [model_name]
     if od_config is not None:
