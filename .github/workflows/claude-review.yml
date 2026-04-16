@@ -1,0 +1,58 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Run on new/updated PRs, or when someone mentions @claude in a PR comment.
+    # Skip PRs authored by the bot account itself.
+    if: |
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.user.login != 'lishunyang12') ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       contains(github.event.comment.body, '@claude'))
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Review this pull request for vLLM-OMNI.
+
+            Style rules (strict):
+            - Post 2-6 inline comments MAX. Pick the highest-signal issues only.
+            - Around half of comments should be 1-line (e.g., "Seems unused", "Is this really needed?").
+            - Do NOT prefix comments with "Nit:" — state the issue directly.
+            - Use GitHub ```suggestion blocks for obvious fixes.
+            - No inline praise ("Good placement", "Nice work") — skip it.
+            - Be direct: "Why not X?" instead of "Would it make sense to...?"
+            - Hedge only when genuinely uncertain ("Tbh I think...").
+            - Review body: keep it ultra-short ("LGTM", "Some nits", "Please fix pre-commit") or leave empty.
+            - About half the time, leave the review body empty and only post inline comments.
+
+            Focus areas (in priority order):
+            1. Correctness bugs (off-by-one, race conditions, wrong dtype/device, missing error handling at boundaries)
+            2. API/interface issues (breaking changes, bad naming, inconsistent with existing code)
+            3. Performance regressions in hot paths
+            4. Test coverage gaps for new logic
+
+            Skip:
+            - Style nits already caught by pre-commit/ruff
+            - Speculative refactor suggestions
+            - Documentation wording unless clearly wrong
+            - Commenting on every file — only files with real issues
