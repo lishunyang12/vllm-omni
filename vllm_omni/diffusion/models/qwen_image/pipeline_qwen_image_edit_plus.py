@@ -53,6 +53,7 @@ logger = logging.getLogger(__name__)
 
 CONDITION_IMAGE_SIZE = 384 * 384
 VAE_IMAGE_SIZE = 1024 * 1024
+MAX_QWEN_IMAGE_EDIT_PLUS_INPUT_IMAGES = 4
 
 
 def get_qwen_image_edit_plus_pre_process_func(
@@ -90,6 +91,11 @@ def get_qwen_image_edit_plus_pre_process_func(
 
             if not isinstance(raw_image, list):
                 raw_image = [raw_image]
+            if len(raw_image) > MAX_QWEN_IMAGE_EDIT_PLUS_INPUT_IMAGES:
+                raise ValueError(
+                    f"Received {len(raw_image)} input images. "
+                    f"At most {MAX_QWEN_IMAGE_EDIT_PLUS_INPUT_IMAGES} images are supported by this model."
+                )
             image = [
                 PIL.Image.open(im) if isinstance(im, str) else cast(PIL.Image.Image | np.ndarray | torch.Tensor, im)
                 for im in raw_image
@@ -328,18 +334,15 @@ class QwenImageEditPlusPipeline(
             return_tensors="pt",
         ).to(self.device)
 
-        # We only need the fused multimodal hidden states for diffusion conditioning.
-        # Calling the full CausalLM forward also materializes logits for the entire
-        # prompt, which becomes unnecessarily expensive for many-image edit prompts.
-        outputs = self.text_encoder.model(
+        outputs = self.text_encoder(
             input_ids=model_inputs.input_ids,
             attention_mask=model_inputs.attention_mask,
             pixel_values=model_inputs.pixel_values,
             image_grid_thw=model_inputs.image_grid_thw,
-            output_hidden_states=False,
-            return_dict=True,
+            output_hidden_states=True,
         )
-        hidden_states = outputs.last_hidden_state
+
+        hidden_states = outputs.hidden_states[-1]
         split_hidden_states = self._extract_masked_hidden(hidden_states, model_inputs.attention_mask)
         split_hidden_states = [e[drop_idx:] for e in split_hidden_states]
         attn_mask_list = [torch.ones(e.size(0), dtype=torch.long, device=e.device) for e in split_hidden_states]
@@ -351,7 +354,7 @@ class QwenImageEditPlusPipeline(
             [torch.cat([u, u.new_zeros(max_seq_len - u.size(0))]) for u in attn_mask_list]
         )
 
-        prompt_embeds = prompt_embeds.to(dtype=dtype, device=self.device)
+        prompt_embeds = prompt_embeds.to(dtype=dtype)
 
         return prompt_embeds, encoder_attention_mask
 
@@ -383,9 +386,6 @@ class QwenImageEditPlusPipeline(
 
         if prompt_embeds is None:
             prompt_embeds, prompt_embeds_mask = self._get_qwen_prompt_embeds(prompt, image)
-
-        prompt_embeds = prompt_embeds[:, :max_sequence_length]
-        prompt_embeds_mask = prompt_embeds_mask[:, :max_sequence_length]
 
         _, seq_len, _ = prompt_embeds.shape
         prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)
