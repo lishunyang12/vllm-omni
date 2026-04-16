@@ -2,7 +2,8 @@ steps:
   - label: "Simple Unit Test"
     depends_on: upload-ready-pipeline
     agents:
-      queue: "linux-aarch64-a2b3-1"
+      queue: "ascend-a3"
+      resource_class: "npu-2"
     image: "swr.cn-southwest-2.myhuaweicloud.com/modelfoundry/vllm-omni-ci-npu:${BUILDKITE_COMMIT}"
     plugins:
       - kubernetes:
