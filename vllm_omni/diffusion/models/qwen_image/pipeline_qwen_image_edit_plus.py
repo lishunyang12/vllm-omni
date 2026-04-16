@@ -332,6 +332,9 @@ class QwenImageEditPlusPipeline(
             truncation=False,
             return_tensors="pt",
         ).to(self.device)
+        # Multi-image edit prepends "Picture N" placeholders before the user
+        # instruction. Subtract the placeholder-aware baseline so attached
+        # images do not reduce the remaining prompt budget.
         template_tokens = self.tokenizer(
             [template.format(base_img_prompt)],
             padding=True,

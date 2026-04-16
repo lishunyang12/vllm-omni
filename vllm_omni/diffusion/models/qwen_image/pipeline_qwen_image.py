@@ -399,6 +399,9 @@ class QwenImagePipeline(nn.Module, QwenImageCFGParallelMixin, DiffusionPipelineP
             truncation=False,
             return_tensors="pt",
         ).to(self.device)
+        # Validate only the user prompt contribution. The Qwen template also
+        # adds a fixed suffix after the user text, so subtracting only
+        # prompt_template_encode_start_idx would overcount near-limit prompts.
         template_tokens = self.tokenizer(
             [template.format("")],
             padding=True,

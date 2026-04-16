@@ -406,6 +406,9 @@ class QwenImageEditPipeline(nn.Module, SupportImageInput, QwenImageCFGParallelMi
             truncation=False,
             return_tensors="pt",
         ).to(self.device)
+        # The edit template contains fixed multimodal scaffolding around the
+        # instruction. Validate against the empty-template baseline so image
+        # placeholder text does not consume the user's text budget.
         template_tokens = self.tokenizer(
             [template.format("")],
             padding=True,

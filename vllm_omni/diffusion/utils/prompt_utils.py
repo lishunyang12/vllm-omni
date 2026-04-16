@@ -13,6 +13,10 @@ def validate_prompt_sequence_lengths(
 ) -> None:
     sequence_lengths = attention_mask.sum(dim=1)
     if baseline_attention_mask is not None:
+        # Some callers need to validate only the user-controlled portion of a
+        # templated prompt. In those cases we subtract the fully-tokenized
+        # template baseline instead of only removing a fixed prefix length,
+        # because the template may also contribute a suffix or image markers.
         baseline_lengths = baseline_attention_mask.sum(dim=1)
         if baseline_lengths.shape[0] == 1 and sequence_lengths.shape[0] > 1:
             baseline_lengths = baseline_lengths.expand(sequence_lengths.shape[0])

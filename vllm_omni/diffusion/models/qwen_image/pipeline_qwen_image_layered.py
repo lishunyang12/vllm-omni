@@ -378,6 +378,9 @@ the image\n<|vision_start|><|image_pad|><|vision_end|><|im_end|>\n<|im_start|>as
             truncation=False,
             return_tensors="pt",
         ).to(device)
+        # The layered template also appends fixed non-user tokens after the
+        # editable text, so use the empty-template tokenized baseline instead of
+        # counting everything after prompt_template_encode_start_idx.
         template_tokens = self.tokenizer(
             [template.format("")],
             padding=True,
