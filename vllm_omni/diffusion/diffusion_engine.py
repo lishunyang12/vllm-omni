@@ -97,12 +97,13 @@ class DiffusionEngine:
         self.abort_queue: queue.Queue[str] = queue.Queue()
         self.execute_fn = self.executor.execute_step if self.step_execution else self.executor.execute_request
 
-        try:
-            self._dummy_run()
-        except Exception as e:
-            logger.error(f"Dummy run failed: {e}")
-            self.close()
-            raise e
+        if od_config.diffusion_load_format != "dummy":
+            try:
+                self._dummy_run()
+            except Exception as e:
+                logger.error(f"Dummy run failed: {e}")
+                self.close()
+                raise e
 
     def step(self, request: OmniDiffusionRequest) -> list[OmniRequestOutput]:
         diffusion_engine_start_time = time.perf_counter()
