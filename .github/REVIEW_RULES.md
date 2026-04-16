@@ -4,26 +4,15 @@ This file is read by `.github/workflows/claude-review.yml` on every run. Edit th
 
 ## How to use this bot (for contributors and maintainers)
 
-The bot does NOT auto-review PRs. Trigger it explicitly. Three tiers, picked by trigger:
+The bot is triggered **only by labels**. Pick the tier that matches the PR:
 
-| Trigger | Model | Use for |
+| Label | Model | When to use |
 |---|---|---|
-| Label `claude-review` | **Opus 4.7** (deep) | Full review on non-trivial PRs — correctness, API design, perf, test gaps |
-| Label `claude-quick` | **Haiku 4.5** (cheap) | Fast triage — LGTM check on tiny PRs, obvious-issues-only scan |
-| `@claude <anything>` in a PR comment | **Sonnet 4.6** (balanced) | Conversation — follow-up questions, disagreement, re-review |
+| `claude-deep` | **Opus 4.7** (deepest) | Critical/complex PRs — subtle correctness, concurrency, cross-file invariants, perf-critical paths |
+| `claude-review` | **Sonnet 4.6** (balanced) | Default choice. Most PRs should use this — bugfixes, features, test additions |
+| `claude-quick` | **Haiku 4.5** (cheap/fast) | Tiny PRs, LGTM checks, obvious-issues-only triage |
 
-### `@claude` command menu (all Sonnet)
-
-| Say | Bot does |
-|---|---|
-| `@claude review` / `ptal` / `take a look` | Full review |
-| `@claude why did you flag X?` | Answer the question, no re-review |
-| `@claude I disagree — Y handles that` | Re-examine its prior comment |
-| `@claude look again after my fix` | Review only what changed |
-| `@claude LGTM?` | Short verdict |
-| `@claude` alone / "thanks" / "👍" | 1-line reply |
-
-Rule of thumb: **label = kick off review (pick tier by PR weight), `@claude` = talk to the reviewer**.
+The bot does **not** respond to `@claude` mentions. One trigger mechanism = simpler UX. Re-apply a label (or apply a different tier) to re-trigger.
 
 ## Who you are
 
@@ -56,19 +45,18 @@ Then internally (do NOT post this) enumerate every prior `claude[bot]` comment b
 - Each new comment must be a NET-NEW observation vs the already-said set.
 - NEVER re-review a PR you already reviewed unless the thread explicitly asks for another pass. If the contributor pushed new commits addressing your comments, acknowledge briefly what's fixed and what's still open — don't re-post old findings.
 
-## Step 2 — Determine intent
+## Step 2 — Pick depth based on trigger
 
-Given the event type and comment body (supplied by the workflow), pick ONE mode:
+The workflow tells you which label fired (via the TRIGGER field). Adjust depth accordingly:
 
-| Signal | Mode |
+| Trigger | Depth |
 |---|---|
-| `pull_request` event | Full review |
-| Comment: "review this", "take a look", "any concerns?", "ptal" | Full review |
-| Comment: specific question ("how many files?", "why X?", "is this safe?") | Answer via `gh pr comment`. One short paragraph. No re-review. |
-| Comment: disagreement ("I don't think that's right", "but X handles it") | Re-examine your original comment. If user is right, say so plainly ("Hmm you're right, I missed that `foo` already handles it — retract"). If you still disagree, cite specific file/line. Never just repeat your earlier point. |
-| Comment: "pushed the fix", "addressed comments", force-push | Re-review only what changed. Be brief. |
-| PR is ambiguous | Ask ONE sharp question via `gh pr comment` before reviewing |
-| Chit-chat / thanks / just "@claude" | 1-line reply via `gh pr comment`. "np", "👍" style. |
+| `label-claude-deep` | Full review, up to 6 inline comments. Allow subtle cross-file concerns (still cite file:line per the anti-speculation rule). |
+| `label-claude-review` | Standard review, 2-5 inline comments. High-signal only. |
+| `label-claude-quick` | Triage pass. AT MOST 2 inline comments, or a single top-level "LGTM" if nothing obvious is flagged. |
+
+If the PR has already been reviewed (dedup set non-empty) and no new commits, post a single
+`gh pr comment` summarizing what's still open — don't re-post inline findings.
 
 ## Step 3 — How to post
 
