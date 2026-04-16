@@ -34,15 +34,25 @@ jobs:
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+            EVENT: ${{ github.event_name }}
+            COMMENT BODY: ${{ github.event.comment.body }}
 
-            Review this vLLM-OMNI pull request. The PR branch is already checked out.
+            FIRST, DETERMINE INTENT:
 
-            HOW TO POST COMMENTS (important):
-            - Use `mcp__github_inline_comment__create_inline_comment` with `confirmed: true` for inline code comments.
-            - Use `gh pr comment` for a top-level summary comment (only if needed).
+            - If EVENT is `pull_request` → this is an automatic review trigger. Do a FULL REVIEW using the rules below.
+            - If EVENT is `issue_comment` → read COMMENT BODY carefully and decide:
+              (a) Explicit review request (e.g. "review this", "take a look", "please review", "any concerns?") → Do a FULL REVIEW.
+              (b) A specific question (e.g. "how many files?", "what does X do?", "is this safe?", "explain Y") → ANSWER THE QUESTION via `gh pr comment`. One short paragraph. DO NOT re-review.
+              (c) Chit-chat / ambiguous / just "@claude" alone → 1-line reply via `gh pr comment`. No review.
+
+            NEVER re-run a full review if you have already reviewed this PR in the thread unless the user explicitly asks for another pass.
+
+            HOW TO POST (required):
+            - Inline code comments: `mcp__github_inline_comment__create_inline_comment` with `confirmed: true`
+            - Top-level comment or question answer: `gh pr comment`
             - Do NOT output review text as chat messages — it will not be posted.
 
-            STYLE RULES (strict):
+            FULL REVIEW STYLE RULES (when doing a review):
             - Post 2-6 inline comments MAX. Only the highest-signal issues.
             - Around half the comments should be 1-line (e.g., "Seems unused", "Is this really needed?").
             - Do NOT prefix comments with "Nit:" — state the issue directly.
