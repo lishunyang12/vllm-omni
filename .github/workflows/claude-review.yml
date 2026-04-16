@@ -17,12 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Triggered ONLY by:
-    #   1. Applying the `claude-review` label to a PR (one-shot full review), OR
-    #   2. Mentioning `@claude` in a PR comment (Q&A / disagreement / re-review / etc.)
+    #   1. Label `claude-review` (deep review, Opus 4.7)
+    #   2. Label `claude-quick`  (fast triage, Haiku 4.5)
+    #   3. `@claude` in a PR comment (conversational, Sonnet 4.6)
     if: |
       (github.event_name == 'pull_request' &&
        github.event.action == 'labeled' &&
-       github.event.label.name == 'claude-review') ||
+       (github.event.label.name == 'claude-review' ||
+        github.event.label.name == 'claude-quick')) ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request != null &&
        contains(github.event.comment.body, '@claude'))
@@ -34,13 +36,18 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Model routing:
+          #   claude-review label -> Opus 4.7   (deep analysis)
+          #   claude-quick  label -> Haiku 4.5  (cheap triage)
+          #   @claude comments    -> Sonnet 4.6 (conversational default)
           claude_args: |
+            --model ${{ (github.event.label.name == 'claude-review') && 'claude-opus-4-7' || (github.event.label.name == 'claude-quick') && 'claude-haiku-4-5-20251001' || 'claude-sonnet-4-6' }}
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh api:*),Read,Grep,Glob"
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
             EVENT: ${{ github.event_name }}
-            TRIGGER: ${{ github.event_name == 'pull_request' && 'label-applied' || 'at-claude-comment' }}
+            TRIGGER: ${{ github.event_name == 'pull_request' && format('label-{0}', github.event.label.name) || 'at-claude-comment' }}
             COMMENT BODY: ${{ github.event.comment.body }}
 
             FIRST ACTION (mandatory): read the review rules file at
@@ -48,12 +55,14 @@ jobs:
             source of truth for persona, intent routing, dedup contract, anti-speculation,
             style, focus areas, and skip list.
 
-            If TRIGGER is `label-applied`, treat this as an explicit FULL REVIEW request
-            (same as the "review request" intent in REVIEW_RULES.md).
-
-            If TRIGGER is `at-claude-comment`, route based on COMMENT BODY per
-            REVIEW_RULES.md Step 2 (review / question / disagreement / re-review /
-            clarification / chit-chat).
+            TRIGGER-TO-INTENT MAPPING:
+              - TRIGGER `label-claude-review` -> FULL REVIEW (deep, thorough, up to 6 inline comments)
+              - TRIGGER `label-claude-quick`  -> QUICK REVIEW: scan the diff in one pass, post at most
+                  2 high-signal inline comments OR a single "LGTM" top-level if nothing is flagged.
+                  Skip any finding that isn't immediately obvious. Fast triage pass.
+              - TRIGGER `at-claude-comment`   -> route based on COMMENT BODY per
+                  REVIEW_RULES.md Step 2 (review / question / disagreement / re-review /
+                  clarification / chit-chat).
 
             Do not improvise review behavior outside what REVIEW_RULES.md specifies.
             If REVIEW_RULES.md is missing, post a single `gh pr comment` saying so and exit.
