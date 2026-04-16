@@ -32,6 +32,9 @@ from vllm_omni.diffusion.models.qwen_image.cfg_parallel import (
     QwenImageCFGParallelMixin,
 )
 from vllm_omni.diffusion.models.qwen_image.pipeline_qwen_image import calculate_shift
+from vllm_omni.diffusion.models.qwen_image.prompt_utils import (
+    validate_qwen_prompt_sequence_lengths,
+)
 from vllm_omni.diffusion.models.qwen_image.qwen_image_transformer import (
     QwenImageTransformer2DModel,
 )
@@ -323,8 +326,11 @@ class QwenImageEditPipeline(nn.Module, SupportImageInput, QwenImageCFGParallelMi
                 "that was used to generate `negative_prompt_embeds`."
             )
 
-        if max_sequence_length is not None and max_sequence_length > 1024:
-            raise ValueError(f"`max_sequence_length` cannot be greater than 1024 but is {max_sequence_length}")
+        if max_sequence_length is not None and max_sequence_length > self.tokenizer_max_length:
+            raise ValueError(
+                f"`max_sequence_length` cannot be greater than {self.tokenizer_max_length} but is "
+                f"{max_sequence_length}"
+            )
 
     def _extract_masked_hidden(self, hidden_states: torch.Tensor, mask: torch.Tensor):
         bool_mask = mask.bool()
@@ -384,6 +390,8 @@ class QwenImageEditPipeline(nn.Module, SupportImageInput, QwenImageCFGParallelMi
         prompt: str | list[str] = None,
         image: PIL.Image.Image | torch.Tensor | None = None,
         dtype: torch.dtype | None = None,
+        max_sequence_length: int | None = None,
+        prompt_name: str = "prompt",
     ):
         """Get prompt embeddings with image support for editing."""
         dtype = dtype or self.text_encoder.dtype
@@ -393,6 +401,23 @@ class QwenImageEditPipeline(nn.Module, SupportImageInput, QwenImageCFGParallelMi
         template = self.prompt_template_encode
         drop_idx = self.prompt_template_encode_start_idx
         txt = [template.format(e) for e in prompt]
+        txt_tokens = self.tokenizer(
+            txt,
+            padding=True,
+            truncation=False,
+            return_tensors="pt",
+        ).to(self.device)
+        # Qwen-Image-Edit expands image placeholders into many vision tokens
+        # inside the processor. `max_sequence_length` is meant to constrain the
+        # prompt text length, so validate on the text template before image
+        # token expansion.
+        validate_qwen_prompt_sequence_lengths(
+            txt_tokens.attention_mask,
+            drop_idx=drop_idx,
+            max_sequence_length=max_sequence_length or self.tokenizer_max_length,
+            supported_max_sequence_length=self.tokenizer_max_length,
+            prompt_name=prompt_name,
+        )
 
         # Use processor to handle both text and image inputs
         model_inputs = self.processor(
@@ -434,6 +459,7 @@ class QwenImageEditPipeline(nn.Module, SupportImageInput, QwenImageCFGParallelMi
         prompt_embeds: torch.Tensor | None = None,
         prompt_embeds_mask: torch.Tensor | None = None,
         max_sequence_length: int = 1024,
+        prompt_name: str = "prompt",
     ):
         r"""
 
@@ -453,7 +479,12 @@ class QwenImageEditPipeline(nn.Module, SupportImageInput, QwenImageCFGParallelMi
         batch_size = len(prompt) if prompt_embeds is None else prompt_embeds.shape[0]
 
         if prompt_embeds is None:
-            prompt_embeds, prompt_embeds_mask = self._get_qwen_prompt_embeds(prompt, image)
+            prompt_embeds, prompt_embeds_mask = self._get_qwen_prompt_embeds(
+                prompt,
+                image,
+                max_sequence_length=max_sequence_length,
+                prompt_name=prompt_name,
+            )
 
         _, seq_len, _ = prompt_embeds.shape
         prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)
@@ -624,7 +655,7 @@ class QwenImageEditPipeline(nn.Module, SupportImageInput, QwenImageCFGParallelMi
         output_type: str | None = "pil",
         attention_kwargs: dict[str, Any] | None = None,
         callback_on_step_end_tensor_inputs: list[str] = ["latents"],
-        max_sequence_length: int = 512,
+        max_sequence_length: int = 1024,
     ) -> DiffusionOutput:
         """Forward pass for image editing."""
         # TODO: In online mode, sometimes it receives [{"negative_prompt": None}, {...}], so cannot use .get("...", "")
@@ -739,6 +770,7 @@ class QwenImageEditPipeline(nn.Module, SupportImageInput, QwenImageCFGParallelMi
                 prompt_embeds_mask=negative_prompt_embeds_mask,
                 num_images_per_prompt=num_images_per_prompt,
                 max_sequence_length=max_sequence_length,
+                prompt_name="negative_prompt",
             )
 
         num_channels_latents = self.transformer.in_channels // 4
