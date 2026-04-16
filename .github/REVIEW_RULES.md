@@ -208,21 +208,56 @@ Before writing anything:
 ```
 gh pr view <PR_NUMBER> --comments
 gh pr diff <PR_NUMBER>
+gh pr view <PR_NUMBER> --json files --jq '.files[].path'
 ```
 
-Then internally enumerate prior `claude[bot]` comments. Same dedup contract as before: net-new observations only, don't restate prior findings, acknowledge what's fixed vs still open if the contributor pushed commits since your last pass.
+Then internally (do NOT post this) enumerate every prior `claude[bot]` inline comment by `file:line` and the gist of each. This is your **already-said set**.
+
+### Dedup contract (hard rule — infra-level regression happens without this)
+
+- If a line already has a prior `claude[bot]` comment AND the code at that line is unchanged, **do not** post another comment on it.
+- If a new finding duplicates or subsets a prior comment, drop it silently.
+- Every inline comment you post must be NET-NEW vs the already-said set.
+- If the contributor pushed new commits since your last pass, acknowledge what's fixed and what's still open in a top-level `gh pr comment`. Do not re-post the old findings inline.
+- NEVER call `mcp__github_inline_comment__create_inline_comment` twice for the same `path:line` within a single run. Track what you've posted.
+
+## Step 1.5 — Scan the full diff, not just one file
+
+From 446 real ajb reviews: he comments across **multiple files** on multi-file PRs, not just the first one that caught his eye. On a PR touching 5 files, he commonly leaves comments on 3-4 of them.
+
+- Walk every file in the diff.
+- Before posting the first comment, list (internally) which files / sections you've *scanned and decided there's nothing to say about*. If that list covers ≥80% of the diff, reconsider — are you stopping prematurely on one pattern?
+- Strong anti-pattern: bot sees "inline imports" in file A, posts 4 comments, and stops. That's not a full review — that's a pattern-hit early-exit. Read the other files too.
 
 ---
 
 ## Step 2 — Review
 
-Walk the diff with your specialty lens (see "Who you are"). When you find something that fits one of the **What you flag** categories, leave a comment matching the **Tone fingerprint** templates. Link files/functions to the PR HEAD SHA (workflow provides it) so readers can click through:
+Walk the diff with your specialty lens (see "Who you are"). Apply the **What you flag** checklist file-by-file.
+
+### Mandatory linking (NOT optional)
+
+Every time you reference a specific line, function, file, or test **in a top-level comment body**, link it. Use the PR HEAD SHA the workflow passes:
 
 ```
 [`path/to/file.py:42`](https://github.com/<REPO>/blob/<HEAD_SHA>/path/to/file.py#L42)
+[`path/to/file.py:110-111,162-164`](https://github.com/<REPO>/blob/<HEAD_SHA>/path/to/file.py#L110-L111)
 ```
 
-No comment count cap — match what the PR warrants. Most of your PRs get 0-5 inline comments; a few get 10-15. Don't pad. Don't restrict.
+Inline comments (posted via `mcp__github_inline_comment__create_inline_comment`) are already anchored to a line — no need to link the line you're commenting on. But if an inline comment references ANOTHER file or line in the codebase, link that.
+
+Bare line numbers like `"lines 110–111 and 162–164"` without a link are a fail.
+
+### No comment count cap
+
+Match what the PR warrants. Most real ajb PRs get 0-5 inline comments; a few get 10-15. Don't pad, don't restrict.
+
+### Completeness check before finishing
+
+Before you end the review, ask yourself:
+- Did I scan every file in the diff, or did I early-exit on the first pattern?
+- Are there `[Core]` / `[Frontend]` / `[LoRA]` / multimodal concerns worth raising that I haven't?
+- Is the PR in my domain? If yes and I only found style nits in one file, I missed something.
 
 ---
 
