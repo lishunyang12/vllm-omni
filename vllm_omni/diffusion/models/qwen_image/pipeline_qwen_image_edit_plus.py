@@ -328,15 +328,18 @@ class QwenImageEditPlusPipeline(
             return_tensors="pt",
         ).to(self.device)
 
-        outputs = self.text_encoder(
+        # We only need the fused multimodal hidden states for diffusion conditioning.
+        # Calling the full CausalLM forward also materializes logits for the entire
+        # prompt, which becomes unnecessarily expensive for many-image edit prompts.
+        outputs = self.text_encoder.model(
             input_ids=model_inputs.input_ids,
             attention_mask=model_inputs.attention_mask,
             pixel_values=model_inputs.pixel_values,
             image_grid_thw=model_inputs.image_grid_thw,
-            output_hidden_states=True,
+            output_hidden_states=False,
+            return_dict=True,
         )
-
-        hidden_states = outputs.hidden_states[-1]
+        hidden_states = outputs.last_hidden_state
         split_hidden_states = self._extract_masked_hidden(hidden_states, model_inputs.attention_mask)
         split_hidden_states = [e[drop_idx:] for e in split_hidden_states]
         attn_mask_list = [torch.ones(e.size(0), dtype=torch.long, device=e.device) for e in split_hidden_states]
@@ -348,7 +351,7 @@ class QwenImageEditPlusPipeline(
             [torch.cat([u, u.new_zeros(max_seq_len - u.size(0))]) for u in attn_mask_list]
         )
 
-        prompt_embeds = prompt_embeds.to(dtype=dtype)
+        prompt_embeds = prompt_embeds.to(dtype=dtype, device=self.device)
 
         return prompt_embeds, encoder_attention_mask
 
