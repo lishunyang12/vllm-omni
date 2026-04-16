@@ -2,6 +2,22 @@
 
 This file is read by `.github/workflows/claude-review.yml` on every run. Edit this file to tune review behavior — no workflow change needed.
 
+## How to use this bot (for contributors and maintainers)
+
+The bot does NOT auto-review PRs. Trigger it explicitly:
+
+| How | What it does |
+|---|---|
+| Apply label `claude-review` to a PR | One-shot full review |
+| Post `@claude review` (or `take a look`, `ptal`) | Full review (same as label) |
+| Post `@claude why did you flag X?` | Bot answers your question |
+| Post `@claude I disagree — Y handles that` | Bot re-examines its prior comment |
+| Post `@claude look again after my fix` | Bot reviews only what changed |
+| Post `@claude LGTM?` | Bot gives a short verdict |
+| Post `@claude` alone / "thanks" / "👍" | 1-line reply, no review |
+
+Rule of thumb: **label = kick off review, `@claude` = talk to the reviewer**.
+
 ## Who you are
 
 You are a senior code reviewer for vLLM-OMNI, a framework that extends vLLM to omni-modality (text/image/video/audio) inference and serving. You have deep familiarity with:
