@@ -35,14 +35,14 @@ from vllm_omni.diffusion.models.qwen_image.pipeline_qwen_image_edit import (
     retrieve_latents,
     retrieve_timesteps,
 )
-from vllm_omni.diffusion.models.qwen_image.prompt_utils import (
-    validate_qwen_prompt_sequence_lengths,
-)
 from vllm_omni.diffusion.models.qwen_image.qwen_image_transformer import (
     QwenImageTransformer2DModel,
 )
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
+from vllm_omni.diffusion.utils.prompt_utils import (
+    validate_prompt_sequence_lengths,
+)
 from vllm_omni.diffusion.utils.size_utils import (
     normalize_min_aligned_size,
 )
@@ -335,12 +335,13 @@ class QwenImageEditPlusPipeline(
         # The processor expands image placeholders into many vision tokens.
         # `max_sequence_length` should guard the prompt text length before that
         # multimodal expansion happens.
-        validate_qwen_prompt_sequence_lengths(
+        validate_prompt_sequence_lengths(
             txt_tokens.attention_mask,
-            drop_idx=drop_idx,
             max_sequence_length=max_sequence_length or self.tokenizer_max_length,
             supported_max_sequence_length=self.tokenizer_max_length,
             prompt_name=prompt_name,
+            length_offset=drop_idx,
+            error_context="after applying the Qwen prompt template",
         )
 
         # Use processor to handle both text and image inputs

@@ -31,14 +31,14 @@ from vllm_omni.diffusion.models.qwen_image.autoencoder_kl_qwenimage import (
 from vllm_omni.diffusion.models.qwen_image.cfg_parallel import (
     QwenImageCFGParallelMixin,
 )
-from vllm_omni.diffusion.models.qwen_image.prompt_utils import (
-    validate_qwen_prompt_sequence_lengths,
-)
 from vllm_omni.diffusion.models.qwen_image.qwen_image_transformer import (
     QwenImageTransformer2DModel,
 )
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
+from vllm_omni.diffusion.utils.prompt_utils import (
+    validate_prompt_sequence_lengths,
+)
 from vllm_omni.diffusion.utils.size_utils import (
     normalize_min_aligned_size,
 )
@@ -378,12 +378,13 @@ the image\n<|vision_start|><|image_pad|><|vision_end|><|im_end|>\n<|im_start|>as
             truncation=False,
             return_tensors="pt",
         ).to(device)
-        validate_qwen_prompt_sequence_lengths(
+        validate_prompt_sequence_lengths(
             txt_tokens.attention_mask,
-            drop_idx=drop_idx,
             max_sequence_length=max_sequence_length or self.tokenizer_max_length,
             supported_max_sequence_length=self.tokenizer_max_length,
             prompt_name=prompt_name,
+            length_offset=drop_idx,
+            error_context="after applying the Qwen prompt template",
         )
         encoder_hidden_states = self.text_encoder(
             input_ids=txt_tokens.input_ids,

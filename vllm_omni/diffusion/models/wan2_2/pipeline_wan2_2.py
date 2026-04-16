@@ -24,14 +24,14 @@ from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin, _is_rank_zero
 from vllm_omni.diffusion.models.schedulers import FlowUniPCMultistepScheduler
-from vllm_omni.diffusion.models.wan2_2.prompt_utils import (
-    validate_wan_prompt_sequence_lengths,
-)
 from vllm_omni.diffusion.models.wan2_2.scheduling_wan_euler import WanEulerScheduler
 from vllm_omni.diffusion.models.wan2_2.wan2_2_transformer import WanTransformer3DModel
 from vllm_omni.diffusion.postprocess import interpolate_video_tensor
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
+from vllm_omni.diffusion.utils.prompt_utils import (
+    validate_prompt_sequence_lengths,
+)
 from vllm_omni.inputs.data import OmniTextPrompt
 from vllm_omni.platforms import current_omni_platform
 
@@ -815,10 +815,11 @@ class Wan22Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, DiffusionPipe
             return_attention_mask=True,
             return_tensors="pt",
         )
-        validate_wan_prompt_sequence_lengths(
+        validate_prompt_sequence_lengths(
             text_inputs_untruncated.attention_mask,
             max_sequence_length=max_sequence_length,
             supported_max_sequence_length=self.tokenizer_max_length,
+            error_context="for Wan2.2 text encoding",
         )
 
         text_inputs = self.tokenizer(
@@ -857,11 +858,12 @@ class Wan22Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, DiffusionPipe
                 return_attention_mask=True,
                 return_tensors="pt",
             )
-            validate_wan_prompt_sequence_lengths(
+            validate_prompt_sequence_lengths(
                 neg_text_inputs_untruncated.attention_mask,
                 max_sequence_length=max_sequence_length,
                 supported_max_sequence_length=self.tokenizer_max_length,
                 prompt_name="negative_prompt",
+                error_context="for Wan2.2 text encoding",
             )
             neg_text_inputs = self.tokenizer(
                 negative_prompt_clean,

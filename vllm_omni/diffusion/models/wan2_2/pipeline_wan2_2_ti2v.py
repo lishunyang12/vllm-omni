@@ -45,11 +45,11 @@ from vllm_omni.diffusion.models.wan2_2.pipeline_wan2_2 import (
     resolve_wan_sample_solver,
     retrieve_latents,
 )
-from vllm_omni.diffusion.models.wan2_2.prompt_utils import (
-    validate_wan_prompt_sequence_lengths,
-)
 from vllm_omni.diffusion.postprocess import interpolate_video_tensor
 from vllm_omni.diffusion.request import OmniDiffusionRequest
+from vllm_omni.diffusion.utils.prompt_utils import (
+    validate_prompt_sequence_lengths,
+)
 from vllm_omni.inputs.data import OmniTextPrompt
 from vllm_omni.platforms import current_omni_platform
 
@@ -532,10 +532,11 @@ class Wan22TI2VPipeline(nn.Module, SupportImageInput, CFGParallelMixin, Progress
             return_attention_mask=True,
             return_tensors="pt",
         )
-        validate_wan_prompt_sequence_lengths(
+        validate_prompt_sequence_lengths(
             text_inputs_untruncated.attention_mask,
             max_sequence_length=max_sequence_length,
             supported_max_sequence_length=self.tokenizer_max_length,
+            error_context="for Wan2.2 text encoding",
         )
 
         text_inputs = self.tokenizer(
@@ -574,11 +575,12 @@ class Wan22TI2VPipeline(nn.Module, SupportImageInput, CFGParallelMixin, Progress
                 return_attention_mask=True,
                 return_tensors="pt",
             )
-            validate_wan_prompt_sequence_lengths(
+            validate_prompt_sequence_lengths(
                 neg_text_inputs_untruncated.attention_mask,
                 max_sequence_length=max_sequence_length,
                 supported_max_sequence_length=self.tokenizer_max_length,
                 prompt_name="negative_prompt",
+                error_context="for Wan2.2 text encoding",
             )
             neg_text_inputs = self.tokenizer(
                 negative_prompt_clean,
