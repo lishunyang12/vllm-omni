@@ -41,7 +41,7 @@ def scan_file(path: str) -> int:
     return 0
 
 
-def main():
+def main() -> int:
     returncode = 0
     for filename in sys.argv[1:]:
         if filename in ALLOWED_FILES:
