@@ -13,9 +13,9 @@ permissions:
 jobs:
   claude-review:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Triggered ONLY by applying one of three labels. `@claude` mentions are
-    # intentionally NOT a trigger — this keeps the UX simple: label = review.
+    timeout-minutes: 20
+    # Triggered ONLY by one of three labels. `@claude` mentions are intentionally
+    # NOT a trigger — labels are the single source of truth.
     if: |
       github.event.action == 'labeled' &&
       (github.event.label.name == 'claude-deep' ||
@@ -30,9 +30,9 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Model routing:
-          #   claude-deep   -> Opus 4.7   (deepest, most expensive)
-          #   claude-review -> Sonnet 4.6 (balanced, default)
-          #   claude-quick  -> Haiku 4.5  (cheap triage)
+          #   claude-deep   -> Opus 4.7   (full maintainer review, strongest reasoning)
+          #   claude-review -> Sonnet 4.6 (full maintainer review, balanced model)
+          #   claude-quick  -> Haiku 4.5  (preview summary only — NOT a review)
           claude_args: |
             --model ${{ (github.event.label.name == 'claude-deep') && 'claude-opus-4-7' || (github.event.label.name == 'claude-quick') && 'claude-haiku-4-5-20251001' || 'claude-sonnet-4-6' }}
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh api:*),Read,Grep,Glob"
@@ -41,20 +41,21 @@ jobs:
             PR NUMBER: ${{ github.event.pull_request.number }}
             TRIGGER: label-${{ github.event.label.name }}
 
-            FIRST ACTION (mandatory): read the review rules file at
-            `.github/REVIEW_RULES.md` and follow every rule in it. That file is the
-            source of truth for persona, dedup contract, anti-speculation, style,
-            focus areas, and skip list.
+            FIRST ACTION (mandatory): read `.github/REVIEW_RULES.md` in the checked-out
+            repo and follow every rule in it. That file is the single source of truth for
+            persona, modes, Phase 0–3 review flow, dedup contract, anti-speculation, style,
+            and trivial-PR shortcut.
 
-            TRIGGER-TO-INTENT MAPPING:
-              - TRIGGER `label-claude-deep`   -> DEEP REVIEW: thorough pass, up to 6 inline
-                  comments, allow subtle correctness / cross-file concerns (but still honor
-                  the anti-speculation rule — cite file:line for any cross-file claim).
-              - TRIGGER `label-claude-review` -> STANDARD REVIEW: balanced pass, 2-5 inline
-                  comments, high-signal only.
-              - TRIGGER `label-claude-quick`  -> QUICK TRIAGE: single pass, AT MOST 2 inline
-                  comments OR a single "LGTM" top-level if nothing is flagged. Skip any
-                  finding that isn't immediately obvious.
+            MODE (recap — full details in REVIEW_RULES.md):
+              - TRIGGER `label-claude-quick`  -> PREVIEW MODE. One top-level `gh pr comment`
+                  with: what-it-does summary, meta check, file-by-file one-liners, depth
+                  recommendation. NO inline comments. NO bug flags.
+              - TRIGGER `label-claude-review` -> FULL REVIEW MODE. Run Phase 0 (meta audit),
+                  Phase 1 (category-specific checks by title prefix), Phase 2 (code review),
+                  Phase 3 (test audit). NO hard cap on comment count.
+              - TRIGGER `label-claude-deep`   -> FULL REVIEW MODE. Identical scope to
+                  `claude-review` but you're running on a stronger model — use that headroom
+                  for subtle correctness / cross-file invariants / concurrency analysis.
 
-            Do not improvise review behavior outside what REVIEW_RULES.md specifies.
-            If REVIEW_RULES.md is missing, post a single `gh pr comment` saying so and exit.
+            Do not improvise behavior outside what REVIEW_RULES.md specifies. If
+            REVIEW_RULES.md is missing, post a single `gh pr comment` saying so and exit.
