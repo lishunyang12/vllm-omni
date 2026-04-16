@@ -1,0 +1,14 @@
+steps:
+  - label: "Simple Unit Test"
+    depends_on: upload-ready-pipeline
+    agents:
+      queue: "ascend-a3"
+      resource_class: "npu-2"
+    image: "swr.cn-southwest-2.myhuaweicloud.com/modelfoundry/vllm-omni-ci-npu:${BUILDKITE_COMMIT}"
+    plugins:
+      - kubernetes:
+          podSpecPatch:
+            imagePullSecrets:
+            - name: swr-secret
+    commands:
+      - "timeout 20m pytest -v -s -m 'core_model and cpu' --cov=vllm_omni --cov-branch --cov-report=term-missing --cov-report=html --cov-report=xml"
