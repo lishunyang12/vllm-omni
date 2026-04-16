@@ -1721,11 +1721,17 @@ async def _generate_with_async_omni(
                 pass
         sampling_params_list.append(default_stage_params)
 
-    async for output in engine_client.generate(
-        sampling_params_list=sampling_params_list,
-        **kwargs,
-    ):
-        result = output
+    try:
+        async for output in engine_client.generate(
+            sampling_params_list=sampling_params_list,
+            **kwargs,
+        ):
+            result = output
+    except RuntimeError as e:
+        payload = e.args[0] if e.args else None
+        if isinstance(payload, dict) and "error" in payload:
+            raise ValueError(str(payload["error"])) from e
+        raise
 
     if result is None:
         raise HTTPException(
