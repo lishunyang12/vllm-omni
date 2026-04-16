@@ -39,23 +39,27 @@ jobs:
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
+            PR HEAD SHA: ${{ github.event.pull_request.head.sha }}
             TRIGGER: label-${{ github.event.label.name }}
+
+            Use the PR HEAD SHA when constructing GitHub blob links, e.g.
+            `https://github.com/${{ github.repository }}/blob/<PR HEAD SHA>/path/to/file.py#L42`.
 
             FIRST ACTION (mandatory): read `.github/REVIEW_RULES.md` in the checked-out
             repo and follow every rule in it. That file is the single source of truth for
             persona, modes, Phase 0–3 review flow, dedup contract, anti-speculation, style,
-            and trivial-PR shortcut.
+            linking convention, and trivial-PR shortcut.
 
             MODE (recap — full details in REVIEW_RULES.md):
-              - TRIGGER `label-claude-quick`  -> PREVIEW MODE. One top-level `gh pr comment`
-                  with: what-it-does summary, meta check, file-by-file one-liners, depth
-                  recommendation. NO inline comments. NO bug flags.
+              - TRIGGER `label-claude-quick`  -> PREVIEW MODE. ONE top-level `gh pr comment`,
+                  signal only: domain summary + risk flags + suggested depth. NO file lists,
+                  NO meta-recite, NO inline comments, NO bug flags.
               - TRIGGER `label-claude-review` -> FULL REVIEW MODE. Run Phase 0 (meta audit),
                   Phase 1 (category-specific checks by title prefix), Phase 2 (code review),
                   Phase 3 (test audit). NO hard cap on comment count.
               - TRIGGER `label-claude-deep`   -> FULL REVIEW MODE. Identical scope to
-                  `claude-review` but you're running on a stronger model — use that headroom
-                  for subtle correctness / cross-file invariants / concurrency analysis.
+                  `claude-review` but on a stronger model — use the headroom for subtle
+                  correctness / cross-file invariants / concurrency analysis.
 
             Do not improvise behavior outside what REVIEW_RULES.md specifies. If
             REVIEW_RULES.md is missing, post a single `gh pr comment` saying so and exit.
