@@ -171,3 +171,70 @@ def test_load_model_clears_cache_backend_for_unsupported_pipeline(monkeypatch):
     assert runner.cache_backend is None
     assert runner.od_config.cache_backend is None
     assert dummy_cache_backend.enabled is False
+
+
+@pytest.mark.core_model
+@pytest.mark.cpu
+def test_should_skip_torch_compile_for_sage_attention_backend(monkeypatch):
+    runner = object.__new__(DiffusionModelRunner)
+    runner.od_config = SimpleNamespace(attention_backend="SAGE_ATTN", enforce_eager=False)
+
+    monkeypatch.delenv("DIFFUSION_ATTENTION_BACKEND", raising=False)
+
+    assert runner._should_skip_torch_compile() is True
+
+
+@pytest.mark.core_model
+@pytest.mark.cpu
+def test_load_model_skips_torch_compile_for_sage_attention_backend(monkeypatch):
+    class _DummyLoader:
+        def __init__(self, load_config, od_config=None):
+            del load_config, od_config
+
+        def load_model(self, **kwargs):
+            del kwargs
+            return SimpleNamespace(transformer=torch.nn.Identity(), transformer_2=torch.nn.Identity())
+
+    class _DummyMemoryProfiler:
+        consumed_memory = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            del exc_type, exc, tb
+            return False
+
+    runner = object.__new__(DiffusionModelRunner)
+    runner.vllm_config = object()
+    runner.device = torch.device("cpu")
+    runner.pipeline = None
+    runner.cache_backend = None
+    runner.offload_backend = None
+    runner.od_config = SimpleNamespace(
+        enable_cpu_offload=False,
+        enable_layerwise_offload=False,
+        cache_backend=None,
+        cache_config={},
+        model_class_name="WanPipeline",
+        enforce_eager=False,
+        attention_backend="SAGE_ATTN",
+    )
+
+    compile_calls = []
+
+    monkeypatch.setattr(model_runner_module, "LoadConfig", lambda: object())
+    monkeypatch.setattr(model_runner_module, "DiffusersPipelineLoader", _DummyLoader)
+    monkeypatch.setattr(model_runner_module, "DeviceMemoryProfiler", _DummyMemoryProfiler)
+    monkeypatch.setattr(model_runner_module, "get_offload_backend", lambda od_config, device: None)
+    monkeypatch.setattr(model_runner_module, "get_cache_backend", lambda cache_backend, cache_config: None)
+    monkeypatch.setattr(model_runner_module.current_omni_platform, "supports_torch_inductor", lambda: True)
+    monkeypatch.setattr(
+        runner,
+        "_compile_transformer",
+        lambda attr_name: compile_calls.append(attr_name),
+    )
+
+    DiffusionModelRunner.load_model(runner)
+
+    assert compile_calls == []

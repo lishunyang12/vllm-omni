@@ -11,6 +11,7 @@ model-related operations.
 from __future__ import annotations
 
 import copy
+import os
 import time
 from collections.abc import Iterable
 from contextlib import nullcontext
@@ -91,6 +92,21 @@ class DiffusionModelRunner(OmniConnectorModelRunnerMixin):
                 e,
             )
 
+    def _should_skip_torch_compile(self) -> bool:
+        backend = (
+            getattr(self.od_config, "attention_backend", None)
+            or os.environ.get("DIFFUSION_ATTENTION_BACKEND")
+            or ""
+        ).upper()
+        if backend.startswith("SAGE_ATTN"):
+            logger.info(
+                "Model runner: skipping torch.compile because attention backend '%s' "
+                "is not stable under repeated Wan diffusion serving requests.",
+                backend,
+            )
+            return True
+        return False
+
     def load_model(
         self,
         memory_pool_context_fn: callable | None = None,
@@ -161,7 +177,9 @@ class DiffusionModelRunner(OmniConnectorModelRunnerMixin):
 
         # Apply torch.compile if not in eager mode
         if not self.od_config.enforce_eager:
-            if current_omni_platform.supports_torch_inductor():
+            if self._should_skip_torch_compile():
+                pass
+            elif current_omni_platform.supports_torch_inductor():
                 self._compile_transformer("transformer")
                 self._compile_transformer("transformer_2")
             else:
