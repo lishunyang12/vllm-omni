@@ -1647,7 +1647,11 @@ def _get_engine_and_model(raw_request: Request):
 
 
 def _supports_multimodal_image_inputs(raw_request: Request, engine_client: Any) -> bool:
-    od_config = _get_diffusion_od_config(raw_request, engine_client)
+    diffusion_engine = getattr(raw_request.app.state, "diffusion_engine", None) or engine_client
+    get_diffusion_od_config = getattr(diffusion_engine, "get_diffusion_od_config", None)
+    od_config = (
+        get_diffusion_od_config() if callable(get_diffusion_od_config) else getattr(diffusion_engine, "od_config", None)
+    )
 
     if od_config is None:
         # Preserve the existing compatibility behavior when the diffusion
@@ -1656,25 +1660,11 @@ def _supports_multimodal_image_inputs(raw_request: Request, engine_client: Any) 
     return bool(getattr(od_config, "supports_multimodal_inputs", False))
 
 
-def _get_diffusion_od_config(raw_request: Request, engine_client: Any) -> Any:
-    diffusion_engine = getattr(raw_request.app.state, "diffusion_engine", None) or engine_client
-    get_diffusion_od_config = getattr(diffusion_engine, "get_diffusion_od_config", None)
-    return (
-        get_diffusion_od_config() if callable(get_diffusion_od_config) else getattr(diffusion_engine, "od_config", None)
-    )
-
-
-def _get_max_edit_input_images(raw_request: Request, engine_client: Any, model_name: str) -> int | None:
+def _get_max_edit_input_images(raw_request: Request, engine_client: Any, model_name: str) -> int:
     if not _supports_multimodal_image_inputs(raw_request, engine_client):
         return 1
 
-    od_config = _get_diffusion_od_config(raw_request, engine_client)
-    model_identifiers = [model_name, getattr(od_config, "model", None)]
-
-    if any(isinstance(identifier, str) and "Qwen-Image-Edit-2511" in identifier for identifier in model_identifiers):
-        return 4
-
-    return None
+    return 4
 
 
 def _get_lora_from_json_str(lora_body):
