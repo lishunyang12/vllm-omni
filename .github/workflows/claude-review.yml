@@ -2,11 +2,7 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
-    paths-ignore:
-      - "docs/**"
-      - "**.md"
-      - "examples/**/*.md"
+    types: [labeled]
   issue_comment:
     types: [created]
 
@@ -20,8 +16,13 @@ jobs:
   claude-review:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Triggered ONLY by:
+    #   1. Applying the `claude-review` label to a PR (one-shot full review), OR
+    #   2. Mentioning `@claude` in a PR comment (Q&A / disagreement / re-review / etc.)
     if: |
-      github.event_name == 'pull_request' ||
+      (github.event_name == 'pull_request' &&
+       github.event.action == 'labeled' &&
+       github.event.label.name == 'claude-review') ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request != null &&
        contains(github.event.comment.body, '@claude'))
@@ -39,12 +40,20 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
             EVENT: ${{ github.event_name }}
+            TRIGGER: ${{ github.event_name == 'pull_request' && 'label-applied' || 'at-claude-comment' }}
             COMMENT BODY: ${{ github.event.comment.body }}
 
             FIRST ACTION (mandatory): read the review rules file at
             `.github/REVIEW_RULES.md` and follow every rule in it. That file is the
             source of truth for persona, intent routing, dedup contract, anti-speculation,
             style, focus areas, and skip list.
+
+            If TRIGGER is `label-applied`, treat this as an explicit FULL REVIEW request
+            (same as the "review request" intent in REVIEW_RULES.md).
+
+            If TRIGGER is `at-claude-comment`, route based on COMMENT BODY per
+            REVIEW_RULES.md Step 2 (review / question / disagreement / re-review /
+            clarification / chit-chat).
 
             Do not improvise review behavior outside what REVIEW_RULES.md specifies.
             If REVIEW_RULES.md is missing, post a single `gh pr comment` saying so and exit.
