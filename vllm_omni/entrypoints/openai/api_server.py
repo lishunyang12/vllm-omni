@@ -1470,14 +1470,13 @@ async def edit_images(
             input_images_list.extend(urls)
         if not input_images_list:
             raise HTTPException(status_code=422, detail="Field 'image' or 'url' is required")
-        pil_images = await _load_input_images(input_images_list)
         max_input_images = _get_max_edit_input_images(raw_request, engine_client, model_name)
-        if max_input_images is not None and len(pil_images) > max_input_images:
+        if max_input_images is not None and len(input_images_list) > max_input_images:
             detail = (
                 "Received multiple input images. Only a single image is supported by this model."
                 if max_input_images == 1
                 else (
-                    f"Received {len(pil_images)} input images. "
+                    f"Received {len(input_images_list)} input images. "
                     f"At most {max_input_images} images are supported by this model."
                 )
             )
@@ -1485,6 +1484,7 @@ async def edit_images(
                 status_code=HTTPStatus.BAD_REQUEST.value,
                 detail=detail,
             )
+        pil_images = await _load_input_images(input_images_list)
         prompt["multi_modal_data"] = {}
         prompt["multi_modal_data"]["image"] = pil_images
 
