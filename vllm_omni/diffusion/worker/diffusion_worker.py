@@ -13,6 +13,7 @@ import multiprocessing as mp
 import os
 from collections.abc import Iterable
 from contextlib import AbstractContextManager, nullcontext
+from dataclasses import dataclass
 from typing import Any
 
 import torch
@@ -47,6 +48,42 @@ from vllm_omni.profiler import OmniTorchProfilerWrapper, create_omni_profiler
 from vllm_omni.worker.gpu_memory_utils import get_process_gpu_memory
 
 logger = init_logger(__name__)
+
+
+@dataclass
+class _DiffusionVllmModelConfig:
+    model: str
+    dtype: torch.dtype
+    quantization: str | None = None
+    quantization_config: Any | None = None
+    hf_config: Any | None = None
+    multimodal_config: Any | None = None
+    enforce_eager: bool = False
+    disable_cascade_attn: bool = False
+    is_moe: bool = False
+
+    def is_quantized(self) -> bool:
+        return self.quantization is not None
+
+    def is_model_moe(self) -> bool:
+        return self.is_moe
+
+    def is_nvfp4_quantized(self) -> bool:
+        return self.quantization == "modelopt_fp4"
+
+
+def _make_diffusion_vllm_model_config(od_config: OmniDiffusionConfig) -> _DiffusionVllmModelConfig:
+    quant_config = getattr(od_config, "quantization_config", None)
+    quantization = quant_config.get_name() if quant_config is not None and hasattr(quant_config, "get_name") else None
+    return _DiffusionVllmModelConfig(
+        model=od_config.model,
+        dtype=od_config.dtype,
+        quantization=quantization,
+        quantization_config=quant_config,
+        hf_config=getattr(od_config, "tf_model_config", None),
+        enforce_eager=getattr(od_config, "enforce_eager", False),
+        is_moe=bool(getattr(od_config, "is_moe", False)),
+    )
 
 
 class DiffusionWorker:
@@ -116,6 +153,8 @@ class DiffusionWorker:
         vllm_config.parallel_config.data_parallel_size = self.od_config.parallel_config.data_parallel_size
         vllm_config.parallel_config.enable_expert_parallel = self.od_config.parallel_config.enable_expert_parallel
         vllm_config.profiler_config = self.od_config.profiler_config
+        vllm_config.model_config = _make_diffusion_vllm_model_config(self.od_config)  # type: ignore[assignment]
+        vllm_config.quant_config = getattr(self.od_config, "quantization_config", None)
         self.vllm_config = vllm_config
 
         # Initialize distributed environment

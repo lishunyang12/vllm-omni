@@ -54,6 +54,44 @@ def test_build_quant_config_dict_not_mutated():
     assert original == copy
 
 
+def test_build_quant_config_modelopt_fp8_config_json():
+    from vllm.model_executor.layers.quantization.modelopt import ModelOptFp8Config
+
+    from vllm_omni.quantization import build_quant_config
+
+    config = build_quant_config(
+        {
+            "quant_method": "modelopt",
+            "quant_algo": "FP8",
+            "ignore": ["proj_out"],
+            "producer": {"name": "modelopt"},
+        }
+    )
+
+    assert isinstance(config, ModelOptFp8Config)
+    assert config.get_name() == "modelopt"
+    assert config.is_checkpoint_fp8_serialized
+
+
+def test_build_quant_config_modelopt_nested_checkpoint_metadata():
+    from vllm.model_executor.layers.quantization.modelopt import ModelOptFp8Config
+
+    from vllm_omni.quantization import build_quant_config
+
+    config = build_quant_config(
+        {
+            "producer": {"name": "modelopt"},
+            "quantization": {
+                "quant_algo": "FP8",
+                "exclude_modules": ["proj_out"],
+            },
+        }
+    )
+
+    assert isinstance(config, ModelOptFp8Config)
+    assert config.get_name() == "modelopt"
+
+
 def test_build_quant_config_per_component():
     from vllm_omni.quantization import ComponentQuantizationConfig, build_quant_config
 
@@ -91,7 +129,7 @@ def test_flat_dict_not_misdetected_as_per_component():
     as a per-component dict — it should raise ValueError for missing 'method'."""
     from vllm_omni.quantization import build_quant_config
 
-    with pytest.raises(ValueError, match="must have a 'method' key"):
+    with pytest.raises(ValueError, match="must have a 'method' or 'quant_method' key"):
         build_quant_config({"activation_scheme": "static"})
 
 
@@ -192,6 +230,26 @@ def test_integration_per_component():
     assert isinstance(config.quantization_config, ComponentQuantizationConfig)
     assert config.quantization_config.component_configs["transformer"].get_name() == "fp8"
     assert config.quantization_config.component_configs["vae"] is None
+
+
+def test_transformer_config_auto_detects_modelopt_fp8():
+    from vllm.model_executor.layers.quantization.modelopt import ModelOptFp8Config
+
+    from vllm_omni.diffusion.data import TransformerConfig
+
+    config = TransformerConfig.from_dict(
+        {
+            "_class_name": "FluxTransformer2DModel",
+            "quantization_config": {
+                "quant_method": "modelopt",
+                "quant_algo": "FP8",
+                "ignore": ["proj_out"],
+            },
+        }
+    )
+
+    assert isinstance(config.quant_config, ModelOptFp8Config)
+    assert config.quant_method == "modelopt"
 
 
 def test_supported_methods_includes_vllm():

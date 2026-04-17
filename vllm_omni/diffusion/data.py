@@ -207,10 +207,11 @@ class TransformerConfig:
         quant_method: str | None = None
         quant_config: QuantizationConfig | None = None
         disk_qc = params.get("quantization_config")
-        if isinstance(disk_qc, dict) and "quant_method" in disk_qc:
-            quant_method = disk_qc["quant_method"]
-            kwargs = {k: v for k, v in disk_qc.items() if k != "quant_method"}
-            quant_config = build_quant_config(quant_method, **kwargs)
+        if isinstance(disk_qc, dict):
+            raw_quant_method = disk_qc.get("quant_method", disk_qc.get("method"))
+            quant_config = build_quant_config(disk_qc)
+            if quant_config is not None:
+                quant_method = raw_quant_method if raw_quant_method is not None else quant_config.get_name()
 
         return cls(params=params, quant_method=quant_method, quant_config=quant_config)
 
@@ -616,14 +617,9 @@ class OmniDiffusionConfig:
 
         # Auto-detect quantization from TransformerConfig if not explicitly set.
         # This covers the case where tf_model_config is passed at construction
-        # time.  For late (post-construction) assignment, callers should use
+        # time. For late (post-construction) assignment, callers should use
         # set_tf_model_config() which propagates quant_config automatically.
-        if self.quantization_config is None and self.tf_model_config.quant_config is not None:
-            self.quantization_config = self.tf_model_config.quant_config
-            logger.info(
-                "Auto-detected quantization '%s' from model config",
-                self.tf_model_config.quant_method,
-            )
+        self._propagate_quantization_from_tf_config(self.tf_model_config)
 
         # Resolve quantization_config: str/dict -> QuantizationConfig via build_quant_config.
         if self.quantization_config is not None:
@@ -644,6 +640,14 @@ class OmniDiffusionConfig:
         elif self.max_cpu_loras < 1:
             raise ValueError("max_cpu_loras must be >= 1 for diffusion LoRA")
 
+    def _propagate_quantization_from_tf_config(self, tf_config: "TransformerConfig") -> None:
+        if self.quantization_config is None and tf_config.quant_config is not None:
+            self.quantization_config = tf_config.quant_config
+            logger.info(
+                "Auto-detected quantization '%s' from model config",
+                tf_config.quant_method,
+            )
+
     def set_tf_model_config(self, tf_config: "TransformerConfig") -> None:
         """Assign `tf_model_config` and propagate quantization if detected.
 
@@ -659,12 +663,7 @@ class OmniDiffusionConfig:
                 `TransformerConfig.from_dict`.
         """
         self.tf_model_config = tf_config
-        if self.quantization_config is None and tf_config.quant_config is not None:
-            self.quantization_config = tf_config.quant_config
-            logger.info(
-                "Auto-detected quantization '%s' from model config",
-                tf_config.quant_method,
-            )
+        self._propagate_quantization_from_tf_config(tf_config)
 
     def update_multimodal_support(self) -> None:
         # Resolve serving-visible multimodal behavior from shared metadata
@@ -690,7 +689,7 @@ class OmniDiffusionConfig:
                 self.update_multimodal_support()
 
                 tf_config_dict = get_hf_file_to_dict("transformer/config.json", self.model)
-                self.tf_model_config = TransformerConfig.from_dict(tf_config_dict)
+                self.set_tf_model_config(TransformerConfig.from_dict(tf_config_dict))
             else:
                 raise FileNotFoundError("model_index.json not found")
         except (AttributeError, OSError, ValueError, FileNotFoundError):
@@ -698,7 +697,7 @@ class OmniDiffusionConfig:
             if cfg is None:
                 raise ValueError(f"Could not find config.json or model_index.json for model {self.model}")
 
-            self.tf_model_config = TransformerConfig.from_dict(cfg)
+            self.set_tf_model_config(TransformerConfig.from_dict(cfg))
             model_type = cfg.get("model_type")
             architectures = cfg.get("architectures") or []
 
