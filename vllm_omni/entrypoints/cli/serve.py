@@ -437,7 +437,9 @@ class OmniServeCommand(CLISubcommand):
             action="store_true",
             help="Enable diffusion pipeline profiler to display stage durations.",
         )
-        OmniServeCommand._parser = serve_parser
+        # Stash via type(self) so the docs hook (which execs this function in a
+        # sandboxed globals dict via ``DummySelf``) doesn't fail on a NameError.
+        type(self)._parser = serve_parser
         return serve_parser
 
 
