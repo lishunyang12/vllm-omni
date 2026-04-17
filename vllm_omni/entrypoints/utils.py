@@ -553,13 +553,21 @@ def load_and_resolve_stage_configs(
         default_stage_cfg_factory: Optional callable that takes no args and returns
             default stage config list when no configs are found
         deploy_config_path: Optional path to deploy YAML (new format).
-            Takes precedence over stage_configs_path.
+            Mutually exclusive with ``stage_configs_path``.
         stage_overrides: Per-stage overrides from ``--stage-overrides`` JSON.
             Keys are stage_id strings, values are dicts of overrides.
 
     Returns:
         Tuple of (config_path, stage_configs)
     """
+    if stage_configs_path is not None and deploy_config_path is not None:
+        raise ValueError(
+            "--stage-configs-path and --deploy-config are mutually exclusive: "
+            "they use different path resolution rules and loading paths. "
+            "Use --deploy-config for new-format YAMLs (preferred); "
+            "--stage-configs-path is kept only for the legacy `stage_args` format "
+            "and will be removed in a future release."
+        )
     if stage_configs_path is not None and deploy_config_path is None:
         if not os.path.exists(stage_configs_path):
             raise FileNotFoundError(

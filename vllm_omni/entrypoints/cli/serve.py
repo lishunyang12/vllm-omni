@@ -160,7 +160,7 @@ class OmniServeCommand(CLISubcommand):
             type=str,
             default=None,
             help="Path to a deploy config YAML (new format with stages/engine_args). "
-            "Overrides --stage-configs-path when both are set.",
+            "Mutually exclusive with --stage-configs-path.",
         )
         omni_config_group.add_argument(
             "--stage-overrides",
