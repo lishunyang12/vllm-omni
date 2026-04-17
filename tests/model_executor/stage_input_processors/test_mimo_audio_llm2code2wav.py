@@ -35,12 +35,24 @@ def test_llm2code2wav_truncates_when_flat_exceeds_max(caplog):
 
     stage_list = _make_stage_list(codec_codes, request_id="req-long")
 
-    with caplog.at_level(logging.WARNING, logger="vllm_omni.model_executor.stage_input_processors.mimo_audio"):
+    # Attach caplog's handler directly to the module logger so the warning is
+    # captured regardless of propagation (vllm's logger configuration can
+    # interact badly with caplog.at_level's default root-handler path).
+    target_logger = logging.getLogger("vllm_omni.model_executor.stage_input_processors.mimo_audio")
+    target_logger.addHandler(caplog.handler)
+    prev_level = target_logger.level
+    target_logger.setLevel(logging.WARNING)
+    try:
         prompts = llm2code2wav(stage_list, engine_input_source=[0])
+    finally:
+        target_logger.removeHandler(caplog.handler)
+        target_logger.setLevel(prev_level)
 
     assert len(prompts) == 1
     assert len(prompts[0]["prompt_token_ids"]) == MAX_CODE2WAV_TOKENS
-    assert any("truncating" in rec.message for rec in caplog.records)
+    assert any("truncating" in rec.getMessage() for rec in caplog.records), (
+        f"Expected a 'truncating' warning; captured records: {[r.getMessage() for r in caplog.records]}"
+    )
 
 
 def test_llm2code2wav_short_sequence_unchanged():
