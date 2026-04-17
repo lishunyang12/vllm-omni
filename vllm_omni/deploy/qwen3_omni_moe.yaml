@@ -24,8 +24,6 @@ stages:
   - stage_id: 0
     gpu_memory_utilization: 0.9
     devices: "0"
-    output_connectors:
-      to_stage_1: connector_of_shared_memory
     default_sampling_params:
       temperature: 0.4
       top_p: 0.9
@@ -39,8 +37,6 @@ stages:
     devices: "1"
     input_connectors:
       from_stage_0: connector_of_shared_memory
-    output_connectors:
-      to_stage_2: connector_of_shared_memory
     default_sampling_params:
       temperature: 0.9
       top_k: 50
