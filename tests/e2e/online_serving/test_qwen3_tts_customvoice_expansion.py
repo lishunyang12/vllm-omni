@@ -20,11 +20,6 @@ from tests.utils import get_deploy_config_path, hardware_test
 MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
 
 
-def get_stage_config(name: str = "qwen3_tts.yaml") -> str:
-    """Resolve a deploy config path under vllm_omni/deploy/."""
-    return get_deploy_config_path(name)
-
-
 def get_prompt(prompt_type="english"):
     """Text prompt for text-to-audio tests (same as test_qwen3_omni - beijing test case)."""
     prompts = {
@@ -44,7 +39,7 @@ tts_server_params = [
     pytest.param(
         OmniServerParams(
             model=MODEL,
-            stage_config_path=get_stage_config("qwen3_tts.yaml"),
+            stage_config_path=get_deploy_config_path("qwen3_tts.yaml"),
             server_args=["--trust-remote-code", "--disable-log-stats"],
         ),
         id="async_chunk",
@@ -55,7 +50,7 @@ tts_server_params = [
     pytest.param(
         OmniServerParams(
             model=MODEL,
-            stage_config_path=get_stage_config("qwen3_tts.yaml"),
+            stage_config_path=get_deploy_config_path("qwen3_tts.yaml"),
             server_args=["--trust-remote-code", "--disable-log-stats", "--no-async-chunk"],
         ),
         id="no_async_chunk",
