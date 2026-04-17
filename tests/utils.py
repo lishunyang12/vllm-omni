@@ -35,6 +35,7 @@ _CI_GENERATED_DIR = _REPO_ROOT / "tests" / ".ci_generated"
 _CI_OVERLAYS: dict[str, dict[str, Any]] = {
     "qwen2_5_omni": {
         "base_config": "qwen2_5_omni.yaml",
+        "async_chunk": False,
         "stages": [
             {
                 "stage_id": 0,
@@ -97,6 +98,7 @@ _CI_OVERLAYS: dict[str, dict[str, Any]] = {
     },
     "qwen3_omni_moe": {
         "base_config": "qwen3_omni_moe.yaml",
+        "async_chunk": False,
         "stages": [
             {
                 "stage_id": 0,
