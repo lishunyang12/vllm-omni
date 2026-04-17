@@ -621,11 +621,21 @@ def merge_pipeline_deploy(
     deploy = _apply_platform_overrides(deploy)
     deploy_by_id = {s.stage_id: s for s in deploy.stages}
 
-    if deploy.async_chunk and not any(ps.async_chunk_process_next_stage_input_func for ps in pipeline.stages):
+    # A pipeline supports async_chunk if any stage has either an explicit
+    # async-chunk-only processor slot OR a custom next-stage processor (some
+    # pipelines like qwen3_omni wire async-chunk processing directly through
+    # ``custom_process_next_stage_input_func``). Only raise when neither is
+    # present — that's the "user enabled async_chunk but pipeline has no
+    # inter-stage processing at all" case.
+    if deploy.async_chunk and not any(
+        ps.async_chunk_process_next_stage_input_func or ps.custom_process_next_stage_input_func
+        for ps in pipeline.stages
+    ):
         raise ValueError(
             f"Pipeline {pipeline.model_type!r} has async_chunk=True in deploy but no stage "
-            "declares async_chunk_process_next_stage_input_func. Either set async_chunk=False "
-            "or implement async-chunk processors on the pipeline."
+            "declares a next-stage input processor "
+            "(``async_chunk_process_next_stage_input_func`` or ``custom_process_next_stage_input_func``). "
+            "Either set async_chunk=False or implement an async-chunk processor on the pipeline."
         )
 
     result: list[StageConfig] = []
