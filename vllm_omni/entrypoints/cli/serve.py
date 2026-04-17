@@ -149,8 +149,8 @@ class OmniServeCommand(CLISubcommand):
             "--stage-configs-path",
             type=str,
             default=None,
-            help="Path to a legacy stage configs YAML (stage_args format). "
-            "Prefer --deploy-config for new-format deploy YAMLs.",
+            help="[Deprecated — will be removed in a future release] Path to a legacy "
+            "stage configs YAML (stage_args format). Prefer --deploy-config for new-format deploy YAMLs.",
         )
         omni_config_group.add_argument(
             "--deploy-config",
