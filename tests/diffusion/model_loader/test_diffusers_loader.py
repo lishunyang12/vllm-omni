@@ -4,6 +4,7 @@
 import pytest
 import torch
 import torch.nn as nn
+from vllm.model_executor.layers.quantization.modelopt import ModelOptFp8Config
 
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 from vllm_omni.diffusion.model_loader.gguf_adapters import get_gguf_adapter
@@ -93,3 +94,127 @@ def test_qwen_model_class_selects_qwen_gguf_adapter():
     adapter = get_gguf_adapter("dummy.gguf", object(), source, od_config)
 
     assert adapter.__class__.__name__ == "QwenImageGGUFAdapter"
+
+
+def test_loader_auto_detects_quant_config_from_transformer_config():
+    od_config = type(
+        "Config",
+        (),
+        {
+            "quantization_config": None,
+            "tf_model_config": type(
+                "TransformerConfig",
+                (),
+                {
+                    "quant_config": ModelOptFp8Config.from_config(
+                        {
+                            "quant_method": "modelopt",
+                            "quant_algo": "FP8",
+                            "ignore": [],
+                        }
+                    ),
+                    "quant_method": "modelopt",
+                },
+            )(),
+            "set_tf_model_config": lambda self, tf_model_config: setattr(
+                self,
+                "quantization_config",
+                tf_model_config.quant_config,
+            ),
+        },
+    )()
+
+    DiffusersPipelineLoader._auto_detect_quant_config(od_config)
+
+    assert od_config.quantization_config is od_config.tf_model_config.quant_config
+
+
+class _PackedModelOptModel(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.transformer = nn.Module()
+        self.transformer.block = nn.Module()
+        self.transformer.block.to_qkv = nn.Linear(2, 2, bias=False)
+
+
+def test_modelopt_adapter_dequantizes_fp8_weight_for_full_precision_target():
+    loader = object.__new__(DiffusersPipelineLoader)
+    model = _PackedModelOptModel()
+    source = DiffusersPipelineLoader.ComponentSource(
+        model_or_path="dummy",
+        subfolder="transformer",
+        revision=None,
+        prefix="transformer.",
+    )
+    fp8_weight = torch.tensor([[2.0, -4.0], [1.0, 3.0]], dtype=torch.float32).to(torch.float8_e4m3fn)
+    scale = torch.tensor([0.5], dtype=torch.float32)
+
+    adapted = list(
+        loader._adapt_modelopt_fp8_weights(
+            model,
+            source,
+            iter(
+                [
+                    ("transformer.block.to_q.weight_scale", scale),
+                    ("transformer.block.to_q.input_scale", torch.tensor([1.0])),
+                    ("transformer.block.to_q.weight", fp8_weight),
+                ]
+            ),
+            {"transformer.block.to_q.weight_scale": scale},
+        )
+    )
+
+    assert [name for name, _ in adapted] == ["transformer.block.to_q.weight"]
+    assert adapted[0][1].dtype == model.transformer.block.to_qkv.weight.dtype
+    assert torch.allclose(adapted[0][1], fp8_weight.to(torch.float32) * scale)
+
+
+class _QuantizedPackedModelOptModel(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.transformer = nn.Module()
+        self.transformer.block = nn.Module()
+        self.transformer.block.to_qkv = nn.Module()
+        self.transformer.block.to_qkv.register_parameter(
+            "weight",
+            nn.Parameter(torch.empty(2, 2, dtype=torch.float8_e4m3fn), requires_grad=False),
+        )
+        self.transformer.block.to_qkv.register_parameter(
+            "weight_scale",
+            nn.Parameter(torch.empty(1), requires_grad=False),
+        )
+        self.transformer.block.to_qkv.register_parameter(
+            "input_scale",
+            nn.Parameter(torch.empty(1), requires_grad=False),
+        )
+
+
+def test_modelopt_adapter_keeps_scale_tensors_for_quantized_target():
+    loader = object.__new__(DiffusersPipelineLoader)
+    model = _QuantizedPackedModelOptModel()
+    source = DiffusersPipelineLoader.ComponentSource(
+        model_or_path="dummy",
+        subfolder="transformer",
+        revision=None,
+        prefix="transformer.",
+    )
+    scale = torch.tensor([0.5], dtype=torch.float32)
+
+    adapted = list(
+        loader._adapt_modelopt_fp8_weights(
+            model,
+            source,
+            iter(
+                [
+                    ("transformer.block.to_q.weight_scale", scale),
+                    ("transformer.block.to_q.input_scale", torch.tensor([1.0])),
+                ]
+            ),
+            {"transformer.block.to_q.weight_scale": scale},
+        )
+    )
+
+    assert [name for name, _ in adapted] == [
+        "transformer.block.to_q.weight_scale",
+        "transformer.block.to_q.input_scale",
+    ]

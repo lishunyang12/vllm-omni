@@ -65,6 +65,18 @@ def apply_rotary_emb_mindiesd(
         return rotary_position_embedding(x, cos, sin, rotated_mode="rotated_half", head_first=False, fused=True)
 
 
+def _ensure_batch_dim(x: torch.Tensor) -> tuple[torch.Tensor, bool]:
+    if x.dim() == 3:
+        return x.unsqueeze(0), True
+    return x, False
+
+
+def _restore_batch_dim(x: torch.Tensor, squeezed: bool) -> torch.Tensor:
+    if squeezed:
+        return x.squeeze(0)
+    return x
+
+
 class RotaryEmbedding(CustomOp):
     """
     rotary positional embedding.
@@ -98,12 +110,14 @@ class RotaryEmbedding(CustomOp):
             cos = cos[0]
             sin = sin[0]
 
-        return apply_rotary_emb(
+        x, squeezed = _ensure_batch_dim(x)
+        output = apply_rotary_emb(
             x,
             cos,
             sin,
             interleaved=self.interleaved,
         )
+        return _restore_batch_dim(output, squeezed)
 
     def forward_hip(
         self,
@@ -119,12 +133,14 @@ class RotaryEmbedding(CustomOp):
             cos = cos[0]
             sin = sin[0]
 
-        return self.apply_rotary_emb_flash_attn(
+        x, squeezed = _ensure_batch_dim(x)
+        output = self.apply_rotary_emb_flash_attn(
             x,
             cos,
             sin,
             interleaved=self.interleaved,
         )
+        return _restore_batch_dim(output, squeezed)
 
     def forward_npu(
         self,

@@ -7,10 +7,11 @@ import re
 import time
 from collections.abc import Generator, Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import torch
 from huggingface_hub import hf_hub_download
+from safetensors import safe_open
 from torch import nn
 from vllm.config import ModelConfig
 from vllm.config.load import LoadConfig
@@ -34,9 +35,6 @@ from vllm_omni.diffusion.distributed.hsdp import HSDPInferenceConfig
 from vllm_omni.diffusion.model_loader.gguf_adapters import get_gguf_adapter
 from vllm_omni.diffusion.registry import initialize_model
 
-if TYPE_CHECKING:
-    from vllm_omni.diffusion.data import OmniDiffusionConfig
-
 logger = init_logger(__name__)
 
 
@@ -48,6 +46,22 @@ def _natural_sort_key(filepath: str) -> list:
 
 MODEL_INDEX = "model_index.json"
 DIFFUSION_MODEL_WEIGHTS_INDEX = "diffusion_pytorch_model.safetensors.index.json"
+MODEL_OPT_SCALE_SUFFIXES = (".input_scale", ".weight_scale", ".weight_scale_inv")
+MODEL_OPT_PACKED_MODULES_MAPPING = {
+    "to_qkv": ("to_q", "to_k", "to_v"),
+    "add_kv_proj": ("add_q_proj", "add_k_proj", "add_v_proj"),
+    "w13": ("w1", "w3"),
+}
+FP8_DTYPES = tuple(
+    dtype
+    for dtype in (
+        getattr(torch, "float8_e4m3fn", None),
+        getattr(torch, "float8_e5m2", None),
+        getattr(torch, "float8_e4m3fnuz", None),
+        getattr(torch, "float8_e5m2fnuz", None),
+    )
+    if dtype is not None
+)
 
 
 class DiffusersPipelineLoader:
@@ -172,7 +186,11 @@ class DiffusersPipelineLoader:
 
         return hf_folder, hf_weights_files, use_safetensors
 
-    def _get_weights_iterator(self, source: "ComponentSource") -> Generator[tuple[str, torch.Tensor], None, None]:
+    def _get_weights_iterator(
+        self,
+        source: "ComponentSource",
+        model: nn.Module | None = None,
+    ) -> Generator[tuple[str, torch.Tensor], None, None]:
         """Get an iterator for the model weights based on the load format."""
         _, hf_weights_files, use_safetensors = self._prepare_weights(
             source.model_or_path,
@@ -208,7 +226,184 @@ class DiffusersPipelineLoader:
         if self.counter_before_loading_weights == 0.0:
             self.counter_before_loading_weights = time.perf_counter()
         # Apply the prefix.
-        return ((source.prefix + name, tensor) for (name, tensor) in weights_iterator)
+        prefixed_weights_iterator = ((source.prefix + name, tensor) for (name, tensor) in weights_iterator)
+        if model is not None and self._should_adapt_modelopt_fp8_weights(source, use_safetensors):
+            scale_tensors = self._collect_modelopt_scale_tensors(hf_weights_files, source.prefix)
+            return self._adapt_modelopt_fp8_weights(model, source, prefixed_weights_iterator, scale_tensors)
+        return prefixed_weights_iterator
+
+    def _get_source_quant_config(self, source: "ComponentSource") -> object | None:
+        od_config = self.od_config
+        if od_config is None:
+            return None
+
+        quant_config = od_config.quantization_config
+        if quant_config is None:
+            return None
+
+        if hasattr(quant_config, "resolve"):
+            return quant_config.resolve(source.prefix.rstrip("."))
+        return quant_config
+
+    @staticmethod
+    def _is_modelopt_fp8_checkpoint_quant_config(quant_config: object) -> bool:
+        return (
+            hasattr(quant_config, "get_name")
+            and quant_config.get_name() == "modelopt"
+            and bool(getattr(quant_config, "is_checkpoint_fp8_serialized", False))
+        )
+
+    def _should_adapt_modelopt_fp8_weights(self, source: "ComponentSource", use_safetensors: bool) -> bool:
+        if not use_safetensors or not self._is_transformer_source(source):
+            return False
+
+        quant_config = self._get_source_quant_config(source)
+        if quant_config is None:
+            return False
+        return self._is_modelopt_fp8_checkpoint_quant_config(quant_config)
+
+    @staticmethod
+    def _is_modelopt_scale(name: str) -> bool:
+        return name.endswith(MODEL_OPT_SCALE_SUFFIXES)
+
+    @staticmethod
+    def _is_fp8_tensor(tensor: torch.Tensor) -> bool:
+        return tensor.dtype in FP8_DTYPES
+
+    @staticmethod
+    def _get_weight_scale_name(weight_name: str) -> str | None:
+        if weight_name.endswith(".weight"):
+            return weight_name[: -len(".weight")] + ".weight_scale"
+        return None
+
+    @staticmethod
+    def _replace_module_name(name: str, old: str, new: str) -> str:
+        if name.startswith(f"{old}."):
+            return f"{new}.{name[len(old) + 1 :]}"
+        return name.replace(f".{old}.", f".{new}.")
+
+    def _get_modelopt_packed_name_pairs(self, model: nn.Module) -> tuple[tuple[str, str], ...]:
+        mapping: dict[str, tuple[str, ...]] = dict(MODEL_OPT_PACKED_MODULES_MAPPING)
+        for _, module in model.named_modules():
+            packed_mapping = getattr(module, "packed_modules_mapping", None)
+            if isinstance(packed_mapping, dict):
+                for packed_name, shard_names in packed_mapping.items():
+                    if isinstance(shard_names, (list, tuple)):
+                        mapping[str(packed_name)] = tuple(str(shard_name) for shard_name in shard_names)
+
+        pairs: list[tuple[str, str]] = []
+        for packed_name, shard_names in mapping.items():
+            pairs.extend((packed_name, shard_name) for shard_name in shard_names)
+        return tuple(pairs)
+
+    def _resolve_modelopt_target_name(
+        self,
+        name: str,
+        loadable_names: set[str],
+        packed_name_pairs: tuple[tuple[str, str], ...],
+    ) -> str | None:
+        if name in loadable_names:
+            return name
+
+        if ".to_out.0." in name:
+            candidate = name.replace(".to_out.0.", ".to_out.")
+            if candidate in loadable_names:
+                return candidate
+
+        for packed_name, shard_name in packed_name_pairs:
+            candidate = self._replace_module_name(name, shard_name, packed_name)
+            if candidate != name and candidate in loadable_names:
+                return candidate
+        return None
+
+    @staticmethod
+    def _reshape_modelopt_weight_scale(scale: torch.Tensor, weight_shape: torch.Size) -> torch.Tensor:
+        if scale.numel() == 1:
+            return scale.reshape(())
+        if len(weight_shape) == 2 and scale.ndim == 1 and scale.shape[0] == weight_shape[0]:
+            return scale.reshape(-1, 1)
+        if tuple(scale.shape) == tuple(weight_shape):
+            return scale
+        if (
+            len(weight_shape) == 2
+            and scale.ndim == 4
+            and scale.shape[1] == 1
+            and scale.shape[3] == 1
+            and weight_shape[0] % scale.shape[0] == 0
+            and weight_shape[1] % scale.shape[2] == 0
+        ):
+            block_n = weight_shape[0] // scale.shape[0]
+            block_k = weight_shape[1] // scale.shape[2]
+            return scale.expand(scale.shape[0], block_n, scale.shape[2], block_k).reshape(weight_shape)
+        raise ValueError(f"Unsupported ModelOpt FP8 weight_scale shape {tuple(scale.shape)} for weight {weight_shape}")
+
+    def _dequantize_modelopt_fp8_weight(
+        self,
+        name: str,
+        loaded_weight: torch.Tensor,
+        scale_tensors: dict[str, torch.Tensor],
+        target_dtype: torch.dtype,
+    ) -> torch.Tensor:
+        scale_name = self._get_weight_scale_name(name)
+        if scale_name is None or scale_name not in scale_tensors:
+            raise ValueError(f"Missing ModelOpt FP8 weight_scale for full-precision target weight {name!r}")
+
+        weight = loaded_weight.to(dtype=torch.float32)
+        scale = scale_tensors[scale_name].to(dtype=torch.float32, device=weight.device)
+        scale = self._reshape_modelopt_weight_scale(scale, loaded_weight.shape)
+        return (weight * scale).to(dtype=target_dtype)
+
+    def _collect_modelopt_scale_tensors(
+        self,
+        hf_weights_files: list[str],
+        prefix: str,
+    ) -> dict[str, torch.Tensor]:
+        scale_tensors: dict[str, torch.Tensor] = {}
+        for filename in sorted(hf_weights_files, key=_natural_sort_key):
+            if not filename.endswith(".safetensors"):
+                continue
+            with safe_open(filename, framework="pt", device="cpu") as f:
+                for name in f.keys():
+                    if self._is_modelopt_scale(name):
+                        scale_tensors[prefix + name] = f.get_tensor(name)
+        return scale_tensors
+
+    def _adapt_modelopt_fp8_weights(
+        self,
+        model: nn.Module,
+        source: "ComponentSource",
+        weights: Iterable[tuple[str, torch.Tensor]],
+        scale_tensors: dict[str, torch.Tensor],
+    ) -> Generator[tuple[str, torch.Tensor], None, None]:
+        loadable_tensors = self._get_model_loadable_tensors(model)
+        loadable_names = set(loadable_tensors)
+        packed_name_pairs = self._get_modelopt_packed_name_pairs(model)
+
+        skipped_scales = 0
+        dequantized_weights = 0
+        for name, tensor in weights:
+            target_name = self._resolve_modelopt_target_name(name, loadable_names, packed_name_pairs)
+            if self._is_modelopt_scale(name):
+                if target_name is None:
+                    skipped_scales += 1
+                    continue
+                yield name, tensor
+                continue
+
+            if self._is_fp8_tensor(tensor) and target_name is not None:
+                target_tensor = loadable_tensors[target_name]
+                if target_tensor.dtype not in FP8_DTYPES:
+                    tensor = self._dequantize_modelopt_fp8_weight(name, tensor, scale_tensors, target_tensor.dtype)
+                    dequantized_weights += 1
+            yield name, tensor
+
+        if skipped_scales or dequantized_weights:
+            logger.info_once(
+                "Adapted ModelOpt FP8 %s weights: dequantized %d full-precision weights, skipped %d scale tensors",
+                source.prefix or source.subfolder or "model",
+                dequantized_weights,
+                skipped_scales,
+            )
 
     def get_all_weights(
         self,
@@ -216,7 +411,7 @@ class DiffusersPipelineLoader:
     ) -> Generator[tuple[str, torch.Tensor], None, None]:
         sources = self._get_weight_sources(model)
         for source in sources:
-            yield from self._get_weights_iterator(source)
+            yield from self._get_weights_iterator(source, model=model)
 
     def _get_weight_sources(self, model: nn.Module) -> tuple["ComponentSource", ...]:
         return tuple(
@@ -262,6 +457,9 @@ class DiffusersPipelineLoader:
         device: torch.device | None = None,
     ) -> nn.Module:
         """Load a model with the given configurations."""
+        self.od_config = od_config
+        self._auto_detect_quant_config(od_config)
+
         # CPU offload + FP8: load weights on device for FP8 quantization
         if load_device == "cpu" and od_config.quantization_config is not None:
             load_device = device.type
@@ -275,11 +473,7 @@ class DiffusersPipelineLoader:
                 )
             else:
                 with target_device:
-                    if load_format == "default":
-                        model = initialize_model(od_config)
-                    elif load_format == "custom_pipeline":
-                        model_cls = resolve_obj_by_qualname(custom_pipeline_name)
-                        model = model_cls(od_config=od_config)
+                    model = self._initialize_pipeline_model(od_config, load_format, custom_pipeline_name)
                 logger.debug("Loading weights on %s ...", load_device)
                 if self._is_gguf_quantization(od_config):
                     self._load_weights_with_gguf(model, od_config)
@@ -292,6 +486,14 @@ class DiffusersPipelineLoader:
             self._process_weights_after_loading(model, target_device)
 
         return model.eval()
+
+    @staticmethod
+    def _auto_detect_quant_config(od_config: OmniDiffusionConfig) -> None:
+        if od_config.quantization_config is not None:
+            return
+        tf_model_config = getattr(od_config, "tf_model_config", None)
+        if getattr(tf_model_config, "quant_config", None) is not None:
+            od_config.set_tf_model_config(tf_model_config)
 
     def _process_weights_after_loading(self, model: nn.Module, target_device: torch.device) -> None:
         """Process weights after loading for quantization methods.
@@ -429,11 +631,27 @@ class DiffusersPipelineLoader:
         return source.prefix.startswith("transformer.")
 
     def _get_model_loadable_names(self, model: nn.Module) -> set[str]:
+        return set(self._get_model_loadable_tensors(model))
+
+    def _get_model_loadable_tensors(self, model: nn.Module) -> dict[str, torch.Tensor]:
         # Avoid model.state_dict() here because GGUF uses UninitializedParameter
         # which raises during detach(). Collect names directly.
-        names = {name for name, _ in model.named_parameters()}
-        names.update(name for name, _ in model.named_buffers())
-        return names
+        loadable_tensors: dict[str, torch.Tensor] = {name: param for name, param in model.named_parameters()}
+        loadable_tensors.update({name: buffer for name, buffer in model.named_buffers()})
+        return loadable_tensors
+
+    @staticmethod
+    def _initialize_pipeline_model(
+        od_config: OmniDiffusionConfig,
+        load_format: str,
+        custom_pipeline_name: str | None,
+    ) -> nn.Module:
+        if load_format == "default":
+            return initialize_model(od_config)
+        if load_format == "custom_pipeline":
+            model_cls = resolve_obj_by_qualname(custom_pipeline_name)
+            return model_cls(od_config=od_config)
+        raise ValueError(f"Unknown load_format: {load_format}")
 
     def _resolve_gguf_model_path(self, gguf_model: str, revision: str | None) -> str:
         if os.path.isfile(gguf_model):
@@ -538,11 +756,7 @@ class DiffusersPipelineLoader:
         # directly on GPU, HSDP needs weights on CPU first so they can be redistributed
         # across GPUs by apply_hsdp_to_model. The model's load_weights handles weight
         # mapping (QKV fusion, etc.).
-        if load_format == "default":
-            model = initialize_model(od_config)
-        elif load_format == "custom_pipeline":
-            model_cls = resolve_obj_by_qualname(custom_pipeline_name)
-            model = model_cls(od_config=od_config)
+        model = self._initialize_pipeline_model(od_config, load_format, custom_pipeline_name)
         self.load_weights(model)
 
         # Collect all transformers to shard (some models have transformer_2 for MoE)
