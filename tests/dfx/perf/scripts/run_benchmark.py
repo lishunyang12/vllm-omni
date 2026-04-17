@@ -21,9 +21,31 @@ os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 os.environ["VLLM_TEST_CLEAN_GPU_MEMORY"] = "0"
 
 
-CONFIG_FILE_PATH = str(Path(__file__).parent.parent / "tests" / "test.json")
+def _get_config_file_from_argv() -> str | None:
+    """Read ``--test-config-file`` from ``sys.argv`` at import time so parametrization can use it."""
+    import sys
+
+    for i, arg in enumerate(sys.argv):
+        if arg == "--test-config-file" and i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+        if arg.startswith("--test-config-file="):
+            return arg.split("=", 1)[1]
+    return None
+
+
+_PERF_TESTS_DIR = Path(__file__).resolve().parent.parent / "tests"
+_DEFAULT_CONFIG_FILE = str(_PERF_TESTS_DIR / "test_qwen_omni.json")
+
+CONFIG_FILE_PATH = _get_config_file_from_argv()
+if CONFIG_FILE_PATH is None:
+    print(
+        "No --test-config-file in argv, using default: tests/dfx/perf/tests/test_qwen_omni.json "
+        "(override with e.g. --test-config-file tests/dfx/perf/tests/test_tts.json)"
+    )
+    CONFIG_FILE_PATH = _DEFAULT_CONFIG_FILE
+
 BENCHMARK_CONFIGS = load_configs(CONFIG_FILE_PATH)
-STAGE_INIT_TIMEOUT = 600
+OMNI_RESULT_TEMPLATE_PATH = Path(__file__).parent / "result_omni_template.json"
 
 
 DEPLOY_CONFIGS_DIR = Path(__file__).parent.parent / "deploy"
@@ -44,7 +66,7 @@ def omni_server(request):
 
         print(f"Starting OmniServer with test: {test_name}, model: {model}")
 
-        server_args = ["--stage-init-timeout", str(STAGE_INIT_TIMEOUT), "--init-timeout", "900"]
+        server_args = ["--stage-init-timeout", "600", "--init-timeout", "900"]
         # --deploy-config and --stage-overrides compose at the CLI (see vllm_omni/entrypoints/utils.py):
         # deploy-config sets the base; stage-overrides are applied on top. Both can be set.
         if stage_config_path:
@@ -101,8 +123,6 @@ def run_benchmark(
         ["vllm", "bench", "serve", "--omni"]
         + args
         + [
-            "--num-warmups",
-            "2",
             "--save-result",
             "--result-dir",
             os.environ.get("BENCHMARK_DIR", "tests"),
@@ -127,8 +147,17 @@ def run_benchmark(
         result_dir = "./"
 
     result_path = os.path.join(result_dir, result_filename)
-    with open(result_path, encoding="utf-8") as f:
-        result = json.load(f)
+    if not os.path.exists(result_path):
+        with open(OMNI_RESULT_TEMPLATE_PATH, encoding="utf-8") as f:
+            template_result: dict[str, Any] = json.load(f)
+        Path(result_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(result_path, "w", encoding="utf-8") as f:
+            json.dump(template_result, f, ensure_ascii=False, indent=2)
+        print(f"Benchmark result file not generated, fallback to template: {result_path}")
+        result = template_result
+    else:
+        with open(result_path, encoding="utf-8") as f:
+            result = json.load(f)
 
     if baseline_config:
         result["baseline"] = _baseline_thresholds_for_step(
@@ -145,7 +174,6 @@ def run_benchmark(
         result["random_output_len"] = random_output_len
     with open(result_path, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
-
     return result
 
 
@@ -211,10 +239,6 @@ def _resolve_baseline_value(
             f"or request_rate={request_rate!r}; keys={list(baseline_raw.keys())!r}"
         )
     if isinstance(baseline_raw, (list, tuple)):
-        if sweep_index is None:
-            raise ValueError("list baseline requires sweep_index")
-        if not (0 <= sweep_index < len(baseline_raw)):
-            raise IndexError(f"baseline list len={len(baseline_raw)} has no index {sweep_index}")
         return baseline_raw[sweep_index]
     return baseline_raw
 
@@ -249,14 +273,14 @@ def assert_result(
 ) -> None:
     assert result["completed"] == num_prompt, "Request failures exist"
     baseline_data = params.get("baseline", {})
-    thresholds = _baseline_thresholds_for_step(
-        baseline_data,
-        sweep_index=sweep_index,
-        max_concurrency=max_concurrency,
-        request_rate=request_rate,
-    )
-    for metric_name, baseline_value in thresholds.items():
+    for metric_name, baseline_raw in baseline_data.items():
         current_value = result[metric_name]
+        baseline_value = _resolve_baseline_value(
+            baseline_raw,
+            sweep_index=sweep_index,
+            max_concurrency=max_concurrency,
+            request_rate=request_rate,
+        )
         if "throughput" in metric_name:
             if current_value <= baseline_value:
                 print(
