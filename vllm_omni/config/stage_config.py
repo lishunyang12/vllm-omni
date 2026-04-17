@@ -338,10 +338,22 @@ def _deep_merge_stage(base: dict, overlay: dict) -> dict:
     """Deep-merge ``_DEEP_MERGE_KEYS`` so thin overlays don't drop base keys."""
     merged = dict(base)
     for k, v in overlay.items():
-        if k in _DEEP_MERGE_KEYS and isinstance(v, dict) and isinstance(merged.get(k), dict):
-            merged[k] = {**merged[k], **v}
-        else:
-            merged[k] = v
+        if k in _DEEP_MERGE_KEYS:
+            base_val = merged.get(k)
+            if isinstance(v, dict) and isinstance(base_val, dict):
+                merged[k] = {**base_val, **v}
+                continue
+            # Deep-merge key but at least one side isn't a dict: surface the
+            # silent clobber so mismatched YAML types don't get past review.
+            if base_val is not None:
+                logger.warning(
+                    "Deep-merge key %r has non-dict value (base=%s, overlay=%s); "
+                    "overlay will fully replace base instead of merging.",
+                    k,
+                    type(base_val).__name__,
+                    type(v).__name__,
+                )
+        merged[k] = v
     return merged
 
 
