@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -34,7 +35,7 @@ def test_llm2code2wav_truncates_when_flat_exceeds_max(caplog):
 
     stage_list = _make_stage_list(codec_codes, request_id="req-long")
 
-    with caplog.at_level("WARNING"):
+    with caplog.at_level(logging.WARNING, logger="vllm_omni.model_executor.stage_input_processors.mimo_audio"):
         prompts = llm2code2wav(stage_list, engine_input_source=[0])
 
     assert len(prompts) == 1
