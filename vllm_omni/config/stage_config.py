@@ -15,6 +15,8 @@ from typing import Any
 from vllm.logger import init_logger
 
 from vllm_omni.config.yaml_util import create_config, load_yaml_config, to_dict
+from vllm_omni.core.sched.omni_ar_scheduler import OmniARScheduler
+from vllm_omni.core.sched.omni_generation_scheduler import OmniGenerationScheduler
 
 _MODELS_DIR = Path(__file__).resolve().parent.parent / "model_executor" / "models"
 
@@ -122,11 +124,22 @@ class StageExecutionType(str, Enum):
     DIFFUSION = "diffusion"
 
 
-_EXECUTION_TYPE_TO_SCHEDULER: dict[StageExecutionType, str | None] = {
-    StageExecutionType.LLM_AR: ("vllm_omni.core.sched.omni_ar_scheduler.OmniARScheduler"),
-    StageExecutionType.LLM_GENERATION: ("vllm_omni.core.sched.omni_generation_scheduler.OmniGenerationScheduler"),
+# Mapping class refs (not dotted-path strings) so module/class renames fail
+# at import time instead of lazily at scheduler resolution. YAML overrides
+# and downstream serialization still use the dotted-path string form; the
+# conversion happens at the map lookup site via _scheduler_path().
+_EXECUTION_TYPE_TO_SCHEDULER: dict[StageExecutionType, type | None] = {
+    StageExecutionType.LLM_AR: OmniARScheduler,
+    StageExecutionType.LLM_GENERATION: OmniGenerationScheduler,
     StageExecutionType.DIFFUSION: None,
 }
+
+
+def _scheduler_path(cls: type | None) -> str | None:
+    """Return the dotted import path for a scheduler class (``None`` passes through)."""
+    if cls is None:
+        return None
+    return f"{cls.__module__}.{cls.__qualname__}"
 
 
 @dataclass(frozen=True)
@@ -182,7 +195,7 @@ class PipelineConfig:
         stage = self.get_stage(stage_id)
         if stage is None:
             return None
-        return _EXECUTION_TYPE_TO_SCHEDULER.get(stage.execution_type)
+        return _scheduler_path(_EXECUTION_TYPE_TO_SCHEDULER.get(stage.execution_type))
 
     def validate(self) -> list[str]:
         """Return list of topology errors (empty if valid)."""
@@ -612,7 +625,7 @@ def merge_pipeline_deploy(
                 final_output=ps.final_output,
                 final_output_type=ps.final_output_type,
                 worker_type=worker_type,
-                scheduler_cls=_EXECUTION_TYPE_TO_SCHEDULER.get(ps.execution_type),
+                scheduler_cls=_scheduler_path(_EXECUTION_TYPE_TO_SCHEDULER.get(ps.execution_type)),
                 hf_config_name=ps.hf_config_name,
                 is_comprehension=ps.owns_tokenizer,
                 yaml_engine_args=engine_args,
