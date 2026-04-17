@@ -74,6 +74,8 @@ class OmniBase:
     def from_cli_args(
         cls,
         args: argparse.Namespace,
+        *,
+        parser: argparse.ArgumentParser | None = None,
         **overrides: Any,
     ) -> OmniBase:
         """Construct an ``Omni`` / ``AsyncOmni`` from an ``argparse.Namespace``.
@@ -82,12 +84,19 @@ class OmniBase:
         ``OmniEngineArgs.from_cli_args``. This is the recommended entry point
         for any argparse-based caller (offline scripts, tests, CI): it
         expands ``vars(args)`` into kwargs and automatically captures which
-        flags the user typed on the command line via
-        ``detect_explicit_cli_keys(sys.argv[1:])`` so that argparse defaults
+        flags the user typed on the command line so that argparse defaults
         do not silently override deploy YAML values.
+
+        Passing ``parser`` is strongly recommended: without it, flag-to-dest
+        resolution falls back to a name-based heuristic that misidentifies
+        flags with ``dest=`` overrides, alias flags, and ``--disable-X`` /
+        ``store_false`` pairs. See :func:`detect_explicit_cli_keys`.
 
         Args:
             args: Parsed argparse namespace from ``parser.parse_args()``.
+            parser: The argparse parser used to produce ``args``. When
+                provided, each user-typed flag is resolved to its real
+                ``dest`` via the parser's action table.
             **overrides: Extra keyword arguments that take precedence over
                 attributes on ``args``.
 
@@ -96,11 +105,11 @@ class OmniBase:
             parser = FlexibleArgumentParser()
             parser.add_argument("--model", required=True)
             args = parser.parse_args()
-            omni = Omni.from_cli_args(args)                 # preferred
-            omni = Omni.from_cli_args(args, model="other")  # with override
+            omni = Omni.from_cli_args(args, parser=parser)          # preferred
+            omni = Omni.from_cli_args(args, parser=parser, model="other")
         """
         kwargs: dict[str, Any] = {**vars(args), **overrides}
-        kwargs["_cli_explicit_keys"] = detect_explicit_cli_keys(sys.argv[1:])
+        kwargs["_cli_explicit_keys"] = detect_explicit_cli_keys(sys.argv[1:], parser)
         return cls(**kwargs)
 
     def __init__(

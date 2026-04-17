@@ -1,3 +1,4 @@
+import argparse
 import os
 import types
 from collections import Counter
@@ -25,9 +26,12 @@ _DIFFUSERS_CLASS_TO_CONFIG: dict[str, str] = {
 }
 
 
-def detect_explicit_cli_keys(argv: list[str]) -> set[str]:
-    """Walk ``argv`` and return the set of long-option attribute names the
-    user explicitly provided (e.g. ``--max-num-seqs 64`` → ``max_num_seqs``).
+def detect_explicit_cli_keys(
+    argv: list[str],
+    parser: argparse.ArgumentParser | None = None,
+) -> set[str]:
+    """Walk ``argv`` and return the set of ``dest`` attribute names the user
+    explicitly provided (e.g. ``--max-num-seqs 64`` → ``max_num_seqs``).
 
     Used to distinguish user-typed CLI args from argparse default values so
     deploy YAMLs are not silently overridden by parser defaults. Shared
@@ -36,12 +40,37 @@ def detect_explicit_cli_keys(argv: list[str]) -> set[str]:
     should invoke this on ``sys.argv[1:]`` and pass the result through to
     ``AsyncOmni`` / ``Omni`` via the ``_cli_explicit_keys`` kwarg.
 
-    For ``argparse.BooleanOptionalAction`` flags (e.g.
-    ``--enable-prefix-caching`` / ``--no-enable-prefix-caching``), both
-    forms map to the same ``dest``, so the ``no_`` prefix is stripped here
-    to match what argparse records.
+    When ``parser`` is provided, each token is looked up in the parser's
+    action table to find its real ``dest``. This correctly handles flags
+    with ``dest=`` overrides, alias flags (e.g. ``--usp`` /
+    ``--ulysses-degree`` both mapping to ``ulysses_degree``), and
+    ``--disable-foo`` / ``store_false`` patterns that map to a differently
+    named dest. Callers with access to an ``argparse.ArgumentParser`` should
+    always pass it.
+
+    When ``parser`` is ``None``, a name-based heuristic is used as a
+    fallback (hyphens → underscores, plus a ``no_`` prefix strip for
+    ``argparse.BooleanOptionalAction``). This is correct for simple flags
+    but silently misidentifies ``--disable-X``-style flags and explicit
+    ``dest=`` overrides, so prefer the parser-aware form.
     """
-    explicit: set[str] = set()
+    if parser is not None:
+        dest_map: dict[str, str] = {}
+        for action in parser._actions:
+            for opt in action.option_strings:
+                dest_map[opt] = action.dest
+        explicit: set[str] = set()
+        for tok in argv:
+            if not tok.startswith("--"):
+                continue
+            flag = tok.split("=", 1)[0]
+            dest = dest_map.get(flag)
+            if dest is not None:
+                explicit.add(dest)
+        return explicit
+
+    # Fallback: name-based heuristic (legacy path for callers without a parser).
+    explicit = set()
     for tok in argv:
         if not tok.startswith("--"):
             continue

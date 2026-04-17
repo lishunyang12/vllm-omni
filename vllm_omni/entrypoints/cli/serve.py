@@ -81,6 +81,9 @@ class OmniServeCommand(CLISubcommand):
     """The `serve` subcommand for the vLLM CLI."""
 
     name = "serve"
+    # Parser stashed at subparser_init so ``cmd`` can resolve each user-typed
+    # flag to its real ``dest`` via the parser's action table.
+    _parser: FlexibleArgumentParser | None = None
 
     @staticmethod
     def cmd(args: argparse.Namespace) -> None:
@@ -94,7 +97,7 @@ class OmniServeCommand(CLISubcommand):
 
         # Stash the set of long-option keys the user actually typed so the
         # stage-config factory can give YAML precedence over argparse defaults.
-        args._cli_explicit_keys = detect_explicit_cli_keys(sys.argv[1:])
+        args._cli_explicit_keys = detect_explicit_cli_keys(sys.argv[1:], OmniServeCommand._parser)
 
         if args.headless:
             run_headless(args)
@@ -434,6 +437,7 @@ class OmniServeCommand(CLISubcommand):
             action="store_true",
             help="Enable diffusion pipeline profiler to display stage durations.",
         )
+        OmniServeCommand._parser = serve_parser
         return serve_parser
 
 
