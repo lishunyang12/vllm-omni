@@ -191,11 +191,16 @@ class PipelineConfig:
         return None
 
     def get_scheduler_cls(self, stage_id: int) -> str | None:
-        """Return the inferred scheduler class path for a stage."""
+        """Return the inferred scheduler class path for a stage.
+
+        Returns ``None`` for DIFFUSION stages (no vLLM scheduler). Raises
+        ``ValueError`` if ``stage_id`` doesn't exist in this pipeline, and
+        ``KeyError`` if ``execution_type`` isn't in the scheduler map.
+        """
         stage = self.get_stage(stage_id)
         if stage is None:
-            return None
-        return _scheduler_path(_EXECUTION_TYPE_TO_SCHEDULER.get(stage.execution_type))
+            raise ValueError(f"Pipeline {self.model_type!r} has no stage with id {stage_id}")
+        return _scheduler_path(_EXECUTION_TYPE_TO_SCHEDULER[stage.execution_type])
 
     def validate(self) -> list[str]:
         """Return list of topology errors (empty if valid)."""
