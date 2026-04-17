@@ -49,17 +49,3 @@ QWEN3_TTS_PIPELINE = PipelineConfig(
 )
 
 register_pipeline(QWEN3_TTS_PIPELINE)
-
-
-# Alias registered under a distinct key so that users can select the
-# synchronous-codec variant explicitly via ``--pipeline qwen3_tts_no_async_chunk``
-# or a ``pipeline:`` field in a custom deploy YAML. Structurally identical to
-# the async-capable pipeline above; the mode is still selected by
-# ``deploy.async_chunk`` in ``merge_pipeline_deploy``.
-QWEN3_TTS_NO_ASYNC_CHUNK_PIPELINE = PipelineConfig(
-    model_type="qwen3_tts_no_async_chunk",
-    model_arch=QWEN3_TTS_PIPELINE.model_arch,
-    stages=QWEN3_TTS_PIPELINE.stages,
-)
-
-register_pipeline(QWEN3_TTS_NO_ASYNC_CHUNK_PIPELINE)

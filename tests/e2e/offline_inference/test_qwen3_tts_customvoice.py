@@ -31,7 +31,6 @@ def get_cuda_graph_config():
     return modify_stage_config(
         get_deploy_config_path("qwen3_tts.yaml"),
         updates={
-            "pipeline": "qwen3_tts_no_async_chunk",
             "async_chunk": False,
             "stages": {
                 0: {

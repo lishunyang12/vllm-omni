@@ -17,7 +17,7 @@ The new deploy schema lives under `vllm_omni/deploy/` and is paired with a froze
 | `edges` | list | optional | `null` | Explicit edge list for the KV transfer graph. Auto-derived from stage inputs if omitted. |
 | `stages` | list | required | — | Per-stage engine args + wiring (see [Stage fields](#stage-fields)). |
 | `platforms` | dict | optional | `null` | Keyed by `npu` / `rocm` / `xpu`, each contains a `stages:` list with per-platform overrides applied on top of the CUDA defaults. |
-| `pipeline` | str | optional | `null` | Override the auto-detected pipeline registry key (used for structural variants like `qwen3_tts_no_async_chunk`). |
+| `pipeline` | str | optional | `null` | Override the auto-detected pipeline registry key (used for structural variants like `qwen2_5_omni_thinker_only`). |
 | `trust_remote_code` | bool | optional | `true` | **Pipeline-wide.** Trust HF remote code on model load; applies to every stage. |
 | `distributed_executor_backend` | str | optional | `"mp"` | **Pipeline-wide.** Executor backend (`"mp"` or `"ray"`). |
 | `dtype` | str \| null | optional | `null` | **Pipeline-wide.** Model dtype for every stage. |
