@@ -184,6 +184,7 @@ _CI_OVERLAYS: dict[str, dict[str, Any]] = {
     },
     # Single-stage thinker-only topology for the abort test.
     "qwen2_5_omni_thinker_only": {
+        "async_chunk": False,
         "pipeline": "qwen2_5_omni_thinker_only",
         "stages": [
             {
