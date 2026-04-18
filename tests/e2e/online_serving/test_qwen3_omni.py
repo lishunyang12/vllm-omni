@@ -33,21 +33,13 @@ def get_chunk_config(config_path: str | None = None):
     """Load the qwen3_omni CI deploy yaml with async_chunk modifications for streaming mode."""
     if config_path is None:
         config_path = _CI_DEPLOY
-    return modify_stage_config(
-        config_path,
-        updates={
-            "async_chunk": True,
-            "stage_args": {
-                0: {
-                    "engine_args.custom_process_next_stage_input_func": "vllm_omni.model_executor.stage_input_processors.qwen3_omni.thinker2talker_async_chunk"
-                },
-                1: {
-                    "engine_args.custom_process_next_stage_input_func": "vllm_omni.model_executor.stage_input_processors.qwen3_omni.talker2code2wav_async_chunk"
-                },
-            },
-        },
-        deletes={"stage_args": {2: ["custom_process_input_func"]}},
-    )
+    # TODO: remove this workaround once legacy `stage_args` path is deleted.
+    # The pipeline (qwen3_omni/pipeline.py) already wires
+    # thinker2talker_async_chunk / talker2code2wav_async_chunk on stage 0/1,
+    # so only async_chunk needs flipping. Writing nested `engine_args:` into
+    # the new-schema overlay trips _parse_stage_deploy's legacy branch and
+    # drops flat fields (load_format, max_num_seqs, ...).
+    return modify_stage_config(config_path, updates={"async_chunk": True})
 
 
 def get_prefix_caching_config(config_path: str):
