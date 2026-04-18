@@ -1589,6 +1589,15 @@ class OmniServerStageCli(OmniServer):
         self.master_port = get_open_port()
         self.visible_device_list = self._load_visible_device_list(env_dict)
         resolved_cfg = resolve_deploy_yaml(stage_config_path)
+        # Dump the resolved deploy config so CI logs show each stage's
+        # gpu_memory_utilization / max_model_len / max_num_seqs after
+        # base_config inheritance and overlay merge — essential when
+        # diagnosing OOMs that depend on the merged values.
+        print(
+            f"[OmniServerStageCli] Resolved deploy config from {stage_config_path}:\n"
+            f"{yaml.safe_dump(resolved_cfg, sort_keys=False, default_flow_style=False)}",
+            flush=True,
+        )
         self.stage_runtime_devices = self._load_stage_runtime_devices(resolved_cfg)
         self.stage_ids = stage_ids or self._load_stage_ids(resolved_cfg)
         if 0 not in self.stage_ids:
