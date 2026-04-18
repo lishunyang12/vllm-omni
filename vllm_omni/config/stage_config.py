@@ -391,7 +391,7 @@ def _merge_platforms(
     return merged
 
 
-def _resolve_deploy_yaml(path: str | Path) -> dict[str, Any]:
+def resolve_deploy_yaml(path: str | Path) -> dict[str, Any]:
     """Load a deploy YAML with optional ``base_config`` inheritance."""
     raw_dict = to_dict(load_yaml_config(path))
 
@@ -401,7 +401,7 @@ def _resolve_deploy_yaml(path: str | Path) -> dict[str, Any]:
 
     # Resolve relative to the overlay file's directory
     base_path = Path(path).parent / base_path
-    base_dict = _resolve_deploy_yaml(base_path)
+    base_dict = resolve_deploy_yaml(base_path)
 
     # Merge top-level scalars: overlay wins. ``stages:`` and ``platforms:``
     # are deep-merged below so an overlay can layer on top of the base.
@@ -419,7 +419,7 @@ def _resolve_deploy_yaml(path: str | Path) -> dict[str, Any]:
 
 def load_deploy_config(path: str | Path) -> DeployConfig:
     """Load a deploy YAML (with optional base_config inheritance)."""
-    raw_dict = _resolve_deploy_yaml(path)
+    raw_dict = resolve_deploy_yaml(path)
 
     stages = [_parse_stage_deploy(s) for s in raw_dict.get("stages", [])]
 
