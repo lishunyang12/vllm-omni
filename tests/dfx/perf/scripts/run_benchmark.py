@@ -62,7 +62,7 @@ def omni_server(request):
     Multi-stage initialization can take 10-20+ minutes.
     """
     with _omni_server_lock:
-        test_name, model, stage_config_path, stage_overrides = request.param
+        test_name, model, stage_config_path, stage_overrides, extra_cli_args = request.param
 
         print(f"Starting OmniServer with test: {test_name}, model: {model}")
 
@@ -73,6 +73,8 @@ def omni_server(request):
             server_args = ["--deploy-config", stage_config_path] + server_args
         if stage_overrides:
             server_args = ["--stage-overrides", stage_overrides] + server_args
+        if extra_cli_args:
+            server_args = list(extra_cli_args) + server_args
         with OmniServer(model, server_args) as server:
             server.test_name = test_name
             print("OmniServer started successfully")
