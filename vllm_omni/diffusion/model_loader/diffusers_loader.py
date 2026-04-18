@@ -11,7 +11,6 @@ from typing import cast
 
 import torch
 from huggingface_hub import hf_hub_download
-from safetensors import safe_open
 from torch import nn
 from vllm.config import ModelConfig
 from vllm.config.load import LoadConfig
@@ -27,6 +26,7 @@ from vllm.model_executor.model_loader.weight_utils import (
     multi_thread_safetensors_weights_iterator,
     safetensors_weights_iterator,
 )
+from vllm.model_executor.utils import get_packed_modules_mapping
 from vllm.utils.import_utils import resolve_obj_by_qualname
 from vllm.utils.torch_utils import set_default_torch_dtype
 
@@ -228,19 +228,14 @@ class DiffusersPipelineLoader:
         # Apply the prefix.
         prefixed_weights_iterator = ((source.prefix + name, tensor) for (name, tensor) in weights_iterator)
         if model is not None and self._should_adapt_modelopt_fp8_weights(source, use_safetensors):
-            scale_tensors = self._collect_modelopt_scale_tensors(hf_weights_files, source.prefix)
-            return self._adapt_modelopt_fp8_weights(model, source, prefixed_weights_iterator, scale_tensors)
+            return self._adapt_modelopt_fp8_weights(model, source, prefixed_weights_iterator)
         return prefixed_weights_iterator
 
     def _get_source_quant_config(self, source: "ComponentSource") -> object | None:
-        od_config = self.od_config
-        if od_config is None:
+        if self.od_config is None:
             return None
 
-        quant_config = od_config.quantization_config
-        if quant_config is None:
-            return None
-
+        quant_config = self.od_config.quantization_config
         if hasattr(quant_config, "resolve"):
             return quant_config.resolve(source.prefix.rstrip("."))
         return quant_config
@@ -276,31 +271,23 @@ class DiffusersPipelineLoader:
             return weight_name[: -len(".weight")] + ".weight_scale"
         return None
 
-    @staticmethod
-    def _replace_module_name(name: str, old: str, new: str) -> str:
-        if name.startswith(f"{old}."):
-            return f"{new}.{name[len(old) + 1 :]}"
-        return name.replace(f".{old}.", f".{new}.")
-
-    def _get_modelopt_packed_name_pairs(self, model: nn.Module) -> tuple[tuple[str, str], ...]:
-        mapping: dict[str, tuple[str, ...]] = dict(MODEL_OPT_PACKED_MODULES_MAPPING)
-        for _, module in model.named_modules():
-            packed_mapping = getattr(module, "packed_modules_mapping", None)
-            if isinstance(packed_mapping, dict):
-                for packed_name, shard_names in packed_mapping.items():
-                    if isinstance(shard_names, (list, tuple)):
-                        mapping[str(packed_name)] = tuple(str(shard_name) for shard_name in shard_names)
-
-        pairs: list[tuple[str, str]] = []
-        for packed_name, shard_names in mapping.items():
-            pairs.extend((packed_name, shard_name) for shard_name in shard_names)
-        return tuple(pairs)
+    def _get_modelopt_packed_modules_mapping(self, model: nn.Module) -> dict[str, tuple[str, ...]]:
+        mapping = {
+            packed_name: tuple(shard_names) for packed_name, shard_names in MODEL_OPT_PACKED_MODULES_MAPPING.items()
+        }
+        mapping.update(
+            {
+                str(packed_name): tuple(str(shard_name) for shard_name in shard_names)
+                for packed_name, shard_names in get_packed_modules_mapping(model).items()
+            }
+        )
+        return mapping
 
     def _resolve_modelopt_target_name(
         self,
         name: str,
         loadable_names: set[str],
-        packed_name_pairs: tuple[tuple[str, str], ...],
+        packed_modules_mapping: dict[str, tuple[str, ...]],
     ) -> str | None:
         if name in loadable_names:
             return name
@@ -310,10 +297,14 @@ class DiffusersPipelineLoader:
             if candidate in loadable_names:
                 return candidate
 
-        for packed_name, shard_name in packed_name_pairs:
-            candidate = self._replace_module_name(name, shard_name, packed_name)
-            if candidate != name and candidate in loadable_names:
-                return candidate
+        for packed_name, shard_names in packed_modules_mapping.items():
+            for shard_name in shard_names:
+                if name.startswith(f"{shard_name}."):
+                    candidate = f"{packed_name}.{name[len(shard_name) + 1 :]}"
+                else:
+                    candidate = name.replace(f".{shard_name}.", f".{packed_name}.")
+                if candidate != name and candidate in loadable_names:
+                    return candidate
         return None
 
     @staticmethod
@@ -353,49 +344,61 @@ class DiffusersPipelineLoader:
         scale = self._reshape_modelopt_weight_scale(scale, loaded_weight.shape)
         return (weight * scale).to(dtype=target_dtype)
 
-    def _collect_modelopt_scale_tensors(
-        self,
-        hf_weights_files: list[str],
-        prefix: str,
-    ) -> dict[str, torch.Tensor]:
-        scale_tensors: dict[str, torch.Tensor] = {}
-        for filename in sorted(hf_weights_files, key=_natural_sort_key):
-            if not filename.endswith(".safetensors"):
-                continue
-            with safe_open(filename, framework="pt", device="cpu") as f:
-                for name in f.keys():
-                    if self._is_modelopt_scale(name):
-                        scale_tensors[prefix + name] = f.get_tensor(name)
-        return scale_tensors
-
     def _adapt_modelopt_fp8_weights(
         self,
         model: nn.Module,
         source: "ComponentSource",
         weights: Iterable[tuple[str, torch.Tensor]],
-        scale_tensors: dict[str, torch.Tensor],
     ) -> Generator[tuple[str, torch.Tensor], None, None]:
         loadable_tensors = self._get_model_loadable_tensors(model)
         loadable_names = set(loadable_tensors)
-        packed_name_pairs = self._get_modelopt_packed_name_pairs(model)
+        packed_modules_mapping = self._get_modelopt_packed_modules_mapping(model)
+        scale_tensors: dict[str, torch.Tensor] = {}
+        pending_weights: dict[str, list[tuple[str, torch.Tensor, torch.dtype]]] = {}
 
         skipped_scales = 0
         dequantized_weights = 0
         for name, tensor in weights:
-            target_name = self._resolve_modelopt_target_name(name, loadable_names, packed_name_pairs)
+            target_name = self._resolve_modelopt_target_name(name, loadable_names, packed_modules_mapping)
             if self._is_modelopt_scale(name):
+                scale_tensors[name] = tensor
                 if target_name is None:
                     skipped_scales += 1
-                    continue
-                yield name, tensor
+                else:
+                    yield name, tensor
+
+                for weight_name, weight_tensor, target_dtype in pending_weights.pop(name, []):
+                    yield (
+                        weight_name,
+                        self._dequantize_modelopt_fp8_weight(
+                            weight_name,
+                            weight_tensor,
+                            scale_tensors,
+                            target_dtype,
+                        ),
+                    )
+                    dequantized_weights += 1
                 continue
 
             if self._is_fp8_tensor(tensor) and target_name is not None:
                 target_tensor = loadable_tensors[target_name]
                 if target_tensor.dtype not in FP8_DTYPES:
-                    tensor = self._dequantize_modelopt_fp8_weight(name, tensor, scale_tensors, target_tensor.dtype)
-                    dequantized_weights += 1
+                    scale_name = self._get_weight_scale_name(name)
+                    if scale_name is None:
+                        raise ValueError(f"Missing ModelOpt FP8 weight_scale name for weight {name!r}")
+                    if scale_name in scale_tensors:
+                        tensor = self._dequantize_modelopt_fp8_weight(name, tensor, scale_tensors, target_tensor.dtype)
+                        dequantized_weights += 1
+                    else:
+                        pending_weights.setdefault(scale_name, []).append((name, tensor, target_tensor.dtype))
+                        continue
             yield name, tensor
+
+        if pending_weights:
+            missing_scale_names = ", ".join(repr(name) for name in sorted(pending_weights))
+            raise ValueError(
+                f"Missing ModelOpt FP8 weight_scale for full-precision target weights: {missing_scale_names}"
+            )
 
         if skipped_scales or dequantized_weights:
             logger.info_once(

@@ -160,7 +160,37 @@ def test_modelopt_adapter_dequantizes_fp8_weight_for_full_precision_target():
                     ("transformer.block.to_q.weight", fp8_weight),
                 ]
             ),
-            {"transformer.block.to_q.weight_scale": scale},
+        )
+    )
+
+    assert [name for name, _ in adapted] == ["transformer.block.to_q.weight"]
+    assert adapted[0][1].dtype == model.transformer.block.to_qkv.weight.dtype
+    assert torch.allclose(adapted[0][1], fp8_weight.to(torch.float32) * scale)
+
+
+def test_modelopt_adapter_dequantizes_fp8_weight_when_scale_arrives_late():
+    loader = object.__new__(DiffusersPipelineLoader)
+    model = _PackedModelOptModel()
+    source = DiffusersPipelineLoader.ComponentSource(
+        model_or_path="dummy",
+        subfolder="transformer",
+        revision=None,
+        prefix="transformer.",
+    )
+    fp8_weight = torch.tensor([[2.0, -4.0], [1.0, 3.0]], dtype=torch.float32).to(torch.float8_e4m3fn)
+    scale = torch.tensor([0.5], dtype=torch.float32)
+
+    adapted = list(
+        loader._adapt_modelopt_fp8_weights(
+            model,
+            source,
+            iter(
+                [
+                    ("transformer.block.to_q.weight", fp8_weight),
+                    ("transformer.block.to_q.weight_scale", scale),
+                    ("transformer.block.to_q.input_scale", torch.tensor([1.0])),
+                ]
+            ),
         )
     )
 
@@ -189,6 +219,45 @@ class _QuantizedPackedModelOptModel(nn.Module):
         )
 
 
+class _ChildPackedModelOptModel(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.transformer = nn.Module()
+        self.transformer.packed_modules_mapping = {"packed_proj": ["proj_a", "proj_b"]}
+        self.transformer.block = nn.Module()
+        self.transformer.block.packed_proj = nn.Linear(2, 2, bias=False)
+
+
+def test_modelopt_adapter_uses_child_packed_modules_mapping():
+    loader = object.__new__(DiffusersPipelineLoader)
+    model = _ChildPackedModelOptModel()
+    source = DiffusersPipelineLoader.ComponentSource(
+        model_or_path="dummy",
+        subfolder="transformer",
+        revision=None,
+        prefix="transformer.",
+    )
+    fp8_weight = torch.tensor([[2.0, -4.0], [1.0, 3.0]], dtype=torch.float32).to(torch.float8_e4m3fn)
+    scale = torch.tensor([0.5], dtype=torch.float32)
+
+    adapted = list(
+        loader._adapt_modelopt_fp8_weights(
+            model,
+            source,
+            iter(
+                [
+                    ("transformer.block.proj_a.weight", fp8_weight),
+                    ("transformer.block.proj_a.weight_scale", scale),
+                ]
+            ),
+        )
+    )
+
+    assert [name for name, _ in adapted] == ["transformer.block.proj_a.weight"]
+    assert adapted[0][1].dtype == model.transformer.block.packed_proj.weight.dtype
+    assert torch.allclose(adapted[0][1], fp8_weight.to(torch.float32) * scale)
+
+
 def test_modelopt_adapter_keeps_scale_tensors_for_quantized_target():
     loader = object.__new__(DiffusersPipelineLoader)
     model = _QuantizedPackedModelOptModel()
@@ -210,7 +279,6 @@ def test_modelopt_adapter_keeps_scale_tensors_for_quantized_target():
                     ("transformer.block.to_q.input_scale", torch.tensor([1.0])),
                 ]
             ),
-            {"transformer.block.to_q.weight_scale": scale},
         )
     )
 
