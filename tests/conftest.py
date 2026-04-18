@@ -47,6 +47,7 @@ from vllm.distributed.parallel_state import cleanup_dist_env_and_memory
 from vllm.logger import init_logger
 from vllm.utils.network_utils import get_open_port
 
+from vllm_omni.config.stage_config import resolve_deploy_yaml
 from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniSamplingParams
 from vllm_omni.outputs import OmniRequestOutput
@@ -1587,8 +1588,9 @@ class OmniServerStageCli(OmniServer):
         self.stage_config_path = stage_config_path
         self.master_port = get_open_port()
         self.visible_device_list = self._load_visible_device_list(env_dict)
-        self.stage_runtime_devices = self._load_stage_runtime_devices(stage_config_path)
-        self.stage_ids = stage_ids or self._load_stage_ids(stage_config_path)
+        resolved_cfg = resolve_deploy_yaml(stage_config_path)
+        self.stage_runtime_devices = self._load_stage_runtime_devices(resolved_cfg)
+        self.stage_ids = stage_ids or self._load_stage_ids(resolved_cfg)
         if 0 not in self.stage_ids:
             raise ValueError(f"Stage CLI test requires stage_id=0 in config: {stage_config_path}")
         self.stage_procs: dict[int, subprocess.Popen] = {}
@@ -1601,22 +1603,18 @@ class OmniServerStageCli(OmniServer):
         return cfg.get("stage_args") or cfg.get("stages") or []
 
     @staticmethod
-    def _load_stage_ids(stage_config_path: str) -> list[int]:
-        with open(stage_config_path, encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
-
-        stage_ids = [stage["stage_id"] for stage in OmniServerStageCli._stage_entries(cfg) if "stage_id" in stage]
+    def _load_stage_ids(resolved_config: dict) -> list[int]:
+        stage_ids = [
+            stage["stage_id"] for stage in OmniServerStageCli._stage_entries(resolved_config) if "stage_id" in stage
+        ]
         if not stage_ids:
-            raise ValueError(f"No stage IDs found in config: {stage_config_path}")
+            raise ValueError("No stage IDs found in resolved config")
         return stage_ids
 
     @staticmethod
-    def _load_stage_runtime_devices(stage_config_path: str) -> dict[int, str]:
-        with open(stage_config_path, encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
-
+    def _load_stage_runtime_devices(resolved_config: dict) -> dict[int, str]:
         runtime_devices: dict[int, str] = {}
-        for stage in OmniServerStageCli._stage_entries(cfg):
+        for stage in OmniServerStageCli._stage_entries(resolved_config):
             stage_id = stage.get("stage_id")
             # New schema: stage.devices is flat at stage level.
             # Legacy schema: stage.runtime.devices is nested.
