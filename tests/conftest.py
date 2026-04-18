@@ -1774,7 +1774,46 @@ class OmniServerStageCli(OmniServer):
 
         raise RuntimeError(f"OmniServerStageCli failed to start within {max_wait} seconds")
 
+    def _dump_stage_logs_for_debug(self, head_lines: int = 300, tail_lines: int = 500) -> None:
+        """Tail each stage's subprocess log back to stdout on teardown.
+
+        Stage subprocesses redirect stdout/stderr to ``/tmp/omni_stage_*.log``
+        so we don't spam the main CI stream while tests run; but that also
+        hides engine init (KV cache size, Available KV cache memory, vLLM
+        engine config) when things go wrong. Dump them here so buildkite
+        captures them post-run. Head covers engine init; tail covers
+        whatever state the stage was in when it was torn down.
+        """
+        log_paths = getattr(self, "_stage_log_paths", {}) or {}
+        for stage_id in sorted(log_paths):
+            log_path = log_paths[stage_id]
+            if not log_path or not log_path.exists():
+                continue
+            try:
+                with open(log_path, encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+            except Exception as exc:  # pragma: no cover - diagnostic only
+                print(f"[OmniServerStageCli] stage {stage_id} log read failed: {exc}", flush=True)
+                continue
+            total = len(lines)
+            if total <= head_lines + tail_lines:
+                head_chunk = lines
+                tail_chunk = []
+                elided = 0
+            else:
+                head_chunk = lines[:head_lines]
+                tail_chunk = lines[-tail_lines:]
+                elided = total - head_lines - tail_lines
+            print(f"\n=== stage {stage_id} log HEAD ({log_path}) ===", flush=True)
+            print("".join(head_chunk).rstrip("\n"), flush=True)
+            if tail_chunk:
+                print(f"\n... [{elided} lines elided] ...", flush=True)
+                print(f"\n=== stage {stage_id} log TAIL ({log_path}) ===", flush=True)
+                print("".join(tail_chunk).rstrip("\n"), flush=True)
+            print(f"=== end stage {stage_id} log ===\n", flush=True)
+
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self._dump_stage_logs_for_debug()
         for stage_id in sorted(self.stage_procs, reverse=True):
             proc = self.stage_procs[stage_id]
             if proc.poll() is None:
