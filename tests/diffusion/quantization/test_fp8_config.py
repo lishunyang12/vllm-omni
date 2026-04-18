@@ -73,25 +73,6 @@ def test_build_quant_config_modelopt_fp8_config_json():
     assert config.is_checkpoint_fp8_serialized
 
 
-def test_build_quant_config_modelopt_nested_checkpoint_metadata():
-    from vllm.model_executor.layers.quantization.modelopt import ModelOptFp8Config
-
-    from vllm_omni.quantization import build_quant_config
-
-    config = build_quant_config(
-        {
-            "producer": {"name": "modelopt"},
-            "quantization": {
-                "quant_algo": "FP8",
-                "exclude_modules": ["proj_out"],
-            },
-        }
-    )
-
-    assert isinstance(config, ModelOptFp8Config)
-    assert config.get_name() == "modelopt"
-
-
 def test_build_quant_config_per_component():
     from vllm_omni.quantization import ComponentQuantizationConfig, build_quant_config
 

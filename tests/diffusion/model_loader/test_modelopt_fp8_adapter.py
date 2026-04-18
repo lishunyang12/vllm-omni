@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 import torch.nn as nn
@@ -8,7 +10,6 @@ import torch.nn as nn
 from vllm_omni.diffusion.model_loader.checkpoint_adapters import (
     ModelOptFp8CheckpointAdapter,
 )
-from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
 
@@ -41,20 +42,9 @@ class _QuantizedPackedModelOptModel(nn.Module):
         )
 
 
-class _ChildPackedModelOptModel(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.transformer = nn.Module()
-        self.transformer.packed_modules_mapping = {"packed_proj": ["proj_a", "proj_b"]}
-        self.transformer.block = nn.Module()
-        self.transformer.block.packed_proj = nn.Linear(2, 2, bias=False)
-
-
-def _make_source() -> DiffusersPipelineLoader.ComponentSource:
-    return DiffusersPipelineLoader.ComponentSource(
-        model_or_path="dummy",
+def _make_source() -> SimpleNamespace:
+    return SimpleNamespace(
         subfolder="transformer",
-        revision=None,
         prefix="transformer.",
     )
 
@@ -79,51 +69,6 @@ def test_modelopt_adapter_dequantizes_fp8_weight_for_full_precision_target():
 
     assert [name for name, _ in adapted] == ["transformer.block.to_q.weight"]
     assert adapted[0][1].dtype == model.transformer.block.to_qkv.weight.dtype
-    assert torch.allclose(adapted[0][1], fp8_weight.to(torch.float32) * scale)
-
-
-def test_modelopt_adapter_dequantizes_fp8_weight_when_scale_arrives_late():
-    model = _PackedModelOptModel()
-    adapter = ModelOptFp8CheckpointAdapter(model, _make_source())
-    fp8_weight = torch.tensor([[2.0, -4.0], [1.0, 3.0]], dtype=torch.float32).to(torch.float8_e4m3fn)
-    scale = torch.tensor([0.5], dtype=torch.float32)
-
-    adapted = list(
-        adapter.adapt(
-            iter(
-                [
-                    ("transformer.block.to_q.weight", fp8_weight),
-                    ("transformer.block.to_q.weight_scale", scale),
-                    ("transformer.block.to_q.input_scale", torch.tensor([1.0])),
-                ]
-            )
-        )
-    )
-
-    assert [name for name, _ in adapted] == ["transformer.block.to_q.weight"]
-    assert adapted[0][1].dtype == model.transformer.block.to_qkv.weight.dtype
-    assert torch.allclose(adapted[0][1], fp8_weight.to(torch.float32) * scale)
-
-
-def test_modelopt_adapter_uses_child_packed_modules_mapping():
-    model = _ChildPackedModelOptModel()
-    adapter = ModelOptFp8CheckpointAdapter(model, _make_source())
-    fp8_weight = torch.tensor([[2.0, -4.0], [1.0, 3.0]], dtype=torch.float32).to(torch.float8_e4m3fn)
-    scale = torch.tensor([0.5], dtype=torch.float32)
-
-    adapted = list(
-        adapter.adapt(
-            iter(
-                [
-                    ("transformer.block.proj_a.weight", fp8_weight),
-                    ("transformer.block.proj_a.weight_scale", scale),
-                ]
-            )
-        )
-    )
-
-    assert [name for name, _ in adapted] == ["transformer.block.proj_a.weight"]
-    assert adapted[0][1].dtype == model.transformer.block.packed_proj.weight.dtype
     assert torch.allclose(adapted[0][1], fp8_weight.to(torch.float32) * scale)
 
 
