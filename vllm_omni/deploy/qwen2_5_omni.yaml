@@ -15,7 +15,7 @@
 #     on CUDA (thinker uses custom ops that don't trace cleanly); NPU / XPU
 #     platform overrides flip back to false where cudagraph is verified.
 #     Qwen3-Omni / Qwen3-TTS AR stages use the default (false = cudagraph on).
-async_chunk: true
+async_chunk: false
 
 stages:
   - stage_id: 0
