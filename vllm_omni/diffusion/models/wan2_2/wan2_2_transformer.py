@@ -680,12 +680,18 @@ class WanTransformerBlock(nn.Module):
 
         # 1. Self-attention
         self.norm1 = AdaLayerNorm(dim, elementwise_affine=False, eps=eps)
+        # Self-attention also kept full precision. Video DiT attention runs over
+        # very long sequences (87K+ tokens at 704×1280×121) and FP8 on Q/K/V
+        # accumulates enough score drift to visibly degrade composition
+        # (astronaut-on-Mars test on Wan2.2 showed detail loss). Keeping attn
+        # BF16 and quantizing only FFN mirrors the FLUX single-stream-only
+        # pattern (see #2728).
         self.attn1 = WanSelfAttention(
             dim=dim,
             num_heads=num_heads,
             head_dim=head_dim,
             eps=eps,
-            quant_config=quant_config,
+            quant_config=None,
             prefix=f"{prefix}.attn1",
         )
 
