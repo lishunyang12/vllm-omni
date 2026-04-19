@@ -83,29 +83,47 @@ def _normalize_method_name(method: Any) -> str:
     return str(method).lower().replace("-", "_")
 
 
+def _resolve_modelopt_variant_by_algo(config: Mapping[str, Any]) -> str | None:
+    """Pick the right ModelOpt variant by inspecting quant_algo.
+
+    ModelOpt checkpoints commonly save `quant_method: modelopt` with the actual
+    algorithm in `quant_algo` (e.g. NVFP4, FP8, MXFP8). Return the specific
+    vLLM registry name — or None if quant_algo doesn't identify a variant.
+    """
+    quantization = config.get("quantization")
+    if isinstance(quantization, Mapping):
+        quant_algo = str(quantization.get("quant_algo", "")).upper()
+    else:
+        quant_algo = str(config.get("quant_algo", "")).upper()
+
+    if quant_algo in _MODEL_OPT_FP8_ALGOS:
+        return "modelopt"
+    if quant_algo == "NVFP4":
+        return "modelopt_fp4"
+    if quant_algo == "MXFP8":
+        return "modelopt_mxfp8"
+    if quant_algo == "MIXED_PRECISION":
+        return "modelopt_mixed"
+    return None
+
+
 def _detect_modelopt_method(config: Mapping[str, Any]) -> str | None:
     method = config.get("method", config.get("quant_method"))
     if method is not None:
         normalized_method = _normalize_method_name(method)
         if normalized_method in _MODEL_OPT_METHODS:
+            # Generic "modelopt" can mean any ModelOpt variant — disambiguate
+            # via quant_algo. Specific names (modelopt_fp4, modelopt_mxfp8,
+            # modelopt_mixed) are already unambiguous.
+            if normalized_method == "modelopt":
+                resolved = _resolve_modelopt_variant_by_algo(config)
+                if resolved is not None:
+                    return resolved
             return normalized_method
 
     producer = config.get("producer")
     if isinstance(producer, Mapping) and str(producer.get("name", "")).lower() == "modelopt":
-        quantization = config.get("quantization")
-        if isinstance(quantization, Mapping):
-            quant_algo = str(quantization.get("quant_algo", "")).upper()
-        else:
-            quant_algo = str(config.get("quant_algo", "")).upper()
-
-        if quant_algo in _MODEL_OPT_FP8_ALGOS:
-            return "modelopt"
-        if quant_algo == "NVFP4":
-            return "modelopt_fp4"
-        if quant_algo == "MXFP8":
-            return "modelopt_mxfp8"
-        if quant_algo == "MIXED_PRECISION":
-            return "modelopt_mixed"
+        return _resolve_modelopt_variant_by_algo(config)
 
     return None
 
