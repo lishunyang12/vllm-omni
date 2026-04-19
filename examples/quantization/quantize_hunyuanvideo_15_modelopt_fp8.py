@@ -83,17 +83,16 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _require_modelopt() -> tuple[Any, Any]:
+def _require_modelopt() -> Any:
     try:
         import modelopt.torch.quantization as mtq
-        from modelopt.torch.export import export_hf_checkpoint
     except ModuleNotFoundError as exc:
         raise SystemExit(
             "NVIDIA ModelOpt is not installed. Install with:\n"
             "  pip install 'nvidia-modelopt[all]'\n"
             f"Original error: {exc}"
         ) from exc
-    return mtq, export_hf_checkpoint
+    return mtq
 
 
 def _ensure_paths(args: argparse.Namespace) -> tuple[str, Path]:
@@ -216,32 +215,125 @@ def _summarize_export(output_dir: Path) -> None:
     print(f"  config path:  {cfg_path}")
 
 
-def _export_with_fallback(
+def _force_export_quantized_weights(backbone: torch.nn.Module, dtype: torch.dtype) -> int:
+    """Convert in-memory weights of quantized modules to actual FP8 storage.
+
+    `export_hf_checkpoint` skips this step for unknown model types (HV-1.5 isn't
+    in ModelOpt's recognized-model registry), so we must call the per-weight
+    export helper ourselves. Same workaround as the HunyuanImage-3 calibration
+    helper.
+    """
+    from modelopt.torch.export.quant_utils import (
+        QUANTIZATION_NONE,
+        get_quantization_format,
+        quantizer_attr_names,
+        weight_attr_names,
+    )
+    from modelopt.torch.export.unified_export_hf import _export_quantized_weight
+
+    exported = 0
+    for name, module in backbone.named_modules():
+        try:
+            quantization_format = get_quantization_format(module)
+        except Exception as exc:
+            print(f"[warn] Could not inspect quantization format for {name}: {exc}", file=sys.stderr)
+            continue
+        if quantization_format == QUANTIZATION_NONE:
+            continue
+        for weight_name in weight_attr_names(module):
+            quantizer_attrs = quantizer_attr_names(weight_name)
+            weight_quantizer = getattr(module, quantizer_attrs.weight_quantizer, None)
+            if weight_quantizer is None or not getattr(weight_quantizer, "is_enabled", False):
+                continue
+            _export_quantized_weight(module, dtype, weight_name)
+            exported += 1
+    return exported
+
+
+def _hv15_quant_config_block() -> dict:
+    """Mirror ModelOpt FP8 metadata expected by vllm-omni's adapter (#2913).
+
+    Same shape as the HunyuanImage-3 author's _hunyuan_quant_config().
+    """
+    return {
+        "config_groups": {
+            "group_0": {
+                "input_activations": {"dynamic": False, "num_bits": 8, "type": "float"},
+                "weights": {"dynamic": False, "num_bits": 8, "type": "float"},
+                "targets": ["Linear"],
+            }
+        },
+        "ignore": [
+            "context_embedder*",
+            "context_embedder_2*",
+            "cond_type_embed*",
+            "image_embedder*",
+            "norm1.linear*",
+            "norm1_context.linear*",
+            "norm2*",
+            "norm2_context*",
+            "norm_out*",
+            "proj_out*",
+            "time_embed*",
+            "token_refiner*",
+            "x_embedder*",
+        ],
+        "producer": {"name": "modelopt"},
+        "quant_algo": "FP8",
+        "quant_method": "modelopt",
+    }
+
+
+def _patch_quant_config(output_dir: Path) -> None:
+    """Inject quant_algo: FP8 + config_groups into transformer/config.json so
+    vllm-omni's adapter (#2913) recognises the checkpoint as ModelOpt FP8."""
+    cfg_path = output_dir / "transformer" / "config.json"
+    with cfg_path.open(encoding="utf-8") as f:
+        cfg = json.load(f)
+
+    new_qc = _hv15_quant_config_block()
+    existing = cfg.get("quantization_config")
+    if isinstance(existing, dict):
+        producer = existing.get("producer")
+        if isinstance(producer, dict):
+            new_qc["producer"] = producer
+
+    cfg["quantization_config"] = new_qc
+    with cfg_path.open("w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+
+
+def _save_pipeline_with_fp8_transformer(
     pipe: DiffusionPipeline,
-    export_hf_checkpoint: Any,
     model_path: str,
     output_dir: Path,
-) -> str:
-    try:
-        export_hf_checkpoint(pipe, export_dir=str(output_dir))
-        return "pipeline"
-    except Exception as exc:
-        print(
-            f"[warn] Whole-pipeline export failed, falling back to transformer-only export: {exc}",
-            file=sys.stderr,
-        )
-        if output_dir.exists():
-            shutil.rmtree(output_dir)
-        # Resolve the source directory: a local path stays as-is; an HF id resolves via snapshot_download.
-        src = Path(model_path)
-        if not src.exists():
-            from huggingface_hub import snapshot_download
+    max_shard_size: str = "5GB",
+) -> None:
+    """Save the pipeline with the (now FP8) transformer.
 
-            src = Path(snapshot_download(model_path))
-        shutil.copytree(src, output_dir, dirs_exist_ok=True)
-        shutil.rmtree(output_dir / "transformer", ignore_errors=True)
-        export_hf_checkpoint(pipe.transformer, export_dir=str(output_dir / "transformer"))
-        return "transformer"
+    Copies the source directory verbatim except for `transformer/`, then
+    saves the transformer with quantizers hidden so the state dict contains
+    only the FP8 weights + scale tensors.
+    """
+    from modelopt.torch.export.diffusers_utils import hide_quantizers_from_state_dict
+
+    src = Path(model_path)
+    if not src.exists():
+        from huggingface_hub import snapshot_download
+
+        src = Path(snapshot_download(model_path))
+
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    shutil.copytree(src, output_dir, ignore=shutil.ignore_patterns("transformer"))
+
+    transformer_out = output_dir / "transformer"
+    with hide_quantizers_from_state_dict(pipe):
+        pipe.transformer.save_pretrained(
+            str(transformer_out),
+            safe_serialization=True,
+            max_shard_size=max_shard_size,
+        )
 
 
 def main() -> None:
@@ -249,7 +341,7 @@ def main() -> None:
     if not torch.cuda.is_available():
         raise SystemExit("CUDA is required for ModelOpt FP8 quantization.")
 
-    mtq, export_hf_checkpoint = _require_modelopt()
+    mtq = _require_modelopt()
     model_path, output_dir = _ensure_paths(args)
     dtype = _select_dtype(args.dtype)
     prompts = _build_prompts(args)
@@ -277,8 +369,21 @@ def main() -> None:
 
     _disable_known_problematic_quantizers(mtq, backbone, quantize_mha=args.quantize_mha)
 
-    export_mode = _export_with_fallback(pipe, export_hf_checkpoint, model_path, output_dir)
-    print(f"Export mode: {export_mode}")
+    print("\nForcing FP8 weight serialization (HV-1.5 isn't in ModelOpt's recognized-model registry,")
+    print("so we have to call the per-weight export helper ourselves)...")
+    exported = _force_export_quantized_weights(backbone, dtype)
+    print(f"  -> {exported} weights converted to FP8 in memory")
+    if exported == 0:
+        raise SystemExit(
+            "No quantized weights were exported. Calibration may have skipped every layer "
+            "(check the disable_quantizer regex) or `mtq.quantize` did not actually wrap any "
+            "weight quantizers."
+        )
+
+    print("\nSaving pipeline with FP8 transformer...")
+    _save_pipeline_with_fp8_transformer(pipe, model_path, output_dir)
+    _patch_quant_config(output_dir)
+    print(f"Saved to: {output_dir}")
     _summarize_export(output_dir)
 
     print("\nNext: validate the checkpoint with vllm-omni:")
