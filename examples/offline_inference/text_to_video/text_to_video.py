@@ -182,8 +182,11 @@ def parse_args() -> argparse.Namespace:
         "--quantization",
         type=str,
         default=None,
-        choices=["fp8", "gguf"],
-        help="Quantization method for the transformer (fp8 for online FP8 quantization).",
+        choices=["fp8", "nvfp4", "gguf"],
+        help="Quantization method for the transformer. "
+        "`fp8` = online FP8 (or ModelOpt FP8 when the checkpoint self-describes). "
+        "`nvfp4` = ModelOpt NVFP4 (Blackwell-only serving). "
+        "Usually not needed — ModelOpt FP8/NVFP4 checkpoints auto-detect from config.json.",
     )
     return parser.parse_args()
 
@@ -245,7 +248,9 @@ def main():
     if args.flow_shift is not None:
         omni_kwargs["flow_shift"] = args.flow_shift
     if args.quantization is not None:
-        omni_kwargs["quantization"] = args.quantization
+        # Map user-facing alias to the vLLM registry name.
+        quant_alias = {"nvfp4": "modelopt_fp4"}
+        omni_kwargs["quantization"] = quant_alias.get(args.quantization, args.quantization)
     if args.cache_backend is not None:
         omni_kwargs["cache_backend"] = args.cache_backend
         omni_kwargs["cache_config"] = cache_config
