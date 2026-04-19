@@ -133,36 +133,41 @@ class ModelOptNvFp4CheckpointAdapter:
         passed_weights = 0
 
         for name, tensor in weights:
-            target_name = self._resolve_target_name(name)
+            # For both weights and scales we yield the ORIGINAL checkpoint name.
+            # The outer model loader (e.g. HunyuanVideo15 load_weights) handles
+            # packed-module name remapping itself via its stacked_params_mapping
+            # + shard_id path. Pre-remapping here to e.g. `to_qkv.weight_scale`
+            # makes the outer loader mis-split names on substring overlaps
+            # (`.to_q` is a substring of `.to_qkv`) and silently drop scales.
             if self._is_scale(name):
+                target_name = self._resolve_target_name(name)
+                if target_name is None and skipped_scales < 3:
+                    similar = [k for k in self._loadable_tensors if k.endswith(name.split(".")[-1])][:3]
+                    logger.warning(
+                        "ModelOpt NVFP4 adapter: scale %r has no matching model param. "
+                        "Similar loadable params by suffix: %r. "
+                        "Hint: checkpoint key doesn't align with any model parameter. "
+                        "Check hf_to_vllm_mapper on the model class.",
+                        name,
+                        similar,
+                    )
                 if target_name is None:
                     skipped_scales += 1
-                    if skipped_scales <= 3:
-                        similar = [k for k in self._loadable_tensors if k.endswith(name.split(".")[-1])][:3]
-                        logger.warning(
-                            "ModelOpt NVFP4 adapter: skipping scale %r (no target). "
-                            "Similar loadable params by suffix: %r. "
-                            "Hint: checkpoint key doesn't match any model parameter. "
-                            "Check hf_to_vllm_mapper on the model class.",
-                            name,
-                            similar,
-                        )
                     continue
                 passed_scales += 1
-                yield target_name, tensor
+                yield name, tensor
                 continue
 
-            # Non-scale tensor: just pass through (name mapping handled by the
-            # outer loader which also calls the weights_mapper). We don't need
-            # to unpack U8 FP4 here — ignored (full-precision) layers are stored
-            # as BF16, and quantized weights stay packed for the NVFP4 kernel.
+            # Non-scale tensor: pass through with original name. Quantized
+            # weights stay U8-packed for the NVFP4 kernel; ignored layers are
+            # already stored as BF16, so nothing to unpack on this side.
             passed_weights += 1
             yield name, tensor
 
         if skipped_scales or passed_scales or passed_weights:
             logger.info_once(
                 "Adapted ModelOpt NVFP4 %s weights: %d weights passed through, "
-                "%d scale tensors remapped, %d scale tensors skipped (no target)",
+                "%d scale tensors passed through, %d scale tensors skipped (no target)",
                 self._source_label,
                 passed_weights,
                 passed_scales,
