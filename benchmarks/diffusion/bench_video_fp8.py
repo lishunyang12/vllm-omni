@@ -13,11 +13,19 @@ Deps:
     pip install lpips scikit-image pynvml imageio[ffmpeg]
 
 Usage:
-    python benchmarks/diffusion/bench_video_fp8.py                           # both models, defaults
-    python benchmarks/diffusion/bench_video_fp8.py --only wan22              # one model
-    python benchmarks/diffusion/bench_video_fp8.py --only wan22 \\
+    # single model, default config
+    python benchmarks/diffusion/bench_video_fp8.py --only hv15
+
+    # HV-1.5 sweep: 4 FP8 presets × 2 frame counts (short + long).
+    # S1 = FFN only, S2 = video stream only, S3 = all FP8 except encoder cross-attn,
+    # S4 = everything FP8. BF16 is captured once per frame count and reused.
+    python benchmarks/diffusion/bench_video_fp8.py --only hv15 \\
+        --presets S1,S2,S3,S4 --frames-list 33,121 --steps 30 --tag sweep
+
+    # Custom prompt + long-only run
+    python benchmarks/diffusion/bench_video_fp8.py --only hv15 \\
         --prompt "An astronaut riding a horse on Mars" \\
-        --num-frames 121 --steps 40 --tag long
+        --num-frames 121 --steps 40 --tag astronaut
 """
 
 from __future__ import annotations
@@ -223,71 +231,117 @@ def main() -> None:
     p.add_argument("--output-dir", default="./bench_output", help="Where to save MP4s.")
     p.add_argument("--fps", type=int, default=24)
     p.add_argument("--prompt", type=str, default=None, help="Override the default prompt.")
-    p.add_argument("--num-frames", type=int, default=None, help="Override num_frames.")
+    p.add_argument("--num-frames", type=int, default=None, help="Override num_frames (single value).")
     p.add_argument("--steps", type=int, default=None, help="Override num_inference_steps.")
-    p.add_argument("--tag", type=str, default="", help="Suffix for output filenames (e.g. 'long').")
+    p.add_argument("--tag", type=str, default="", help="Suffix for output filenames.")
+    p.add_argument(
+        "--presets",
+        type=str,
+        default="S4",
+        help="Comma-separated FP8 presets for HV-1.5 sweep (BF16,S1,S2,S3,S4). Ignored for other models.",
+    )
+    p.add_argument(
+        "--frames-list",
+        type=str,
+        default=None,
+        help="Comma-separated list of num_frames to sweep (e.g. '33,121'). Overrides --num-frames.",
+    )
     args = p.parse_args()
 
     prompt = args.prompt or PROMPT
     print(f"Prompt: {prompt}", flush=True)
 
+    presets = [s.strip().upper() for s in args.presets.split(",") if s.strip()]
+    valid_presets = {"BF16", "S1", "S2", "S3", "S4"}
+    for pr in presets:
+        if pr not in valid_presets:
+            raise SystemExit(f"Invalid preset {pr!r}. Expected one of {sorted(valid_presets)}")
+
     keys = [args.only] if args.only else list(CASES)
+    suffix_tag = f"_{args.tag}" if args.tag else ""
+
     rows: list[str] = []
     for case_key in keys:
-        c = dict(CASES[case_key])  # shallow copy so we don't mutate the module-level dict
-        c["kwargs"] = dict(c["kwargs"])
+        base = CASES[case_key]
+        base_kwargs = dict(base["kwargs"])
         if args.num_frames is not None:
-            c["kwargs"]["num_frames"] = args.num_frames
+            base_kwargs["num_frames"] = args.num_frames
         if args.steps is not None:
-            c["kwargs"]["num_inference_steps"] = args.steps
-        c["task"] = (
-            f"T2V {c['kwargs']['height']}x{c['kwargs']['width']}, "
-            f"{c['kwargs']['num_frames']} frames, {c['kwargs']['num_inference_steps']} steps"
+            base_kwargs["num_inference_steps"] = args.steps
+        frames_values = (
+            [int(x) for x in args.frames_list.split(",") if x.strip()]
+            if args.frames_list
+            else [base_kwargs["num_frames"]]
         )
-        suffix = f"_{args.tag}" if args.tag else ""
-        print(f"\n=== {c['id']} BF16 ===", flush=True)
-        mem_bf16, t_bf16, v_bf16 = run(c["model"], None, c["kwargs"], prompt=prompt)
-        bf16_path = os.path.join(args.output_dir, f"{case_key}_bf16_seed{SEED}{suffix}.mp4")
-        save_video(v_bf16, bf16_path, fps=args.fps)
-        print(f"  peak {mem_bf16:.2f} GiB, {t_bf16:.2f}s -> {bf16_path}", flush=True)
 
-        print(f"\n=== {c['id']} FP8 ===", flush=True)
-        mem_fp8, t_fp8, v_fp8 = run(c["model"], "fp8", c["kwargs"], prompt=prompt)
-        fp8_path = os.path.join(args.output_dir, f"{case_key}_fp8_seed{SEED}{suffix}.mp4")
-        save_video(v_fp8, fp8_path, fps=args.fps)
-        print(f"  peak {mem_fp8:.2f} GiB, {t_fp8:.2f}s -> {fp8_path}", flush=True)
-
-        print("\n  computing LPIPS/PSNR/SSIM...", flush=True)
-        try:
-            m = compute_metrics(v_bf16, v_fp8)
-            print(
-                f"  LPIPS={m['lpips']:.4f}  PSNR={m['psnr']:.2f}dB  SSIM={m['ssim']:.4f}",
-                flush=True,
+        for frames in frames_values:
+            kwargs_f = dict(base_kwargs)
+            kwargs_f["num_frames"] = frames
+            task = (
+                f"T2V {kwargs_f['height']}x{kwargs_f['width']}, "
+                f"{kwargs_f['num_frames']} frames, {kwargs_f['num_inference_steps']} steps"
             )
-            quality_cols = f"{m['lpips']:.4f} | {m['psnr']:.2f} | {m['ssim']:.4f}"
-        except Exception as e:
-            print(f"  metric computation failed: {e}", flush=True)
-            quality_cols = "n/a | n/a | n/a"
+            frame_suffix = f"_f{frames}"
 
-        mem_red = (1 - mem_fp8 / mem_bf16) if mem_bf16 > 0 else 0.0
-        speedup = (1 - t_fp8 / t_bf16) if t_bf16 > 0 else 0.0
-        row = (
-            f"| {c['id']} | {c['task']} "
-            f"| {mem_bf16:.2f} GiB | {mem_fp8:.2f} GiB | {mem_red:.0%} "
-            f"| {t_bf16:.2f}s | {t_fp8:.2f}s | {speedup:.0%} "
-            f"| {quality_cols} |"
-        )
-        print(f"\n  row: {row}", flush=True)
-        rows.append(row)
+            # BF16 baseline once per frame count.
+            print(f"\n=== {base['id']} BF16 frames={frames} ===", flush=True)
+            os.environ["HV15_FP8_PRESET"] = "BF16"  # harmless on other models
+            mem_bf16, t_bf16, v_bf16 = run(base["model"], None, kwargs_f, prompt=prompt)
+            bf16_path = os.path.join(args.output_dir, f"{case_key}_bf16_seed{SEED}{frame_suffix}{suffix_tag}.mp4")
+            save_video(v_bf16, bf16_path, fps=args.fps)
+            print(f"  peak {mem_bf16:.2f} GiB, {t_bf16:.2f}s -> {bf16_path}", flush=True)
 
-    print("\n\n## Benchmark (H100 80GB × 1)\n")
-    print(
-        "| Model | Task | Mem BF16 | Mem FP8 | Mem Red | Time BF16 | Time FP8 | Speedup | LPIPS ↓ | PSNR ↑ | SSIM ↑ |"
-    )
-    print(
-        "|-------|------|----------|---------|---------|-----------|----------|---------|---------|--------|--------|"
-    )
-    print("\n".join(rows))
+            # Sweep FP8 presets against the cached BF16 video.
+            for preset in presets:
+                if preset == "BF16":
+                    continue
+                print(f"\n=== {base['id']} FP8 preset={preset} frames={frames} ===", flush=True)
+                os.environ["HV15_FP8_PRESET"] = preset
+                mem_fp8, t_fp8, v_fp8 = run(base["model"], "fp8", kwargs_f, prompt=prompt)
+                fp8_path = os.path.join(
+                    args.output_dir, f"{case_key}_fp8_{preset}_seed{SEED}{frame_suffix}{suffix_tag}.mp4"
+                )
+                save_video(v_fp8, fp8_path, fps=args.fps)
+                print(f"  peak {mem_fp8:.2f} GiB, {t_fp8:.2f}s -> {fp8_path}", flush=True)
+
+                print("\n  computing LPIPS/PSNR/SSIM...", flush=True)
+                try:
+                    m = compute_metrics(v_bf16, v_fp8)
+                    print(
+                        f"  LPIPS={m['lpips']:.4f}  PSNR={m['psnr']:.2f}dB  SSIM={m['ssim']:.4f}",
+                        flush=True,
+                    )
+                    quality_cols = f"{m['lpips']:.4f} | {m['psnr']:.2f} | {m['ssim']:.4f}"
+                except Exception as e:
+                    print(f"  metric computation failed: {e}", flush=True)
+                    quality_cols = "n/a | n/a | n/a"
+
+                mem_red = (1 - mem_fp8 / mem_bf16) if mem_bf16 > 0 else 0.0
+                speedup = (1 - t_fp8 / t_bf16) if t_bf16 > 0 else 0.0
+                row = (
+                    f"| {base['id']} | {task} | **{preset}** "
+                    f"| {mem_bf16:.2f} GiB | {mem_fp8:.2f} GiB | {mem_red:.0%} "
+                    f"| {t_bf16:.2f}s | {t_fp8:.2f}s | {speedup:.0%} "
+                    f"| {quality_cols} |"
+                )
+                print(f"\n  row: {row}", flush=True)
+                rows.append(row)
+
+    header = [
+        "\n## Benchmark (H100 80GB × 1)\n",
+        f"Prompt: `{prompt}`\n",
+        "| Model | Task | Preset | Mem BF16 | Mem FP8 | Mem Red | Time BF16 | Time FP8 | Speedup | LPIPS ↓ | PSNR ↑ | SSIM ↑ |",
+        "|-------|------|--------|----------|---------|---------|-----------|----------|---------|---------|--------|--------|",
+        *rows,
+    ]
+    md = "\n".join(header)
+    print("\n" + md)
+
+    results_path = os.path.join(args.output_dir, "results.md")
+    os.makedirs(args.output_dir, exist_ok=True)
+    with open(results_path, "w", encoding="utf-8") as f:
+        f.write(md + "\n")
+    print(f"\nResults saved to {results_path}", flush=True)
 
 
 if __name__ == "__main__":

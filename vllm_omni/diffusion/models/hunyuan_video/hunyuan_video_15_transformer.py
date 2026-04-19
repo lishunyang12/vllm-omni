@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import os
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
@@ -31,6 +32,31 @@ if TYPE_CHECKING:
     from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
 
 logger = init_logger(__name__)
+
+
+# FP8 preset mechanism for sweep experiments (see benchmarks/diffusion/bench_video_fp8.py).
+# Env var HV15_FP8_PRESET selects which per-block linears get FP8:
+#   BF16 - nothing (same as --quantization none)
+#   S1   - FFN only (video + encoder)
+#   S2   - video stream only (self-attn QKV/out + video FFN)
+#   S3   - all FP8 except encoder cross-attn (keeps add_kv_proj, to_add_out BF16)
+#   S4   - everything FP8 (default, matches pre-sweep behavior)
+_HV15_FP8_PRESET_ROLES: dict[str, set[str]] = {
+    "BF16": set(),
+    "S1": {"video_ffn", "encoder_ffn"},
+    "S2": {"video_attn", "video_ffn"},
+    "S3": {"video_attn", "video_ffn", "encoder_ffn"},
+    "S4": {"video_attn", "encoder_attn", "video_ffn", "encoder_ffn"},
+}
+
+
+def _hv15_quant_for_role(base_quant_config, role: str):
+    """Resolve preset: return `base_quant_config` if `role` is FP8 under current preset, else None."""
+    if base_quant_config is None:
+        return None
+    preset = os.environ.get("HV15_FP8_PRESET", "S4").upper()
+    allowed = _HV15_FP8_PRESET_ROLES.get(preset, _HV15_FP8_PRESET_ROLES["S4"])
+    return base_quant_config if role in allowed else None
 
 
 class HunyuanVideo15PatchEmbed(nn.Module):
@@ -351,7 +377,7 @@ class HunyuanVideo15Attention(nn.Module):
             head_size=self.head_dim,
             total_num_heads=self.heads,
             bias=bias,
-            quant_config=quant_config,
+            quant_config=_hv15_quant_for_role(quant_config, "video_attn"),
             prefix=f"{prefix}.to_qkv",
         )
 
@@ -363,7 +389,7 @@ class HunyuanVideo15Attention(nn.Module):
                     bias=out_bias,
                     input_is_parallel=True,
                     return_bias=False,
-                    quant_config=quant_config,
+                    quant_config=_hv15_quant_for_role(quant_config, "video_attn"),
                     prefix=f"{prefix}.to_out.0",
                 ),
                 nn.Identity(),  # placeholder for dropout (none used)
@@ -379,7 +405,7 @@ class HunyuanVideo15Attention(nn.Module):
                 head_size=self.head_dim,
                 total_num_heads=self.heads,
                 bias=added_proj_bias,
-                quant_config=quant_config,
+                quant_config=_hv15_quant_for_role(quant_config, "encoder_attn"),
                 prefix=f"{prefix}.add_kv_proj",
             )
 
@@ -389,7 +415,7 @@ class HunyuanVideo15Attention(nn.Module):
                 bias=out_bias,
                 input_is_parallel=True,
                 return_bias=False,
-                quant_config=quant_config,
+                quant_config=_hv15_quant_for_role(quant_config, "encoder_attn"),
                 prefix=f"{prefix}.to_add_out",
             )
 
@@ -508,7 +534,11 @@ class HunyuanVideo15TransformerBlock(nn.Module):
 
         self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.ff = FeedForward(
-            dim=hidden_size, dim_out=hidden_size, mult=mlp_ratio, quant_config=quant_config, prefix=f"{prefix}.ff"
+            dim=hidden_size,
+            dim_out=hidden_size,
+            mult=mlp_ratio,
+            quant_config=_hv15_quant_for_role(quant_config, "video_ffn"),
+            prefix=f"{prefix}.ff",
         )
 
         self.norm2_context = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
@@ -516,7 +546,7 @@ class HunyuanVideo15TransformerBlock(nn.Module):
             dim=hidden_size,
             dim_out=hidden_size,
             mult=mlp_ratio,
-            quant_config=quant_config,
+            quant_config=_hv15_quant_for_role(quant_config, "encoder_ffn"),
             prefix=f"{prefix}.ff_context",
         )
 
