@@ -76,6 +76,23 @@ def _read_safetensors_header(path: Path) -> dict:
     return header
 
 
+def _classify_weight_scale_granularity(weight_scale_shapes: list[list[int]]) -> str:
+    """Infer per-tensor vs per-channel vs per-block from sample weight_scale shapes."""
+    if not weight_scale_shapes:
+        return "no weight_scale tensors found"
+    scalar = sum(1 for s in weight_scale_shapes if len(s) == 0 or (len(s) == 1 and s[0] == 1))
+    per_channel = sum(1 for s in weight_scale_shapes if len(s) == 1 and s[0] > 1)
+    per_block = sum(1 for s in weight_scale_shapes if len(s) >= 2 and all(x > 1 for x in s))
+    total = len(weight_scale_shapes)
+    if scalar == total:
+        return "per-tensor (all scalar scales)"
+    if per_channel == total:
+        return "per-channel (all 1-D scales)"
+    if per_block == total:
+        return "per-block (all N-D scales)"
+    return f"mixed: scalar={scalar}, per-channel={per_channel}, per-block={per_block} of {total}"
+
+
 def _check_safetensors(transformer_dir: Path) -> int:
     """Returns 0 on pass, 1 on fail. Reads on-disk dtype from the safetensors header."""
     files = sorted(transformer_dir.glob("*.safetensors"))
@@ -86,6 +103,8 @@ def _check_safetensors(transformer_dir: Path) -> int:
     header_dtype_counts: Counter[str] = Counter()
     sample_fp8_keys: list[str] = []
     sample_scale_keys: list[str] = []
+    weight_scale_shapes: list[list[int]] = []
+    sample_weight_scale_entries: list[tuple[str, list[int]]] = []
     for f in files:
         try:
             header = _read_safetensors_header(f)
@@ -99,6 +118,10 @@ def _check_safetensors(transformer_dir: Path) -> int:
                 sample_fp8_keys.append(k)
             if k.endswith(("_scale", ".weight_scale", ".input_scale", "_scale_inv")) and len(sample_scale_keys) < 5:
                 sample_scale_keys.append(k)
+            if k.endswith(".weight_scale"):
+                weight_scale_shapes.append(info.get("shape", []))
+                if len(sample_weight_scale_entries) < 5:
+                    sample_weight_scale_entries.append((k, info.get("shape", [])))
 
     print(f"\n[B] On-disk dtype counts across {len(files)} safetensors file(s) (from header, not get_tensor):")
     for dtype, count in sorted(header_dtype_counts.items(), key=lambda kv: -kv[1]):
@@ -117,6 +140,11 @@ def _check_safetensors(transformer_dir: Path) -> int:
         print(f"    sample scale tensors: {sample_scale_keys[:3]}")
     print("    (Note: torch's get_tensor() may return these as bf16 views on some versions —")
     print("     irrelevant; vLLM's loader uses native FP8 ops.)")
+
+    # Weight-scale granularity — per-tensor (scalar) vs per-channel (1-D) vs per-block (N-D).
+    print(f"\n    weight_scale granularity: {_classify_weight_scale_granularity(weight_scale_shapes)}")
+    for key, shape in sample_weight_scale_entries[:3]:
+        print(f"      {key}: shape {shape}")
     return 0
 
 
