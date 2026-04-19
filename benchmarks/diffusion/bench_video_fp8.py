@@ -10,18 +10,19 @@ Target: 1×H100 80GB. Wan2.2 uses the TI2V-5B dense checkpoint (fits in 80GB
 BF16); for A14B MoE you need 2×H100 + TP=2 or CPU offload.
 
 Deps:
-    pip install lpips scikit-image pynvml
+    pip install lpips scikit-image pynvml imageio[ffmpeg]
 
 Usage:
-    python benchmarks/diffusion/bench_video_fp8.py              # both models
-    python benchmarks/diffusion/bench_video_fp8.py --only hv15  # HV-1.5 only
-    python benchmarks/diffusion/bench_video_fp8.py --only wan22 # Wan2.2 only
+    python benchmarks/diffusion/bench_video_fp8.py                           # both models
+    python benchmarks/diffusion/bench_video_fp8.py --only hv15               # HV-1.5 only
+    python benchmarks/diffusion/bench_video_fp8.py --output-dir ./my_videos  # custom dir
 """
 
 from __future__ import annotations
 
 import argparse
 import gc
+import os
 import threading
 import time
 
@@ -154,6 +155,15 @@ def run(model: str, quantization: str | None, kwargs: dict) -> tuple[float, floa
         torch.cuda.synchronize()
 
 
+def save_video(video: np.ndarray, path: str, fps: int = 24) -> None:
+    """Save [T, H, W, 3] float video in [0, 1] as MP4."""
+    import imageio.v2 as imageio
+
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    frames_uint8 = (np.clip(video, 0.0, 1.0) * 255).astype(np.uint8)
+    imageio.mimsave(path, list(frames_uint8), fps=fps, codec="libx264", quality=8)
+
+
 def compute_metrics(bf16: np.ndarray, fp8: np.ndarray) -> dict[str, float]:
     """Frame-averaged LPIPS (lower better), PSNR (higher better), SSIM (higher better)."""
     import lpips
@@ -182,18 +192,25 @@ def compute_metrics(bf16: np.ndarray, fp8: np.ndarray) -> dict[str, float]:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--only", choices=list(CASES), default=None)
+    p.add_argument("--output-dir", default="./bench_output", help="Where to save MP4s.")
+    p.add_argument("--fps", type=int, default=24)
     args = p.parse_args()
-    cases = [CASES[args.only]] if args.only else list(CASES.values())
 
+    keys = [args.only] if args.only else list(CASES)
     rows: list[str] = []
-    for c in cases:
+    for case_key in keys:
+        c = CASES[case_key]
         print(f"\n=== {c['id']} BF16 ===", flush=True)
         mem_bf16, t_bf16, v_bf16 = run(c["model"], None, c["kwargs"])
-        print(f"  peak {mem_bf16:.2f} GiB, {t_bf16:.2f}s", flush=True)
+        bf16_path = os.path.join(args.output_dir, f"{case_key}_bf16_seed{SEED}.mp4")
+        save_video(v_bf16, bf16_path, fps=args.fps)
+        print(f"  peak {mem_bf16:.2f} GiB, {t_bf16:.2f}s -> {bf16_path}", flush=True)
 
         print(f"\n=== {c['id']} FP8 ===", flush=True)
         mem_fp8, t_fp8, v_fp8 = run(c["model"], "fp8", c["kwargs"])
-        print(f"  peak {mem_fp8:.2f} GiB, {t_fp8:.2f}s", flush=True)
+        fp8_path = os.path.join(args.output_dir, f"{case_key}_fp8_seed{SEED}.mp4")
+        save_video(v_fp8, fp8_path, fps=args.fps)
+        print(f"  peak {mem_fp8:.2f} GiB, {t_fp8:.2f}s -> {fp8_path}", flush=True)
 
         print("\n  computing LPIPS/PSNR/SSIM...", flush=True)
         m = compute_metrics(v_bf16, v_fp8)
