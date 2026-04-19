@@ -20,6 +20,7 @@ from vllm.logger import init_logger
 from vllm.model_executor.layers.conv import Conv3dLayer
 from vllm.model_executor.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
+from vllm.model_executor.models.utils import WeightsMapper
 
 from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
 from vllm_omni.diffusion.attention.layer import Attention
@@ -793,6 +794,17 @@ class WanTransformer3DModel(nn.Module):
     packed_modules_mapping = {
         "to_qkv": ["to_q", "to_k", "to_v"],
     }
+
+    # Diffusers → vllm-omni weight-name translation. Used by the ModelOpt FP8
+    # checkpoint adapter (#2913) to remap scale tensor names: diffusers stores
+    # FFN as `ffn.net.0.proj` / `ffn.net.2` (dotted), vllm-omni's WanFeedForward
+    # uses `ffn.net_0.proj` / `ffn.net_2` (underscore).
+    hf_to_vllm_mapper = WeightsMapper(
+        orig_to_new_substr={
+            ".ffn.net.0.": ".ffn.net_0.",
+            ".ffn.net.2.": ".ffn.net_2.",
+        },
+    )
 
     @staticmethod
     def _is_transformer_block(name: str, module) -> bool:

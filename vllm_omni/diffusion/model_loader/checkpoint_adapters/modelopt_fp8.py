@@ -105,6 +105,14 @@ class ModelOptFp8CheckpointAdapter:
             for shard_name in shard_names:
                 orig_to_new_substr[f".{shard_name}."] = f".{packed_name}."
                 orig_to_new_prefix[f"{shard_name}."] = f"{packed_name}."
+
+        # Let models extend the remap with arbitrary diffusers→vllm-omni
+        # substring translations (e.g. Wan2.2's `.ffn.net.0.` → `.ffn.net_0.`).
+        model_mapper = getattr(model, "hf_to_vllm_mapper", None)
+        if model_mapper is not None:
+            orig_to_new_substr.update(getattr(model_mapper, "orig_to_new_substr", None) or {})
+            orig_to_new_prefix.update(getattr(model_mapper, "orig_to_new_prefix", None) or {})
+
         return WeightsMapper(
             orig_to_new_substr=orig_to_new_substr,
             orig_to_new_prefix=orig_to_new_prefix,
