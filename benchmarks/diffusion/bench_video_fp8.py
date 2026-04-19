@@ -77,7 +77,9 @@ def _extract_video(outputs) -> np.ndarray:
 
     if isinstance(frames, torch.Tensor):
         v = frames.detach().cpu()
-        if v.dim() == 5:
+        # Strip extra leading dims (batch, num_videos_per_prompt, etc.) until 4D.
+        # Wan2.2 returns 6D ([B, N, C, T, H, W]); HV-1.5 returns 5D.
+        while v.dim() > 4:
             v = v[0]
         if v.dim() == 4 and v.shape[0] in (3, 4):
             v = v.permute(1, 2, 3, 0)
@@ -213,20 +215,27 @@ def main() -> None:
         print(f"  peak {mem_fp8:.2f} GiB, {t_fp8:.2f}s -> {fp8_path}", flush=True)
 
         print("\n  computing LPIPS/PSNR/SSIM...", flush=True)
-        m = compute_metrics(v_bf16, v_fp8)
-        print(
-            f"  LPIPS={m['lpips']:.4f}  PSNR={m['psnr']:.2f}dB  SSIM={m['ssim']:.4f}",
-            flush=True,
-        )
+        try:
+            m = compute_metrics(v_bf16, v_fp8)
+            print(
+                f"  LPIPS={m['lpips']:.4f}  PSNR={m['psnr']:.2f}dB  SSIM={m['ssim']:.4f}",
+                flush=True,
+            )
+            quality_cols = f"{m['lpips']:.4f} | {m['psnr']:.2f} | {m['ssim']:.4f}"
+        except Exception as e:
+            print(f"  metric computation failed: {e}", flush=True)
+            quality_cols = "n/a | n/a | n/a"
 
         mem_red = (1 - mem_fp8 / mem_bf16) if mem_bf16 > 0 else 0.0
         speedup = (1 - t_fp8 / t_bf16) if t_bf16 > 0 else 0.0
-        rows.append(
+        row = (
             f"| {c['id']} | {c['task']} "
             f"| {mem_bf16:.2f} GiB | {mem_fp8:.2f} GiB | {mem_red:.0%} "
             f"| {t_bf16:.2f}s | {t_fp8:.2f}s | {speedup:.0%} "
-            f"| {m['lpips']:.4f} | {m['psnr']:.2f} | {m['ssim']:.4f} |"
+            f"| {quality_cols} |"
         )
+        print(f"\n  row: {row}", flush=True)
+        rows.append(row)
 
     print("\n\n## Benchmark (H100 80GB × 1)\n")
     print(
