@@ -77,20 +77,29 @@ def _read_safetensors_header(path: Path) -> dict:
 
 
 def _classify_weight_scale_granularity(weight_scale_shapes: list[list[int]]) -> str:
-    """Infer per-tensor vs per-channel vs per-block from sample weight_scale shapes."""
+    """Infer per-tensor vs per-channel vs per-block from sample weight_scale shapes.
+
+    ModelOpt block-wise produces shapes like `[16, 1, 16, 1]` (broadcasting dims of 1
+    interleaved with block-count dims). We count "meaningful" dims — ones with size > 1 —
+    and classify: 0 meaningful dims = per-tensor (scalar), 1 = per-channel, 2+ = per-block.
+    """
     if not weight_scale_shapes:
         return "no weight_scale tensors found"
-    scalar = sum(1 for s in weight_scale_shapes if len(s) == 0 or (len(s) == 1 and s[0] == 1))
-    per_channel = sum(1 for s in weight_scale_shapes if len(s) == 1 and s[0] > 1)
-    per_block = sum(1 for s in weight_scale_shapes if len(s) >= 2 and all(x > 1 for x in s))
+
+    def meaningful_dims(shape: list[int]) -> int:
+        return sum(1 for d in shape if d > 1)
+
+    per_tensor = sum(1 for s in weight_scale_shapes if meaningful_dims(s) == 0)
+    per_channel = sum(1 for s in weight_scale_shapes if meaningful_dims(s) == 1)
+    per_block = sum(1 for s in weight_scale_shapes if meaningful_dims(s) >= 2)
     total = len(weight_scale_shapes)
-    if scalar == total:
+    if per_tensor == total:
         return "per-tensor (all scalar scales)"
     if per_channel == total:
-        return "per-channel (all 1-D scales)"
+        return "per-channel (1 meaningful dim)"
     if per_block == total:
-        return "per-block (all N-D scales)"
-    return f"mixed: scalar={scalar}, per-channel={per_channel}, per-block={per_block} of {total}"
+        return "per-block (2+ meaningful dims — e.g. [M//bm, 1, N//bn, 1] for tiles)"
+    return f"mixed: per-tensor={per_tensor}, per-channel={per_channel}, per-block={per_block} of {total}"
 
 
 def _check_safetensors(transformer_dir: Path) -> int:
