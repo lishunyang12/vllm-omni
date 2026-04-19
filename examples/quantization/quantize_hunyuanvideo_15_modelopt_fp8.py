@@ -162,20 +162,36 @@ def _load_pipeline(model_path: str, dtype: torch.dtype) -> DiffusionPipeline:
 def _build_forward_loop(pipe: DiffusionPipeline, args: argparse.Namespace, prompts: list[str]):
     generator = torch.Generator(device="cuda")
 
+    # Try to set guidance on the pipeline's guider object up front (modern
+    # diffusers HV-1.5 uses a Guider abstraction, not a per-call kwarg). Falls
+    # back silently — calibration uses whatever default the pipeline ships with.
+    guider = getattr(pipe, "guider", None)
+    if guider is not None and hasattr(guider, "guidance_scale"):
+        try:
+            guider.guidance_scale = args.guidance_scale
+        except Exception:
+            pass
+
+    base_kwargs = dict(
+        height=args.height,
+        width=args.width,
+        num_frames=args.num_frames,
+        num_inference_steps=args.calib_steps,
+        output_type="latent",
+    )
+
     def forward_loop(*_unused_args, **_unused_kwargs) -> None:
         with torch.inference_mode():
             for idx, prompt in enumerate(prompts):
                 generator.manual_seed(args.seed + idx)
-                pipe(
-                    prompt=prompt,
-                    height=args.height,
-                    width=args.width,
-                    num_frames=args.num_frames,
-                    num_inference_steps=args.calib_steps,
-                    guidance_scale=args.guidance_scale,
-                    generator=generator,
-                    output_type="latent",
-                )
+                # Try with guidance_scale first; fall back without on TypeError
+                # for pipelines (like HV-1.5) that take CFG via guider config.
+                try:
+                    pipe(prompt=prompt, generator=generator, guidance_scale=args.guidance_scale, **base_kwargs)
+                except TypeError as exc:
+                    if "guidance_scale" not in str(exc):
+                        raise
+                    pipe(prompt=prompt, generator=generator, **base_kwargs)
 
     return forward_loop
 
