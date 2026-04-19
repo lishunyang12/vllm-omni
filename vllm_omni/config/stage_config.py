@@ -310,6 +310,25 @@ class _LazyPipelineRegistry:
     def __setitem__(self, model_type: str, pipeline: PipelineConfig) -> None:
         self._loaded[model_type] = pipeline
 
+    def __delitem__(self, model_type: str) -> None:
+        """Remove a dynamically-registered pipeline.
+
+        Only the dynamic-cache side of the registry can be mutated; the
+        central declarative registry is immutable at runtime. Calling ``del``
+        on a model_type that only exists in the central registry raises
+        ``KeyError``.
+        """
+        if model_type in self._loaded:
+            del self._loaded[model_type]
+            return
+        if model_type in self._get_lazy_map():
+            raise KeyError(
+                f"{model_type!r} is declared in the central pipeline_registry and "
+                "cannot be removed at runtime. Edit "
+                "vllm_omni/config/pipeline_registry.py to delete a built-in entry."
+            )
+        raise KeyError(model_type)
+
     def keys(self) -> set[str]:
         return set(self._get_lazy_map().keys()) | set(self._loaded.keys())
 

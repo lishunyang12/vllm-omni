@@ -91,7 +91,8 @@ class TestDynamicRegistration:
             assert _PIPELINE_REGISTRY["_test_dynamic_registration"] is custom
         finally:
             # Don't leak the test registration into other tests.
-            _PIPELINE_REGISTRY._loaded.pop("_test_dynamic_registration", None)
+            if "_test_dynamic_registration" in _PIPELINE_REGISTRY:
+                del _PIPELINE_REGISTRY["_test_dynamic_registration"]
 
     def test_dynamic_registration_overrides_lazy_entry(self):
         # Build a substitute for qwen3_omni_moe that we can distinguish.
@@ -105,4 +106,6 @@ class TestDynamicRegistration:
         try:
             assert _PIPELINE_REGISTRY["qwen3_omni_moe"].model_arch == "OverriddenArch"
         finally:
-            _PIPELINE_REGISTRY._loaded.pop("qwen3_omni_moe", None)
+            # Remove the dynamic override so later tests see the original.
+            if "qwen3_omni_moe" in _PIPELINE_REGISTRY._loaded:
+                del _PIPELINE_REGISTRY["qwen3_omni_moe"]
