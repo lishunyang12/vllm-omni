@@ -689,14 +689,16 @@ class WanTransformerBlock(nn.Module):
             prefix=f"{prefix}.attn1",
         )
 
-        # 2. Cross-attention
+        # 2. Cross-attention — kept full precision. FP8 on the text-conditioning
+        # joint attention path collapses output quality (same pattern as FLUX
+        # dual-stream blocks, see #2728).
         self.attn2 = WanCrossAttention(
             dim=dim,
             num_heads=num_heads,
             head_dim=head_dim,
             eps=eps,
             added_kv_proj_dim=added_kv_proj_dim,
-            quant_config=quant_config,
+            quant_config=None,
             prefix=f"{prefix}.attn2",
         )
         self.norm2 = LayerNorm(dim, eps, elementwise_affine=True) if cross_attn_norm else nn.Identity()
