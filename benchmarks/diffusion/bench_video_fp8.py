@@ -63,7 +63,7 @@ SEED = 42
 
 
 def _extract_video(outputs) -> np.ndarray:
-    """Return [T, H, W, 3] float in [0, 1]."""
+    """Return [T, H, W, 3] float in [0, 1]. Handles any dim order / batch wrappers."""
     from vllm_omni.outputs import OmniRequestOutput
 
     first = outputs[0]
@@ -76,17 +76,41 @@ def _extract_video(outputs) -> np.ndarray:
         raise ValueError("Cannot extract frames from output.")
 
     if isinstance(frames, torch.Tensor):
-        v = frames.detach().cpu()
-        # Strip extra leading dims (batch, num_videos_per_prompt, etc.) until 4D.
-        # Wan2.2 returns 6D ([B, N, C, T, H, W]); HV-1.5 returns 5D.
-        while v.dim() > 4:
-            v = v[0]
-        if v.dim() == 4 and v.shape[0] in (3, 4):
-            v = v.permute(1, 2, 3, 0)
-        if v.is_floating_point():
-            v = v.clamp(-1, 1) * 0.5 + 0.5
-        return v.float().numpy()
-    return np.asarray(frames).astype(np.float32) / 255.0
+        v = frames.detach().cpu().float().numpy()
+    else:
+        v = np.asarray(frames)
+        if v.dtype == np.uint8:
+            v = v.astype(np.float32) / 255.0
+        else:
+            v = v.astype(np.float32)
+
+    print(f"    _extract_video raw shape: {v.shape}, dtype: {v.dtype}", flush=True)
+
+    # Clamp [-1, 1] → [0, 1] if signed
+    if v.dtype.kind == "f" and v.min() < -1e-3:
+        v = np.clip(v, -1.0, 1.0) * 0.5 + 0.5
+
+    # Strip leading size-1 dims, then any extra leading dims (take first)
+    while v.ndim > 4 and v.shape[0] == 1:
+        v = v[0]
+    while v.ndim > 4:
+        v = v[0]
+
+    if v.ndim != 4:
+        raise ValueError(f"Expected 4D video after reduction, got {v.shape}")
+
+    # Permute to [T, H, W, C]. Try in order: already-correct, [C, T, H, W], [T, C, H, W].
+    if v.shape[-1] in (1, 3, 4):
+        pass  # already [T, H, W, C]
+    elif v.shape[0] in (1, 3, 4):
+        v = np.transpose(v, (1, 2, 3, 0))  # [C, T, H, W] -> [T, H, W, C]
+    elif v.shape[1] in (1, 3, 4):
+        v = np.transpose(v, (0, 2, 3, 1))  # [T, C, H, W] -> [T, H, W, C]
+    else:
+        raise ValueError(f"Cannot identify channel axis in shape {v.shape}")
+
+    print(f"    _extract_video normalized shape: {v.shape}", flush=True)
+    return v
 
 
 def _nvml_used_gib() -> float:
