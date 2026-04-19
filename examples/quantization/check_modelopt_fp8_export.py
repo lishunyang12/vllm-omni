@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Verify a ModelOpt FP8 diffusers checkpoint exported by
-quantize_hunyuanvideo_15_modelopt_fp8.py (or any sibling quantize_*.py).
+"""Verify a ModelOpt FP8 or NVFP4 diffusers checkpoint exported by
+quantize_hunyuanvideo_15_modelopt_fp8.py / _nvfp4.py (or any sibling quantize_*.py).
 
 Three checks:
   A. transformer/config.json has a sane quantization_config block.
-  B. transformer/*.safetensors contains FP8 (float8_e4m3fn) tensors.
+  B. transformer/*.safetensors contains quantized tensors
+     (FP8: float8_e4m3fn; NVFP4: packed uint8 FP4 weights + FP8 group scales).
   C. transformer disk size is materially smaller than a BF16 baseline.
 
 Example:
     python examples/quantization/check_modelopt_fp8_export.py \\
         --output ./hv15-480p-modelopt-fp8
+
+    python examples/quantization/check_modelopt_fp8_export.py \\
+        --output ./hv15-480p-modelopt-nvfp4
 
     # Optional: compare disk size against a local or HF BF16 baseline.
     python examples/quantization/check_modelopt_fp8_export.py \\
@@ -27,13 +31,15 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+SUPPORTED_ALGOS = ("FP8", "NVFP4")
 
-def _check_config(transformer_dir: Path) -> int:
-    """Returns 0 on pass, 1 on fail. Prints findings."""
+
+def _check_config(transformer_dir: Path) -> tuple[int, str | None]:
+    """Returns (status, quant_algo). status: 0 pass, 1 fail, 2 warn."""
     cfg_path = transformer_dir / "config.json"
     if not cfg_path.exists():
         print(f"[FAIL] {cfg_path} missing.")
-        return 1
+        return 1, None
 
     with cfg_path.open(encoding="utf-8") as f:
         cfg = json.load(f)
@@ -41,24 +47,27 @@ def _check_config(transformer_dir: Path) -> int:
     qc = cfg.get("quantization_config")
     if not isinstance(qc, dict):
         print(f"[FAIL] No `quantization_config` block in {cfg_path}.")
-        return 1
+        return 1, None
 
     print(f"[A] quantization_config from {cfg_path}:")
     print(json.dumps(qc, indent=2))
 
+    quant_algo = qc.get("quant_algo")
     issues = []
     if qc.get("quant_method") != "modelopt":
         issues.append(f"quant_method={qc.get('quant_method')!r} (expected 'modelopt')")
-    if qc.get("quant_algo") != "FP8":
-        issues.append(f"quant_algo={qc.get('quant_algo')!r} (expected 'FP8' — vllm-omni adapter may not auto-detect)")
+    if quant_algo not in SUPPORTED_ALGOS:
+        issues.append(
+            f"quant_algo={quant_algo!r} (expected one of {SUPPORTED_ALGOS} — vllm-omni adapter may not auto-detect)"
+        )
 
     if issues:
         print("[A] WARN — config looks incomplete:")
         for issue in issues:
             print(f"    - {issue}")
-        return 2
-    print("[A] PASS — config looks correct.")
-    return 0
+        return 2, quant_algo
+    print(f"[A] PASS — config looks correct (quant_algo={quant_algo}).")
+    return 0, quant_algo
 
 
 def _read_safetensors_header(path: Path) -> dict:
@@ -102,7 +111,7 @@ def _classify_weight_scale_granularity(weight_scale_shapes: list[list[int]]) -> 
     return f"mixed: per-tensor={per_tensor}, per-channel={per_channel}, per-block={per_block} of {total}"
 
 
-def _check_safetensors(transformer_dir: Path) -> int:
+def _check_safetensors(transformer_dir: Path, quant_algo: str | None) -> int:
     """Returns 0 on pass, 1 on fail. Reads on-disk dtype from the safetensors header."""
     files = sorted(transformer_dir.glob("*.safetensors"))
     if not files:
@@ -110,10 +119,12 @@ def _check_safetensors(transformer_dir: Path) -> int:
         return 1
 
     header_dtype_counts: Counter[str] = Counter()
-    sample_fp8_keys: list[str] = []
+    sample_quant_weight_keys: list[str] = []
     sample_scale_keys: list[str] = []
     weight_scale_shapes: list[list[int]] = []
     sample_weight_scale_entries: list[tuple[str, list[int]]] = []
+
+    is_nvfp4 = quant_algo == "NVFP4"
     for f in files:
         try:
             header = _read_safetensors_header(f)
@@ -123,9 +134,17 @@ def _check_safetensors(transformer_dir: Path) -> int:
         for k, info in header.items():
             dtype = info.get("dtype", "?")
             header_dtype_counts[dtype] += 1
-            if dtype.startswith("F8") and len(sample_fp8_keys) < 5:
-                sample_fp8_keys.append(k)
-            if k.endswith(("_scale", ".weight_scale", ".input_scale", "_scale_inv")) and len(sample_scale_keys) < 5:
+            # NVFP4 packs two FP4 values per byte into U8 weight tensors.
+            # FP8 stores weights as F8_E4M3 directly.
+            is_quant_weight = (is_nvfp4 and dtype == "U8" and k.endswith(".weight")) or (
+                not is_nvfp4 and dtype.startswith("F8") and k.endswith(".weight")
+            )
+            if is_quant_weight and len(sample_quant_weight_keys) < 5:
+                sample_quant_weight_keys.append(k)
+            if (
+                k.endswith(("_scale", ".weight_scale", ".input_scale", "_scale_inv", ".weight_scale_2"))
+                and len(sample_scale_keys) < 5
+            ):
                 sample_scale_keys.append(k)
             if k.endswith(".weight_scale"):
                 weight_scale_shapes.append(info.get("shape", []))
@@ -134,21 +153,35 @@ def _check_safetensors(transformer_dir: Path) -> int:
 
     print(f"\n[B] On-disk dtype counts across {len(files)} safetensors file(s) (from header, not get_tensor):")
     for dtype, count in sorted(header_dtype_counts.items(), key=lambda kv: -kv[1]):
-        marker = "  <-- FP8" if dtype.startswith("F8") else ""
+        marker = ""
+        if dtype.startswith("F8"):
+            marker = "  <-- FP8"
+        elif is_nvfp4 and dtype == "U8":
+            marker = "  <-- NVFP4 packed weights (2 FP4 per byte)"
         print(f"    {dtype:10s} {count:>6d}{marker}")
 
-    fp8_count = sum(c for d, c in header_dtype_counts.items() if d.startswith("F8"))
-    if fp8_count == 0:
-        print("[B] FAIL — no FP8 tensors on disk. Calibration likely did not actually quantize the weights.")
+    if is_nvfp4:
+        quant_count = header_dtype_counts.get("U8", 0)
+        label = "NVFP4 packed (U8)"
+    else:
+        quant_count = sum(c for d, c in header_dtype_counts.items() if d.startswith("F8"))
+        label = "FP8"
+
+    if quant_count == 0:
+        print(f"[B] FAIL — no {label} tensors on disk. Calibration likely did not actually quantize the weights.")
         return 1
 
-    print(f"[B] PASS — {fp8_count} FP8 tensors stored on disk.")
-    if sample_fp8_keys:
-        print(f"    sample FP8 tensors:   {sample_fp8_keys[:3]}")
+    print(f"[B] PASS — {quant_count} {label} tensors stored on disk.")
+    if sample_quant_weight_keys:
+        print(f"    sample quantized weight tensors: {sample_quant_weight_keys[:3]}")
     if sample_scale_keys:
-        print(f"    sample scale tensors: {sample_scale_keys[:3]}")
-    print("    (Note: torch's get_tensor() may return these as bf16 views on some versions —")
-    print("     irrelevant; vLLM's loader uses native FP8 ops.)")
+        print(f"    sample scale tensors:            {sample_scale_keys[:3]}")
+    if is_nvfp4:
+        print("    NVFP4 expects: weight=U8 (packed FP4), weight_scale=F8_E4M3 (per-16-elem group),")
+        print("                   weight_scale_2=F32 (per-tensor global). Serving needs Blackwell (sm_100+).")
+    else:
+        print("    (Note: torch's get_tensor() may return these as bf16 views on some versions —")
+        print("     irrelevant; vLLM's loader uses native FP8 ops.)")
 
     # Weight-scale granularity — per-tensor (scalar) vs per-channel (1-D) vs per-block (N-D).
     print(f"\n    weight_scale granularity: {_classify_weight_scale_granularity(weight_scale_shapes)}")
@@ -161,10 +194,11 @@ def _disk_size_gib(p: Path) -> float:
     return sum(f.stat().st_size for f in p.rglob("*") if f.is_file()) / (1024**3)
 
 
-def _check_size_vs_baseline(transformer_dir: Path, baseline: str | None) -> int:
+def _check_size_vs_baseline(transformer_dir: Path, baseline: str | None, quant_algo: str | None) -> int:
     """Returns 0 always (informational only)."""
-    fp8_size = _disk_size_gib(transformer_dir)
-    print(f"\n[C] FP8 transformer disk size: {fp8_size:.2f} GiB")
+    quant_size = _disk_size_gib(transformer_dir)
+    label = quant_algo or "quantized"
+    print(f"\n[C] {label} transformer disk size: {quant_size:.2f} GiB")
 
     if baseline is None:
         print("[C] SKIP — pass --baseline <path or HF id> to compare against BF16.")
@@ -187,11 +221,17 @@ def _check_size_vs_baseline(transformer_dir: Path, baseline: str | None) -> int:
         print(f"[C] WARN — baseline transformer dir empty: {bf16_dir}")
         return 0
 
-    reduction = (1 - fp8_size / bf16_size) * 100
+    # Expected reduction: FP8 ~50%, NVFP4 ~75%.
+    min_reduction = 60 if quant_algo == "NVFP4" else 30
+    reduction = (1 - quant_size / bf16_size) * 100
     print(f"[C] BF16 baseline transformer disk size: {bf16_size:.2f} GiB ({bf16_dir})")
-    print(f"[C] Disk reduction: {reduction:.1f}%  (FP8 transformer is {fp8_size / bf16_size:.0%} of BF16)")
-    if reduction < 30:
-        print("[C] WARN — FP8 should typically reduce disk by ~40-50%; <30% suggests partial quantization.")
+    print(f"[C] Disk reduction: {reduction:.1f}%  ({label} transformer is {quant_size / bf16_size:.0%} of BF16)")
+    if reduction < min_reduction:
+        print(
+            f"[C] WARN — {label} should typically reduce disk by "
+            f"{'~70-75' if quant_algo == 'NVFP4' else '~40-50'}%; "
+            f"<{min_reduction}% suggests partial quantization."
+        )
     return 0
 
 
@@ -214,9 +254,10 @@ def main() -> None:
     print(f"Checking: {out_root}\n")
 
     fail = 0
-    fail |= _check_config(transformer_dir)
-    fail |= _check_safetensors(transformer_dir)
-    _check_size_vs_baseline(transformer_dir, args.baseline)
+    config_status, quant_algo = _check_config(transformer_dir)
+    fail |= config_status
+    fail |= _check_safetensors(transformer_dir, quant_algo)
+    _check_size_vs_baseline(transformer_dir, args.baseline, quant_algo)
 
     print()
     if fail == 0:
