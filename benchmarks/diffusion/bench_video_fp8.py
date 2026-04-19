@@ -10,7 +10,7 @@ Target: 1×H100 80GB. Wan2.2 uses the TI2V-5B dense checkpoint (fits in 80GB
 BF16); for A14B MoE you need 2×H100 + TP=2 or CPU offload.
 
 Deps:
-    pip install lpips scikit-image
+    pip install lpips scikit-image pynvml
 
 Usage:
     python benchmarks/diffusion/bench_video_fp8.py              # both models
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import threading
 import time
 
 import numpy as np
@@ -85,29 +86,65 @@ def _extract_video(outputs) -> np.ndarray:
     return np.asarray(frames).astype(np.float32) / 255.0
 
 
+def _nvml_used_gib() -> float:
+    """Process-wide GPU-0 used memory in GiB. Captures the worker subprocess too."""
+    import pynvml
+
+    pynvml.nvmlInit()
+    try:
+        h = pynvml.nvmlDeviceGetHandleByIndex(0)
+        return pynvml.nvmlDeviceGetMemoryInfo(h).used / (1024**3)
+    finally:
+        pynvml.nvmlShutdown()
+
+
+class _PeakPoller:
+    """Polls process-wide NVML 'used' memory every 100ms, tracks peak."""
+
+    def __init__(self, interval_s: float = 0.1) -> None:
+        self.interval_s = interval_s
+        self.peak = 0.0
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def __enter__(self) -> _PeakPoller:
+        def loop() -> None:
+            while not self._stop.is_set():
+                self.peak = max(self.peak, _nvml_used_gib())
+                self._stop.wait(self.interval_s)
+
+        self._thread = threading.Thread(target=loop, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+
+
 def run(model: str, quantization: str | None, kwargs: dict) -> tuple[float, float, np.ndarray]:
-    """One (model, precision) pair: warmup + timed run. Returns (peak_gib, seconds, video)."""
+    """One (model, precision) pair: warmup + timed run. Returns (peak_gib, seconds, video).
+
+    Uses integer `seed=` via sampling params (pickles to the worker subprocess correctly —
+    `torch.Generator` handles do not propagate across processes). Peak VRAM is captured via
+    pynvml polling so the worker's memory counts.
+    """
     omni_kw: dict = {"model": model}
     if quantization:
         omni_kw["quantization"] = quantization
     omni = Omni(**omni_kw)
     try:
         # warmup
-        omni.generate(
-            PROMPT,
-            OmniDiffusionSamplingParams(**kwargs, generator=torch.Generator("cuda").manual_seed(0)),
-        )
+        omni.generate(PROMPT, OmniDiffusionSamplingParams(**kwargs, seed=0))
         torch.cuda.synchronize()
-        torch.cuda.reset_peak_memory_stats()
 
-        t0 = time.perf_counter()
-        outputs = omni.generate(
-            PROMPT,
-            OmniDiffusionSamplingParams(**kwargs, generator=torch.Generator("cuda").manual_seed(SEED)),
-        )
-        torch.cuda.synchronize()
-        elapsed = time.perf_counter() - t0
-        peak = torch.cuda.max_memory_allocated() / (1024**3)
+        with _PeakPoller() as poll:
+            t0 = time.perf_counter()
+            outputs = omni.generate(PROMPT, OmniDiffusionSamplingParams(**kwargs, seed=SEED))
+            torch.cuda.synchronize()
+            elapsed = time.perf_counter() - t0
+        peak = poll.peak
         video = _extract_video(outputs)
         return peak, elapsed, video
     finally:
@@ -165,8 +202,8 @@ def main() -> None:
             flush=True,
         )
 
-        mem_red = 1 - mem_fp8 / mem_bf16
-        speedup = 1 - t_fp8 / t_bf16
+        mem_red = (1 - mem_fp8 / mem_bf16) if mem_bf16 > 0 else 0.0
+        speedup = (1 - t_fp8 / t_bf16) if t_bf16 > 0 else 0.0
         rows.append(
             f"| {c['id']} | {c['task']} "
             f"| {mem_bf16:.2f} GiB | {mem_fp8:.2f} GiB | {mem_red:.0%} "
