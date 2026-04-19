@@ -79,8 +79,25 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable FP8 attention K/V/softmax quantizers. Off by default — empirically degrades HV-1.5 video output.",
     )
+    p.add_argument(
+        "--weight-block-size",
+        type=str,
+        default=None,
+        help="Per-block weight quantization as 'M,N' (e.g. '128,128' for 128x128 tiles). "
+        "Default: per-tensor (one scale per linear). Block-wise typically gives tighter quality at "
+        "negligible memory cost. Static FP8 is exempt from upstream vLLM's online block-wise gate.",
+    )
     p.add_argument("--overwrite", action="store_true", help="Replace an existing output directory.")
     return p
+
+
+def _parse_block_size(spec: str | None) -> list[int] | None:
+    if spec is None:
+        return None
+    parts = [int(x) for x in spec.split(",") if x.strip()]
+    if len(parts) != 2:
+        raise SystemExit(f"--weight-block-size must be 'M,N' (2 ints), got {spec!r}")
+    return parts
 
 
 def _require_modelopt() -> Any:
@@ -250,16 +267,22 @@ def _force_export_quantized_weights(backbone: torch.nn.Module, dtype: torch.dtyp
     return exported
 
 
-def _hv15_quant_config_block() -> dict:
+def _hv15_quant_config_block(weight_block_size: list[int] | None = None) -> dict:
     """Mirror ModelOpt FP8 metadata expected by vllm-omni's adapter (#2913).
 
-    Same shape as the HunyuanImage-3 author's _hunyuan_quant_config().
+    Same shape as the HunyuanImage-3 author's _hunyuan_quant_config(). When
+    `weight_block_size` is given, advertise block-wise weight quantization in
+    the saved metadata (so consumers know to expect multi-element scale tensors).
     """
+    weights_cfg: dict = {"dynamic": False, "num_bits": 8, "type": "float"}
+    if weight_block_size is not None:
+        weights_cfg["strategy"] = "block"
+        weights_cfg["block_structure"] = f"{weight_block_size[0]}x{weight_block_size[1]}"
     return {
         "config_groups": {
             "group_0": {
                 "input_activations": {"dynamic": False, "num_bits": 8, "type": "float"},
-                "weights": {"dynamic": False, "num_bits": 8, "type": "float"},
+                "weights": weights_cfg,
                 "targets": ["Linear"],
             }
         },
@@ -284,14 +307,14 @@ def _hv15_quant_config_block() -> dict:
     }
 
 
-def _patch_quant_config(output_dir: Path) -> None:
+def _patch_quant_config(output_dir: Path, weight_block_size: list[int] | None = None) -> None:
     """Inject quant_algo: FP8 + config_groups into transformer/config.json so
     vllm-omni's adapter (#2913) recognises the checkpoint as ModelOpt FP8."""
     cfg_path = output_dir / "transformer" / "config.json"
     with cfg_path.open(encoding="utf-8") as f:
         cfg = json.load(f)
 
-    new_qc = _hv15_quant_config_block()
+    new_qc = _hv15_quant_config_block(weight_block_size=weight_block_size)
     existing = cfg.get("quantization_config")
     if isinstance(existing, dict):
         producer = existing.get("producer")
@@ -349,19 +372,35 @@ def main() -> None:
     prompts = _build_prompts(args)
 
     print("Quantization plan:")
-    print(f"  input:        {args.model}")
-    print(f"  output:       {output_dir}")
-    print(f"  dtype:        {dtype}")
-    print(f"  height/width: {args.height}x{args.width}")
-    print(f"  num_frames:   {args.num_frames}")
-    print(f"  calib_size:   {len(prompts)}")
-    print(f"  calib_steps:  {args.calib_steps}")
-    print(f"  quantize_mha: {args.quantize_mha}")
+    weight_block_size = _parse_block_size(args.weight_block_size)
+
+    print(f"  input:           {args.model}")
+    print(f"  output:          {output_dir}")
+    print(f"  dtype:           {dtype}")
+    print(f"  height/width:    {args.height}x{args.width}")
+    print(f"  num_frames:      {args.num_frames}")
+    print(f"  calib_size:      {len(prompts)}")
+    print(f"  calib_steps:     {args.calib_steps}")
+    print(f"  quantize_mha:    {args.quantize_mha}")
+    print(
+        f"  weight strategy: {'block-wise ' + str(weight_block_size) if weight_block_size else 'per-tensor (default)'}"
+    )
 
     pipe = _load_pipeline(model_path, dtype)
     backbone = pipe.transformer
 
     quant_config = copy.deepcopy(mtq.FP8_DEFAULT_CFG)
+    if weight_block_size is not None:
+        # Switch from per-tensor (default) to block-wise weight quantization.
+        # ModelOpt's wildcard "*weight_quantizer" matches every linear's weight quantizer.
+        quant_config["quant_cfg"]["*weight_quantizer"] = {
+            "num_bits": (4, 3),  # E4M3 (FP8 weights, same as default)
+            "block_sizes": {-1: weight_block_size[1], -2: weight_block_size[0]},
+        }
+        print(
+            f"  -> overriding weight quantizer with block_sizes={weight_block_size} "
+            f"({weight_block_size[0]}x{weight_block_size[1]} tiles)"
+        )
 
     forward_loop = _build_forward_loop(pipe, args, prompts)
     quantized = mtq.quantize(backbone, quant_config, forward_loop)
@@ -384,7 +423,7 @@ def main() -> None:
 
     print("\nSaving pipeline with FP8 transformer...")
     _save_pipeline_with_fp8_transformer(pipe, model_path, output_dir)
-    _patch_quant_config(output_dir)
+    _patch_quant_config(output_dir, weight_block_size=weight_block_size)
     print(f"Saved to: {output_dir}")
     _summarize_export(output_dir)
 
