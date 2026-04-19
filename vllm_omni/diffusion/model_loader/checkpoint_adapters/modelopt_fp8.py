@@ -106,12 +106,17 @@ class ModelOptFp8CheckpointAdapter:
                 orig_to_new_substr[f".{shard_name}."] = f".{packed_name}."
                 orig_to_new_prefix[f"{shard_name}."] = f"{packed_name}."
 
-        # Let models extend the remap with arbitrary diffusers→vllm-omni
-        # substring translations (e.g. Wan2.2's `.ffn.net.0.` → `.ffn.net_0.`).
-        model_mapper = getattr(model, "hf_to_vllm_mapper", None)
-        if model_mapper is not None:
-            orig_to_new_substr.update(getattr(model_mapper, "orig_to_new_substr", None) or {})
-            orig_to_new_prefix.update(getattr(model_mapper, "orig_to_new_prefix", None) or {})
+        # Collect `hf_to_vllm_mapper` from `model` AND any submodule that defines one.
+        # The adapter may be called with a whole Pipeline; its transformer submodule
+        # (e.g. WanTransformer3DModel) is where the model-specific mapper lives.
+        collected: set[int] = set()
+        for m in (model, *(sm for _, sm in model.named_modules())):
+            mp = getattr(m, "hf_to_vllm_mapper", None)
+            if mp is None or id(mp) in collected:
+                continue
+            collected.add(id(mp))
+            orig_to_new_substr.update(getattr(mp, "orig_to_new_substr", None) or {})
+            orig_to_new_prefix.update(getattr(mp, "orig_to_new_prefix", None) or {})
 
         return WeightsMapper(
             orig_to_new_substr=orig_to_new_substr,
