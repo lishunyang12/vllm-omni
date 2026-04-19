@@ -958,7 +958,10 @@ class TestBaseConfigInheritance:
         assert deploy.stages[0].gpu_memory_utilization == 0.9
         assert deploy.connectors is not None
         assert "connector_of_shared_memory" in deploy.connectors
-        assert deploy.async_chunk is True
+        # CI overlay explicitly sets async_chunk: False (see
+        # tests/utils.py::_CI_OVERLAYS and PR #2383 discussion). Overlay
+        # bool overrides base even when the base yaml has async_chunk: true.
+        assert deploy.async_chunk is False
 
     def test_ci_sampling_merge(self):
         from tests.utils import get_deploy_config_path

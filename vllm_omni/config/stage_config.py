@@ -39,15 +39,18 @@ def build_stage_runtime_overrides(
 ) -> dict[str, Any]:
     """Build per-stage runtime overrides from global and ``stage_<id>_*`` kwargs.
 
-    ``internal_keys`` defaults to the set derived from ``OrchestratorArgs``
-    (via ``arg_utils.internal_blacklist_keys``) so that orchestrator
-    fields are never forwarded as per-stage engine args. Callers can pass an
-    explicit set for tests or specialized flows.
+    ``internal_keys`` defaults to the union of
+    ``arg_utils.internal_blacklist_keys()`` and ``arg_utils.SHARED_FIELDS``
+    so that neither orchestrator-only fields nor shared-pipeline fields
+    (``model`` / ``stage_configs_path`` / ``log_stats`` / ``stage_id``) leak
+    into a stage's per-stage runtime overrides — the orchestrator sets those
+    uniformly for every stage, they are not per-stage knobs. Callers can
+    pass an explicit set for tests or specialized flows.
     """
     if internal_keys is None:
-        from vllm_omni.engine.arg_utils import internal_blacklist_keys
+        from vllm_omni.engine.arg_utils import SHARED_FIELDS, internal_blacklist_keys
 
-        internal_keys = internal_blacklist_keys()
+        internal_keys = internal_blacklist_keys() | SHARED_FIELDS
 
     result: dict[str, Any] = {}
 
