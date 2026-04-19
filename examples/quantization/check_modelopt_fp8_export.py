@@ -61,47 +61,62 @@ def _check_config(transformer_dir: Path) -> int:
     return 0
 
 
-def _check_safetensors(transformer_dir: Path) -> int:
-    """Returns 0 on pass, 1 on fail. Counts dtypes across all *.safetensors."""
-    try:
-        from safetensors import safe_open
-    except ImportError:
-        print("[B] SKIP — safetensors not installed.")
-        return 0
+def _read_safetensors_header(path: Path) -> dict:
+    """Read the JSON header of a safetensors file. Bypass-safe — doesn't materialize tensors.
 
+    Returns {tensor_name: {'dtype': 'F8_E4M3', 'shape': [...], 'data_offsets': [...]}}.
+    Header dtype strings: F8_E4M3, F8_E5M2, BF16, F16, F32, F64, I8, I16, I32, I64, BOOL, U8, ...
+    """
+    import struct
+
+    with open(path, "rb") as f:
+        header_len = struct.unpack("<Q", f.read(8))[0]
+        header = json.loads(f.read(header_len))
+    header.pop("__metadata__", None)
+    return header
+
+
+def _check_safetensors(transformer_dir: Path) -> int:
+    """Returns 0 on pass, 1 on fail. Reads on-disk dtype from the safetensors header."""
     files = sorted(transformer_dir.glob("*.safetensors"))
     if not files:
         print(f"[FAIL] No *.safetensors in {transformer_dir}.")
         return 1
 
-    counts: Counter[str] = Counter()
+    header_dtype_counts: Counter[str] = Counter()
     sample_fp8_keys: list[str] = []
     sample_scale_keys: list[str] = []
     for f in files:
-        with safe_open(f, framework="pt", device="cpu") as h:
-            for k in h.keys():
-                t = h.get_tensor(k)
-                dtype = str(t.dtype)
-                counts[dtype] += 1
-                if "float8" in dtype and len(sample_fp8_keys) < 5:
-                    sample_fp8_keys.append(k)
-                if k.endswith(("_scale", ".weight_scale", ".input_scale")) and len(sample_scale_keys) < 5:
-                    sample_scale_keys.append(k)
+        try:
+            header = _read_safetensors_header(f)
+        except Exception as exc:
+            print(f"[B] WARN — could not parse header of {f}: {exc}")
+            continue
+        for k, info in header.items():
+            dtype = info.get("dtype", "?")
+            header_dtype_counts[dtype] += 1
+            if dtype.startswith("F8") and len(sample_fp8_keys) < 5:
+                sample_fp8_keys.append(k)
+            if k.endswith(("_scale", ".weight_scale", ".input_scale", "_scale_inv")) and len(sample_scale_keys) < 5:
+                sample_scale_keys.append(k)
 
-    print(f"\n[B] Tensor dtype counts across {len(files)} safetensors file(s):")
-    for dtype, count in sorted(counts.items(), key=lambda kv: -kv[1]):
-        print(f"    {dtype:30s} {count:>6d}")
+    print(f"\n[B] On-disk dtype counts across {len(files)} safetensors file(s) (from header, not get_tensor):")
+    for dtype, count in sorted(header_dtype_counts.items(), key=lambda kv: -kv[1]):
+        marker = "  <-- FP8" if dtype.startswith("F8") else ""
+        print(f"    {dtype:10s} {count:>6d}{marker}")
 
-    fp8_count = sum(c for d, c in counts.items() if "float8" in d)
+    fp8_count = sum(c for d, c in header_dtype_counts.items() if d.startswith("F8"))
     if fp8_count == 0:
-        print("[B] FAIL — no FP8 tensors found. Calibration likely did not actually quantize the weights.")
+        print("[B] FAIL — no FP8 tensors on disk. Calibration likely did not actually quantize the weights.")
         return 1
 
-    print(f"[B] PASS — {fp8_count} FP8 tensors present.")
+    print(f"[B] PASS — {fp8_count} FP8 tensors stored on disk.")
     if sample_fp8_keys:
-        print(f"    sample FP8 tensors: {sample_fp8_keys[:3]}")
+        print(f"    sample FP8 tensors:   {sample_fp8_keys[:3]}")
     if sample_scale_keys:
         print(f"    sample scale tensors: {sample_scale_keys[:3]}")
+    print("    (Note: torch's get_tensor() may return these as bf16 views on some versions —")
+    print("     irrelevant; vLLM's loader uses native FP8 ops.)")
     return 0
 
 
