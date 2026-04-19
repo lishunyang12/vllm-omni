@@ -13,9 +13,11 @@ Deps:
     pip install lpips scikit-image pynvml imageio[ffmpeg]
 
 Usage:
-    python benchmarks/diffusion/bench_video_fp8.py                           # both models
-    python benchmarks/diffusion/bench_video_fp8.py --only hv15               # HV-1.5 only
-    python benchmarks/diffusion/bench_video_fp8.py --output-dir ./my_videos  # custom dir
+    python benchmarks/diffusion/bench_video_fp8.py                           # both models, defaults
+    python benchmarks/diffusion/bench_video_fp8.py --only wan22              # one model
+    python benchmarks/diffusion/bench_video_fp8.py --only wan22 \\
+        --prompt "An astronaut riding a horse on Mars" \\
+        --num-frames 121 --steps 40 --tag long
 """
 
 from __future__ import annotations
@@ -150,7 +152,7 @@ class _PeakPoller:
             self._thread.join(timeout=2.0)
 
 
-def run(model: str, quantization: str | None, kwargs: dict) -> tuple[float, float, np.ndarray]:
+def run(model: str, quantization: str | None, kwargs: dict, prompt: str = PROMPT) -> tuple[float, float, np.ndarray]:
     """One (model, precision) pair: warmup + timed run. Returns (peak_gib, seconds, video).
 
     Uses integer `seed=` via sampling params (pickles to the worker subprocess correctly —
@@ -163,12 +165,12 @@ def run(model: str, quantization: str | None, kwargs: dict) -> tuple[float, floa
     omni = Omni(**omni_kw)
     try:
         # warmup
-        omni.generate(PROMPT, OmniDiffusionSamplingParams(**kwargs, seed=0))
+        omni.generate(prompt, OmniDiffusionSamplingParams(**kwargs, seed=0))
         torch.cuda.synchronize()
 
         with _PeakPoller() as poll:
             t0 = time.perf_counter()
-            outputs = omni.generate(PROMPT, OmniDiffusionSamplingParams(**kwargs, seed=SEED))
+            outputs = omni.generate(prompt, OmniDiffusionSamplingParams(**kwargs, seed=SEED))
             torch.cuda.synchronize()
             elapsed = time.perf_counter() - t0
         peak = poll.peak
@@ -220,21 +222,38 @@ def main() -> None:
     p.add_argument("--only", choices=list(CASES), default=None)
     p.add_argument("--output-dir", default="./bench_output", help="Where to save MP4s.")
     p.add_argument("--fps", type=int, default=24)
+    p.add_argument("--prompt", type=str, default=None, help="Override the default prompt.")
+    p.add_argument("--num-frames", type=int, default=None, help="Override num_frames.")
+    p.add_argument("--steps", type=int, default=None, help="Override num_inference_steps.")
+    p.add_argument("--tag", type=str, default="", help="Suffix for output filenames (e.g. 'long').")
     args = p.parse_args()
+
+    prompt = args.prompt or PROMPT
+    print(f"Prompt: {prompt}", flush=True)
 
     keys = [args.only] if args.only else list(CASES)
     rows: list[str] = []
     for case_key in keys:
-        c = CASES[case_key]
+        c = dict(CASES[case_key])  # shallow copy so we don't mutate the module-level dict
+        c["kwargs"] = dict(c["kwargs"])
+        if args.num_frames is not None:
+            c["kwargs"]["num_frames"] = args.num_frames
+        if args.steps is not None:
+            c["kwargs"]["num_inference_steps"] = args.steps
+        c["task"] = (
+            f"T2V {c['kwargs']['height']}x{c['kwargs']['width']}, "
+            f"{c['kwargs']['num_frames']} frames, {c['kwargs']['num_inference_steps']} steps"
+        )
+        suffix = f"_{args.tag}" if args.tag else ""
         print(f"\n=== {c['id']} BF16 ===", flush=True)
-        mem_bf16, t_bf16, v_bf16 = run(c["model"], None, c["kwargs"])
-        bf16_path = os.path.join(args.output_dir, f"{case_key}_bf16_seed{SEED}.mp4")
+        mem_bf16, t_bf16, v_bf16 = run(c["model"], None, c["kwargs"], prompt=prompt)
+        bf16_path = os.path.join(args.output_dir, f"{case_key}_bf16_seed{SEED}{suffix}.mp4")
         save_video(v_bf16, bf16_path, fps=args.fps)
         print(f"  peak {mem_bf16:.2f} GiB, {t_bf16:.2f}s -> {bf16_path}", flush=True)
 
         print(f"\n=== {c['id']} FP8 ===", flush=True)
-        mem_fp8, t_fp8, v_fp8 = run(c["model"], "fp8", c["kwargs"])
-        fp8_path = os.path.join(args.output_dir, f"{case_key}_fp8_seed{SEED}.mp4")
+        mem_fp8, t_fp8, v_fp8 = run(c["model"], "fp8", c["kwargs"], prompt=prompt)
+        fp8_path = os.path.join(args.output_dir, f"{case_key}_fp8_seed{SEED}{suffix}.mp4")
         save_video(v_fp8, fp8_path, fps=args.fps)
         print(f"  peak {mem_fp8:.2f} GiB, {t_fp8:.2f}s -> {fp8_path}", flush=True)
 
