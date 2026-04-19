@@ -641,12 +641,27 @@ class OmniDiffusionConfig:
             raise ValueError("max_cpu_loras must be >= 1 for diffusion LoRA")
 
     def _propagate_quantization_from_tf_config(self, tf_config: "TransformerConfig") -> None:
-        if self.quantization_config is None and tf_config.quant_config is not None:
+        if tf_config.quant_config is None:
+            return
+
+        is_checkpoint_fp8 = bool(getattr(tf_config.quant_config, "is_checkpoint_fp8_serialized", False))
+        should_use_checkpoint_config = self.quantization_config is None or (
+            is_checkpoint_fp8 and self._is_generic_fp8_quant_config(self.quantization_config)
+        )
+        if should_use_checkpoint_config:
             self.quantization_config = tf_config.quant_config
             logger.info(
                 "Auto-detected quantization '%s' from model config",
                 tf_config.quant_method,
             )
+
+    @staticmethod
+    def _is_generic_fp8_quant_config(quant_config: object) -> bool:
+        if isinstance(quant_config, str):
+            return quant_config.lower() == "fp8"
+        if hasattr(quant_config, "get_name"):
+            return quant_config.get_name() == "fp8"
+        return False
 
     def set_tf_model_config(self, tf_config: "TransformerConfig") -> None:
         """Assign `tf_model_config` and propagate quantization if detected.

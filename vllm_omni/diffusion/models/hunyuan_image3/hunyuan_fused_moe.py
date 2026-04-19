@@ -32,7 +32,7 @@ class HunyuanFusedMoEDefault(SharedFusedMoE):
         self._init_hook_handle = self.register_forward_pre_hook(self._initialize_kernel_hook, with_kwargs=True)
 
     def _initialize_kernel_hook(self, module: Any, args: Any, kwargs: Any) -> None:
-        if self.quant_method:
+        if self.quant_method and getattr(self.quant_method, "moe_kernel", None) is None:
             self.quant_method.process_weights_after_loading(self)
         self._init_hook_handle.remove()
 
