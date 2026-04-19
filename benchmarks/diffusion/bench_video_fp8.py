@@ -22,6 +22,11 @@ Usage:
     python benchmarks/diffusion/bench_video_fp8.py --only hv15 \\
         --presets S1,S2,S3,S4 --frames-list 33,121 --steps 30 --tag sweep
 
+    # Winning preset + block-wise FP8 (per-tile scales, closer to BF16 quality).
+    # Block size [128, 128] is the standard; try [1, 128] for per-output-row precision.
+    python benchmarks/diffusion/bench_video_fp8.py --only hv15 \\
+        --presets S4 --weight-block-size 128,128 --num-frames 33 --tag bs128
+
     # Custom prompt + long-only run
     python benchmarks/diffusion/bench_video_fp8.py --only hv15 \\
         --prompt "An astronaut riding a horse on Mars" \\
@@ -160,8 +165,16 @@ class _PeakPoller:
             self._thread.join(timeout=2.0)
 
 
-def run(model: str, quantization: str | None, kwargs: dict, prompt: str = PROMPT) -> tuple[float, float, np.ndarray]:
+def run(
+    model: str,
+    quantization: str | dict | None,
+    kwargs: dict,
+    prompt: str = PROMPT,
+) -> tuple[float, float, np.ndarray]:
     """One (model, precision) pair: warmup + timed run. Returns (peak_gib, seconds, video).
+
+    `quantization` may be None (BF16), a string like "fp8", or a dict like
+    `{"method": "fp8", "weight_block_size": [128, 128]}` for finer-grained FP8 config.
 
     Uses integer `seed=` via sampling params (pickles to the worker subprocess correctly —
     `torch.Generator` handles do not propagate across processes). Peak VRAM is captured via
@@ -246,7 +259,22 @@ def main() -> None:
         default=None,
         help="Comma-separated list of num_frames to sweep (e.g. '33,121'). Overrides --num-frames.",
     )
+    p.add_argument(
+        "--weight-block-size",
+        type=str,
+        default=None,
+        help="FP8 weight quantization block size as 'M,N' (e.g. '128,128' for block-wise scales). "
+        "Default: per-tensor (one scale per linear). Requires activation_scheme=dynamic (default).",
+    )
     args = p.parse_args()
+
+    weight_block_size: list[int] | None = None
+    if args.weight_block_size:
+        parts = [int(x) for x in args.weight_block_size.split(",") if x.strip()]
+        if len(parts) != 2:
+            raise SystemExit(f"--weight-block-size must be 'M,N' (2 ints), got {args.weight_block_size!r}")
+        weight_block_size = parts
+        print(f"FP8 weight_block_size: {weight_block_size}", flush=True)
 
     prompt = args.prompt or PROMPT
     print(f"Prompt: {prompt}", flush=True)
@@ -297,9 +325,18 @@ def main() -> None:
                     continue
                 print(f"\n=== {base['id']} FP8 preset={preset} frames={frames} ===", flush=True)
                 os.environ["HV15_FP8_PRESET"] = preset
-                mem_fp8, t_fp8, v_fp8 = run(base["model"], "fp8", kwargs_f, prompt=prompt)
+
+                # Per-tensor (string "fp8") vs block-wise (dict with weight_block_size).
+                quant_spec: str | dict = "fp8"
+                bs_tag = ""
+                if weight_block_size is not None:
+                    quant_spec = {"method": "fp8", "weight_block_size": weight_block_size}
+                    bs_tag = f"_bs{weight_block_size[0]}x{weight_block_size[1]}"
+
+                mem_fp8, t_fp8, v_fp8 = run(base["model"], quant_spec, kwargs_f, prompt=prompt)
                 fp8_path = os.path.join(
-                    args.output_dir, f"{case_key}_fp8_{preset}_seed{SEED}{frame_suffix}{suffix_tag}.mp4"
+                    args.output_dir,
+                    f"{case_key}_fp8_{preset}{bs_tag}_seed{SEED}{frame_suffix}{suffix_tag}.mp4",
                 )
                 save_video(v_fp8, fp8_path, fps=args.fps)
                 print(f"  peak {mem_fp8:.2f} GiB, {t_fp8:.2f}s -> {fp8_path}", flush=True)
@@ -318,8 +355,11 @@ def main() -> None:
 
                 mem_red = (1 - mem_fp8 / mem_bf16) if mem_bf16 > 0 else 0.0
                 speedup = (1 - t_fp8 / t_bf16) if t_bf16 > 0 else 0.0
+                preset_label = (
+                    f"{preset}+bs{weight_block_size[0]}x{weight_block_size[1]}" if weight_block_size else preset
+                )
                 row = (
-                    f"| {base['id']} | {task} | **{preset}** "
+                    f"| {base['id']} | {task} | **{preset_label}** "
                     f"| {mem_bf16:.2f} GiB | {mem_fp8:.2f} GiB | {mem_red:.0%} "
                     f"| {t_bf16:.2f}s | {t_fp8:.2f}s | {speedup:.0%} "
                     f"| {quality_cols} |"
