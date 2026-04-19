@@ -183,6 +183,19 @@ class ModelOptFp8CheckpointAdapter:
         state.scale_tensors[name] = tensor
         if target_name is None:
             state.skipped_scales += 1
+            # Diagnostic: log first few skipped scales with a sample of loadable keys that
+            # contain a similar substring so we can tell if the hf_to_vllm_mapper is even loaded.
+            if state.skipped_scales <= 3:
+                hint_substr = name.rsplit(".", 2)[0] if "." in name else name
+                similar = [k for k in self._loadable_tensors if k.endswith(name.split(".")[-1])][:3]
+                logger.warning(
+                    "ModelOpt FP8 adapter: skipping scale %r (no target). "
+                    "Similar loadable params by suffix: %r. "
+                    "Hint: the checkpoint key uses a name that doesn't match any model parameter. "
+                    "Check hf_to_vllm_mapper on the model class.",
+                    name,
+                    similar,
+                )
         else:
             yield name, tensor
         yield from self._flush_pending_weights(name, state)
