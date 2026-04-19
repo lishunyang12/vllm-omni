@@ -672,18 +672,26 @@ stages:
 
 
 class TestPipelineDiscovery:
-    """Tests for auto-discovery of pipelines from models/*/pipeline.py."""
+    """Tests for the central pipeline registry (``pipeline_registry._VLLM_OMNI_PIPELINES``)."""
 
-    def test_discover_populates_registry_with_known_models(self):
-        """``_discover_all_pipelines`` imports every pipeline.py so the
-        registry is populated with the built-in models after one call."""
-        from vllm_omni.config.stage_config import _discover_all_pipelines
-
-        _discover_all_pipelines()
-        # These models have a pipeline.py in-tree and must be registered.
+    def test_registry_has_known_models(self):
+        """Built-in pipelines are lazy-loaded from the central declaration
+        on first access; no eager import or discovery walk needed."""
+        # ``in`` triggers the lazy-map lookup without forcing a load.
         assert "qwen2_5_omni" in _PIPELINE_REGISTRY
         assert "qwen3_omni_moe" in _PIPELINE_REGISTRY
         assert "qwen3_tts" in _PIPELINE_REGISTRY
+
+    def test_registry_loads_pipeline_on_getitem(self):
+        """Looking up a registered model_type returns the matching PipelineConfig."""
+        pipeline = _PIPELINE_REGISTRY["qwen3_omni_moe"]
+        assert pipeline.model_type == "qwen3_omni_moe"
+        assert len(pipeline.stages) == 3  # thinker + talker + code2wav
+
+    def test_registry_returns_none_for_unknown(self):
+        """Unknown model_types aren't found; ``get()`` returns None."""
+        assert "definitely_not_a_real_model" not in _PIPELINE_REGISTRY
+        assert _PIPELINE_REGISTRY.get("definitely_not_a_real_model") is None
 
     def test_pipeline_config_supports_hf_architectures(self):
         """PipelineConfig accepts hf_architectures for HF-arch fallback
