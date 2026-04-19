@@ -392,12 +392,16 @@ def main() -> None:
     print(
         "  python examples/offline_inference/text_to_video/text_to_video.py \\\n"
         f"    --model {output_dir} \\\n"
-        "    --stage-configs-path vllm_omni/model_executor/stage_configs/hunyuan_video_15_dit_fp8.yaml \\\n"
+        "    --quantization fp8 \\\n"
         "    --prompt 'A dog running across a field of golden wheat.' \\\n"
         f"    --height {args.height} --width {args.width} --num-frames {args.num_frames} \\\n"
         "    --num-inference-steps 30 --guidance-scale 6.0 --seed 42 \\\n"
         "    --output outputs/hv15_modelopt_fp8.mp4 \\\n"
         "    --enforce-eager"
+    )
+    print(
+        "\n  (--quantization fp8 is auto-upgraded to ModelOpt FP8 at runtime because the "
+        "checkpoint's config.json has modelopt metadata.)"
     )
 
 
