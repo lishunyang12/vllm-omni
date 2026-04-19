@@ -23,7 +23,7 @@ from vllm_omni.config.stage_config import (
     register_pipeline,
     strip_parent_engine_args,
 )
-from vllm_omni.engine.arg_utils import internal_blacklist_keys
+from vllm_omni.engine.arg_utils import SHARED_FIELDS, internal_blacklist_keys
 
 
 class TestStageType:
@@ -330,6 +330,9 @@ class TestStageResolutionHelpers:
     """Tests for shared stage override / filtering helpers."""
 
     def test_build_stage_runtime_overrides_ignores_other_stage_and_internal_keys(self):
+        # Pass the same filter set the function uses by default
+        # (orchestrator-only fields plus SHARED_FIELDS so ``model`` is
+        # treated as not-per-stage-overridable).
         overrides = build_stage_runtime_overrides(
             0,
             {
@@ -339,7 +342,7 @@ class TestStageResolutionHelpers:
                 "stage_0_model": "should_be_ignored",
                 "parallel_config": {"world_size": 2},
             },
-            internal_keys=internal_blacklist_keys(),
+            internal_keys=internal_blacklist_keys() | SHARED_FIELDS,
         )
 
         assert overrides["gpu_memory_utilization"] == 0.9
