@@ -328,7 +328,9 @@ def _save_pipeline_with_fp8_transformer(
     shutil.copytree(src, output_dir, ignore=shutil.ignore_patterns("transformer"))
 
     transformer_out = output_dir / "transformer"
-    with hide_quantizers_from_state_dict(pipe):
+    # `hide_quantizers_from_state_dict` walks named_modules(); pass the actual
+    # nn.Module (transformer), not the diffusers Pipeline wrapper.
+    with hide_quantizers_from_state_dict(pipe.transformer):
         pipe.transformer.save_pretrained(
             str(transformer_out),
             safe_serialization=True,
