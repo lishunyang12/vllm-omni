@@ -17,13 +17,8 @@ def _patch_nvfp4_apply_for_nd_input() -> None:
 
     vLLM's NVFP4 path was designed for LLMs, which flatten activations to 2D
     (batch*seq, hidden) before every Linear. Diffusion transformers pass 3-D
-    tensors (batch, seq, hidden) directly. The FlashInfer/CUTLASS FP4 GEMM
-    silently misinterprets the strided memory — producing pure noise output —
-    and the EMULATION backend crashes outright with
-    `ValueError: too many values to unpack (expected 2)`.
-
-    Wrap `.apply` to flatten leading dims, call the original, and restore the
-    original shape. Idempotent — safe to import multiple times per process.
+    tensors (batch, seq, hidden) directly. Wrap `.apply` to flatten leading
+    dims, call the original, and restore the original shape. Idempotent.
     """
     if getattr(ModelOptNvFp4LinearMethod, "_vllm_omni_nd_input_patched", False):
         return
@@ -45,15 +40,75 @@ def _patch_nvfp4_apply_for_nd_input() -> None:
 
     ModelOptNvFp4LinearMethod.apply = _nd_aware_apply
     ModelOptNvFp4LinearMethod._vllm_omni_nd_input_patched = True
+
+
+def _patch_nvfp4_process_weights_for_fused_qkv() -> None:
+    """Patch process_weights_after_loading to correctly fuse per-shard scales.
+
+    For a fused QKV Linear, ModelOpt calibration produces three different
+    per-shard `weight_scale_2` scalars (one per Q/K/V) and three per-group
+    `weight_scale` blocks. vLLM's original path does:
+
+        weight_global_scale = layer.weight_scale_2.max()
+
+    which KEEPS only the largest of the three scalars. The per-group
+    `weight_scale` for K/V was calibrated relative to their own smaller
+    `weight_scale_2`, so substituting Q's larger value at inference makes
+    K's and V's effective weights too large (often by 1.5-3x). For LLMs
+    where Q/K/V weight magnitudes are similar this is ~OK; for diffusion
+    transformers the magnitudes are more dispersed and the output becomes
+    noise.
+
+    Fix: before `.max()` collapses the per-shard vector, re-normalize each
+    shard's per-group `weight_scale` by `weight_scale_2[shard] / max`. That
+    bakes the per-shard information into the per-group scales, so the
+    subsequent `.max()` + matmul produces the correct effective per-group
+    scale for every shard.
+    """
+    if getattr(ModelOptNvFp4LinearMethod, "_vllm_omni_fused_scale_patched", False):
+        return
+
+    original_process = ModelOptNvFp4LinearMethod.process_weights_after_loading
+
+    def _fused_scale_aware_process(self, layer: nn.Module) -> None:
+        logical_widths = getattr(layer, "logical_widths", None)
+        weight_scale_2 = getattr(layer, "weight_scale_2", None)
+        weight_scale = getattr(layer, "weight_scale", None)
+        if (
+            logical_widths is not None
+            and len(logical_widths) > 1
+            and weight_scale_2 is not None
+            and weight_scale is not None
+            and weight_scale_2.numel() == len(logical_widths)
+        ):
+            ws2_fp32 = weight_scale_2.detach().to(torch.float32)
+            max_ws2 = ws2_fp32.max()
+            # Avoid divide-by-zero on pathological calibration.
+            if float(max_ws2) > 0:
+                ratios = (ws2_fp32 / max_ws2).clamp(max=1.0)
+                original_dtype = weight_scale.dtype
+                ws_fp32 = weight_scale.detach().to(torch.float32)
+                offset = 0
+                for ratio, width in zip(ratios.tolist(), logical_widths):
+                    if ratio < 1.0:
+                        ws_fp32[offset : offset + width] = ws_fp32[offset : offset + width] * ratio
+                    offset += width
+                weight_scale.data.copy_(ws_fp32.to(original_dtype))
+        return original_process(self, layer)
+
+    ModelOptNvFp4LinearMethod.process_weights_after_loading = _fused_scale_aware_process
+    ModelOptNvFp4LinearMethod._vllm_omni_fused_scale_patched = True
     logger.info_once(
-        "Patched ModelOptNvFp4LinearMethod.apply for N-D (batch, seq, hidden) "
-        "diffusion activations. Without this, vLLM's FlashInfer/CUTLASS FP4 "
-        "GEMM silently misinterprets 3-D input and emits noise."
+        "Patched ModelOptNvFp4LinearMethod.process_weights_after_loading to "
+        "absorb per-shard weight_scale_2 into per-group weight_scale before "
+        "the `.max()` reduction. Required when Q/K/V (or gate/up) scales "
+        "differ by more than a few percent — common in diffusion transformers."
     )
 
 
-# Apply the patch at import time — covers all workers that load this module.
+# Apply both patches at import time — covers all workers that load this module.
 _patch_nvfp4_apply_for_nd_input()
+_patch_nvfp4_process_weights_for_fused_qkv()
 
 # NVFP4 serialized checkpoints expose these auxiliary tensors per quantized Linear:
 #   .input_scale       -> F32 scalar (activation per-tensor scale)
