@@ -36,14 +36,45 @@ import torch
 from diffusers import DiffusionPipeline
 
 DEFAULT_PROMPTS = [
+    # Animals & motion
     "A dog running across a field of golden wheat.",
-    "An astronaut riding a horse across the surface of Mars, red dust swirling, cinematic wide shot.",
+    "A horse galloping along an empty beach at sunset, waves crashing behind.",
     "A hummingbird hovering in front of a vibrant red flower, slow motion, macro shot.",
-    "A crackling campfire at night under a starry sky, sparks rising into the dark.",
-    "An underwater shot of a coral reef with tropical fish swimming by, sun rays piercing the water.",
-    "A close-up of a blooming rose covered in morning dew, soft natural light.",
-    "A peaceful mountain village at dawn, mist rolling over the rooftops, cinematic establishing shot.",
+    "A pack of wolves running through a snowy forest, tracking shot.",
+    "A cheetah sprinting across the savanna at full speed, dust kicking up.",
+    # Portraits & people
+    "A close-up portrait of an old fisherman with weathered skin, smiling as sun lights his face.",
+    "A young ballerina spinning in a grand theater, stage lights, long dress billowing.",
     "A skateboarder doing a kickflip in an urban plaza, slow motion, golden hour lighting.",
+    "A chef tossing a pan of flaming vegetables in a professional kitchen, dramatic lighting.",
+    "A painter in their studio carefully adding brushstrokes to a large abstract canvas.",
+    # Natural scenes & weather
+    "A peaceful mountain village at dawn, mist rolling over the rooftops, cinematic establishing shot.",
+    "Timelapse of thunderclouds rolling over a prairie, lightning strikes in the distance.",
+    "An aurora borealis dancing above a frozen lake, stars reflected on the ice.",
+    "A cherry blossom orchard in full bloom with petals drifting in the breeze.",
+    "A dense rainforest canopy seen from above, mist rising between the trees.",
+    # Urban & architecture
+    "A bustling Tokyo street at night, neon signs reflecting in rain puddles, people walking.",
+    "A slow drone shot flying between skyscrapers in a modern city at golden hour.",
+    "An ancient stone castle on a cliff with fog swirling around its towers.",
+    "A cozy cafe interior in Paris, warm light, steam rising from coffee cups.",
+    "Aerial view of Venice canals at dusk, gondolas gliding beneath bridges.",
+    # Macro & texture
+    "A close-up of a blooming rose covered in morning dew, soft natural light.",
+    "Slow-motion macro of honey being drizzled onto a spoon, amber light.",
+    "Extreme close-up of ice crystals forming on a windowpane, warm indoor light behind.",
+    "A snake slithering through fallen leaves, scales catching sunlight, macro lens.",
+    # Water & fire
+    "An underwater shot of a coral reef with tropical fish swimming by, sun rays piercing the water.",
+    "A crackling campfire at night under a starry sky, sparks rising into the dark.",
+    "A majestic waterfall tumbling into a mist-filled canyon, rainbow in the spray.",
+    "Ocean waves crashing against dark volcanic rocks in slow motion, sea foam flying.",
+    # Sci-fi & fantasy
+    "An astronaut riding a horse across the surface of Mars, red dust swirling, cinematic wide shot.",
+    "A dragon flying over a misty mountain range at sunrise, cinematic epic shot.",
+    "A lone cyberpunk figure walking through a rain-soaked neon alley, steam rising.",
+    "A spaceship taking off from a remote jungle planet, engines roaring, birds scattering.",
 ]
 
 
@@ -56,8 +87,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--num-frames", type=int, default=49)
     p.add_argument("--guidance-scale", type=float, default=5.0)
-    p.add_argument("--calib-steps", type=int, default=10)
-    p.add_argument("--calib-size", type=int, default=8)
+    p.add_argument(
+        "--calib-steps",
+        type=int,
+        default=15,
+        help="Denoising steps per calibration prompt. 15 is a good quality/time tradeoff for NVFP4.",
+    )
+    p.add_argument(
+        "--calib-size",
+        type=int,
+        default=16,
+        help="How many prompts to calibrate with. 16+ recommended for NVFP4 to cover outlier activations.",
+    )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--prompt", action="append", default=[])
     p.add_argument(
