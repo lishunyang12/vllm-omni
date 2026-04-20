@@ -2,12 +2,58 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from collections.abc import Generator, Iterable
 
+import torch
 from torch import nn
 from vllm.logger import init_logger
+from vllm.model_executor.layers.quantization.modelopt import ModelOptNvFp4LinearMethod
 from vllm.model_executor.models.utils import WeightsMapper
 from vllm.model_executor.utils import get_packed_modules_mapping
 
 logger = init_logger(__name__)
+
+
+def _patch_nvfp4_apply_for_nd_input() -> None:
+    """Patch ModelOptNvFp4LinearMethod.apply to handle N-D activation tensors.
+
+    vLLM's NVFP4 path was designed for LLMs, which flatten activations to 2D
+    (batch*seq, hidden) before every Linear. Diffusion transformers pass 3-D
+    tensors (batch, seq, hidden) directly. The FlashInfer/CUTLASS FP4 GEMM
+    silently misinterprets the strided memory — producing pure noise output —
+    and the EMULATION backend crashes outright with
+    `ValueError: too many values to unpack (expected 2)`.
+
+    Wrap `.apply` to flatten leading dims, call the original, and restore the
+    original shape. Idempotent — safe to import multiple times per process.
+    """
+    if getattr(ModelOptNvFp4LinearMethod, "_vllm_omni_nd_input_patched", False):
+        return
+
+    original_apply = ModelOptNvFp4LinearMethod.apply
+
+    def _nd_aware_apply(
+        self,
+        layer: nn.Module,
+        x: torch.Tensor,
+        bias: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if x.dim() <= 2:
+            return original_apply(self, layer, x, bias)
+        leading = x.shape[:-1]
+        x_2d = x.reshape(-1, x.shape[-1])
+        out_2d = original_apply(self, layer, x_2d, bias)
+        return out_2d.reshape(*leading, out_2d.shape[-1])
+
+    ModelOptNvFp4LinearMethod.apply = _nd_aware_apply
+    ModelOptNvFp4LinearMethod._vllm_omni_nd_input_patched = True
+    logger.info_once(
+        "Patched ModelOptNvFp4LinearMethod.apply for N-D (batch, seq, hidden) "
+        "diffusion activations. Without this, vLLM's FlashInfer/CUTLASS FP4 "
+        "GEMM silently misinterprets 3-D input and emits noise."
+    )
+
+
+# Apply the patch at import time — covers all workers that load this module.
+_patch_nvfp4_apply_for_nd_input()
 
 # NVFP4 serialized checkpoints expose these auxiliary tensors per quantized Linear:
 #   .input_scale       -> F32 scalar (activation per-tensor scale)
