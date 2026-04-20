@@ -76,14 +76,27 @@ def _read_tensor(path: Path, name: str):
         return f.get_tensor(name)
 
 
-def _describe_scalar(t) -> str:
+def _describe_tensor(t) -> str:
     import torch  # local import: avoid requiring torch just to parse CLI
 
     if not isinstance(t, torch.Tensor):
         return str(t)
     if t.numel() == 1:
         return f"{t.item():.6g}"
-    return f"min={t.min().item():.6g} max={t.max().item():.6g} mean={t.float().mean().item():.6g}"
+    tf = t.float()
+    nonzero = int((t != 0).sum().item())
+    has_nan = bool(tf.isnan().any().item())
+    has_inf = bool(tf.isinf().any().item())
+    flags = []
+    if has_nan:
+        flags.append("NaN!")
+    if has_inf:
+        flags.append("Inf!")
+    flag_str = (" " + " ".join(flags)) if flags else ""
+    return (
+        f"min={tf.min().item():.4g} max={tf.max().item():.4g} "
+        f"mean={tf.mean().item():.4g} nonzero={nonzero}/{t.numel()}{flag_str}"
+    )
 
 
 def _inspect_shard(shard_index: dict[str, Path], full_name: str) -> None:
@@ -98,14 +111,15 @@ def _inspect_shard(shard_index: dict[str, Path], full_name: str) -> None:
     print(f"  {full_name}")
     print(f"    dtype={dtype}  shape={tuple(shape)}  file={path.name}")
 
-    # Materialize the tensor for scalar / small tensors; skip huge ones
+    # Always materialize scalars + scale tensors; skip huge weight blobs
+    is_scale = full_name.endswith(("input_scale", "weight_scale_2", "weight_scale"))
     total = 1
     for d in shape:
         total *= int(d) if d else 1
-    if total <= 4096 or full_name.endswith(("input_scale", "weight_scale_2")):
+    if total <= 4096 or is_scale:
         try:
             t = _read_tensor(path, full_name)
-            print(f"    value: {_describe_scalar(t)}")
+            print(f"    value: {_describe_tensor(t)}")
         except Exception as exc:  # pragma: no cover - diagnostic only
             print(f"    (could not materialize: {exc})")
 
