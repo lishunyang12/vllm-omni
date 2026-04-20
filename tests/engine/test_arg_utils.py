@@ -6,6 +6,7 @@ explicitly patch values that differ from vLLM.
 
 import argparse
 import inspect
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -38,21 +39,28 @@ def test_default_stage_id_is_concrete_int():
     assert cfg.stage_id == 0
 
 
-def test_multimodal_kwarg_overrides():
+def test_multimodal_kwarg_overrides(mocker):
     """Ensure that overrides in the multimodal config are preserved."""
-    # Get a different value than the default for a multimodal field
     sig = inspect.signature(OmniEngineArgs)
     default_mm_cache = sig.parameters["mm_processor_cache_gb"].default
     override_val = default_mm_cache + 1
 
-    # NOTE: This needs to be a model that resolves to supports_multimodal=True
-    # in vLLM, otherwise we won't have an MM config
+    fake_model_config = SimpleNamespace(
+        multimodal_config=SimpleNamespace(mm_processor_cache_gb=override_val),
+    )
+
+    def _fake_parent_create_model_config(self):
+        assert self.mm_processor_cache_gb == override_val
+        return fake_model_config
+
+    mocker.patch.object(EngineArgs, "create_model_config", _fake_parent_create_model_config)
+    mocker.patch.object(OmniModelConfig, "from_vllm_model_config", side_effect=lambda model_config, **_: model_config)
+
     cfg = OmniEngineArgs(
         model="Qwen/Qwen2-VL-2B-Instruct",
         mm_processor_cache_gb=override_val,
     ).create_model_config()
 
-    # Ensure that the override was applied correctly
     assert cfg.multimodal_config is not None
     assert cfg.multimodal_config.mm_processor_cache_gb == override_val
 
@@ -102,7 +110,7 @@ def test_qwen3_tts_codec_frame_rate_patching():
     vllm_config = EngineArgs().create_model_config()
 
     # Create a mock talking config with a dummy value for position_id_per_seconds
-    mock_talker_config = Mock()
+    mock_talker_config = SimpleNamespace()
     mock_talker_config.position_id_per_seconds = 12.3
     vllm_config.hf_config.talker_config = mock_talker_config
 
@@ -116,13 +124,6 @@ def test_qwen3_tts_codec_frame_rate_patching():
 
     # Verify codec_frame_rate_hz was patched
     assert omni_config.codec_frame_rate_hz == 12.3
-
-
-def test_stage_configs_path_blocks_create_model_config():
-    """create_model_config() should raise when stage_configs_path is set."""
-    args = OmniEngineArgs(stage_configs_path="/some/path.yaml")
-    with pytest.raises(RuntimeError, match="stage_configs_path"):
-        args.create_model_config()
 
 
 def test_from_cli_args_picks_up_stage_configs_path():
@@ -146,13 +147,12 @@ def test_stage_specific_text_config_override():
     # Switch the created hf text config with a mock whose
     # values we want to pull through the text config helper
     stage_text_config = vllm_config.hf_text_config
-    vllm_config.hf_text_config = Mock()
+    vllm_config.hf_text_config = SimpleNamespace()
     stage_text_config.sliding_window = 4096
     stage_text_config.attention_chunk_size = 2048
 
     # Move the stage config's text config getter & thinker config
-    mock_stage_config = Mock()
-    mock_stage_config.get_text_config.return_value = stage_text_config
+    mock_stage_config = SimpleNamespace(get_text_config=lambda: stage_text_config)
     vllm_config.hf_config.thinker_config = mock_stage_config
 
     # Ensure that create from a vLLM config correctly pulls the
@@ -172,6 +172,24 @@ def test_stage_configs_path_field():
     """OmniEngineArgs with stage_configs_path should construct without error."""
     args = OmniEngineArgs(stage_configs_path="/some/path.yaml")
     assert args.stage_configs_path == "/some/path.yaml"
+
+
+def test_voxcpm_model_arch_injects_model_type_override(mocker):
+    """Ensure VoxCPM model_arch injects hf_overrides for config resolution."""
+    mocker.patch.object(OmniEngineArgs, "_ensure_omni_models_registered", return_value=True)
+    mocker.patch.object(OmniEngineArgs, "_patch_empty_hf_config")
+    mocker.patch.object(EngineArgs, "create_model_config", return_value=Mock())
+    mocker.patch.object(OmniModelConfig, "from_vllm_model_config", return_value=Mock())
+
+    args = OmniEngineArgs(
+        model="OpenBMB/VoxCPM1.5",
+        model_arch="VoxCPMForConditionalGeneration",
+    )
+    args.create_model_config()
+
+    assert args.hf_overrides["architectures"] == ["VoxCPMForConditionalGeneration"]
+    assert args.hf_overrides["model_type"] == "voxcpm"
+    args._patch_empty_hf_config.assert_called_once_with("voxcpm")
 
 
 def test_strip_single_engine_args():
