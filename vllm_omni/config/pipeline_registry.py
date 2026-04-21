@@ -69,8 +69,74 @@ _OMNI_PIPELINES: dict[str, tuple[str, str]] = {
     ),
 }
 
-# --- Single-stage diffusion pipelines (populated in PR 3/N) ---
-_DIFFUSION_PIPELINES: dict[str, tuple[str, str]] = {}
+# --- Single-stage diffusion pipelines ---
+_DIFFUSION_PIPELINES: dict[str, tuple[str, str]] = {
+    # model_type -> (module_path, variable_name)
+    "flux": (
+        "vllm_omni.model_executor.models.flux.pipeline",
+        "FLUX_PIPELINE",
+    ),
+    "flux_kontext": (
+        "vllm_omni.model_executor.models.flux_kontext.pipeline",
+        "FLUX_KONTEXT_PIPELINE",
+    ),
+    "flux2": (
+        "vllm_omni.model_executor.models.flux2.pipeline",
+        "FLUX2_PIPELINE",
+    ),
+    "flux2_klein": (
+        "vllm_omni.model_executor.models.flux2_klein.pipeline",
+        "FLUX2_KLEIN_PIPELINE",
+    ),
+    "qwen_image": (
+        "vllm_omni.model_executor.models.qwen_image.pipeline",
+        "QWEN_IMAGE_PIPELINE",
+    ),
+    "qwen_image_edit": (
+        "vllm_omni.model_executor.models.qwen_image_edit.pipeline",
+        "QWEN_IMAGE_EDIT_PIPELINE",
+    ),
+    "qwen_image_edit_plus": (
+        "vllm_omni.model_executor.models.qwen_image_edit_plus.pipeline",
+        "QWEN_IMAGE_EDIT_PLUS_PIPELINE",
+    ),
+    "qwen_image_layered": (
+        "vllm_omni.model_executor.models.qwen_image_layered.pipeline",
+        "QWEN_IMAGE_LAYERED_PIPELINE",
+    ),
+    "z_image": (
+        "vllm_omni.model_executor.models.z_image.pipeline",
+        "Z_IMAGE_PIPELINE",
+    ),
+    "ovis_image": (
+        "vllm_omni.model_executor.models.ovis_image.pipeline",
+        "OVIS_IMAGE_PIPELINE",
+    ),
+    "longcat_image": (
+        "vllm_omni.model_executor.models.longcat_image.pipeline",
+        "LONGCAT_IMAGE_PIPELINE",
+    ),
+    "longcat_image_edit": (
+        "vllm_omni.model_executor.models.longcat_image_edit.pipeline",
+        "LONGCAT_IMAGE_EDIT_PIPELINE",
+    ),
+    "sd3": (
+        "vllm_omni.model_executor.models.sd3.pipeline",
+        "SD3_PIPELINE",
+    ),
+    "helios": (
+        "vllm_omni.model_executor.models.helios.pipeline",
+        "HELIOS_PIPELINE",
+    ),
+    "omnigen2": (
+        "vllm_omni.model_executor.models.omnigen2.pipeline",
+        "OMNIGEN2_PIPELINE",
+    ),
+    "nextstep_1_1": (
+        "vllm_omni.model_executor.models.nextstep_1_1.pipeline",
+        "NEXTSTEP_1_1_PIPELINE",
+    ),
+}
 
 # Union view used by ``_LazyPipelineRegistry``; don't mutate at runtime.
 _VLLM_OMNI_PIPELINES: dict[str, tuple[str, str]] = {

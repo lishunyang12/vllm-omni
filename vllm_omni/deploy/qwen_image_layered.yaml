@@ -1,0 +1,13 @@
+async_chunk: false
+
+# Pipeline.__call__ has guidance_scale default = None; using 1.0 to match the
+# other Qwen-Image variants (CFG-distilled).
+stages:
+  - stage_id: 0
+    gpu_memory_utilization: 0.9
+    devices: "0"
+    enforce_eager: true
+    default_sampling_params:
+      seed: 42
+      num_inference_steps: 50
+      guidance_scale: 1.0
