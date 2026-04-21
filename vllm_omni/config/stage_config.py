@@ -720,6 +720,8 @@ def _build_engine_args(
         engine_args["model_subdir"] = ps.model_subdir
     if ps.tokenizer_subdir:
         engine_args["tokenizer_subdir"] = ps.tokenizer_subdir
+    if ps.omni_kv_config is not None:
+        engine_args["omni_kv_config"] = dict(ps.omni_kv_config)
 
     # Pipeline-wide top-level DeployConfig settings, applied to every stage.
     for name in _PIPELINE_WIDE_ENGINE_FIELDS:
@@ -799,6 +801,8 @@ def merge_pipeline_deploy(
         runtime: dict[str, Any] = {"process": True}
         if ds is not None:
             runtime["devices"] = ds.devices
+        if ps.requires_multimodal_data:
+            runtime["requires_multimodal_data"] = True
 
         result.append(
             StageConfig(

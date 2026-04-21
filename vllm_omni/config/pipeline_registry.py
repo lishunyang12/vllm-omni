@@ -27,6 +27,26 @@ from __future__ import annotations
 # --- Multi-stage omni pipelines (LLM-centric; audio / video I/O) ---
 _OMNI_PIPELINES: dict[str, tuple[str, str]] = {
     # model_type -> (module_path, variable_name)
+    "hunyuan_image3_t2i": (
+        "vllm_omni.model_executor.models.hunyuan_image3.pipeline",
+        "HUNYUAN_IMAGE3_T2I_PIPELINE",
+    ),
+    "hunyuan_image3_it2i": (
+        "vllm_omni.model_executor.models.hunyuan_image3.pipeline",
+        "HUNYUAN_IMAGE3_IT2I_PIPELINE",
+    ),
+    "hunyuan_image3_i2t": (
+        "vllm_omni.model_executor.models.hunyuan_image3.pipeline",
+        "HUNYUAN_IMAGE3_I2T_PIPELINE",
+    ),
+    "hunyuan_image3_t2t": (
+        "vllm_omni.model_executor.models.hunyuan_image3.pipeline",
+        "HUNYUAN_IMAGE3_T2T_PIPELINE",
+    ),
+    "hunyuan_image3_dit_only": (
+        "vllm_omni.model_executor.models.hunyuan_image3.pipeline",
+        "HUNYUAN_IMAGE3_DIT_ONLY_PIPELINE",
+    ),
     "qwen2_5_omni": (
         "vllm_omni.model_executor.models.qwen2_5_omni.pipeline",
         "QWEN2_5_OMNI_PIPELINE",

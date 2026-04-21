@@ -23,7 +23,7 @@ HunyuanImage-3.0-Instruct supports multiple modality modes. You can control the 
 - **Pipeline**: Text → AR (CoT + latent tokens) → DiT (denoise) → VAE Decode → Image
 - **Stages Used**: Stage 0 (AR) + Stage 1 (DiT)
 - **KV Transfer**: AR sends KV cache to DiT for conditioned generation
-- **Default Config**: `hunyuan_image3_t2i.yaml`
+- **Default Config**: `vllm_omni/deploy/hunyuan_image3_t2i.yaml`
 
 ```bash
 python end2end.py --model tencent/HunyuanImage-3.0-Instruct \
@@ -36,7 +36,7 @@ python end2end.py --model tencent/HunyuanImage-3.0-Instruct \
 - **Pipeline**: Image + Text → AR (CoT + recaption + latent) → DiT → Edited Image
 - **Stages Used**: Stage 0 (AR) + Stage 1 (DiT)
 - **KV Transfer**: AR sends KV cache to DiT
-- **Default Config**: `hunyuan_image3_it2i.yaml`
+- **Default Config**: `vllm_omni/deploy/hunyuan_image3_it2i.yaml`
 
 ```bash
 python end2end.py --model tencent/HunyuanImage-3.0-Instruct \
@@ -49,7 +49,7 @@ python end2end.py --model tencent/HunyuanImage-3.0-Instruct \
 
 - **Pipeline**: Image + Question → AR → Text description
 - **Stages Used**: Stage 0 (AR) only
-- **Default Config**: `hunyuan_image3_i2t.yaml`
+- **Default Config**: `vllm_omni/deploy/hunyuan_image3_i2t.yaml`
 
 ```bash
 python end2end.py --model tencent/HunyuanImage-3.0-Instruct \
@@ -62,7 +62,7 @@ python end2end.py --model tencent/HunyuanImage-3.0-Instruct \
 
 - **Pipeline**: Text → AR → Text
 - **Stages Used**: Stage 0 (AR) only
-- **Default Config**: `hunyuan_image3_t2t.yaml`
+- **Default Config**: `vllm_omni/deploy/hunyuan_image3_t2t.yaml`
 
 ```bash
 python end2end.py --model tencent/HunyuanImage-3.0-Instruct \
@@ -108,28 +108,22 @@ python end2end.py --modality text2img \
 
 #### ⚙️ Stage Configurations
 
-| Config YAML                         | Modality  | Stages | GPUs   | Description                           |
-| :---------------------------------- | :-------- | :----- | :----- | :------------------------------------ |
-| `hunyuan_image3_t2i.yaml`           | text2img  | 2      | 8      | T2I with AR→DiT, 4 GPU each          |
-| `hunyuan_image3_it2i.yaml`          | img2img   | 2      | 8      | IT2I with AR→DiT, 4 GPU each         |
-| `hunyuan_image3_i2t.yaml`           | img2text  | 1      | 4      | I2T (AR only)                         |
-| `hunyuan_image3_t2t.yaml`           | text2text | 1      | 4      | T2T (AR only)                         |
-| `hunyuan_image3_t2i_2gpu.yaml`      | text2img  | 2      | 2      | T2I for 2-GPU setups                  |
-| `hunyuan_image3_moe.yaml`           | text2img  | 2      | 8      | T2I with MoE AR→DiT KV reuse          |
-| `hunyuan_image3_moe_dit_2gpu_fp8.yaml` | text2img | 2   | 2      | T2I with FP8 quantization             |
+All deploy YAMLs live under `vllm_omni/deploy/` in the new schema (PR #2383).
+
+| Deploy YAML                              | Modality   | Stages | GPUs | Description                       |
+| :--------------------------------------- | :--------- | :----- | :--- | :-------------------------------- |
+| `hunyuan_image3_t2i.yaml`                | text2img   | 2      | 8    | AR + DiT with KV transfer         |
+| `hunyuan_image3_it2i.yaml`               | img2img    | 2      | 8    | AR + DiT (image-edit)             |
+| `hunyuan_image3_i2t.yaml`                | img2text   | 1      | 4    | AR only                           |
+| `hunyuan_image3_t2t.yaml`                | text2text  | 1      | 4    | AR only                           |
+| `hunyuan_image3_dit_only.yaml`           | text2img   | 1      | 4    | DiT only (CUDA + NPU overlay)     |
+| `hunyuan_image3_t2i_fp8.yaml`            | text2img   | 1      | 2    | DiT only with FP8 quantization    |
 
 ------
 
-## Using MoE Config
+## AR→DiT KV cache reuse
 
-The `hunyuan_image3_moe.yaml` config enables AR→DiT KV cache reuse with 8 GPUs (4 for AR + 4 for DiT).
-
-```bash
-python end2end.py --model tencent/HunyuanImage-3.0-Instruct \
-                  --modality text2img \
-                  --stage-configs-path hunyuan_image3_moe.yaml \
-                  --prompts "A cute cat"
-```
+The default `hunyuan_image3_t2i.yaml` deploy already enables AR→DiT KV cache reuse on 8 GPUs (4 for AR + 4 for DiT) — the wiring lives on the pipeline (`omni_kv_config` for both stages).
 
 ------
 

@@ -72,12 +72,12 @@ def build_prompt(
     return "".join(parts)
 
 
-# Modality → default stage config
+# Modality → default deploy config (under vllm_omni/deploy/).
 _MODALITY_DEFAULT_CONFIG = {
-    "text2img": "hunyuan_image3_t2i.yaml",
-    "img2img": "hunyuan_image3_it2i.yaml",
-    "img2text": "hunyuan_image3_i2t.yaml",
-    "text2text": "hunyuan_image3_t2t.yaml",
+    "text2img": "vllm_omni/deploy/hunyuan_image3_t2i.yaml",
+    "img2img": "vllm_omni/deploy/hunyuan_image3_it2i.yaml",
+    "img2text": "vllm_omni/deploy/hunyuan_image3_i2t.yaml",
+    "text2text": "vllm_omni/deploy/hunyuan_image3_t2t.yaml",
 }
 
 

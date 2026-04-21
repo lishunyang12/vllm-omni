@@ -1,0 +1,33 @@
+# HunyuanImage-3.0 image-edit (AR consumes image+text, DiT decodes).
+# Verified on 8x L40S-48G (4 AR + 4 DiT).
+pipeline: hunyuan_image3_it2i
+trust_remote_code: true
+distributed_executor_backend: mp
+
+stages:
+  - stage_id: 0
+    max_num_seqs: 1
+    gpu_memory_utilization: 0.95
+    enforce_eager: true
+    tensor_parallel_size: 4
+    devices: "0,1,2,3"
+    hf_overrides:
+      rope_parameters:
+        mrope_section: [0, 32, 32]
+        rope_type: default
+    default_sampling_params:
+      temperature: 0.6
+      top_p: 0.95
+      top_k: 1024
+      max_tokens: 4096
+
+  - stage_id: 1
+    max_num_seqs: 1
+    enforce_eager: true
+    devices: "4,5,6,7"
+    parallel_config:
+      tensor_parallel_size: 4
+      enable_expert_parallel: true
+    default_sampling_params:
+      num_inference_steps: 50
+      guidance_scale: 2.5

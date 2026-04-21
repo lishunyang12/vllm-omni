@@ -1,0 +1,18 @@
+# HunyuanImage-3.0 DiT-only with FP8 online quantization. Verified on 2x H200.
+# Uses the dit_only pipeline; quant lives in deploy because it's not a
+# topology change.
+pipeline: hunyuan_image3_dit_only
+trust_remote_code: true
+distributed_executor_backend: mp
+quantization: fp8
+
+stages:
+  - stage_id: 0
+    max_num_seqs: 1
+    enforce_eager: true
+    devices: "0,1"
+    parallel_config:
+      tensor_parallel_size: 2
+      enable_expert_parallel: true
+    default_sampling_params:
+      seed: 42

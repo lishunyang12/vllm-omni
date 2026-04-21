@@ -1,0 +1,27 @@
+# HunyuanImage-3.0 DiT-only (no AR). CUDA verified on 4x H20.
+pipeline: hunyuan_image3_dit_only
+trust_remote_code: true
+distributed_executor_backend: mp
+
+stages:
+  - stage_id: 0
+    max_num_seqs: 1
+    enforce_eager: true
+    devices: "0,1,2,3"
+    parallel_config:
+      tensor_parallel_size: 4
+      enable_expert_parallel: true
+    default_sampling_params:
+      seed: 42
+
+platforms:
+  npu:
+    # Verified on 8x A3-64G NPUs.
+    stages:
+      - stage_id: 0
+        gpu_memory_utilization: 0.65
+        devices: "0,1,2,3,4,5,6,7"
+        max_num_batched_tokens: 32768
+        parallel_config:
+          tensor_parallel_size: 8
+          enable_expert_parallel: true
