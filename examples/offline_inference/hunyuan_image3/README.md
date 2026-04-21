@@ -45,31 +45,6 @@ python end2end.py --model tencent/HunyuanImage-3.0-Instruct \
                   --prompts "Make the petals neon pink"
 ```
 
-#### Image to Text (img2text)
-
-- **Pipeline**: Image + Question → AR → Text description
-- **Stages Used**: Stage 0 (AR) only
-- **Default Config**: `vllm_omni/deploy/hunyuan_image3_i2t.yaml`
-
-```bash
-python end2end.py --model tencent/HunyuanImage-3.0-Instruct \
-                  --modality img2text \
-                  --image-path /path/to/image.jpg \
-                  --prompts "Describe the content of the picture."
-```
-
-#### Text to Text (text2text)
-
-- **Pipeline**: Text → AR → Text
-- **Stages Used**: Stage 0 (AR) only
-- **Default Config**: `vllm_omni/deploy/hunyuan_image3_t2t.yaml`
-
-```bash
-python end2end.py --model tencent/HunyuanImage-3.0-Instruct \
-                  --modality text2text \
-                  --prompts "What is the capital of France?"
-```
-
 ### Inference Steps & Guidance
 
 Control generation quality for image modalities:
@@ -89,7 +64,7 @@ python end2end.py --modality text2img \
 | Argument               | Type   | Default                              | Description                                                  |
 | :--------------------- | :----- | :----------------------------------- | :----------------------------------------------------------- |
 | `--model`              | string | `tencent/HunyuanImage-3.0-Instruct` | Model path or name                                           |
-| `--modality`           | choice | `text2img`                           | Modality: `text2img`, `img2img`, `img2text`, `text2text`     |
+| `--modality`           | choice | `text2img`                           | Modality: `text2img`, `img2img`                              |
 | `--prompts`            | list   | `None`                               | Input text prompts                                           |
 | `--image-path`         | string | `None`                               | Input image path (for `img2img`/`img2text`)                  |
 | `--output`             | string | `.`                                  | Output directory for saved images                            |
@@ -114,10 +89,8 @@ All deploy YAMLs live under `vllm_omni/deploy/` in the new schema (PR #2383).
 | :--------------------------------------- | :--------- | :----- | :--- | :-------------------------------- |
 | `hunyuan_image3_t2i.yaml`                | text2img   | 2      | 8    | AR + DiT with KV transfer         |
 | `hunyuan_image3_it2i.yaml`               | img2img    | 2      | 8    | AR + DiT (image-edit)             |
-| `hunyuan_image3_i2t.yaml`                | img2text   | 1      | 4    | AR only                           |
-| `hunyuan_image3_t2t.yaml`                | text2text  | 1      | 4    | AR only                           |
-| `hunyuan_image3_dit_only.yaml`           | text2img   | 1      | 4    | DiT only (CUDA + NPU overlay)     |
-| `hunyuan_image3_t2i_fp8.yaml`            | text2img   | 1      | 2    | DiT only with FP8 quantization    |
+
+The `hunyuan_image3_dit_only` pipeline is also registered (no shipped deploy yaml) for users who want to skip the AR stage with a custom deploy.
 
 ------
 

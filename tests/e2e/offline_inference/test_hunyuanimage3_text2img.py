@@ -17,7 +17,9 @@ PROMPT = "A brown and white dog is running on the grass"
 MODEL_NAME = "tencent/HunyuanImage-3.0"
 LOCAL_CLIP_PATH = "openai/clip-vit-base-patch32"
 REPO_ROOT = Path(__file__).resolve().parents[3]
-STAGE_CONFIG_PATH = REPO_ROOT / "vllm_omni" / "deploy" / "hunyuan_image3_dit_only.yaml"
+STAGE_CONFIG_PATH = (
+    REPO_ROOT / "tests" / "e2e" / "offline_inference" / "stage_configs" / "hunyuan_image3_dit_only_ci.yaml"
+)
 
 pytestmark = [pytest.mark.advanced_model, pytest.mark.diffusion]
 

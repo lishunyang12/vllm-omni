@@ -76,8 +76,6 @@ def build_prompt(
 _MODALITY_DEFAULT_CONFIG = {
     "text2img": "vllm_omni/deploy/hunyuan_image3_t2i.yaml",
     "img2img": "vllm_omni/deploy/hunyuan_image3_it2i.yaml",
-    "img2text": "vllm_omni/deploy/hunyuan_image3_i2t.yaml",
-    "text2text": "vllm_omni/deploy/hunyuan_image3_t2t.yaml",
 }
 
 
@@ -91,7 +89,7 @@ def parse_args():
     parser.add_argument(
         "--modality",
         default="text2img",
-        choices=["text2img", "img2img", "img2text", "text2text"],
+        choices=["text2img", "img2img"],
         help="Modality mode to control stage execution.",
     )
     parser.add_argument("--prompts", nargs="+", default=None, help="Input text prompts.")

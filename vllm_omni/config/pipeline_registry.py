@@ -35,14 +35,8 @@ _OMNI_PIPELINES: dict[str, tuple[str, str]] = {
         "vllm_omni.model_executor.models.hunyuan_image3.pipeline",
         "HUNYUAN_IMAGE3_IT2I_PIPELINE",
     ),
-    "hunyuan_image3_i2t": (
-        "vllm_omni.model_executor.models.hunyuan_image3.pipeline",
-        "HUNYUAN_IMAGE3_I2T_PIPELINE",
-    ),
-    "hunyuan_image3_t2t": (
-        "vllm_omni.model_executor.models.hunyuan_image3.pipeline",
-        "HUNYUAN_IMAGE3_T2T_PIPELINE",
-    ),
+    # ``dit_only`` ships no default deploy yaml — kept for tests and users
+    # who want to skip the AR stage with a custom deploy.
     "hunyuan_image3_dit_only": (
         "vllm_omni.model_executor.models.hunyuan_image3.pipeline",
         "HUNYUAN_IMAGE3_DIT_ONLY_PIPELINE",

@@ -2,18 +2,18 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """HunyuanImage-3.0 pipeline topologies (frozen).
 
-Five variants share one HF model_arch (HunyuanImage3ForCausalMM) but expose
+Three variants share one HF model_arch (HunyuanImage3ForCausalMM) but expose
 different stage graphs:
 
     t2i      Stage 0 AR (text → latent) + Stage 1 DiT, KV-transfer
     it2i     Stage 0 AR (image+text → latent) + Stage 1 DiT, KV-transfer
-    i2t      Stage 0 AR only (image+text → text)
-    t2t      Stage 0 AR only (text → text)
     dit_only Stage 0 DiT only (latent → image)
 
 Variants are surfaced as separate model_types so the orchestrator picks the
 right topology from deploy YAML alone (mirrors the qwen2_5_omni /
-qwen2_5_omni_thinker_only split).
+qwen2_5_omni_thinker_only split). Only ``t2i`` and ``it2i`` ship with a
+default deploy yaml; ``dit_only`` is registered for tests and bring-your-own
+deploy.
 """
 
 from vllm_omni.config.stage_config import (
@@ -96,43 +96,6 @@ HUNYUAN_IMAGE3_IT2I_PIPELINE = PipelineConfig(
             requires_multimodal_data=True,
             custom_process_input_func=_AR2DIT,
             omni_kv_config=_DIT_KV_RECV,
-        ),
-    ),
-)
-
-
-HUNYUAN_IMAGE3_I2T_PIPELINE = PipelineConfig(
-    model_type="hunyuan_image3_i2t",
-    model_arch=_MODEL_ARCH,
-    stages=(
-        StagePipelineConfig(
-            stage_id=0,
-            model_stage="AR",
-            execution_type=StageExecutionType.LLM_AR,
-            input_sources=(),
-            final_output=True,
-            final_output_type="text",
-            owns_tokenizer=True,
-            requires_multimodal_data=True,
-            sampling_constraints={"detokenize": True},
-        ),
-    ),
-)
-
-
-HUNYUAN_IMAGE3_T2T_PIPELINE = PipelineConfig(
-    model_type="hunyuan_image3_t2t",
-    model_arch=_MODEL_ARCH,
-    stages=(
-        StagePipelineConfig(
-            stage_id=0,
-            model_stage="AR",
-            execution_type=StageExecutionType.LLM_AR,
-            input_sources=(),
-            final_output=True,
-            final_output_type="text",
-            owns_tokenizer=True,
-            sampling_constraints={"detokenize": True},
         ),
     ),
 )
