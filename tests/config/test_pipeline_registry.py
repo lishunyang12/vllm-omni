@@ -6,11 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from vllm_omni.config.pipeline_registry import (
-    _DIFFUSION_PIPELINES,
-    _OMNI_PIPELINES,
-    _VLLM_OMNI_PIPELINES,
-)
+from vllm_omni.config.pipeline_registry import _DIFFUSION_PIPELINES, _OMNI_PIPELINES
 from vllm_omni.config.stage_config import (
     _PIPELINE_REGISTRY,
     PipelineConfig,
@@ -21,15 +17,15 @@ from vllm_omni.config.stage_config import (
 
 
 class TestCentralRegistryDeclarations:
-    """Every in-tree pipeline must be declared exactly once in the central registry."""
+    """Every in-tree pipeline must be discoverable via the central registry."""
 
-    def test_union_contains_all_omni(self):
+    def test_omni_entries_visible(self):
         for key in _OMNI_PIPELINES:
-            assert key in _VLLM_OMNI_PIPELINES
+            assert key in _PIPELINE_REGISTRY
 
-    def test_union_contains_all_diffusion(self):
+    def test_diffusion_entries_visible(self):
         for key in _DIFFUSION_PIPELINES:
-            assert key in _VLLM_OMNI_PIPELINES
+            assert key in _PIPELINE_REGISTRY
 
     def test_no_duplicate_model_type_between_omni_and_diffusion(self):
         overlap = set(_OMNI_PIPELINES) & set(_DIFFUSION_PIPELINES)
@@ -66,6 +62,47 @@ class TestLazyLoading:
         keys = set(_PIPELINE_REGISTRY)
         assert "qwen2_5_omni" in keys
         assert "qwen3_omni_moe" in keys
+
+
+class TestSingleStageDiffusion:
+    """Single-stage diffusion pipelines are pre-built in ``_DIFFUSION_PIPELINES``."""
+
+    def test_uniform_topology(self):
+        pipeline = _PIPELINE_REGISTRY["flux"]
+        assert pipeline.model_type == "flux"
+        assert pipeline.model_arch == "FluxPipeline"
+        assert len(pipeline.stages) == 1
+        stage = pipeline.stages[0]
+        assert stage.execution_type == StageExecutionType.DIFFUSION
+        assert stage.final_output is True
+        assert stage.final_output_type == "image"
+        assert stage.model_arch == "FluxPipeline"
+
+    def test_lookup_returns_same_object(self):
+        # Pre-built configs: registry hands back the same instance.
+        first = _PIPELINE_REGISTRY["qwen_image"]
+        second = _PIPELINE_REGISTRY["qwen_image"]
+        assert first is second
+
+    def test_dynamic_registration_overrides_diffusion_entry(self):
+        custom = PipelineConfig(
+            model_type="flux",
+            model_arch="OverriddenFlux",
+            stages=(
+                StagePipelineConfig(
+                    stage_id=0,
+                    model_stage="dit",
+                    execution_type=StageExecutionType.DIFFUSION,
+                    final_output=True,
+                ),
+            ),
+        )
+        register_pipeline(custom)
+        try:
+            assert _PIPELINE_REGISTRY["flux"].model_arch == "OverriddenFlux"
+        finally:
+            if "flux" in _PIPELINE_REGISTRY._loaded:
+                del _PIPELINE_REGISTRY["flux"]
 
 
 class TestDynamicRegistration:

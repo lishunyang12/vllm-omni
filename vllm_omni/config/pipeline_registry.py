@@ -2,31 +2,41 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Central declarative registry of all vllm-omni pipelines.
 
-Mirrors the pattern in ``vllm/model_executor/models/registry.py``: each entry
-is ``model_type -> (module_path, variable_name)``, and the module is imported
-lazily on first lookup (see ``_LazyPipelineRegistry`` in
-``vllm_omni/config/stage_config.py``). Keeping every pipeline declared in one
-file makes it easy to spot a missing registration, which was the original
-motivation in https://github.com/vllm-project/vllm-omni/issues/2887 (item 4).
+Two registration shapes coexist:
 
-Per-model ``pipeline.py`` modules still define the ``PipelineConfig`` instance;
-they just no longer need to self-register via ``register_pipeline(...)``.
+* **Multi-stage pipelines** (``_OMNI_PIPELINES``) ship a per-model
+  ``pipeline.py`` with custom topology / KV transfer / connectors.
+  Entries are ``model_type -> (module_path, variable_name)``; the module
+  is imported lazily on first lookup (see ``_LazyPipelineRegistry``).
+* **Single-stage diffusion pipelines** (``_DIFFUSION_PIPELINES``) all
+  share one topology (one ``DIFFUSION`` stage, ``final_output=True``),
+  so the ``PipelineConfig`` is built inline via
+  ``_single_stage_diffusion(...)`` instead of duplicating ~20 lines of
+  per-model boilerplate. Entries are pre-built ``PipelineConfig`` objects
+  — the registry just hands them back at lookup time.
 
-Adding a new pipeline:
-    1. Define the ``PipelineConfig`` instance as a module-level variable in
-       ``vllm_omni/.../pipeline.py``.
-    2. Add one line to ``_OMNI_PIPELINES`` or ``_DIFFUSION_PIPELINES`` below.
+Adding a pipeline:
+    * Multi-stage: write ``vllm_omni/.../pipeline.py``, add an
+      ``_OMNI_PIPELINES`` entry.
+    * Single-stage diffusion: add a ``vllm_omni/deploy/<model>.yaml`` and
+      one line to ``_DIFFUSION_PIPELINES`` below.
 
 ``register_pipeline(config)`` in ``stage_config`` is still supported for
-out-of-tree plugins and tests that create pipelines at runtime; those override
-the entries declared here.
+out-of-tree plugins and tests; dynamic registrations override either
+table.
 """
 
 from __future__ import annotations
 
+from vllm_omni.config.stage_config import (
+    PipelineConfig,
+    StageExecutionType,
+    StagePipelineConfig,
+)
+
 # --- Multi-stage omni pipelines (LLM-centric; audio / video I/O) ---
+# model_type -> (module_path, variable_name)
 _OMNI_PIPELINES: dict[str, tuple[str, str]] = {
-    # model_type -> (module_path, variable_name)
     "qwen2_5_omni": (
         "vllm_omni.model_executor.models.qwen2_5_omni.pipeline",
         "QWEN2_5_OMNI_PIPELINE",
@@ -69,77 +79,43 @@ _OMNI_PIPELINES: dict[str, tuple[str, str]] = {
     ),
 }
 
-# --- Single-stage diffusion pipelines ---
-_DIFFUSION_PIPELINES: dict[str, tuple[str, str]] = {
-    # model_type -> (module_path, variable_name)
-    "flux": (
-        "vllm_omni.model_executor.models.flux.pipeline",
-        "FLUX_PIPELINE",
-    ),
-    "flux_kontext": (
-        "vllm_omni.model_executor.models.flux_kontext.pipeline",
-        "FLUX_KONTEXT_PIPELINE",
-    ),
-    "flux2": (
-        "vllm_omni.model_executor.models.flux2.pipeline",
-        "FLUX2_PIPELINE",
-    ),
-    "flux2_klein": (
-        "vllm_omni.model_executor.models.flux2_klein.pipeline",
-        "FLUX2_KLEIN_PIPELINE",
-    ),
-    "qwen_image": (
-        "vllm_omni.model_executor.models.qwen_image.pipeline",
-        "QWEN_IMAGE_PIPELINE",
-    ),
-    "qwen_image_edit": (
-        "vllm_omni.model_executor.models.qwen_image_edit.pipeline",
-        "QWEN_IMAGE_EDIT_PIPELINE",
-    ),
-    "qwen_image_edit_plus": (
-        "vllm_omni.model_executor.models.qwen_image_edit_plus.pipeline",
-        "QWEN_IMAGE_EDIT_PLUS_PIPELINE",
-    ),
-    "qwen_image_layered": (
-        "vllm_omni.model_executor.models.qwen_image_layered.pipeline",
-        "QWEN_IMAGE_LAYERED_PIPELINE",
-    ),
-    "z_image": (
-        "vllm_omni.model_executor.models.z_image.pipeline",
-        "Z_IMAGE_PIPELINE",
-    ),
-    "ovis_image": (
-        "vllm_omni.model_executor.models.ovis_image.pipeline",
-        "OVIS_IMAGE_PIPELINE",
-    ),
-    "longcat_image": (
-        "vllm_omni.model_executor.models.longcat_image.pipeline",
-        "LONGCAT_IMAGE_PIPELINE",
-    ),
-    "longcat_image_edit": (
-        "vllm_omni.model_executor.models.longcat_image_edit.pipeline",
-        "LONGCAT_IMAGE_EDIT_PIPELINE",
-    ),
-    "sd3": (
-        "vllm_omni.model_executor.models.sd3.pipeline",
-        "SD3_PIPELINE",
-    ),
-    "helios": (
-        "vllm_omni.model_executor.models.helios.pipeline",
-        "HELIOS_PIPELINE",
-    ),
-    "omnigen2": (
-        "vllm_omni.model_executor.models.omnigen2.pipeline",
-        "OMNIGEN2_PIPELINE",
-    ),
-    "nextstep_1_1": (
-        "vllm_omni.model_executor.models.nextstep_1_1.pipeline",
-        "NEXTSTEP_1_1_PIPELINE",
-    ),
-}
 
-# Union view used by ``_LazyPipelineRegistry``; don't mutate at runtime.
-_VLLM_OMNI_PIPELINES: dict[str, tuple[str, str]] = {
-    **_OMNI_PIPELINES,
-    **_DIFFUSION_PIPELINES,
+def _single_stage_diffusion(model_type: str, model_arch: str, output: str = "image") -> PipelineConfig:
+    """Uniform single-stage DIFFUSION topology — every entry in
+    ``_DIFFUSION_PIPELINES`` is built from this one helper.
+    """
+    return PipelineConfig(
+        model_type=model_type,
+        model_arch=model_arch,
+        stages=(
+            StagePipelineConfig(
+                stage_id=0,
+                model_stage="dit",
+                execution_type=StageExecutionType.DIFFUSION,
+                final_output=True,
+                final_output_type=output,
+                model_arch=model_arch,
+            ),
+        ),
+    )
+
+
+# --- Single-stage diffusion pipelines (pre-built configs) ---
+_DIFFUSION_PIPELINES: dict[str, PipelineConfig] = {
+    "flux": _single_stage_diffusion("flux", "FluxPipeline"),
+    "flux_kontext": _single_stage_diffusion("flux_kontext", "FluxKontextPipeline"),
+    "flux2": _single_stage_diffusion("flux2", "Flux2Pipeline"),
+    "flux2_klein": _single_stage_diffusion("flux2_klein", "Flux2KleinPipeline"),
+    "qwen_image": _single_stage_diffusion("qwen_image", "QwenImagePipeline"),
+    "qwen_image_edit": _single_stage_diffusion("qwen_image_edit", "QwenImageEditPipeline"),
+    "qwen_image_edit_plus": _single_stage_diffusion("qwen_image_edit_plus", "QwenImageEditPlusPipeline"),
+    "qwen_image_layered": _single_stage_diffusion("qwen_image_layered", "QwenImageLayeredPipeline"),
+    "z_image": _single_stage_diffusion("z_image", "ZImagePipeline"),
+    "ovis_image": _single_stage_diffusion("ovis_image", "OvisImagePipeline"),
+    "longcat_image": _single_stage_diffusion("longcat_image", "LongCatImagePipeline"),
+    "longcat_image_edit": _single_stage_diffusion("longcat_image_edit", "LongCatImageEditPipeline"),
+    "sd3": _single_stage_diffusion("sd3", "StableDiffusion3Pipeline"),
+    "helios": _single_stage_diffusion("helios", "HeliosPipeline"),
+    "omnigen2": _single_stage_diffusion("omnigen2", "OmniGen2Pipeline"),
+    "nextstep_1_1": _single_stage_diffusion("nextstep_1_1", "NextStep11Pipeline"),
 }

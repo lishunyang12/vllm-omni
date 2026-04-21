@@ -261,19 +261,35 @@ class _LazyPipelineRegistry:
     def __init__(self) -> None:
         self._loaded: dict[str, PipelineConfig] = {}
         # Populated lazily to avoid a circular import at module init time.
-        self._lazy_map: dict[str, tuple[str, str]] | None = None
+        self._module_map: dict[str, tuple[str, str]] | None = None
+        self._diffusion_map: dict[str, PipelineConfig] | None = None
 
-    def _get_lazy_map(self) -> dict[str, tuple[str, str]]:
-        if self._lazy_map is None:
-            from vllm_omni.config.pipeline_registry import _VLLM_OMNI_PIPELINES
+    def _get_module_map(self) -> dict[str, tuple[str, str]]:
+        if self._module_map is None:
+            from vllm_omni.config.pipeline_registry import _OMNI_PIPELINES
 
-            self._lazy_map = _VLLM_OMNI_PIPELINES
-        return self._lazy_map
+            self._module_map = _OMNI_PIPELINES
+        return self._module_map
+
+    def _get_diffusion_map(self) -> dict[str, PipelineConfig]:
+        if self._diffusion_map is None:
+            from vllm_omni.config.pipeline_registry import _DIFFUSION_PIPELINES
+
+            self._diffusion_map = _DIFFUSION_PIPELINES
+        return self._diffusion_map
 
     def _load_lazy(self, model_type: str) -> PipelineConfig | None:
-        entry = self._get_lazy_map().get(model_type)
-        if entry is None:
-            return None
+        module_entry = self._get_module_map().get(model_type)
+        if module_entry is not None:
+            return self._load_module_pipeline(model_type, module_entry)
+        # Single-stage diffusion: pre-built PipelineConfig in the table.
+        diffusion_pipeline = self._get_diffusion_map().get(model_type)
+        if diffusion_pipeline is not None:
+            self._loaded[model_type] = diffusion_pipeline
+            return diffusion_pipeline
+        return None
+
+    def _load_module_pipeline(self, model_type: str, entry: tuple[str, str]) -> PipelineConfig | None:
         module_path, var_name = entry
         import importlib
 
@@ -305,7 +321,7 @@ class _LazyPipelineRegistry:
     def __contains__(self, model_type: str) -> bool:
         if model_type in self._loaded:
             return True
-        return model_type in self._get_lazy_map()
+        return model_type in self._get_module_map() or model_type in self._get_diffusion_map()
 
     def __getitem__(self, model_type: str) -> PipelineConfig:
         if model_type in self._loaded:
@@ -335,7 +351,7 @@ class _LazyPipelineRegistry:
         if model_type in self._loaded:
             del self._loaded[model_type]
             return
-        if model_type in self._get_lazy_map():
+        if model_type in self._get_module_map() or model_type in self._get_diffusion_map():
             raise KeyError(
                 f"{model_type!r} is declared in the central pipeline_registry and "
                 "cannot be removed at runtime. Edit "
@@ -344,7 +360,7 @@ class _LazyPipelineRegistry:
         raise KeyError(model_type)
 
     def keys(self) -> set[str]:
-        return set(self._get_lazy_map().keys()) | set(self._loaded.keys())
+        return set(self._get_module_map().keys()) | set(self._get_diffusion_map().keys()) | set(self._loaded.keys())
 
     def values(self):
         # Iterating values forces load of every lazy pipeline.
@@ -365,8 +381,9 @@ _PIPELINE_REGISTRY = _LazyPipelineRegistry()
 def register_pipeline(pipeline: PipelineConfig) -> None:
     """Register a pipeline config dynamically.
 
-    In-tree pipelines are declared in ``pipeline_registry._VLLM_OMNI_PIPELINES``
-    and loaded lazily; calling ``register_pipeline`` is only needed for
+    In-tree pipelines are declared in ``pipeline_registry`` (``_OMNI_PIPELINES``
+    or ``_DIFFUSION_PIPELINES``) and loaded lazily; calling ``register_pipeline``
+    is only needed for
     out-of-tree plugins or tests that build a ``PipelineConfig`` at runtime.
     A dynamic registration overrides the central-registry entry with the same
     ``model_type``.
