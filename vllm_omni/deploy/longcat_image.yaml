@@ -4,7 +4,6 @@ stages:
   - stage_id: 0
     gpu_memory_utilization: 0.9
     devices: "0"
-    enforce_eager: true
     default_sampling_params:
       seed: 42
       num_inference_steps: 50

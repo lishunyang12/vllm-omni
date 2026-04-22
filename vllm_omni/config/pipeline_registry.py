@@ -80,7 +80,7 @@ _OMNI_PIPELINES: dict[str, tuple[str, str]] = {
 }
 
 
-def _single_stage_diffusion(model_type: str, model_arch: str, output: str = "image") -> PipelineConfig:
+def _single_stage_diffusion(model_type: str, model_arch: str, output: str) -> PipelineConfig:
     """Uniform single-stage DIFFUSION topology — every entry in
     ``_DIFFUSION_PIPELINES`` is built from this one helper.
     """
@@ -102,20 +102,20 @@ def _single_stage_diffusion(model_type: str, model_arch: str, output: str = "ima
 
 # --- Single-stage diffusion pipelines (pre-built configs) ---
 _DIFFUSION_PIPELINES: dict[str, PipelineConfig] = {
-    "flux": _single_stage_diffusion("flux", "FluxPipeline"),
-    "flux_kontext": _single_stage_diffusion("flux_kontext", "FluxKontextPipeline"),
-    "flux2": _single_stage_diffusion("flux2", "Flux2Pipeline"),
-    "flux2_klein": _single_stage_diffusion("flux2_klein", "Flux2KleinPipeline"),
-    "qwen_image": _single_stage_diffusion("qwen_image", "QwenImagePipeline"),
-    "qwen_image_edit": _single_stage_diffusion("qwen_image_edit", "QwenImageEditPipeline"),
-    "qwen_image_edit_plus": _single_stage_diffusion("qwen_image_edit_plus", "QwenImageEditPlusPipeline"),
-    "qwen_image_layered": _single_stage_diffusion("qwen_image_layered", "QwenImageLayeredPipeline"),
-    "z_image": _single_stage_diffusion("z_image", "ZImagePipeline"),
-    "ovis_image": _single_stage_diffusion("ovis_image", "OvisImagePipeline"),
-    "longcat_image": _single_stage_diffusion("longcat_image", "LongCatImagePipeline"),
-    "longcat_image_edit": _single_stage_diffusion("longcat_image_edit", "LongCatImageEditPipeline"),
-    "sd3": _single_stage_diffusion("sd3", "StableDiffusion3Pipeline"),
-    "helios": _single_stage_diffusion("helios", "HeliosPipeline"),
-    "omnigen2": _single_stage_diffusion("omnigen2", "OmniGen2Pipeline"),
-    "nextstep_1_1": _single_stage_diffusion("nextstep_1_1", "NextStep11Pipeline"),
+    "flux": _single_stage_diffusion("flux", "FluxPipeline", "image"),
+    "flux_kontext": _single_stage_diffusion("flux_kontext", "FluxKontextPipeline", "image"),
+    "flux2": _single_stage_diffusion("flux2", "Flux2Pipeline", "image"),
+    "flux2_klein": _single_stage_diffusion("flux2_klein", "Flux2KleinPipeline", "image"),
+    "qwen_image": _single_stage_diffusion("qwen_image", "QwenImagePipeline", "image"),
+    "qwen_image_edit": _single_stage_diffusion("qwen_image_edit", "QwenImageEditPipeline", "image"),
+    "qwen_image_edit_plus": _single_stage_diffusion("qwen_image_edit_plus", "QwenImageEditPlusPipeline", "image"),
+    "qwen_image_layered": _single_stage_diffusion("qwen_image_layered", "QwenImageLayeredPipeline", "image"),
+    "z_image": _single_stage_diffusion("z_image", "ZImagePipeline", "image"),
+    "ovis_image": _single_stage_diffusion("ovis_image", "OvisImagePipeline", "image"),
+    "longcat_image": _single_stage_diffusion("longcat_image", "LongCatImagePipeline", "image"),
+    "longcat_image_edit": _single_stage_diffusion("longcat_image_edit", "LongCatImageEditPipeline", "image"),
+    "sd3": _single_stage_diffusion("sd3", "StableDiffusion3Pipeline", "image"),
+    "helios": _single_stage_diffusion("helios", "HeliosPipeline", "image"),
+    "omnigen2": _single_stage_diffusion("omnigen2", "OmniGen2Pipeline", "image"),
+    "nextstep_1_1": _single_stage_diffusion("nextstep_1_1", "NextStep11Pipeline", "image"),
 }
