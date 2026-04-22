@@ -405,15 +405,18 @@ def main():
         # NextStep-1.1 requires explicit pipeline class
         omni_kwargs["model_class_name"] = "NextStep11Pipeline"
     omni = Omni(**omni_kwargs)
-    # Print resolved per-stage values so override behavior is visible.
+    # Print resolved per-stage engine_args so override behavior is visible.
+    # Source of truth: stage_configs[sid].engine_args (the merged dict the
+    # worker actually receives — yaml + platform overlay + caller overrides).
     print(f"\n[stage config] num_stages={omni.num_stages}")
     for sid in range(omni.num_stages):
-        md = omni.engine.stage_metadata[sid]
+        ea = getattr(omni.engine.stage_configs[sid], "engine_args", {}) or {}
         print(
             f"[stage config] stage {sid}: "
-            f"gpu_memory_utilization={md.get('gpu_memory_utilization')}, "
-            f"max_num_seqs={md.get('max_num_seqs')}, "
-            f"enforce_eager={md.get('enforce_eager')}"
+            f"gpu_memory_utilization={ea.get('gpu_memory_utilization')}, "
+            f"max_num_seqs={ea.get('max_num_seqs')}, "
+            f"max_num_batched_tokens={ea.get('max_num_batched_tokens')}, "
+            f"enforce_eager={ea.get('enforce_eager')}"
         )
 
     if profiler_enabled:
