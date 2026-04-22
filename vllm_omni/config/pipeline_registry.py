@@ -83,10 +83,15 @@ _OMNI_PIPELINES: dict[str, tuple[str, str]] = {
 def _single_stage_diffusion(model_type: str, model_arch: str, output: str) -> PipelineConfig:
     """Uniform single-stage DIFFUSION topology — every entry in
     ``_DIFFUSION_PIPELINES`` is built from this one helper.
+
+    ``model_arch`` doubles as the diffusers ``_class_name`` (e.g. ``FluxPipeline``)
+    so ``_auto_detect_model_type`` can resolve pure-diffusers checkpoints
+    via ``model_index.json`` without users passing ``--pipeline <key>``.
     """
     return PipelineConfig(
         model_type=model_type,
         model_arch=model_arch,
+        diffusers_class_name=model_arch,
         stages=(
             StagePipelineConfig(
                 stage_id=0,

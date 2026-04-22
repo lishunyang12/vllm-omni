@@ -71,6 +71,9 @@ class TestSingleStageDiffusion:
         pipeline = _PIPELINE_REGISTRY["flux"]
         assert pipeline.model_type == "flux"
         assert pipeline.model_arch == "FluxPipeline"
+        # Diffusers ``_class_name`` autodetect: model_arch doubles as the
+        # diffusers class name so model_index.json-only repos resolve.
+        assert pipeline.diffusers_class_name == "FluxPipeline"
         assert len(pipeline.stages) == 1
         stage = pipeline.stages[0]
         assert stage.execution_type == StageExecutionType.DIFFUSION
