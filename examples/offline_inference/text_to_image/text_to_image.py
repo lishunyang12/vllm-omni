@@ -267,6 +267,32 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=("Custom system prompt. Used when --use-system-prompt is custom. "),
     )
+    # Engine-level deploy/stage overrides (forwarded to Omni only if set, so
+    # they don't clobber deploy YAML defaults).
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=None,
+        help="Override per-stage gpu_memory_utilization (applies to all stages).",
+    )
+    parser.add_argument(
+        "--max-num-seqs",
+        type=int,
+        default=None,
+        help="Override per-stage max_num_seqs (applies to all stages).",
+    )
+    parser.add_argument(
+        "--stage-overrides",
+        type=str,
+        default=None,
+        help='Per-stage override JSON, e.g. \'{"0":{"gpu_memory_utilization":0.4}}\'.',
+    )
+    parser.add_argument(
+        "--deploy-config",
+        type=str,
+        default=None,
+        help="Path to a custom deploy YAML. Mutually exclusive with --stage-configs-path.",
+    )
     return parser.parse_args()
 
 
@@ -365,10 +391,30 @@ def main():
     }
     if args.stage_configs_path:
         omni_kwargs["stage_configs_path"] = args.stage_configs_path
+    if args.deploy_config:
+        omni_kwargs["deploy_config"] = args.deploy_config
+    # Forward deploy/stage overrides only when set, so unset flags don't
+    # silently clobber deploy YAML values via the parser-default fall-through.
+    if args.gpu_memory_utilization is not None:
+        omni_kwargs["gpu_memory_utilization"] = args.gpu_memory_utilization
+    if args.max_num_seqs is not None:
+        omni_kwargs["max_num_seqs"] = args.max_num_seqs
+    if args.stage_overrides is not None:
+        omni_kwargs["stage_overrides"] = args.stage_overrides
     if use_nextstep:
         # NextStep-1.1 requires explicit pipeline class
         omni_kwargs["model_class_name"] = "NextStep11Pipeline"
     omni = Omni(**omni_kwargs)
+    # Print resolved per-stage values so override behavior is visible.
+    print(f"\n[stage config] num_stages={omni.num_stages}")
+    for sid in range(omni.num_stages):
+        md = omni.engine.stage_metadata[sid]
+        print(
+            f"[stage config] stage {sid}: "
+            f"gpu_memory_utilization={md.get('gpu_memory_utilization')}, "
+            f"max_num_seqs={md.get('max_num_seqs')}, "
+            f"enforce_eager={md.get('enforce_eager')}"
+        )
 
     if profiler_enabled:
         print("[Profiler] Starting profiling...")
