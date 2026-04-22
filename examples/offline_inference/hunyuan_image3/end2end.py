@@ -133,31 +133,28 @@ def parse_args():
     parser.add_argument("--init-timeout", type=int, default=300, help="Initialization timeout in seconds.")
     parser.add_argument("--enforce-eager", action="store_true", help="Disable torch.compile.")
 
-    return parser.parse_args()
+    return parser, parser.parse_args()
 
 
 def main():
-    args = parse_args()
+    parser, args = parse_args()
     os.makedirs(args.output, exist_ok=True)
 
     # Determine task for prompt formatting
     task = args.bot_task or _MODALITY_TASK_MAP[args.modality]
 
-    # Determine stage config
-    stage_configs_path = args.stage_configs_path or _MODALITY_DEFAULT_CONFIG[args.modality]
-
-    # Build Omni
-    omni_kwargs = {
-        "model": args.model,
-        "stage_configs_path": stage_configs_path,
-        "log_stats": args.log_stats,
-        "init_timeout": args.init_timeout,
-        "enforce_eager": args.enforce_eager,
+    # Resolve modality-derived overrides — these are not direct CLI flags so
+    # forward them to ``from_cli_args`` via ``**overrides``.
+    overrides: dict[str, object] = {
+        "stage_configs_path": args.stage_configs_path or _MODALITY_DEFAULT_CONFIG[args.modality],
     }
     if args.modality in ("text2img", "img2img"):
-        omni_kwargs["mode"] = "text-to-image"
+        overrides["mode"] = "text-to-image"
 
-    omni = Omni(**omni_kwargs)
+    # ``from_cli_args`` captures which flags the user typed (via
+    # ``detect_explicit_cli_keys``) so argparse defaults don't silently
+    # clobber deploy YAML values.
+    omni = Omni.from_cli_args(args, parser=parser, **overrides)
 
     # Prepare prompts
     prompts = args.prompts or ["A cute cat"]
@@ -217,7 +214,7 @@ def main():
     print("HunyuanImage-3.0 Generation Configuration:")
     print(f"  Model: {args.model}")
     print(f"  Modality: {args.modality}")
-    print(f"  Stage config: {stage_configs_path}")
+    print(f"  Stage config: {overrides['stage_configs_path']}")
     print(f"  Num stages: {omni.num_stages}")
     if args.modality in ("text2img", "img2img"):
         print(f"  Inference steps: {args.steps}")
