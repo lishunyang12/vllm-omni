@@ -41,14 +41,32 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
     ) -> str:
         from vllm_omni.diffusion.envs import PACKAGES_CHECKER
 
-        # Check compute capability for Flash Attention support
-        # Flash Attention requires compute capability >= 8.0 and < 10.0
+        # Check compute capability for Flash Attention support.
+        # FA requires sm_80+. Blackwell (sm_10x/sm_12x) only works with FA builds
+        # that include the Blackwell CUTE kernel — plain FA2 will crash there.
+        #
+        # Known Blackwell SKUs:
+        #   sm_100 = B200 / GB200 (datacenter)
+        #   sm_103 = B300 / GB300 (Blackwell Ultra)
+        #   sm_120 = RTX Pro 6000, RTX 50-series (consumer)
+        #   sm_121 = consumer Blackwell refresh
+        _known_blackwell_sms = {(10, 0), (10, 3), (12, 0), (12, 1)}
         compute_capability = cls.get_device_capability()
         compute_supported = False
+        is_blackwell = False
+        sm_str = ""
         if compute_capability is not None:
             major, minor = compute_capability
             capability = major * 10 + minor
-            compute_supported = 80 <= capability < 100
+            compute_supported = capability >= 80
+            sm_str = f"sm_{major}{minor}"
+            # Accept major in {10, 11, 12} to cover future Blackwell refreshes.
+            is_blackwell = major in (10, 11, 12)
+            if is_blackwell and (major, minor) not in _known_blackwell_sms:
+                logger.info(
+                    "Detected Blackwell-class GPU %s (untested variant); routing to CUDNN_ATTN with SDPA fallback.",
+                    sm_str,
+                )
 
         # Check if FA packages are available
         packages_info = PACKAGES_CHECKER.get_packages_info()
@@ -57,13 +75,19 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
         # Both compute capability and packages must be available for FA
         flash_attn_supported = compute_supported and packages_available
 
+        # cuDNN 9.5+ ships Blackwell FMHA kernels. If the runtime is older,
+        # the CUDNN_ATTN default would still work via internal fallback but
+        # without the tuned Blackwell path, so we skip routing there.
+        cudnn_version = torch.backends.cudnn.version() or 0
+        cudnn_blackwell_ready = cudnn_version >= 90500
+
         if selected_backend is not None:
             backend_upper = selected_backend.upper()
             if backend_upper == "FLASH_ATTN" and not flash_attn_supported:
                 if not compute_supported:
                     logger.warning(
-                        "Flash Attention requires GPU with compute capability >= 8.0 "
-                        "and < 10.0. Falling back to TORCH_SDPA backend."
+                        "Flash Attention requires GPU with compute capability >= 8.0. "
+                        "Falling back to TORCH_SDPA backend."
                     )
                 elif not packages_available:
                     logger.warning("Flash Attention packages not available. Falling back to TORCH_SDPA backend.")
@@ -72,6 +96,22 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
             backend = DiffusionAttentionBackendEnum[backend_upper]
             logger.info("Using diffusion attention backend '%s'", backend_upper)
             return backend.get_path()
+
+        if is_blackwell and cudnn_blackwell_ready:
+            logger.info(
+                "Defaulting to diffusion attention backend CUDNN_ATTN (Blackwell %s, cuDNN %d)",
+                sm_str,
+                cudnn_version,
+            )
+            return DiffusionAttentionBackendEnum.CUDNN_ATTN.get_path()
+
+        if is_blackwell and not cudnn_blackwell_ready:
+            logger.warning(
+                "Detected Blackwell %s but cuDNN %d < 9.5 — no tuned Blackwell FMHA. "
+                "Falling through to FLASH_ATTN / SDPA.",
+                sm_str,
+                cudnn_version,
+            )
 
         if flash_attn_supported:
             logger.info("Defaulting to diffusion attention backend FLASH_ATTN")
