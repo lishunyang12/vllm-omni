@@ -131,9 +131,16 @@ def _run_sdpa_variants(q, k, v, attn_mask, scale: float) -> list[tuple[str, floa
     return rows
 
 
-def _run_flashinfer(q, k, v, scale: float, backend: str | None = None) -> tuple[float, str]:
-    """Call FlashInfer's dense single-prefill. ``backend`` hints at
-    cutlass/fa3/trtllm if the installed version exposes that kwarg."""
+def _run_flashinfer(
+    q, k, v, scale: float, backend: str | None = None, attn_mask=None
+) -> tuple[float, str]:
+    """Call FlashInfer's dense single-prefill.
+
+    ``backend`` hints at cutlass/fa3/trtllm if the installed version exposes
+    that kwarg. ``attn_mask`` is the same additive 4D mask we pass to SDPA —
+    we convert it to the 2D boolean ``custom_mask`` form FlashInfer accepts.
+    Per FlashInfer docs, ``custom_mask`` only applies when ``causal=False``.
+    """
     try:
         import inspect
 
@@ -147,6 +154,12 @@ def _run_flashinfer(q, k, v, scale: float, backend: str | None = None) -> tuple[
         if "backend" not in sig.parameters:
             return float("nan"), "no-backend-kwarg"
         kwargs["backend"] = backend
+
+    if attn_mask is not None:
+        # Collapse (B, 1, S, S) additive float mask to (S, S) boolean.
+        # FlashInfer expects True = keep, False = masked out.
+        mask_2d = attn_mask[0, 0]
+        kwargs["custom_mask"] = mask_2d != float("-inf")
 
     def _call():
         out = single_prefill_with_kv_cache(q[0], k[0], v[0], **kwargs)
@@ -247,7 +260,7 @@ def _bench_one_shape(shape: dict, dtype: torch.dtype, device: str) -> tuple[list
 
     mask = _make_mask(shape["batch"], shape["seq"], device=device, dtype=dtype, pad_tokens=256)
     rows_mask = _run_sdpa_variants(q, k, v, attn_mask=mask, scale=scale)
-    rows_mask.append(("FLASHINFER (dense)", float("nan"), "mask-not-supported"))
+    rows_mask.append(("FLASHINFER (dense)", *_run_flashinfer(q, k, v, scale, attn_mask=mask)))
     rows_mask.append(("FA4 (direct)", float("nan"), "mask-not-supported"))
 
     return rows_nomask, rows_mask
