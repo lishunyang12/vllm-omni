@@ -1318,3 +1318,63 @@ class TestSamplingConstraintsPrecedence:
         assert stages[1].yaml_extras["default_sampling_params"]["stop_token_ids"] == [2150]
         # Deploy temperature still flows through
         assert stages[0].yaml_extras["default_sampling_params"]["temperature"] == 0.4
+
+
+class TestHunyuanImage3ShippedDeploys:
+    """Structural smoke tests for shipped Hunyuan-Image3 deploy yamls.
+
+    The GPU-gated e2e test (``test_hunyuanimage3_text2img.py``) runs against
+    the DiT-only CI fixture; these cheap tests catch schema regressions in
+    the shipped AR→DiT t2i / it2i / dit_only deploys that no GPU is needed
+    to see.
+    """
+
+    @pytest.mark.parametrize(
+        "yaml_name,expected_pipeline,expected_stage_count,expected_stages",
+        [
+            ("hunyuan_image3_t2i.yaml", "hunyuan_image3_t2i", 2, ("AR", "dit")),
+            ("hunyuan_image3_it2i.yaml", "hunyuan_image3_it2i", 2, ("AR", "dit")),
+            ("hunyuan_image3_dit_only.yaml", "hunyuan_image3_dit_only", 1, ("dit",)),
+        ],
+    )
+    def test_shipped_deploys_parse_and_resolve(
+        self, yaml_name, expected_pipeline, expected_stage_count, expected_stages
+    ):
+        import vllm_omni.model_executor.models.hunyuan_image3.pipeline  # noqa: F401
+        from vllm_omni.config.stage_config import load_deploy_config, merge_pipeline_deploy
+
+        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / yaml_name
+        if not deploy_path.exists():
+            pytest.skip(f"Shipped deploy not found: {yaml_name}")
+
+        deploy = load_deploy_config(deploy_path)
+        assert deploy.pipeline == expected_pipeline
+        assert len(deploy.stages) == expected_stage_count
+
+        pipeline = _PIPELINE_REGISTRY[expected_pipeline]
+        assert tuple(s.model_stage for s in pipeline.stages) == expected_stages
+
+        stages = merge_pipeline_deploy(pipeline, deploy)
+        assert len(stages) == expected_stage_count
+
+    def test_t2i_ar_dit_topology(self):
+        """The AR→DiT t2i default wires stage 1 to consume stage 0's KV output."""
+        import vllm_omni.model_executor.models.hunyuan_image3.pipeline  # noqa: F401
+        from vllm_omni.config.stage_config import load_deploy_config, merge_pipeline_deploy
+
+        deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "hunyuan_image3_t2i.yaml"
+        if not deploy_path.exists():
+            pytest.skip("Shipped deploy not found: hunyuan_image3_t2i.yaml")
+
+        pipeline = _PIPELINE_REGISTRY["hunyuan_image3_t2i"]
+        deploy = load_deploy_config(deploy_path)
+        stages = merge_pipeline_deploy(pipeline, deploy)
+
+        # Pipeline-level invariants for the KV-transfer path.
+        assert pipeline.stages[0].omni_kv_config is not None
+        assert pipeline.stages[1].input_sources == (0,)
+        assert pipeline.stages[1].omni_kv_config is not None
+
+        # Deploy-level placement: 4 AR + 4 DiT across 8 devices.
+        assert stages[0].yaml_runtime.get("devices") == "0,1,2,3"
+        assert stages[1].yaml_runtime.get("devices") == "4,5,6,7"

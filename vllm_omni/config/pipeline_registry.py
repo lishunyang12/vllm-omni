@@ -35,8 +35,8 @@ _OMNI_PIPELINES: dict[str, tuple[str, str]] = {
         "vllm_omni.model_executor.models.hunyuan_image3.pipeline",
         "HUNYUAN_IMAGE3_IT2I_PIPELINE",
     ),
-    # ``dit_only`` / ``i2t`` / ``t2t`` ship no default deploy yaml — kept
-    # for tests and users bringing their own deploy.
+    # ``dit_only`` ships a default deploy yaml (DiT-only path + NPU section);
+    # ``i2t`` / ``t2t`` are kept BYO.
     "hunyuan_image3_dit_only": (
         "vllm_omni.model_executor.models.hunyuan_image3.pipeline",
         "HUNYUAN_IMAGE3_DIT_ONLY_PIPELINE",
