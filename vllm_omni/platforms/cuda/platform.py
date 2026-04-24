@@ -98,6 +98,18 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
         cudnn_version = torch.backends.cudnn.version() or 0
         cudnn_blackwell_ready = cudnn_version >= 90500
 
+        # FlashInfer's dense prefill edges cuDNN by a few percent on sm_120
+        # Blackwell (6.79 ms vs 7.08 ms at HV-1.5 shapes; see bench in
+        # benchmarks/diffusion/bench_attention_backends.py). Prefer it when
+        # importable; fall through to cuDNN otherwise.
+        flashinfer_available = False
+        try:
+            import flashinfer  # noqa: F401
+
+            flashinfer_available = True
+        except ImportError:
+            pass
+
         if selected_backend is not None:
             backend_upper = selected_backend.upper()
             if backend_upper == "FLASH_ATTN" and not flash_attn_supported:
@@ -113,6 +125,13 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
             backend = DiffusionAttentionBackendEnum[backend_upper]
             logger.debug("Using diffusion attention backend '%s'", backend_upper)
             return backend.get_path()
+
+        if is_blackwell and flashinfer_available:
+            logger.info(
+                "Defaulting to diffusion attention backend FLASHINFER_ATTN (Blackwell %s)",
+                sm_str,
+            )
+            return DiffusionAttentionBackendEnum.FLASHINFER_ATTN.get_path()
 
         if is_blackwell and cudnn_blackwell_ready:
             logger.info(
