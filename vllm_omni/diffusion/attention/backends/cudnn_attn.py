@@ -68,9 +68,30 @@ class CuDNNAttentionImpl(AttentionImpl):
         # PyTorch SDPA dispatch quirk: when FLASH rejects a non-None attn_mask,
         # cuDNN gets runtime-disabled in the same call and the dispatcher falls
         # through to MATH even though cuDNN alone handles the mask fine
-        # (~11 ms vs ~215 ms for MATH on sm_120 HV-1.5 shapes). Users who need a
-        # fallback should set DIFFUSION_ATTENTION_BACKEND=TORCH_SDPA.
-        with sdpa_kernel([SDPBackend.CUDNN_ATTENTION]):
+        # (~11 ms vs ~215 ms for MATH on sm_120 HV-1.5 shapes).
+        #
+        # Fall back to the default SDPA dispatcher if cuDNN rejects the shape,
+        # e.g. under torch.compile where Dynamo sees a symbolic head_dim and
+        # cuDNN's kernel selection fails (observed in LTX-2 audio attention).
+        # The unpinned dispatcher then picks EFFICIENT/MATH instead of raising.
+        try:
+            with sdpa_kernel([SDPBackend.CUDNN_ATTENTION]):
+                output = torch.nn.functional.scaled_dot_product_attention(
+                    query,
+                    key,
+                    value,
+                    attn_mask=attention_mask,
+                    dropout_p=0.0,
+                    is_causal=self.causal,
+                    scale=self.softmax_scale,
+                )
+        except RuntimeError as e:
+            if "No available kernel" not in str(e):
+                raise
+            logger.warning_once(
+                "cuDNN SDPA rejected this shape; falling back to default SDPA dispatcher. "
+                "Set DIFFUSION_ATTENTION_BACKEND=TORCH_SDPA for the full dispatcher path on every call."
+            )
             output = torch.nn.functional.scaled_dot_product_attention(
                 query,
                 key,
