@@ -11,7 +11,6 @@ model-related operations.
 from __future__ import annotations
 
 import copy
-import os
 import time
 from collections.abc import Iterable
 from contextlib import nullcontext
@@ -78,29 +77,13 @@ class DiffusionModelRunner(OmniConnectorModelRunnerMixin):
         self.kv_transfer_manager = OmniKVTransferManager.from_od_config(od_config)
 
     def _compile_transformer(self, attr_name: str) -> None:
-        """Compile a transformer attribute on the pipeline with torch.compile.
-
-        ``DIFFUSION_COMPILE_MODE=reduce-overhead`` opts in to torch.compile's
-        reduce-overhead mode which auto-captures CUDA graphs per shape. Graph
-        capture needs static shapes, so we flip ``dynamic=False`` when that
-        mode is selected. Default path keeps ``dynamic=True`` so resolution
-        changes don't trigger a recompile storm.
-        """
+        """Compile a transformer attribute on the pipeline with torch.compile."""
         model = getattr(self.pipeline, attr_name, None)
         if model is None:
             return
-        mode = os.environ.get("DIFFUSION_COMPILE_MODE", "default")
-        if mode == "reduce-overhead":
-            compile_kwargs: dict = {"mode": "reduce-overhead", "dynamic": False}
-        else:
-            compile_kwargs = {"dynamic": True}
         try:
-            setattr(self.pipeline, attr_name, regionally_compile(model, **compile_kwargs))
-            logger.info(
-                "Model runner: %s compiled with torch.compile (%s).",
-                attr_name,
-                ", ".join(f"{k}={v}" for k, v in compile_kwargs.items()),
-            )
+            setattr(self.pipeline, attr_name, regionally_compile(model, dynamic=True))
+            logger.info("Model runner: %s compiled with torch.compile.", attr_name)
         except Exception as e:
             logger.warning(
                 "Model runner: torch.compile for %s failed: %s. Using eager mode.",

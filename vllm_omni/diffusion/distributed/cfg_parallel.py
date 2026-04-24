@@ -129,12 +129,8 @@ class CFGParallelMixin(metaclass=ABCMeta):
                     cfg_normalize,
                 )
             else:
-                # Sequential CFG: compute both positive and negative. Mark a new
-                # cudagraph step between them so the positive output is cloned
-                # before the negative call reuses the same graph output buffer.
-                # No-op when DIFFUSION_COMPILE_MODE != "reduce-overhead".
+                # Sequential CFG: compute both positive and negative
                 positive_noise_pred = _wrap(self.predict_noise(**positive_kwargs))
-                torch.compiler.cudagraph_mark_step_begin()
                 negative_noise_pred = _wrap(self.predict_noise(**negative_kwargs))
 
                 if output_slice is not None:

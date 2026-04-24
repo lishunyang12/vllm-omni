@@ -281,14 +281,17 @@ def main() -> None:
                     shape[k] = v
 
         print("\n" + "=" * 88)
-        print(f"Preset: {preset_name}  |  batch={shape['batch']} heads={shape['heads']} "
-              f"seq={shape['seq']} head_dim={shape['head_dim']}")
+        print(
+            f"Preset: {preset_name}  |  batch={shape['batch']} heads={shape['heads']} "
+            f"seq={shape['seq']} head_dim={shape['head_dim']}"
+        )
         print("=" * 88)
 
         rows_nomask, rows_mask = _bench_one_shape(shape, dtype, args.device)
         _print_table(f"[{preset_name}] No attention mask", rows_nomask, baseline_name="CUDNN_ATTENTION")
-        _print_table(f"[{preset_name}] With attention mask (pad 256 tokens)",
-                     rows_mask, baseline_name="CUDNN_ATTENTION")
+        _print_table(
+            f"[{preset_name}] With attention mask (pad 256 tokens)", rows_mask, baseline_name="CUDNN_ATTENTION"
+        )
 
         summary[preset_name] = _pick_winner(rows_nomask)
 
