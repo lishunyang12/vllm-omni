@@ -19,7 +19,8 @@ Run:
 
 Optional extras:
     pip install --pre flash-attn-4        # FA4 is currently pre-release only
-    pip install -U flashinfer              # for backend= kwarg support
+    pip install -U flashinfer              # latest FlashInfer (0.6.9)
+    pip install sageattention             # SageAttention 2.2, INT8 quantized path
 
 The table at the end is the data we want on the PR — surface the row where a
 backend is >1.5x the SDPA baseline, that's the one to gate off the auto-route.
@@ -172,6 +173,54 @@ def _run_fa4(q, k, v, scale: float) -> tuple[float, str]:
     return _time_call(_call)
 
 
+def _run_flashinfer_cudnn_batch(q, k, v, scale: float) -> tuple[float, str]:
+    """Call FlashInfer's direct cuDNN wrapper. Bypasses PyTorch SDPA dispatch
+    (which has a few hundred ns of overhead per call) and talks to cuDNN FMHA
+    straight. Useful as a ceiling for 'pure cuDNN, no SDPA' on Blackwell."""
+    try:
+        from flashinfer.prefill import cudnn_batch_prefill_with_kv_cache
+    except Exception as e:
+        return float("nan"), f"import-{type(e).__name__}"
+
+    b, s, h, d = q.shape
+    qo_indptr = torch.tensor([0, s], dtype=torch.int32, device=q.device)
+    kv_indptr = torch.tensor([0, s], dtype=torch.int32, device=q.device)
+
+    def _call():
+        return cudnn_batch_prefill_with_kv_cache(
+            q.reshape(b * s, h, d),
+            k.reshape(b * s, h, d),
+            v.reshape(b * s, h, d),
+            qo_indptr=qo_indptr,
+            kv_indptr=kv_indptr,
+            max_qo_len=s,
+            max_kv_len=s,
+            sm_scale=scale,
+            causal=False,
+        )
+
+    return _time_call(_call)
+
+
+def _run_sage(q, k, v, scale: float) -> tuple[float, str]:
+    """SageAttention 2.2 — INT8 quantized attention with FP16 accumulation.
+    On Blackwell, typically 1.3-1.7x faster than BF16 FMHA kernels. Lossy in
+    principle but generally visually indistinguishable on diffusion outputs.
+    This is the real 1.5x candidate on sm_120 today."""
+    try:
+        from sageattention import sageattn
+    except Exception as e:
+        return float("nan"), f"import-{type(e).__name__}"
+
+    def _call():
+        # sageattn expects (B, H, S, D) layout (same as F.sdpa), not (B, S, H, D).
+        q_t, k_t, v_t = (x.permute(0, 2, 1, 3) for x in (q, k, v))
+        out = sageattn(q_t, k_t, v_t, is_causal=False, sm_scale=scale)
+        return out.permute(0, 2, 1, 3)
+
+    return _time_call(_call)
+
+
 def _print_table(title: str, rows: list[tuple[str, float, str]]) -> None:
     print(f"\n{title}")
     print("-" * 72)
@@ -214,13 +263,12 @@ def main() -> None:
     # --- No mask (Wan-like hot path) ---
     rows_nomask = _run_sdpa_variants(q, k, v, attn_mask=None, scale=scale)
     rows_nomask.append(("FLASHINFER (default)", *_run_flashinfer(q, k, v, scale)))
-    # Probe several FlashInfer backend names — valid set varies by version
-    # (0.6.x: fa2/fa3/trtllm-gen/auto; newer: also cutlass). _time_call
-    # swallows ValueError so invalid names just show up as failed rows.
-    for fi_backend in ("fa2", "fa3", "trtllm-gen", "cutlass", "auto"):
-        rows_nomask.append(
-            (f"FLASHINFER ({fi_backend})", *_run_flashinfer(q, k, v, scale, backend=fi_backend))
-        )
+    # Probe FlashInfer's named backends. `trtllm-gen` has no sm_120 cubins
+    # (NVIDIA/TensorRT-LLM#11799) so it stays off the probe list.
+    for fi_backend in ("fa2", "fa3", "cutlass", "auto"):
+        rows_nomask.append((f"FLASHINFER ({fi_backend})", *_run_flashinfer(q, k, v, scale, backend=fi_backend)))
+    rows_nomask.append(("FLASHINFER (cudnn-batch)", *_run_flashinfer_cudnn_batch(q, k, v, scale)))
+    rows_nomask.append(("SAGEATTENTION (INT8)", *_run_sage(q, k, v, scale)))
     rows_nomask.append(("FA4 (direct)", *_run_fa4(q, k, v, scale)))
     _print_table("No attention mask", rows_nomask)
 
