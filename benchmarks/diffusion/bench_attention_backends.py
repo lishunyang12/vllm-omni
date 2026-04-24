@@ -20,7 +20,6 @@ Run:
 Optional extras:
     pip install --pre flash-attn-4        # FA4 is currently pre-release only
     pip install -U flashinfer              # latest FlashInfer (0.6.9)
-    pip install sageattention             # SageAttention 2.2, INT8 quantized path
 
 The table at the end is the data we want on the PR — surface the row where a
 backend is >1.5x the SDPA baseline, that's the one to gate off the auto-route.
@@ -202,39 +201,62 @@ def _run_flashinfer_cudnn_batch(q, k, v, scale: float) -> tuple[float, str]:
     return _time_call(_call)
 
 
-def _run_sage(q, k, v, scale: float) -> tuple[float, str]:
-    """SageAttention 2.2 — INT8 quantized attention with FP16 accumulation.
-    On Blackwell, typically 1.3-1.7x faster than BF16 FMHA kernels. Lossy in
-    principle but generally visually indistinguishable on diffusion outputs.
-    This is the real 1.5x candidate on sm_120 today."""
-    try:
-        from sageattention import sageattn
-    except Exception as e:
-        return float("nan"), f"import-{type(e).__name__}"
-
-    def _call():
-        # sageattn expects (B, H, S, D) layout (same as F.sdpa), not (B, S, H, D).
-        q_t, k_t, v_t = (x.permute(0, 2, 1, 3) for x in (q, k, v))
-        out = sageattn(q_t, k_t, v_t, is_causal=False, sm_scale=scale)
-        return out.permute(0, 2, 1, 3)
-
-    return _time_call(_call)
-
-
-def _print_table(title: str, rows: list[tuple[str, float, str]]) -> None:
+def _print_table(title: str, rows: list[tuple[str, float, str]], baseline_name: str | None = None) -> None:
     print(f"\n{title}")
-    print("-" * 72)
-    print(f"{'backend':<24} {'median (ms)':>14}    status")
-    print("-" * 72)
+    print("-" * 88)
+    header = f"{'backend':<24} {'median (ms)':>14}    {'vs baseline':>12}    status"
+    print(header)
+    print("-" * 88)
+    baseline_ms = None
+    if baseline_name is not None:
+        for name, ms, _ in rows:
+            if name == baseline_name and ms == ms:  # not NaN
+                baseline_ms = ms
+                break
     for name, ms, err in rows:
-        ms_str = f"{ms:>14.3f}" if ms == ms else f"{'n/a':>14}"  # NaN check
+        ms_str = f"{ms:>14.3f}" if ms == ms else f"{'n/a':>14}"
+        if baseline_ms is not None and ms == ms:
+            ratio = baseline_ms / ms
+            ratio_str = f"{ratio:>11.2f}x"
+        else:
+            ratio_str = f"{'—':>12}"
         status = "ok" if not err else f"FAILED ({err})"
-        print(f"{name:<24} {ms_str}    {status}")
+        print(f"{name:<24} {ms_str}    {ratio_str}    {status}")
+
+
+def _pick_winner(rows: list[tuple[str, float, str]]) -> tuple[str, float] | None:
+    """Return (backend, ms) of the fastest non-failing row, or None."""
+    ok_rows = [(n, m) for n, m, err in rows if not err and m == m]
+    if not ok_rows:
+        return None
+    return min(ok_rows, key=lambda x: x[1])
+
+
+def _bench_one_shape(shape: dict, dtype: torch.dtype, device: str) -> tuple[list, list]:
+    torch.manual_seed(0)
+    q, k, v = _make_qkv(**shape, device=device, dtype=dtype)
+    scale = 1.0 / (shape["head_dim"] ** 0.5)
+
+    rows_nomask = _run_sdpa_variants(q, k, v, attn_mask=None, scale=scale)
+    rows_nomask.append(("FLASHINFER (default)", *_run_flashinfer(q, k, v, scale)))
+    # `trtllm-gen` has no sm_120 cubins (NVIDIA/TensorRT-LLM#11799) — skipped.
+    for fi_backend in ("fa2", "fa3", "cutlass", "auto"):
+        rows_nomask.append((f"FLASHINFER ({fi_backend})", *_run_flashinfer(q, k, v, scale, backend=fi_backend)))
+    rows_nomask.append(("FLASHINFER (cudnn-batch)", *_run_flashinfer_cudnn_batch(q, k, v, scale)))
+    rows_nomask.append(("FA4 (direct)", *_run_fa4(q, k, v, scale)))
+
+    mask = _make_mask(shape["batch"], shape["seq"], device=device, dtype=dtype, pad_tokens=256)
+    rows_mask = _run_sdpa_variants(q, k, v, attn_mask=mask, scale=scale)
+    rows_mask.append(("FLASHINFER (dense)", float("nan"), "mask-not-supported"))
+    rows_mask.append(("FA4 (direct)", float("nan"), "mask-not-supported"))
+
+    return rows_nomask, rows_mask
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--preset", choices=list(_PRESETS.keys()), default="hv15")
+    parser.add_argument("--sweep", action="store_true", help="Run all presets and print a ranking")
     parser.add_argument("--batch", type=int, default=None)
     parser.add_argument("--heads", type=int, default=None)
     parser.add_argument("--seq", type=int, default=None)
@@ -243,55 +265,49 @@ def main() -> None:
     parser.add_argument("--device", default="cuda:0")
     args = parser.parse_args()
 
-    shape = dict(_PRESETS[args.preset])
-    for k in ("batch", "heads", "seq", "head_dim"):
-        v = getattr(args, k if k != "head_dim" else "head_dim")
-        if v is not None:
-            shape[k] = v
     dtype = torch.bfloat16 if args.dtype == "bf16" else torch.float16
-
     _env_report()
-    print(
-        f"Shape         : batch={shape['batch']} heads={shape['heads']} seq={shape['seq']} head_dim={shape['head_dim']}"
-    )
     print(f"dtype         : {args.dtype}")
 
-    torch.manual_seed(0)
-    q, k, v = _make_qkv(**shape, device=args.device, dtype=dtype)
-    scale = 1.0 / (shape["head_dim"] ** 0.5)
+    presets = list(_PRESETS.keys()) if args.sweep else [args.preset]
+    summary: dict[str, tuple[str, float] | None] = {}
 
-    # --- No mask (Wan-like hot path) ---
-    rows_nomask = _run_sdpa_variants(q, k, v, attn_mask=None, scale=scale)
-    rows_nomask.append(("FLASHINFER (default)", *_run_flashinfer(q, k, v, scale)))
-    # Probe FlashInfer's named backends. `trtllm-gen` has no sm_120 cubins
-    # (NVIDIA/TensorRT-LLM#11799) so it stays off the probe list.
-    for fi_backend in ("fa2", "fa3", "cutlass", "auto"):
-        rows_nomask.append((f"FLASHINFER ({fi_backend})", *_run_flashinfer(q, k, v, scale, backend=fi_backend)))
-    rows_nomask.append(("FLASHINFER (cudnn-batch)", *_run_flashinfer_cudnn_batch(q, k, v, scale)))
-    rows_nomask.append(("SAGEATTENTION (INT8)", *_run_sage(q, k, v, scale)))
-    rows_nomask.append(("FA4 (direct)", *_run_fa4(q, k, v, scale)))
-    _print_table("No attention mask", rows_nomask)
+    for preset_name in presets:
+        shape = dict(_PRESETS[preset_name])
+        if not args.sweep:
+            for k in ("batch", "heads", "seq", "head_dim"):
+                v = getattr(args, k if k != "head_dim" else "head_dim")
+                if v is not None:
+                    shape[k] = v
 
-    # --- With padding mask (HV-1.5 hot path) ---
-    mask = _make_mask(shape["batch"], shape["seq"], device=args.device, dtype=dtype, pad_tokens=256)
-    rows_mask = _run_sdpa_variants(q, k, v, attn_mask=mask, scale=scale)
-    rows_mask.append(("FLASHINFER (dense)", float("nan"), "mask-not-supported"))
-    rows_mask.append(("FA4 (direct)", float("nan"), "mask-not-supported"))
-    _print_table("With attention mask (pad 256 tokens)", rows_mask)
+        print("\n" + "=" * 88)
+        print(f"Preset: {preset_name}  |  batch={shape['batch']} heads={shape['heads']} "
+              f"seq={shape['seq']} head_dim={shape['head_dim']}")
+        print("=" * 88)
 
-    print("\nInterpretation:")
-    print("  * If CUDNN_ATTN_CHAIN is near MATH on the mask run → the chain collapses")
-    print("    to MATH. Fix: pin sdpa_kernel to [CUDNN_ATTENTION] only (already done in")
-    print("    CuDNNAttentionImpl after the PR's first-review fix).")
-    print("  * If CUDNN_ATTENTION alone is >1.5x FLASH_ATTENTION on the no-mask run →")
-    print("    cuDNN has no tuned kernel for this (SM, shape). Restrict auto-route to")
-    print("    datacenter Blackwell (sm_100/103).")
-    print("  * FLASHINFER (cutlass/fa3) rows show which internal FlashInfer backend is")
-    print("    tuned for this shape; pick the winner for the diffusion FLASHINFER_ATTN")
-    print("    impl rather than letting it default.")
-    print("  * FA4 (direct) is the Blackwell-native FMHA from flash-attn-4. Expect ~20%")
-    print("    over cuDNN 9.10 on sm_120. If it lands that way, the PR should add an")
-    print("    FA4_ATTN backend class and prefer it on Blackwell.")
+        rows_nomask, rows_mask = _bench_one_shape(shape, dtype, args.device)
+        _print_table(f"[{preset_name}] No attention mask", rows_nomask, baseline_name="CUDNN_ATTENTION")
+        _print_table(f"[{preset_name}] With attention mask (pad 256 tokens)",
+                     rows_mask, baseline_name="CUDNN_ATTENTION")
+
+        summary[preset_name] = _pick_winner(rows_nomask)
+
+    if args.sweep or len(presets) > 1:
+        print("\n" + "=" * 88)
+        print("Winners per preset (no-mask path)")
+        print("=" * 88)
+        for preset_name, winner in summary.items():
+            if winner is None:
+                print(f"  {preset_name:<10} — no successful backend")
+            else:
+                name, ms = winner
+                print(f"  {preset_name:<10} {name:<24} {ms:>8.3f} ms")
+
+    print("\nNotes:")
+    print("  * Ratios are relative to CUDNN_ATTENTION. >1.0x means faster than cuDNN.")
+    print("  * Mask-path winner inherits CUDNN_ATTN's fallback in the PR's backends.")
+    print("  * `trtllm-gen` and FA4 4.0.0b10 are known-broken on sm_120 as of Apr 2026.")
+    print("  * For e2e timings run benchmarks/diffusion/bench_e2e_attention.sh.")
 
 
 if __name__ == "__main__":
