@@ -453,10 +453,6 @@ class HunyuanVideo15Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, Diff
 
         with self.progress_bar(total=len(timesteps)) as pbar:
             for i, t in enumerate(timesteps):
-                # Signal cudagraph_trees that a new inference step is starting so
-                # stale outputs from the previous step's graph are cloned before
-                # the buffer is reused. No-op when DIFFUSION_COMPILE_MODE != "reduce-overhead".
-                torch.compiler.cudagraph_mark_step_begin()
                 self._current_timestep = t
 
                 latent_model_input = torch.cat([latents, cond_latents, mask], dim=1)
