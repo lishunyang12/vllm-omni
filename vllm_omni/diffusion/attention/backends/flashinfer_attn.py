@@ -66,39 +66,36 @@ class FlashInferAttentionImpl(AttentionImpl):
         self.softmax_scale = softmax_scale
 
     @staticmethod
-    def _pack_mask_for_flashinfer(
-        attn_mask: torch.Tensor, qo_len: int, kv_len: int
-    ) -> torch.Tensor | None:
+    def _pack_mask_for_flashinfer(attn_mask: torch.Tensor, qo_len: int, kv_len: int) -> torch.Tensor | None:
         """Convert a diffusion-style attn_mask into the 2D boolean form
         FlashInfer's ``custom_mask`` expects: ``(qo_len, kv_len)``, ``True``
         = keep.
 
-        Returns ``None`` when the mask is all-ones (elide), or when the shape
-        cannot be broadcast to ``(qo_len, kv_len)``. Caller falls back to
-        SDPA in the latter case — FlashInfer crashes (illegal memory access)
-        rather than raising if handed a wrong-shape mask, so we pre-check.
+        Accepts any input shape that broadcasts to ``(qo_len, kv_len)`` —
+        includes the common ``(B, 1, 1, kv_len)`` key-padding mask from
+        diffusion text encoders. Returns ``None`` when the mask is all-ones
+        (elide). Raises ``ValueError`` when shapes are incompatible; the
+        caller falls back to SDPA.
         """
         mask = attn_mask
-        # Strip leading singleton dims: (B, H, S_q, S_k) -> (S_q, S_k) when
-        # B == H == 1 or all heads share the mask. We only keep the final
-        # 2D slice; if it's a broadcast-ready (1, S_k) or (S_k,) mask, fall
-        # back to SDPA rather than guess-broadcast it.
+        # Strip leading singleton dims while keeping at least 2D so the final
+        # broadcast sees (..., kv_len) or (qo_len, kv_len).
         while mask.dim() > 2:
             mask = mask[0]
-        if mask.dim() != 2 or mask.shape != (qo_len, kv_len):
-            # Shape doesn't match what FlashInfer expects. Signal the caller
-            # (via ValueError) to fall back to SDPA — safer than passing a
-            # mismatched buffer to the kernel.
+        try:
+            mask = mask.broadcast_to((qo_len, kv_len))
+        except RuntimeError as e:
             raise ValueError(
-                f"attn_mask shape {tuple(mask.shape)} is not (qo_len={qo_len}, "
-                f"kv_len={kv_len}); falling back to SDPA"
-            )
+                f"attn_mask shape {tuple(attn_mask.shape)} cannot broadcast to (qo_len={qo_len}, kv_len={kv_len})"
+            ) from e
         if mask.dtype == torch.bool:
             bool_mask = mask
         else:
             bool_mask = mask != float("-inf")
         if bool_mask.all():
             return None
+        # ``broadcast_to`` returns a non-contiguous view; materialize for the
+        # kernel, which reads from GPU memory directly.
         return bool_mask.contiguous()
 
     def _sdpa_fallback(
