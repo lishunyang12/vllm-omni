@@ -81,10 +81,13 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
         cudnn_version = torch.backends.cudnn.version() or 0
         cudnn_blackwell_ready = cudnn_version >= 90500
 
-        # FlashInfer's dense prefill edges cuDNN by a few percent on sm_120
-        # Blackwell (6.79 ms vs 7.08 ms at HV-1.5 shapes; see bench in
-        # benchmarks/diffusion/bench_attention_backends.py). Prefer it when
-        # importable; fall through to cuDNN otherwise.
+        # FlashInfer edges cuDNN by ~4% at the kernel level on sm_120 but
+        # regresses ~2x at e2e on HV-1.5 because its dense-prefill path can't
+        # take 2D attn_masks and the SDPA fallback dispatches to
+        # EFFICIENT_ATTENTION (~25 ms) instead of the cuDNN mask path (~11 ms).
+        # CUDNN_ATTN pins sdpa_kernel([CUDNN_ATTENTION]) directly so masked
+        # calls keep the cuDNN path. Blackwell default prefers CUDNN_ATTN;
+        # users can opt into FLASHINFER_ATTN explicitly for no-mask workloads.
         flashinfer_available = False
         try:
             import flashinfer  # noqa: F401
@@ -109,13 +112,6 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
             logger.info("Using diffusion attention backend '%s'", backend_upper)
             return backend.get_path()
 
-        if is_blackwell and flashinfer_available:
-            logger.info(
-                "Defaulting to diffusion attention backend FLASHINFER_ATTN (Blackwell %s)",
-                sm_str,
-            )
-            return DiffusionAttentionBackendEnum.FLASHINFER_ATTN.get_path()
-
         if is_blackwell and cudnn_blackwell_ready:
             logger.info(
                 "Defaulting to diffusion attention backend CUDNN_ATTN (Blackwell %s, cuDNN %d)",
@@ -123,6 +119,14 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
                 cudnn_version,
             )
             return DiffusionAttentionBackendEnum.CUDNN_ATTN.get_path()
+
+        if is_blackwell and flashinfer_available:
+            logger.info(
+                "Defaulting to diffusion attention backend FLASHINFER_ATTN "
+                "(Blackwell %s, cuDNN unavailable)",
+                sm_str,
+            )
+            return DiffusionAttentionBackendEnum.FLASHINFER_ATTN.get_path()
 
         if is_blackwell and not cudnn_blackwell_ready:
             logger.warning(
