@@ -115,7 +115,7 @@ class LTX23Pipeline(nn.Module, ProgressBarMixin):
     - CPU offloading: text encoder, connectors, VAE, vocoder stay on CPU
     """
 
-    # Audio is diffused jointly with video; warmup must size audio tokens (#3121).
+    # Audio is diffused jointly with video; warmup must size audio tokens.
     support_audio_output = True
 
     def __init__(

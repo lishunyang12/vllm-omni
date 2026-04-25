@@ -64,7 +64,7 @@ def _make_rms_norm(hidden_size: int, *, eps: float, elementwise_affine: bool) ->
 
 def apply_interleaved_rotary_emb(x: torch.Tensor, freqs: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
     cos, sin = freqs
-    # Concrete pair count instead of -1 keeps SDPA shape static under torch.compile (#3121).
+    # Concrete pair count instead of -1 keeps SDPA shape static under torch.compile.
     x_real, x_imag = x.unflatten(2, (x.shape[2] // 2, 2)).unbind(-1)  # [B, S, C // 2]
     x_rotated = torch.stack([-x_imag, x_real], dim=-1).flatten(2)
     out = (x.float() * cos + x_rotated.float() * sin).to(x.dtype)
@@ -77,7 +77,7 @@ def apply_split_rotary_emb(
     *,
     head_dim: int,
 ) -> torch.Tensor:
-    # `head_dim` is plumbed in (not inferred via `-1`) so SDPA shape stays static under torch.compile (#3121).
+    # `head_dim` is plumbed in (not inferred via `-1`) so SDPA shape stays static under torch.compile.
     cos, sin = freqs
 
     x_dtype = x.dtype
@@ -1331,7 +1331,7 @@ class LTX2AudioVideoRotaryPosEmbed(nn.Module):
             # Reshape freqs to be compatible with multi-head attention
             b = cos_freq.shape[0]
             t = cos_freq.shape[1]
-            # Concrete per-head dim instead of -1 — see apply_split_rotary_emb (#3121)
+            # Concrete per-head dim instead of -1 — see apply_split_rotary_emb
             r = self.dim // self.num_attention_heads // 2
 
             cos_freq = cos_freq.reshape(b, t, self.num_attention_heads, r)
