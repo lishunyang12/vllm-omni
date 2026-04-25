@@ -70,7 +70,7 @@ def apply_interleaved_rotary_emb(x: torch.Tensor, freqs: tuple[torch.Tensor, tor
     out = (x.float() * cos + x_rotated.float() * sin).to(x.dtype)
     return out
 
-
+def apply_split_rotary_emb(x: torch.Tensor, freqs: tuple[torch.Tensor, torch.Tensor], *, head_dim: int) -> torch.Tensor:
 def apply_split_rotary_emb(x: torch.Tensor, freqs: tuple[torch.Tensor, torch.Tensor], head_dim: int) -> torch.Tensor:
     # `head_dim` is plumbed in (not inferred via `-1`) so SDPA shape stays static under torch.compile (#3121).
     cos, sin = freqs
