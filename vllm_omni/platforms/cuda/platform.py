@@ -139,8 +139,7 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
 
         if is_blackwell and flashinfer_available:
             logger.info(
-                "Defaulting to diffusion attention backend FLASHINFER_ATTN "
-                "(Blackwell %s, cuDNN unavailable)",
+                "Defaulting to diffusion attention backend FLASHINFER_ATTN (Blackwell %s, cuDNN unavailable)",
                 sm_str,
             )
             return DiffusionAttentionBackendEnum.FLASHINFER_ATTN.get_path()

@@ -131,9 +131,7 @@ def _run_sdpa_variants(q, k, v, attn_mask, scale: float) -> list[tuple[str, floa
     return rows
 
 
-def _run_flashinfer(
-    q, k, v, scale: float, backend: str | None = None, attn_mask=None
-) -> tuple[float, str]:
+def _run_flashinfer(q, k, v, scale: float, backend: str | None = None, attn_mask=None) -> tuple[float, str]:
     """Call FlashInfer's dense single-prefill.
 
     ``backend`` hints at cutlass/fa3/trtllm if the installed version exposes
