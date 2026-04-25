@@ -426,6 +426,15 @@ class DiffusionEngine:
             "prompt": "dummy run",
             "multi_modal_data": {"image": dummy_image, "audio": dummy_audio},
         }
+        # Audio pipelines round audio token count from num_frames; the default
+        # of 1 yields seq_len=1 K/V which cuDNN SDPA refuses under torch.compile
+        # 2 is the minimum that produces audio_num_frames > 1.
+        num_frames = (
+            2
+            if supports_audio_input(self.od_config.model_class_name)
+            or supports_audio_output(self.od_config.model_class_name)
+            else 1
+        )
         req = OmniDiffusionRequest(
             prompts=[prompt],
             request_ids=["dummy_req_id"],
@@ -433,6 +442,7 @@ class DiffusionEngine:
                 height=height,
                 width=width,
                 num_inference_steps=num_inference_steps,
+                num_frames=num_frames,
                 # Keep warmup path minimal and robust across text encoders.
                 # Some models may fail when warmup implicitly triggers
                 # classifier-free guidance with an empty negative prompt.
