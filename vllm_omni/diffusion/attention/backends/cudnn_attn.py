@@ -64,34 +64,19 @@ class CuDNNAttentionImpl(AttentionImpl):
             attention_mask = _maybe_reshape_attn_mask(query, key, attn_metadata.attn_mask, mask_mode="broadcast_k")
 
         query, key, value = (x.permute(0, 2, 1, 3) for x in (query, key, value))
-        # Pin cuDNN exclusively. A priority list like [CUDNN, FLASH, MATH] hits a
-        # PyTorch SDPA dispatch quirk: when FLASH rejects a non-None attn_mask,
-        # cuDNN gets runtime-disabled in the same call and the dispatcher falls
-        # through to MATH even though cuDNN alone handles the mask fine
-        # (~11 ms vs ~215 ms for MATH on sm_120 HV-1.5 shapes).
+        # Pin cuDNN exclusively. A priority list like [CUDNN, FLASH, MATH] hits
+        # a PyTorch SDPA dispatch quirk: when FLASH rejects a non-None
+        # attn_mask, cuDNN gets runtime-disabled in the same call and the
+        # dispatcher falls through to MATH even though cuDNN alone handles the
+        # mask fine (~11 ms vs ~215 ms for MATH on sm_120 HV-1.5 shapes).
         #
-        # Fall back to the default SDPA dispatcher if cuDNN rejects the shape,
-        # e.g. under torch.compile where Dynamo sees a symbolic head_dim and
-        # cuDNN's kernel selection fails (observed in LTX-2 audio attention).
-        # The unpinned dispatcher then picks EFFICIENT/MATH instead of raising.
-        try:
-            with sdpa_kernel([SDPBackend.CUDNN_ATTENTION]):
-                output = torch.nn.functional.scaled_dot_product_attention(
-                    query,
-                    key,
-                    value,
-                    attn_mask=attention_mask,
-                    dropout_p=0.0,
-                    is_causal=self.causal,
-                    scale=self.softmax_scale,
-                )
-        except RuntimeError as e:
-            if "No available kernel" not in str(e):
-                raise
-            logger.warning_once(
-                "cuDNN SDPA rejected this shape; falling back to default SDPA dispatcher. "
-                "Set DIFFUSION_ATTENTION_BACKEND=TORCH_SDPA for the full dispatcher path on every call."
-            )
+        # Under torch.compile, cuDNN's SDPA backend selection can fail at
+        # *trace time* on symbolic head_dims (observed in LTX-2 audio
+        # attention). Dynamo wraps the failure in TorchRuntimeError and aborts
+        # compilation before our runtime try/except can catch it. Detect
+        # compile mode and skip the pin so the dispatcher resolves
+        # symbolically-traceable shapes without crashing.
+        if torch.compiler.is_compiling():
             output = torch.nn.functional.scaled_dot_product_attention(
                 query,
                 key,
@@ -101,4 +86,32 @@ class CuDNNAttentionImpl(AttentionImpl):
                 is_causal=self.causal,
                 scale=self.softmax_scale,
             )
+        else:
+            try:
+                with sdpa_kernel([SDPBackend.CUDNN_ATTENTION]):
+                    output = torch.nn.functional.scaled_dot_product_attention(
+                        query,
+                        key,
+                        value,
+                        attn_mask=attention_mask,
+                        dropout_p=0.0,
+                        is_causal=self.causal,
+                        scale=self.softmax_scale,
+                    )
+            except RuntimeError as e:
+                if "No available kernel" not in str(e):
+                    raise
+                logger.warning_once(
+                    "cuDNN SDPA rejected this shape; falling back to default SDPA dispatcher. "
+                    "Set DIFFUSION_ATTENTION_BACKEND=TORCH_SDPA for the full dispatcher path on every call."
+                )
+                output = torch.nn.functional.scaled_dot_product_attention(
+                    query,
+                    key,
+                    value,
+                    attn_mask=attention_mask,
+                    dropout_p=0.0,
+                    is_causal=self.causal,
+                    scale=self.softmax_scale,
+                )
         return output.permute(0, 2, 1, 3)
