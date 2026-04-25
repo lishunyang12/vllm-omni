@@ -466,9 +466,9 @@ class LTX2AudioVideoAttnProcessor:
                 query = apply_split_rotary_emb(query, query_rotary_emb)
                 key = apply_split_rotary_emb(key, key_rotary_emb if key_rotary_emb is not None else query_rotary_emb)
 
-        query = query.unflatten(2, (attn.heads, -1))
-        key = key.unflatten(2, (attn.heads, -1))
-        value = value.unflatten(2, (attn.heads, -1))
+        query = query.unflatten(2, (attn.heads, attn.head_dim))
+        key = key.unflatten(2, (attn.heads, attn.head_dim))
+        value = value.unflatten(2, (attn.heads, attn.head_dim))
 
         attn_metadata = AttentionMetadata(attn_mask=attention_mask) if attention_mask is not None else None
         hidden_states = attn.attn(query, key, value, attn_metadata)
@@ -477,7 +477,7 @@ class LTX2AudioVideoAttnProcessor:
 
         # LTX-2.3: per-head gated attention
         if attn.to_gate_logits is not None:
-            hidden_states = hidden_states.unflatten(2, (attn.heads, -1))  # [B, T, H, D]
+            hidden_states = hidden_states.unflatten(2, (attn.heads, attn.head_dim))  # [B, T, H, D]
             # 2.0 * sigmoid so zero-init gates produce 1.0 (identity)
             gates = 2.0 * torch.sigmoid(gate_logits)  # [B, T, H]
             hidden_states = hidden_states * gates.unsqueeze(-1)
