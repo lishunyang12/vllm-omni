@@ -426,31 +426,32 @@ class DiffusionEngine:
             "prompt": "dummy run",
             "multi_modal_data": {"image": dummy_image, "audio": dummy_audio},
         }
-        sampling_kwargs: dict[str, Any] = dict(
-            height=height,
-            width=width,
-            num_inference_steps=num_inference_steps,
-            # Keep warmup path minimal and robust across text encoders.
-            # Some models may fail when warmup implicitly triggers
-            # classifier-free guidance with an empty negative prompt.
-            guidance_scale=0.0,
-            num_outputs_per_prompt=1,
-            # Disable CFG for warmup to avoid triggering CFG parallel
-            # validation when cfg_parallel_size > 1.
-            extra_args={"cfg_text_scale": 1.0, "cfg_img_scale": 1.0},
-        )
         # Audio pipelines round audio token count from num_frames; the default
         # of 1 yields seq_len=1 K/V which cuDNN SDPA refuses under torch.compile
         # (#3121). Pick a non-trivial num_frames so audio_num_frames > 1.
-        if supports_audio_input(self.od_config.model_class_name) or supports_audio_output(
-            self.od_config.model_class_name
-        ):
-            sampling_kwargs["num_frames"] = 24
-
+        num_frames = (
+            24
+            if supports_audio_input(self.od_config.model_class_name)
+            or supports_audio_output(self.od_config.model_class_name)
+            else 1
+        )
         req = OmniDiffusionRequest(
             prompts=[prompt],
             request_ids=["dummy_req_id"],
-            sampling_params=OmniDiffusionSamplingParams(**sampling_kwargs),
+            sampling_params=OmniDiffusionSamplingParams(
+                height=height,
+                width=width,
+                num_inference_steps=num_inference_steps,
+                num_frames=num_frames,
+                # Keep warmup path minimal and robust across text encoders.
+                # Some models may fail when warmup implicitly triggers
+                # classifier-free guidance with an empty negative prompt.
+                guidance_scale=0.0,
+                num_outputs_per_prompt=1,
+                # Disable CFG for warmup to avoid triggering CFG parallel
+                # validation when cfg_parallel_size > 1.
+                extra_args={"cfg_text_scale": 1.0, "cfg_img_scale": 1.0},
+            ),
         )
         logger.info("dummy run to warm up the model")
         request = self.pre_process_func(req) if self.pre_process_func is not None else req
