@@ -29,11 +29,18 @@ FPS="${FPS:-48}"
 SEED="${SEED:-42}"
 CFG_PARALLEL_SIZE="${CFG_PARALLEL_SIZE:-2}"
 
-BACKENDS=(
-  TORCH_SDPA
-  CUDNN_ATTN
-  FLASHINFER_ATTN
-)
+if [[ -n "${BACKENDS:-}" ]]; then
+  # shellcheck disable=SC2206
+  BACKENDS=( ${BACKENDS} )
+elif [[ -n "${DIFFUSION_ATTENTION_BACKEND:-}" ]]; then
+  BACKENDS=( "${DIFFUSION_ATTENTION_BACKEND}" )
+else
+  BACKENDS=(
+    TORCH_SDPA
+    CUDNN_ATTN
+    FLASHINFER_ATTN
+  )
+fi
 
 OUT_DIR="${OUT_DIR:-bench_ltx2_out}"
 mkdir -p "$OUT_DIR"
@@ -48,20 +55,34 @@ for BACKEND in "${BACKENDS[@]}"; do
   echo "======================================================================"
   echo "Running $BACKEND (CFG parallel ${CFG_PARALLEL_SIZE}) ..."
   echo "======================================================================"
-  DIFFUSION_ATTENTION_BACKEND="$BACKEND" \
-    python examples/offline_inference/text_to_video/text_to_video.py \
-      --model "$MODEL" \
-      --prompt "$PROMPT" \
-      --height "$HEIGHT" \
-      --width "$WIDTH" \
-      --num-frames "$FRAMES" \
-      --guidance-scale "$GUIDANCE" \
-      --frame-rate "$FRAME_RATE" \
-      --num-inference-steps "$STEPS" \
-      --fps "$FPS" \
-      --seed "$SEED" \
-      --cfg-parallel-size "$CFG_PARALLEL_SIZE" \
-      --output "$VID" 2>&1 | tee "$LOG"
+  EXTRA_ARGS=()
+  if [[ -n "${MODEL_CLASS_NAME:-}" ]]; then
+    EXTRA_ARGS+=(--model-class-name "$MODEL_CLASS_NAME")
+  fi
+  if [[ "${ENFORCE_EAGER:-0}" == "1" ]]; then
+    EXTRA_ARGS+=(--enforce-eager)
+  fi
+  # Run each backend in its own subshell with pipefail off so a non-zero
+  # python exit (e.g. example-script post-processing error after the timing
+  # has been printed) doesn't abort the sweep before the next backend runs.
+  ( set +e; set +o pipefail
+    DIFFUSION_ATTENTION_BACKEND="$BACKEND" \
+      python examples/offline_inference/text_to_video/text_to_video.py \
+        --model "$MODEL" \
+        --prompt "$PROMPT" \
+        --height "$HEIGHT" \
+        --width "$WIDTH" \
+        --num-frames "$FRAMES" \
+        --guidance-scale "$GUIDANCE" \
+        --frame-rate "$FRAME_RATE" \
+        --num-inference-steps "$STEPS" \
+        --fps "$FPS" \
+        --seed "$SEED" \
+        --cfg-parallel-size "$CFG_PARALLEL_SIZE" \
+        --tensor-parallel-size 1 \
+        "${EXTRA_ARGS[@]}" \
+        --output "$VID" 2>&1 | tee "$LOG"
+  ) || echo "[bench] $BACKEND exited non-zero — continuing"
 
   TOTAL=$(grep -oE "Total generation time: [0-9.]+" "$LOG" | awk '{print $4}' | tail -1)
   STEP=$(grep -oE "[0-9]+\.[0-9]+s/it" "$LOG" | tail -1 | sed 's/s\/it//')

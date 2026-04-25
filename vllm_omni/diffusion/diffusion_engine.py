@@ -426,22 +426,36 @@ class DiffusionEngine:
             "prompt": "dummy run",
             "multi_modal_data": {"image": dummy_image, "audio": dummy_audio},
         }
+        sampling_kwargs: dict[str, Any] = dict(
+            height=height,
+            width=width,
+            num_inference_steps=num_inference_steps,
+            # Keep warmup path minimal and robust across text encoders.
+            # Some models may fail when warmup implicitly triggers
+            # classifier-free guidance with an empty negative prompt.
+            guidance_scale=0.0,
+            num_outputs_per_prompt=1,
+            # Disable CFG for warmup to avoid triggering CFG parallel
+            # validation when cfg_parallel_size > 1.
+            extra_args={"cfg_text_scale": 1.0, "cfg_img_scale": 1.0},
+        )
+        # Audio-bearing models (LTX-2/2.3) round their audio token count from
+        # num_frames. The default num_frames=1 yields audio_num_frames=1, which
+        # cuDNN SDPA rejects ("does not support key/value sequence length 1")
+        # under torch.compile — Dynamo wraps the dispatch failure before the
+        # runtime fallback in cudnn_attn.forward_cuda can fire (issue #3121).
+        # Use a non-trivial num_frames whenever the pipeline produces or
+        # accepts audio so the warmup graph hits realistic audio attention
+        # shapes.
+        if supports_audio_input(self.od_config.model_class_name) or supports_audio_output(
+            self.od_config.model_class_name
+        ):
+            sampling_kwargs["num_frames"] = 24
+
         req = OmniDiffusionRequest(
             prompts=[prompt],
             request_ids=["dummy_req_id"],
-            sampling_params=OmniDiffusionSamplingParams(
-                height=height,
-                width=width,
-                num_inference_steps=num_inference_steps,
-                # Keep warmup path minimal and robust across text encoders.
-                # Some models may fail when warmup implicitly triggers
-                # classifier-free guidance with an empty negative prompt.
-                guidance_scale=0.0,
-                num_outputs_per_prompt=1,
-                # Disable CFG for warmup to avoid triggering CFG parallel
-                # validation when cfg_parallel_size > 1.
-                extra_args={"cfg_text_scale": 1.0, "cfg_img_scale": 1.0},
-            ),
+            sampling_params=OmniDiffusionSamplingParams(**sampling_kwargs),
         )
         logger.info("dummy run to warm up the model")
         request = self.pre_process_func(req) if self.pre_process_func is not None else req

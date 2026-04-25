@@ -64,23 +64,36 @@ def _make_rms_norm(hidden_size: int, *, eps: float, elementwise_affine: bool) ->
 
 def apply_interleaved_rotary_emb(x: torch.Tensor, freqs: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
     cos, sin = freqs
-    x_real, x_imag = x.unflatten(2, (-1, 2)).unbind(-1)  # [B, S, C // 2]
+    # Use a concrete pair count (x.shape[2] // 2) instead of unflatten's -1.
+    # Under torch.compile, -1 forces Dynamo to introduce a fresh SymInt for
+    # the inferred dim, which propagates as a symbolic head_dim through to
+    # SDPA and breaks cuDNN's kernel selection (issue #3121).
+    pair_count = x.shape[2] // 2
+    x_real, x_imag = x.unflatten(2, (pair_count, 2)).unbind(-1)  # [B, S, C // 2]
     x_rotated = torch.stack([-x_imag, x_real], dim=-1).flatten(2)
     out = (x.float() * cos + x_rotated.float() * sin).to(x.dtype)
     return out
 
 
-def apply_split_rotary_emb(x: torch.Tensor, freqs: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
+def apply_split_rotary_emb(
+    x: torch.Tensor,
+    freqs: tuple[torch.Tensor, torch.Tensor],
+    *,
+    head_dim: int,
+) -> torch.Tensor:
     cos, sin = freqs
 
     x_dtype = x.dtype
     needs_reshape = False
     if x.ndim != 4 and cos.ndim == 4:
-        # cos is (#b, h, t, r) -> reshape x to (b, h, t, dim_per_head)
-        # The cos/sin batch dim may only be broadcastable, so take batch size from x
+        # cos is (#b, h, t, r) -> reshape x to (b, h, t, head_dim)
+        # The cos/sin batch dim may only be broadcastable, so take batch size from x.
+        # Use the concrete `head_dim` arg instead of `-1` here: under torch.compile,
+        # an inferred `-1` becomes a fresh SymInt that propagates to SDPA and
+        # makes cuDNN's kernel selector reject the call (issue #3121).
         b = x.shape[0]
         _, h, t, _ = cos.shape
-        x = x.reshape(b, t, h, -1).swapaxes(1, 2)
+        x = x.reshape(b, t, h, head_dim).swapaxes(1, 2)
         needs_reshape = True
 
     # Split last dim (2*r) into (d=2, r)
@@ -107,7 +120,9 @@ def apply_split_rotary_emb(x: torch.Tensor, freqs: tuple[torch.Tensor, torch.Ten
     out = out.reshape(*out.shape[:-2], last)
 
     if needs_reshape:
-        out = out.swapaxes(1, 2).reshape(b, t, -1)
+        # Same reasoning as above: avoid `-1` so the flattened total_dim
+        # stays concrete in the Dynamo trace.
+        out = out.swapaxes(1, 2).reshape(b, t, h * head_dim)
 
     out = out.to(dtype=x_dtype)
     return out
@@ -463,8 +478,12 @@ class LTX2AudioVideoAttnProcessor:
                     key, key_rotary_emb if key_rotary_emb is not None else query_rotary_emb
                 )
             elif attn.rope_type == "split":
-                query = apply_split_rotary_emb(query, query_rotary_emb)
-                key = apply_split_rotary_emb(key, key_rotary_emb if key_rotary_emb is not None else query_rotary_emb)
+                query = apply_split_rotary_emb(query, query_rotary_emb, head_dim=attn.head_dim)
+                key = apply_split_rotary_emb(
+                    key,
+                    key_rotary_emb if key_rotary_emb is not None else query_rotary_emb,
+                    head_dim=attn.head_dim,
+                )
 
         query = query.unflatten(2, (attn.heads, attn.head_dim))
         key = key.unflatten(2, (attn.heads, attn.head_dim))
@@ -1319,12 +1338,18 @@ class LTX2AudioVideoRotaryPosEmbed(nn.Module):
                 cos_freq = torch.concatenate([cos_padding, cos_freq], axis=-1)
                 sin_freq = torch.concatenate([sin_padding, sin_freq], axis=-1)
 
-            # Reshape freqs to be compatible with multi-head attention
+            # Reshape freqs to be compatible with multi-head attention.
+            # Compute the per-head frequency width as a concrete Python int
+            # (self.dim and self.num_attention_heads are construction-time
+            # constants). Using `-1` here would let Dynamo infer it as a
+            # SymInt that propagates through SDPA and breaks cuDNN's kernel
+            # selection (issue #3121).
             b = cos_freq.shape[0]
             t = cos_freq.shape[1]
+            freq_dim_per_head = self.dim // self.num_attention_heads // 2
 
-            cos_freq = cos_freq.reshape(b, t, self.num_attention_heads, -1)
-            sin_freq = sin_freq.reshape(b, t, self.num_attention_heads, -1)
+            cos_freq = cos_freq.reshape(b, t, self.num_attention_heads, freq_dim_per_head)
+            sin_freq = sin_freq.reshape(b, t, self.num_attention_heads, freq_dim_per_head)
 
             cos_freqs = torch.swapaxes(cos_freq, 1, 2)  # (B,H,T,D//2)
             sin_freqs = torch.swapaxes(sin_freq, 1, 2)  # (B,H,T,D//2)

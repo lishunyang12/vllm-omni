@@ -148,6 +148,12 @@ class _VideoAudioScheduler:
 
 
 class LTX2Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin):
+    # The transformer jointly diffuses video + audio latents (audio_attn1 in
+    # LTX2VideoTransformerBlock fires unconditionally during forward), so the
+    # warmup needs realistic audio shapes to compile cleanly under
+    # torch.compile + cuDNN SDPA. See diffusion_engine._dummy_run.
+    support_audio_output = True
+
     def __init__(
         self,
         *,
