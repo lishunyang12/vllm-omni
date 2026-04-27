@@ -463,6 +463,22 @@ _STAGE_NON_ENGINE_KEYS = frozenset(
 _STAGE_DEPLOY_FIELDS = {f.name: f for f in fields(StageDeployConfig) if f.name not in _STAGE_NON_ENGINE_KEYS}
 
 
+_DIT_PARALLEL_FIELDS_AT_TOP_LEVEL = frozenset(
+    {
+        "enable_expert_parallel",
+        "sequence_parallel_size",
+        "ulysses_degree",
+        "ring_degree",
+        "ulysses_mode",
+        "cfg_parallel_size",
+        "vae_patch_parallel_size",
+        "use_hsdp",
+        "hsdp_shard_size",
+        "hsdp_replicate_size",
+    }
+)
+
+
 def _parse_stage_deploy(stage_data: dict[str, Any]) -> StageDeployConfig:
     """Parse a single stage entry from deploy YAML into StageDeployConfig."""
     if "engine_args" in stage_data:
@@ -476,6 +492,22 @@ def _parse_stage_deploy(stage_data: dict[str, Any]) -> StageDeployConfig:
     for name, f in _STAGE_DEPLOY_FIELDS.items():
         if name in engine_args:
             kwargs[name] = engine_args.pop(name)
+
+    # Flat schema support: hoist DiT-only parallel fields and tensor_parallel_size
+    # from top level into a parallel_config block. Lets authors write the same
+    # flat shape for AR and DiT stages — DiT engines read parallel_config.*,
+    # AR engines read top-level fields directly. Existing nested parallel_config
+    # forms keep working (we only setdefault).
+    pc = engine_args.get("parallel_config")
+    if not isinstance(pc, dict):
+        pc = {}
+    for name in _DIT_PARALLEL_FIELDS_AT_TOP_LEVEL:
+        if name in engine_args:
+            pc.setdefault(name, engine_args.pop(name))
+    if (tps := kwargs.get("tensor_parallel_size")) and tps > 1:
+        pc.setdefault("tensor_parallel_size", tps)
+    if pc:
+        engine_args["parallel_config"] = pc
 
     kwargs["output_connectors"] = stage_data.get("output_connectors")
     kwargs["input_connectors"] = stage_data.get("input_connectors")
