@@ -13,9 +13,9 @@ different stage graphs:
 
 Variants are surfaced as separate model_types so the orchestrator picks the
 right topology from deploy YAML alone (mirrors the qwen2_5_omni /
-qwen2_5_omni_thinker_only split). Only ``t2i`` and ``it2i`` ship with a
-default deploy yaml; ``dit_only`` / ``i2t`` / ``t2t`` are registered for
-tests and bring-your-own deploy.
+qwen2_5_omni_thinker_only split). ``t2i`` / ``it2i`` / ``dit_only`` ship
+with default deploy yamls (the dit_only deploy also carries the NPU
+overlay); ``i2t`` / ``t2t`` are registered for bring-your-own deploy.
 """
 
 from vllm_omni.config.stage_config import (

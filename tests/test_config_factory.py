@@ -1344,8 +1344,7 @@ class TestHunyuanImage3ShippedDeploys:
         from vllm_omni.config.stage_config import load_deploy_config, merge_pipeline_deploy
 
         deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / yaml_name
-        if not deploy_path.exists():
-            pytest.skip(f"Shipped deploy not found: {yaml_name}")
+        assert deploy_path.exists(), f"Shipped deploy missing: {yaml_name}"
 
         deploy = load_deploy_config(deploy_path)
         assert deploy.pipeline == expected_pipeline
@@ -1363,8 +1362,7 @@ class TestHunyuanImage3ShippedDeploys:
         from vllm_omni.config.stage_config import load_deploy_config, merge_pipeline_deploy
 
         deploy_path = Path(__file__).parent.parent / "vllm_omni" / "deploy" / "hunyuan_image3_t2i.yaml"
-        if not deploy_path.exists():
-            pytest.skip("Shipped deploy not found: hunyuan_image3_t2i.yaml")
+        assert deploy_path.exists(), "Shipped deploy missing: hunyuan_image3_t2i.yaml"
 
         pipeline = _PIPELINE_REGISTRY["hunyuan_image3_t2i"]
         deploy = load_deploy_config(deploy_path)
