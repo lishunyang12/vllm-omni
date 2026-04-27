@@ -133,11 +133,14 @@ def parse_args():
     parser.add_argument("--init-timeout", type=int, default=300, help="Initialization timeout in seconds.")
     parser.add_argument("--enforce-eager", action="store_true", help="Disable torch.compile.")
 
-    return parser, parser.parse_args()
+    from vllm_omni.engine.arg_utils import nullify_stage_engine_defaults
+
+    nullify_stage_engine_defaults(parser)
+    return parser.parse_args()
 
 
 def main():
-    parser, args = parse_args()
+    args = parse_args()
     os.makedirs(args.output, exist_ok=True)
 
     # Determine task for prompt formatting
@@ -151,10 +154,7 @@ def main():
     if args.modality in ("text2img", "img2img"):
         overrides["mode"] = "text-to-image"
 
-    # ``from_cli_args`` captures which flags the user typed (via
-    # ``detect_explicit_cli_keys``) so argparse defaults don't silently
-    # clobber deploy YAML values.
-    omni = Omni.from_cli_args(args, parser=parser, **overrides)
+    omni = Omni.from_cli_args(args, **overrides)
 
     # Prepare prompts
     prompts = args.prompts or ["A cute cat"]

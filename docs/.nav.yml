@@ -10,6 +10,7 @@ nav:
       - Image Generation: serving/image_generation_api.md
       - Image Edit: serving/image_edit_api.md
       - Text to Speech: serving/speech_api.md
+      - Streaming Video Input: serving/video_stream_api.md
   - Examples:
     - examples/README.md
     - Offline Inference:
@@ -65,6 +66,7 @@ nav:
         - FP8: user_guide/diffusion/quantization/fp8.md
         - Int8: user_guide/diffusion/quantization/int8.md
         - GGUF: user_guide/diffusion/quantization/gguf.md
+      - Attention Backends: user_guide/diffusion/attention_backends.md
       - Frame Interpolation: user_guide/diffusion/frame_interpolation.md
       - Parallelism:
         - Overview: user_guide/diffusion/parallelism/overview.md
