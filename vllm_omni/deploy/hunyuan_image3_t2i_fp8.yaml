@@ -12,6 +12,12 @@ stages:
     gpu_memory_utilization: 0.9
     enforce_eager: true
     tensor_parallel_size: 2
+    # AR colocates with DiT on devices 0,1. DiT reserves ~32 GiB per rank
+    # before AR's profile_run, which the profiling fallback misattributes as
+    # "non_torch_increase" and zeroes out the KV budget. Set kv_cache_memory_bytes
+    # explicitly to bypass profiling — AR needs ~3 GiB per rank for max_num_seqs=1
+    # at max_model_len=22800.
+    kv_cache_memory_bytes: 4294967296   # 4 GiB per rank
     devices: "0,1"
     hf_overrides:
       rope_parameters:
