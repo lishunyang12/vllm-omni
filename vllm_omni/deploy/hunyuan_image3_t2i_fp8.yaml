@@ -9,10 +9,7 @@ quantization: fp8
 stages:
   - stage_id: 0
     max_num_seqs: 1
-    # AR colocates with DiT on devices 0,1 — DiT reserves ~65 GiB peak per
-    # request, so AR needs to budget the rest. 0.45 leaves ~78 GiB for AR
-    # weights (~21 GiB) + KV cache + profile-run headroom.
-    gpu_memory_utilization: 0.45
+    gpu_memory_utilization: 0.9
     enforce_eager: true
     tensor_parallel_size: 2
     devices: "0,1"
