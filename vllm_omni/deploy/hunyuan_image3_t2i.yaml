@@ -3,13 +3,7 @@
 # transfer wiring live on the pipeline; deploy carries placement + sampling.
 # NPU deployment is DiT-only — use `--pipeline hunyuan_image3_dit_only`
 # with `vllm_omni/deploy/hunyuan_image3_dit_only.yaml`.
-#
-# FP8 on 2x H200 (verified): pass --quantization fp8 and override stage
-# placement to colocate AR+DiT on devices 0,1 with TP=2 (DiT keeps EP):
-#   --quantization fp8 --stage-overrides \
-#     '{"0":{"tensor_parallel_size":2,"devices":"0,1"},
-#       "1":{"tensor_parallel_size":2,"devices":"0,1",
-#            "parallel_config":{"enable_expert_parallel":true}}}'
+# FP8 on 2x H200 ships as `vllm_omni/deploy/hunyuan_image3_t2i_fp8.yaml`.
 pipeline: hunyuan_image3_t2i
 trust_remote_code: true
 distributed_executor_backend: mp
