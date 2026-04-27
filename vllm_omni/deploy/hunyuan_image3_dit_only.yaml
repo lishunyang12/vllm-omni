@@ -4,6 +4,7 @@
 pipeline: hunyuan_image3_dit_only
 trust_remote_code: true
 distributed_executor_backend: mp
+async_chunk: false
 
 stages:
   - stage_id: 0

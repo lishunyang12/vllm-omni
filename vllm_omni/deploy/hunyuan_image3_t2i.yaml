@@ -13,6 +13,9 @@
 pipeline: hunyuan_image3_t2i
 trust_remote_code: true
 distributed_executor_backend: mp
+# AR → DiT cross-stage KV transfer is sync (DiT consumes AR's full KV after
+# prefill_finished), no per-token next-stage processor.
+async_chunk: false
 
 stages:
   - stage_id: 0
