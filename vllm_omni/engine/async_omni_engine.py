@@ -110,6 +110,10 @@ _PARENT_ARGS_KEEP: frozenset[str] = frozenset(
         "worker_extension_cls",
         "allowed_local_media_path",
         "allowed_media_domains",
+        # Pipeline-wide; flows into every stage's engine_args via
+        # _PIPELINE_WIDE_ENGINE_FIELDS so users can pick FP8 from CLI
+        # without authoring a dedicated quant deploy yaml.
+        "quantization",
     }
 )
 
