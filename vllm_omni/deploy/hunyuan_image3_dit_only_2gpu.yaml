@@ -1,0 +1,20 @@
+# HunyuanImage-3.0 DiT-only on 2 GPUs (FP8). For 2x H200 / H100 / A100-80GB.
+# Single-stage variant of `hunyuan_image3_dit_only.yaml` retuned for 2-GPU
+# placement; matches Tencent's `bot_task="image"` (DiT-only, no AR rewriter).
+pipeline: hunyuan_image3_dit_only
+trust_remote_code: true
+distributed_executor_backend: mp
+async_chunk: false
+quantization: fp8
+
+stages:
+  - stage_id: 0
+    max_num_seqs: 1
+    enforce_eager: true
+    tensor_parallel_size: 2
+    enable_expert_parallel: true
+    devices: "0,1"
+    default_sampling_params:
+      num_inference_steps: 50
+      guidance_scale: 2.5
+      seed: 42
