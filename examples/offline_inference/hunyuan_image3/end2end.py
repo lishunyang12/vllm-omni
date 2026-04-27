@@ -132,6 +132,13 @@ def parse_args():
     parser.add_argument("--log-stats", action="store_true", default=False)
     parser.add_argument("--init-timeout", type=int, default=300, help="Initialization timeout in seconds.")
     parser.add_argument("--enforce-eager", action="store_true", help="Disable torch.compile.")
+    parser.add_argument("--quantization", type=str, default=None, help="Quantization scheme (e.g. fp8).")
+    parser.add_argument(
+        "--stage-overrides",
+        type=str,
+        default=None,
+        help='JSON: per-stage overrides, e.g. \'{"0":{"tensor_parallel_size":2}}\'.',
+    )
 
     from vllm_omni.engine.arg_utils import nullify_stage_engine_defaults
 
