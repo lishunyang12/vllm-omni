@@ -168,16 +168,18 @@ def _build_omni_kwargs(args, quantization=None):
             "parallel_config": parallel_config,
             "enforce_eager": args.enforce_eager,
             "quantization_config":quantization,
-            "vae_use_tiling":args.vae_use_tiling
+            "vae_use_tiling":args.vae_use_tiling,
+            "enable_diffusion_pipeline_profiler": True,
         }
     else:
         kwargs = {
             "model": args.model,
             "parallel_config": parallel_config,
             "enforce_eager": args.enforce_eager,
-            "vae_use_tiling":args.vae_use_tiling
+            "vae_use_tiling":args.vae_use_tiling,
+            "enable_diffusion_pipeline_profiler": True,
         }
-    
+
     return kwargs
 
 def _load_reference_images(spec: str | None) -> list[Any]:
@@ -198,8 +200,22 @@ def _load_reference_images(spec: str | None) -> list[Any]:
         raise SystemExit(f"No image files (jpg/jpeg/png/webp) found in {p}")
     return [Image.open(f).convert("RGB") for f in image_paths]
 
+def _extract_denoise_seconds(first) -> float | None:
+    """Pull denoise-only time out of OmniRequestOutput.stage_durations.
+
+    The pipeline profiler records keys like '<PipelineClass>.diffuse'
+    (cuda-synced timer wrapped around the denoising loop). Match by suffix so
+    this stays model-agnostic.
+    """
+    stage_durations = getattr(first, "stage_durations", {}) or {}
+    return next(
+        (v for k, v in stage_durations.items() if k.endswith(".diffuse")),
+        None,
+    )
+
+
 def _generate_image(omni, args, prompt, seed):
-    """Generate a single image and return (PIL.Image, time_seconds, memory_gib)."""
+    """Generate a single image and return (PIL.Image, wall_seconds, memory_gib, denoise_seconds)."""
     from vllm_omni.inputs.data import OmniDiffusionSamplingParams
     from vllm_omni.platforms import current_omni_platform
 
@@ -219,13 +235,14 @@ def _generate_image(omni, args, prompt, seed):
     peak_mem = torch.cuda.max_memory_allocated() / (1024**3)
 
     first = outputs[0]
+    denoise_seconds = _extract_denoise_seconds(first)
     req_out = first.request_output[0] if hasattr(first, "request_output") else first
     img = req_out.images[0]
-    return img, elapsed, peak_mem
+    return img, elapsed, peak_mem, denoise_seconds
 
 
 def _generate_video(omni, args, prompt, seed,image=None):
-    """Generate a video and return (np.ndarray [F,H,W,C], time_seconds, memory_gib)."""
+    """Generate a video and return (np.ndarray [F,H,W,C], wall_seconds, memory_gib, denoise_seconds)."""
     from vllm_omni.inputs.data import OmniDiffusionSamplingParams
     from vllm_omni.outputs import OmniRequestOutput
     from vllm_omni.platforms import current_omni_platform
@@ -251,6 +268,7 @@ def _generate_video(omni, args, prompt, seed,image=None):
 
     first = outputs[0]
     peak_mem = getattr(first, "peak_memory_mb", 0.0) / 1024  # MB -> GiB
+    denoise_seconds = _extract_denoise_seconds(first)
     if hasattr(first, "request_output") and isinstance(first.request_output, list):
         inner = first.request_output[0]
         if isinstance(inner, OmniRequestOutput) and hasattr(inner, "images"):
@@ -278,7 +296,7 @@ def _generate_video(omni, args, prompt, seed,image=None):
         if frames_array.ndim == 5:
             frames_array = frames_array[0]
 
-    return frames_array, elapsed, peak_mem
+    return frames_array, elapsed, peak_mem, denoise_seconds
 
 
 def _unload_omni(omni):
@@ -314,18 +332,20 @@ def run_benchmark(args):
     bl_kwargs = _build_omni_kwargs(args, quantization=None)
     omni_bl = Omni(**bl_kwargs)
 
-    baseline_outputs = {}  # prompt -> (output, time, mem)
+    baseline_outputs = {}  # prompt -> (output, wall_time, mem, denoise_seconds)
     for i,prompt in enumerate(prompts):
         print(f"  Generating: {prompt[:60]}...")
         if is_video and input_images is not None:
-            out, t, mem = _generate_video(omni_bl, args, prompt, seed,input_images[i % len(input_images)])
+            out, t, mem, dt = _generate_video(omni_bl, args, prompt, seed,input_images[i % len(input_images)])
         elif is_video:
-            out, t, mem = _generate_video(omni_bl, args, prompt, seed)
+            out, t, mem, dt = _generate_video(omni_bl, args, prompt, seed)
         else:
-            out, t, mem = _generate_image(omni_bl, args, prompt, seed)
-        baseline_outputs[prompt] = (out, t, mem)
+            out, t, mem, dt = _generate_image(omni_bl, args, prompt, seed)
+        baseline_outputs[prompt] = (out, t, mem, dt)
 
     bl_avg_time = np.mean([v[1] for v in baseline_outputs.values()])
+    bl_denoise_times = [v[3] for v in baseline_outputs.values() if v[3] is not None]
+    bl_avg_denoise = float(np.mean(bl_denoise_times)) if bl_denoise_times else None
     bl_mem = baseline_outputs[prompts[0]][2]  # use first prompt's memory
     _unload_omni(omni_bl)
     del omni_bl # must explicitly del omni_bl otherwise will cause oom when running next model
@@ -361,14 +381,16 @@ def run_benchmark(args):
         for i,prompt in enumerate(prompts):
             print(f"  Generating: {prompt[:60]}...")
             if is_video and input_images is not None:
-                out, t, mem = _generate_video(omni_qt, args, prompt, seed,input_images[i % len(input_images)])
+                out, t, mem, dt = _generate_video(omni_qt, args, prompt, seed,input_images[i % len(input_images)])
             elif is_video:
-                out, t, mem = _generate_video(omni_qt, args, prompt, seed)
+                out, t, mem, dt = _generate_video(omni_qt, args, prompt, seed)
             else:
-                out, t, mem = _generate_image(omni_qt, args, prompt, seed)
-            qt_outputs[prompt] = (out, t, mem)
+                out, t, mem, dt = _generate_image(omni_qt, args, prompt, seed)
+            qt_outputs[prompt] = (out, t, mem, dt)
 
         qt_avg_time = np.mean([v[1] for v in qt_outputs.values()])
+        qt_denoise_times = [v[3] for v in qt_outputs.values() if v[3] is not None]
+        qt_avg_denoise = float(np.mean(qt_denoise_times)) if qt_denoise_times else None
         qt_mem = qt_outputs[prompts[0]][2]
         _unload_omni(omni_qt)
         del omni_qt  # must explicitly del omni_qt otherwise will cause oom when running next model
@@ -398,12 +420,16 @@ def run_benchmark(args):
         mean_lpips = np.mean([p["lpips"] for p in per_prompt])
         speedup = bl_avg_time / qt_avg_time if qt_avg_time > 0 else float("inf")
         mem_reduction = (bl_mem - qt_mem) / bl_mem * 100
-        qt_throughput = args.num_inference_steps / qt_avg_time if qt_avg_time > 0 else float("inf")
+        # Throughput uses denoise-only time (cuda-synced via DiffusionPipelineProfiler);
+        # falls back to wall time only if the profiler didn't surface it.
+        qt_throughput_basis = qt_avg_denoise if qt_avg_denoise is not None else qt_avg_time
+        qt_throughput = qt_throughput_basis / args.num_inference_steps if args.num_inference_steps > 0 else float("inf")
 
         all_results.append(
             {
                 "config": config_label,
                 "avg_time": qt_avg_time,
+                "avg_denoise": qt_avg_denoise,
                 "speedup": speedup,
                 "throughput_its": qt_throughput,
                 "memory_gib": qt_mem,
@@ -432,9 +458,12 @@ def run_benchmark(args):
     lines.append("")
     lines.append("### Summary")
     lines.append("")
-    bl_throughput = args.num_inference_steps / bl_avg_time if bl_avg_time > 0 else float("inf")
+    # Throughput uses denoise-only time (cuda-synced via DiffusionPipelineProfiler);
+    # falls back to wall time only if the profiler didn't surface it.
+    bl_throughput_basis = bl_avg_denoise if bl_avg_denoise is not None else bl_avg_time
+    bl_throughput = bl_throughput_basis / args.num_inference_steps if args.num_inference_steps > 0 else float("inf")
     lines.append(
-        "| Config | Avg Time | Speedup | Throughput (it/s) "
+        "| Config | Avg Time | Speedup | Throughput (s/it) "
         "| Peak VRAM (GiB) | Peak VRAM Reduction | Mean LPIPS |"
     )
     lines.append(
@@ -442,20 +471,21 @@ def run_benchmark(args):
         "|-----------------|---------------------|------------|"
     )
     lines.append(
-        f"| BF16 baseline | {bl_avg_time:.2f}s | 1.00x | {bl_throughput:.2f} "
+        f"| BF16 baseline | {bl_avg_time:.2f}s | 1.00x | {bl_throughput:.3f} "
         f"| {bl_mem:.2f} | — | (ref) |"
     )
     for r in all_results:
         lines.append(
             f"| {r['config']} | {r['avg_time']:.2f}s | {r['speedup']:.2f}x "
-            f"| {r['throughput_its']:.2f} "
+            f"| {r['throughput_its']:.3f} "
             f"| {r['memory_gib']:.2f} | {r['mem_reduction_pct']:.0f}% "
             f"| {r['mean_lpips']:.4f} |"
         )
     lines.append("")
     lines.append("> LPIPS < 0.01 = imperceptible, > 0.1 = clearly noticeable.")
     lines.append(
-        "> Throughput (it/s) = num_inference_steps / wall_time (text encode + denoising + VAE decode)."
+        "> Throughput (s/it) = denoise time / num_inference_steps "
+        "(cuda-synced via DiffusionPipelineProfiler; excludes text encode + VAE decode)."
     )
     lines.append(
         "> Peak VRAM = `max_memory_allocated` during one generate (model + activations + latents + VAE buffers)."

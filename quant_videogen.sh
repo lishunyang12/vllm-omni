@@ -152,8 +152,8 @@ stage2_hv15_branch() {
         "${OUTPUT_DIR}/hv15-720p-t2v-fp8-per-block" \
         "${HV15_PRODUCER}" \
         --model "${HV15_720P_T2V_MODEL}" \
-        --variant t2v \
         --height 720 --width 1280 \
+        --variant t2v \
         --weight-block-size 128,128
 }
 
@@ -165,13 +165,15 @@ stage2_vace_branch() {
         "${OUTPUT_DIR}/wan21-vace-14b-r2v-fp8-per-tensor" \
         "${VACE_PRODUCER}" \
         --model "${VACE_14B_MODEL}" \
-        --reference-images "${VACE_REF_IMAGES}"
+        --reference-images "${VACE_REF_IMAGES}" \
+        --height 480 --width 832 \
 
     run_quant "wan21_vace_14b_r2v_per_block" "1" \
         "${OUTPUT_DIR}/wan21-vace-14b-r2v-fp8-per-block" \
         "${VACE_PRODUCER}" \
         --model "${VACE_14B_MODEL}" \
         --reference-images "${VACE_REF_IMAGES}" \
+        --height 480 --width 832 \
         --weight-block-size 128,128
 }
 

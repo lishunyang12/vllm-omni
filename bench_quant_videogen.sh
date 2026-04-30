@@ -147,6 +147,7 @@ bench_2_hv15_720p_t2v_per_tensor() {  # GPU 0
         --quantization fp8 \
         --prompts "${PROMPTS[@]}" \
         --height 720 --width 1280 \
+        --guidance-scale 6.0 \
         --num-frames 49 --num-inference-steps 30 --seed 42 \
         --vae-use-tiling
 }
@@ -160,6 +161,7 @@ bench_3_hv15_720p_t2v_per_block() {   # GPU 1
         --quantization fp8 \
         --prompts "${PROMPTS[@]}" \
         --height 720 --width 1280 \
+        --guidance-scale 6.0 \
         --num-frames 49 --num-inference-steps 30 --seed 42 \
         --vae-use-tiling
 }
