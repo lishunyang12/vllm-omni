@@ -235,8 +235,9 @@ def _generate_image(omni, args, prompt, seed):
     peak_mem = torch.cuda.max_memory_allocated() / (1024**3)
 
     first = outputs[0]
+    peak_mem = getattr(first, "peak_memory_mb", 0.0) / 1024  # MB -> GiB
     denoise_seconds = _extract_denoise_seconds(first)
-    req_out = first.request_output[0] if hasattr(first, "request_output") else first
+    req_out = first.request_output if hasattr(first, "request_output") else first
     img = req_out.images[0]
     return img, elapsed, peak_mem, denoise_seconds
 

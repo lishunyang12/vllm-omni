@@ -62,7 +62,7 @@ def wait_for_port(host, port, q):
     q.put((host, port))
 
 
-@app.function(gpu="H100:2", timeout=3600 * 24)
+@app.function(gpu="H100", timeout=3600 * 24)
 def launch_ssh(q):
     with modal.forward(22, unencrypted=True) as tunnel:
         host, port = tunnel.tcp_socket
