@@ -10,7 +10,7 @@ scale cannot cover the full dynamic range at every timestep -- the layer is
 a poor candidate for W4A4 (NVFP4 default) and should use W4A8 or be kept
 full-precision.
 
-Tuned for Wan2.2 T2V A14B at 720x1280 / 81 frames by default, but the
+Tuned for Wan2.2 T2V A14B at 720x1280 / 33 frames by default, but the
 constants at the top of the file can be changed for any diffusers pipeline.
 
 Example:
@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -40,7 +39,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dtype", choices=("bfloat16", "float16"), default="bfloat16")
     p.add_argument("--height", type=int, default=720)
     p.add_argument("--width", type=int, default=1280)
-    p.add_argument("--num-frames", type=int, default=81)
+    p.add_argument("--num-frames", type=int, default=33)
     p.add_argument("--num-inference-steps", type=int, default=40)
     p.add_argument("--guidance-scale", type=float, default=4.0)
     p.add_argument("--seed", type=int, default=42)
