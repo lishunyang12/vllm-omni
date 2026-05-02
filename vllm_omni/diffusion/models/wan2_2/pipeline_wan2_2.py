@@ -374,9 +374,13 @@ class Wan22Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, DiffusionPipe
     def _create_transformer(self, config: dict) -> WanTransformer3DModel:
         """Create a transformer from a config dict. Subclasses may override."""
         qc = self.od_config.quantization_config
+        if qc is None:
+            qc = getattr(self.od_config.tf_model_config, "quant_config", None)
         print(
-            f"[dbg _create_transformer] od_config.quantization_config="
-            f"{type(qc).__name__ if qc is not None else 'None'} id={id(qc)}",
+            f"[dbg _create_transformer] resolved quant_config="
+            f"{type(qc).__name__ if qc is not None else 'None'} "
+            f"od_config.quantization_config={type(self.od_config.quantization_config).__name__ if self.od_config.quantization_config is not None else 'None'} "
+            f"tf_model_config.quant_config={type(getattr(self.od_config.tf_model_config, 'quant_config', None)).__name__ if getattr(self.od_config.tf_model_config, 'quant_config', None) is not None else 'None'}",
             flush=True,
         )
         return create_transformer_from_config(config, quant_config=qc)
