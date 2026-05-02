@@ -65,7 +65,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--num-frames", type=int, default=33)
     p.add_argument("--guidance-scale", type=float, default=4.0)
-    p.add_argument("--calib-steps", type=int, default=20)
+    p.add_argument("--calib-steps", type=int, default=40)
     p.add_argument("--calib-size", type=int, default=8)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--prompt", action="append", default=[])
