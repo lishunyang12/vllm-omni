@@ -55,11 +55,28 @@ def _build_inc(**kw: Any) -> QuantizationConfig:
     return OmniINCConfig(**filtered)
 
 
+def _build_modelopt_nvfp4(**kw: Any) -> QuantizationConfig:
+    """Lazy import for ModelOpt NVFP4 config.
+
+    ``ModelOptNvFp4Config.__init__`` takes internal fields
+    (``is_checkpoint_nvfp4_serialized``, ...) that are inconvenient to specify
+    from a checkpoint's ``quantization_config`` block. The classmethod
+    ``from_config`` accepts the friendlier on-disk schema
+    (``{"quant_algo", "kv_cache_quant_algo", "exclude_modules", "group_size"}``)
+    and normalizes it, so we route through that. Matches the pattern
+    upstream vLLM uses when loading ModelOpt-quantized LLM checkpoints.
+    """
+    from vllm.model_executor.layers.quantization.modelopt import ModelOptNvFp4Config
+
+    return ModelOptNvFp4Config.from_config({"quantization": kw})
+
+
 _OVERRIDES: dict[str, Callable[..., QuantizationConfig]] = {
     "gguf": _build_gguf,
     "int8": _build_int8,
     "inc": _build_inc,
     "auto-round": _build_inc,
+    "modelopt_fp4": _build_modelopt_nvfp4,
 }
 
 SUPPORTED_QUANTIZATION_METHODS: list[str] = list(dict.fromkeys(QUANTIZATION_METHODS + list(_OVERRIDES.keys())))

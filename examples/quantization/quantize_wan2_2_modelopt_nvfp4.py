@@ -327,7 +327,7 @@ def _wan22_quant_config_block() -> dict:
         ],
         "producer": {"name": "modelopt"},
         "quant_algo": "NVFP4",
-        "quant_method": "modelopt",
+        "quant_method": "modelopt_fp4",
     }
 
 
