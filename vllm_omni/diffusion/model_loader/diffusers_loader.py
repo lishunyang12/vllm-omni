@@ -215,9 +215,16 @@ class DiffusersPipelineLoader:
         self,
         model: nn.Module,
     ) -> Generator[tuple[str, torch.Tensor], None, None]:
+        from vllm_omni.diffusion.model_loader.checkpoint_adapters import get_checkpoint_adapter
+
         sources = self._get_weight_sources(model)
+        quant_config = getattr(self.od_config, "quantization_config", None) if self.od_config else None
         for source in sources:
-            yield from self._get_weights_iterator(source)
+            weights_iter = self._get_weights_iterator(source)
+            adapter = get_checkpoint_adapter(source, quant_config, model, use_safetensors=True)
+            if adapter is not None:
+                weights_iter = adapter.adapt(weights_iter)
+            yield from weights_iter
 
     def _get_weight_sources(self, model: nn.Module) -> tuple["ComponentSource", ...]:
         return tuple(
