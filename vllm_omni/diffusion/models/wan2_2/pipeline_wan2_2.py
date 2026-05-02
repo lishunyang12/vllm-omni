@@ -373,7 +373,13 @@ class Wan22Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, DiffusionPipe
 
     def _create_transformer(self, config: dict) -> WanTransformer3DModel:
         """Create a transformer from a config dict. Subclasses may override."""
-        return create_transformer_from_config(config, quant_config=self.od_config.quantization_config)
+        qc = self.od_config.quantization_config
+        print(
+            f"[dbg _create_transformer] od_config.quantization_config="
+            f"{type(qc).__name__ if qc is not None else 'None'} id={id(qc)}",
+            flush=True,
+        )
+        return create_transformer_from_config(config, quant_config=qc)
 
     @property
     def guidance_scale(self):

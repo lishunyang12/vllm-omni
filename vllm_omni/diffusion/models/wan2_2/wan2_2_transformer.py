@@ -849,6 +849,12 @@ class WanTransformer3DModel(nn.Module):
     ):
         super().__init__()
 
+        print(
+            f"[dbg wan2_2 init] quant_config={type(quant_config).__name__ if quant_config is not None else 'None'} "
+            f"id={id(quant_config)}",
+            flush=True,
+        )
+
         # Store config for compatibility
         self.config = type(
             "Config",
@@ -1115,7 +1121,16 @@ class WanTransformer3DModel(nn.Module):
                     loaded_weight = loaded_weight[tp_rank * shard_size : (tp_rank + 1) * shard_size]
 
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
-                weight_loader(param, loaded_weight)
+                try:
+                    weight_loader(param, loaded_weight)
+                except RuntimeError as exc:
+                    print(
+                        f"[dbg load_weights] FAILED lookup_name={lookup_name} "
+                        f"param.shape={tuple(param.shape)} param.dtype={param.dtype} "
+                        f"loaded.shape={tuple(loaded_weight.shape)} loaded.dtype={loaded_weight.dtype}",
+                        flush=True,
+                    )
+                    raise
 
             loaded_params.add(original_name)
             loaded_params.add(lookup_name)
