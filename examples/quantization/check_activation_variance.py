@@ -47,10 +47,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--min-hits",
         type=int,
-        default=None,
-        help="Minimum forward-pass hits to include a layer. Defaults to "
-             "--num-inference-steps (filters sparse MoE experts that fire "
-             "on fewer than 1 pass per step).",
+        default=1,
+        help="Minimum forward-pass hits to include a layer (default 1). "
+             "Raise to filter MoE experts that barely fire; note that the "
+             "low-noise transformer in dual-DiT models fires only ~12%% of "
+             "steps, so keep this well below --num-inference-steps.",
     )
     p.add_argument(
         "--ratio-threshold",
@@ -59,6 +60,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Layers with amax ratio above this are flagged in console output (default 3.0).",
     )
     return p
+
+
+def _get_transformer_modules(pipe: DiffusionPipeline) -> list[tuple[str, torch.nn.Module]]:
+    """Collect all transformer sub-modules across pipe.transformer and pipe.transformer_2."""
+    modules: list[tuple[str, torch.nn.Module]] = []
+    for attr in ("transformer", "transformer_2"):
+        root = getattr(pipe, attr, None)
+        if root is None:
+            continue
+        prefix = attr + "."
+        modules.extend((prefix + n, m) for n, m in root.named_modules())
+    return modules
 
 
 def _collect_stats(pipe: DiffusionPipeline, args: argparse.Namespace) -> dict[str, list[float]]:
@@ -70,11 +83,14 @@ def _collect_stats(pipe: DiffusionPipeline, args: argparse.Namespace) -> dict[st
                 stats[name].append(out.detach().float().abs().max().item())
         return hook
 
+    all_modules = _get_transformer_modules(pipe)
     handles = [
         mod.register_forward_hook(make_hook(name))
-        for name, mod in pipe.transformer.named_modules()
+        for name, mod in all_modules
         if isinstance(mod, torch.nn.Linear)
     ]
+    print(f"  Registered hooks on {len(handles)} Linear layers "
+          f"across {sum(1 for a in ('transformer', 'transformer_2') if getattr(pipe, a, None) is not None)} transformer(s)")
 
     call_kwargs: dict = dict(
         prompt=args.prompt,
@@ -99,6 +115,7 @@ def _collect_stats(pipe: DiffusionPipeline, args: argparse.Namespace) -> dict[st
     for h in handles:
         h.remove()
 
+    print(f"  Collected data for {len(stats)} layers (before min-hits filtering)")
     return dict(stats)
 
 
@@ -137,7 +154,7 @@ def main() -> None:
         raise SystemExit("CUDA required.")
 
     dtype = {"bfloat16": torch.bfloat16, "float16": torch.float16}[args.dtype]
-    min_hits = args.min_hits if args.min_hits is not None else args.num_inference_steps
+    min_hits = args.min_hits
 
     print(f"Loading {args.model} in {args.dtype}...")
     pipe = DiffusionPipeline.from_pretrained(args.model, torch_dtype=dtype)
