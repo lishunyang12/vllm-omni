@@ -156,9 +156,7 @@ def _filter_func_wan22(name: str) -> bool:
         return True
     # Extreme-variance cross-attention layers (attn2 to_out / to_k) at the
     # deep blocks flagged by check_activation_variance.py with ratio > 10x.
-    extreme_attn2 = re.compile(
-        r".*\.blocks\.(19|30|31|34|35|36|37|38|39)\.attn2\.to_(out\.0|k)\..*"
-    )
+    extreme_attn2 = re.compile(r".*\.blocks\.(19|30|31|34|35|36|37|38|39)\.attn2\.to_(out\.0|k)\..*")
     return extreme_attn2.match(name) is not None
 
 
@@ -300,7 +298,21 @@ def _wan22_quant_config_block() -> dict:
 
     Written into each transformer's config.json so the vllm-omni factory's
     _detect_modelopt_method() routes the checkpoint to the NVFP4 kernel path.
+
+    Includes both schemas: the compressed-tensors style (config_groups, ignore)
+    for tooling that inspects per-group settings, and the flat ModelOpt schema
+    (group_size, kv_cache_quant_algo, exclude_modules) required by upstream
+    ModelOptNvFp4Config._from_config.
     """
+    exclude_modules = [
+        "condition_embedder*",
+        "norm_out*",
+        "output_scale_shift_prepare*",
+        "patch_embedding*",
+        "proj_out*",
+        "scale_shift_table*",
+        "timestep_proj_prepare*",
+    ]
     return {
         "config_groups": {
             "group_0": {
@@ -316,18 +328,13 @@ def _wan22_quant_config_block() -> dict:
                 "targets": ["Linear"],
             }
         },
-        "ignore": [
-            "condition_embedder*",
-            "norm_out*",
-            "output_scale_shift_prepare*",
-            "patch_embedding*",
-            "proj_out*",
-            "scale_shift_table*",
-            "timestep_proj_prepare*",
-        ],
+        "ignore": list(exclude_modules),
         "producer": {"name": "modelopt"},
         "quant_algo": "NVFP4",
         "quant_method": "modelopt_fp4",
+        "group_size": 16,
+        "kv_cache_quant_algo": None,
+        "exclude_modules": list(exclude_modules),
     }
 
 
@@ -388,8 +395,10 @@ def _summarize_export(output_dir: Path) -> None:
             cfg = json.load(f)
         qc = cfg.get("quantization_config", {})
         act_bits = qc.get("config_groups", {}).get("group_0", {}).get("input_activations", {}).get("num_bits")
-        print(f"  [{transformer_dir}] quant_method={qc.get('quant_method')} "
-              f"quant_algo={qc.get('quant_algo')} act_bits={act_bits}")
+        print(
+            f"  [{transformer_dir}] quant_method={qc.get('quant_method')} "
+            f"quant_algo={qc.get('quant_algo')} act_bits={act_bits}"
+        )
 
 
 def main() -> None:
@@ -418,8 +427,7 @@ def main() -> None:
     transformers = _list_transformers(pipe)
     if not transformers:
         raise SystemExit("Pipeline has no transformer or transformer_2 attribute.")
-    print(f"  found {len(transformers)} transformer(s) on pipeline: "
-          f"{', '.join(a for a, _ in transformers)}")
+    print(f"  found {len(transformers)} transformer(s) on pipeline: {', '.join(a for a, _ in transformers)}")
     if _is_image_conditioned(pipe):
         print("  pipeline accepts `image` -> using black placeholder for calibration")
 
