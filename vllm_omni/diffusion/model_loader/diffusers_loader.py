@@ -219,9 +219,22 @@ class DiffusersPipelineLoader:
 
         sources = self._get_weight_sources(model)
         quant_config = getattr(self.od_config, "quantization_config", None) if self.od_config else None
+        if quant_config is None and self.od_config is not None:
+            quant_config = getattr(getattr(self.od_config, "tf_model_config", None), "quant_config", None)
+        print(
+            f"[dbg get_all_weights] quant_config="
+            f"{type(quant_config).__name__ if quant_config is not None else 'None'} "
+            f"sources={[(getattr(s, 'subfolder', None), getattr(s, 'prefix', None)) for s in sources]}",
+            flush=True,
+        )
         for source in sources:
             weights_iter = self._get_weights_iterator(source)
             adapter = get_checkpoint_adapter(source, quant_config, model, use_safetensors=True)
+            print(
+                f"[dbg get_all_weights] source.subfolder={getattr(source, 'subfolder', None)} "
+                f"adapter={type(adapter).__name__ if adapter is not None else 'None'}",
+                flush=True,
+            )
             if adapter is not None:
                 weights_iter = adapter.adapt(weights_iter)
             yield from weights_iter
