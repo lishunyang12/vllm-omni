@@ -573,7 +573,7 @@ def main() -> None:
             "    --prompt 'A dog running across a field of golden wheat.' \\\n"
             f"    --height {args.height} --width {args.width} --num-frames {args.num_frames} \\\n"
             "    --num-inference-steps 30 --guidance-scale 6.0 --seed 42 \\\n"
-            "    --output outputs/hv15_modelopt_fp8.mp4 \\\n"
+            "    --output outputs/hv15_t2v_modelopt_fp8.mp4 \\\n"
             "    --enforce-eager"
         )
     print(

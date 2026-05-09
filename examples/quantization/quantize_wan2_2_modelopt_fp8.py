@@ -76,6 +76,7 @@ DEFAULT_PROMPTS = [
     "A skateboarder doing a kickflip in an urban plaza, slow motion, golden hour lighting.",
 ]
 
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--model", required=True, help="Input Wan2.2 diffusers directory or HF id.")
@@ -97,8 +98,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=10,
         help="Denoising steps per calibration prompt (10 is enough for amax statistics).",
     )
-    p.add_argument("--calib-size", type=int, default=8, help="How many prompts to use for calibration. It is now decoupled with " \
-    "number of DEFAULT_PROMPTS, i.e. type any size you like" 
+    p.add_argument(
+        "--calib-size",
+        type=int,
+        default=8,
+        help="How many prompts to use for calibration. It is now decoupled with "
+        "number of DEFAULT_PROMPTS, i.e. type any size you like",
     )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
@@ -539,7 +544,7 @@ def _calibrate(
     Returns the (possibly replaced) backbone module so the caller can rebind
     `pipe.transformer` / `pipe.transformer_2` to the wrapped instance. The
     backbone's weights remain in their original dtype here — call
-    `_force_export` afterwards to commit FP8 storage. 
+    `_force_export` afterwards to commit FP8 storage.
     """
     print(f"\nCalibrating {label}...")
     quantized = mtq.quantize(backbone, quant_config, forward_loop)
@@ -550,8 +555,7 @@ def _calibrate(
 
 
 def _force_export(backbone: torch.nn.Module, label: str, dtype: torch.dtype) -> None:
-    """Convert calibrated weights to actual FP8 storage.
-    """
+    """Convert calibrated weights to actual FP8 storage."""
     print(f"\nForcing FP8 weight serialization for {label} (Wan2.2 isn't in ModelOpt's")
     print("recognized-model registry, so we call the per-weight export helper ourselves)...")
     exported = _force_export_quantized_weights(backbone, dtype)
@@ -681,15 +685,27 @@ def main() -> None:
         _summarize_export(output_dir, subfolder="transformer_2")
 
     print("\nNext: validate the checkpoint with vllm-omni:")
-    print(
-        "  python examples/offline_inference/text_to_video/text_to_video.py \\\n"
-        f"    --model {output_dir} \\\n"
-        "    --quantization fp8 \\\n"
-        "    --prompt 'A dog running across a field of golden wheat.' \\\n"
-        f"    --height {args.height} --width {args.width} --num-frames {args.num_frames} \\\n"
-        "    --num-inference-steps 30 --guidance-scale 5.0 --seed 42 \\\n"
-        "    --output outputs/wan22_modelopt_fp8.mp4"
-    )
+    if args.is_i2v:
+        print(
+            "  python examples/offline_inference/image_to_video/image_to_video.py \\\n"
+            f"    --model {output_dir} \\\n"
+            "    --quantization fp8 \\\n"
+            "    --prompt 'A subject from the reference image moves through the scene.' \\\n"
+            "    --image <path/to/your/reference.jpg> \\\n"
+            f"    --height {args.height} --width {args.width} --num-frames {args.num_frames} \\\n"
+            "    --num-inference-steps 30 --guidance-scale 5.0 --seed 42 \\\n"
+            "    --output outputs/wan22_i2v_modelopt_fp8.mp4"
+        )
+    else:
+        print(
+            "  python examples/offline_inference/text_to_video/text_to_video.py \\\n"
+            f"    --model {output_dir} \\\n"
+            "    --quantization fp8 \\\n"
+            "    --prompt 'A dog running across a field of golden wheat.' \\\n"
+            f"    --height {args.height} --width {args.width} --num-frames {args.num_frames} \\\n"
+            "    --num-inference-steps 30 --guidance-scale 5.0 --seed 42 \\\n"
+            "    --output outputs/wan22_modelopt_fp8.mp4"
+        )
     print(
         "\n  (--quantization fp8 is auto-upgraded to ModelOpt FP8 at runtime because the "
         "checkpoint's config.json has modelopt metadata.)"

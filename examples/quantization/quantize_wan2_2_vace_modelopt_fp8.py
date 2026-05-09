@@ -659,16 +659,38 @@ def main() -> None:
         _summarize_export(output_dir, subfolder="transformer_2")
 
     print("\nNext: validate the checkpoint with vllm-omni:")
-    print(
-        "  python examples/offline_inference/vace/vace_video_generation.py \\\n"
-        "    --mode t2v \\\n"
-        f"    --model {output_dir} \\\n"
-        "    --quantization fp8 \\\n"
-        "    --prompt 'A dog running across a field of golden wheat.' \\\n"
-        f"    --height {args.height} --width {args.width} --num-frames {args.num_frames} \\\n"
-        "    --num-inference-steps 30 --guidance-scale 5.0 \\\n"
-        "    --output outputs/wan_vace_modelopt_fp8.mp4"
-    )
+    if n_r2v > 0:
+        print(
+            "  python examples/offline_inference/vace/vace_video_generation.py \\\n"
+            "    --mode r2v \\\n"
+            f"    --model {output_dir} \\\n"
+            "    --quantization fp8 \\\n"
+            "    --prompt 'The subject from the reference image walks through a snowy forest at dusk.' \\\n"
+            "    --image <path/to/your/reference.jpg> \\\n"
+            f"    --height {args.height} --width {args.width} --num-frames {args.num_frames} \\\n"
+            "    --num-inference-steps 30 --guidance-scale 5.0 \\\n"
+            "    --output outputs/wan_vace_r2v_modelopt_fp8.mp4"
+        )
+        print(
+            "\n  (T2V also works with this checkpoint — drop --mode r2v / --image and pass a "
+            "plain prompt; vace_blocks were calibrated on both zero- and real-conditioning samples.)"
+        )
+    else:
+        print(
+            "  python examples/offline_inference/vace/vace_video_generation.py \\\n"
+            "    --mode t2v \\\n"
+            f"    --model {output_dir} \\\n"
+            "    --quantization fp8 \\\n"
+            "    --prompt 'A dog running across a field of golden wheat.' \\\n"
+            f"    --height {args.height} --width {args.width} --num-frames {args.num_frames} \\\n"
+            "    --num-inference-steps 30 --guidance-scale 5.0 \\\n"
+            "    --output outputs/wan_vace_modelopt_fp8.mp4"
+        )
+        print(
+            "\n  (R2V/I2V inference will still work but vace_blocks' amax was calibrated on "
+            "zero vace_context only — re-run quantization with --reference-images for tighter "
+            "R2V scales.)"
+        )
     print(
         "\n  (--quantization fp8 is auto-upgraded to ModelOpt FP8 at runtime because the "
         "checkpoint's config.json has modelopt metadata.)"
