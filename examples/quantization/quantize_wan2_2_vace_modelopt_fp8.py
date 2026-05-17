@@ -1,54 +1,42 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Quantize Wan2.2 to a ModelOpt FP8 Hugging Face checkpoint.
+"""Quantize Wan VACE models to a ModelOpt FP8 Hugging Face checkpoint. Support modes:
 
-Calibrates the DiT transformer(s) using a small video prompt set and exports a
-diffusers-style directory whose transformer(s) carry ModelOpt FP8 metadata.
-The exported checkpoint is consumable by vllm-omni's ModelOpt FP8 adapter
-(see vllm_omni/diffusion/model_loader/checkpoint_adapters/modelopt_fp8.py).
+  - T2V    : prompt only (vace_context auto-filled with zeros + mask=1)
+  - R2V    : prompt + reference_images=[PIL.Image]
+  - I2V    : prompt + reference_images=[PIL.Image], same as R2V in calibration step
 
-Layers kept full precision match the #2728 / #2795 pattern: condition embedder
+This script currently calibrates with **T2V + R2V + I2V** samples. The other modes
+(I2V/FLF2V/inpaint) require encoded video + mask inputs and can be wired in
+later by extending `_build_calib_samples`.
+
+Layers kept full precision match the Wan2.2 pattern: condition embedder
 (time/text/image), patch embedding, modulation (scale_shift_table), final
 norm + proj_out, and sequence-parallel helpers. All attention + FFN linears
-are quantized — static calibration handles the numerics that online FP8
-couldn't (see #2920 ablation).
+are quantized — including the vace_blocks' own attention/FFN linears (since
+they're standard `WanTransformerBlock` subclasses).
 
 Supported targets:
-- `Wan-AI/Wan2.2-TI2V-5B-Diffusers` (single-transformer, 80GB BF16 fits one GPU)
-- `Wan-AI/Wan2.2-T2V-A14B-Diffusers` (MoE, two transformers, needs 2+ GPUs BF16)
-- `Wan-AI/Wan2.2-I2V-A14B-Diffusers` (MoE, two transformers, needs 2+ GPUs BF16)
+- `Wan-AI/Wan2.1-VACE-1.3B-diffusers` (single-transformer, ~10GB BF16)
+- `Wan-AI/Wan2.1-VACE-14B-diffusers` (single-transformer, ~38GB BF16)
+- `Wan-AI/Wan2.2-VACE-A14B-Diffusers` (MoE + VACE, dual-transformer; needs 2+ GPUs BF16; Model not released yet, but the wiring is ready)
 
-For VACE variants (Wan-AI/Wan2.X-VACE-*), use the dedicated script
-`quantize_wan2_2_vace_modelopt_fp8.py` instead
+For dual-transformer VACE the diffusers pipeline routes between `transformer`
+and `transformer_2` by `boundary_timestep` exactly like Wan2.2 MoE T2V/I2V.
 
-For MoE A14B variants the diffusers pipeline routes between `transformer` (high
-noise, t >= boundary_timestep) and `transformer_2` (low noise) automatically
-based on `boundary_ratio` from `model_index.json`. A single calibration run
-collects amax statistics for both via timestep-conditioned forward passes.
-
-For I2V variants diffusers' WanImageToVideoPipeline takes a required `image`
-kwarg, so calibration must pair every prompt with a reference image — pass
-`--is-i2v` together with `--reference-images <dir-or-file>`.
-
-Example(TI2V-5B):
-    python examples/quantization/quantize_wan2_2_modelopt_fp8.py \
-        --model Wan-AI/Wan2.2-TI2V-5B-Diffusers \
-        --output ./wan22-ti2v-modelopt-fp8 \
+Example (VACE T2V calibration, no reference images):
+    python examples/quantization/quantize_wan2_2_vace_modelopt_fp8.py \
+        --model Wan-AI/Wan2.1-VACE-1.3B-diffusers \
+        --output ./wan21-vace-1.3b-fp8 \
         --overwrite
-Example(T2V-A14B):
-    python examples/quantization/quantize_wan2_2_modelopt_fp8.py \
-            --model Wan-AI/Wan2.2-T2V-A14B-Diffusers \
-            --output ./wan22-t2v-modelopt-fp8 \
-            --calib-boundary-ratio 0.5 \
-            --overwrite
-Example(I2V-A14B):
-    python examples/quantization/quantize_wan2_2_modelopt_fp8.py \
-            --model Wan-AI/Wan2.2-I2V-A14B-Diffusers \
-            --output ./wan22-i2v-modelopt-fp8 \
-            --is-i2v --reference-images /path/to/ref_images/ \
-            --calib-boundary-ratio 0.5 \
-            --overwrite
+
+Example (VACE T2V + R2V mix, with reference images):
+    python examples/quantization/quantize_wan2_2_vace_modelopt_fp8.py \
+        --model Wan-AI/Wan2.1-VACE-14B-diffusers \
+        --output ./wan21-vace-14b-fp8 \
+        --reference-images /path/to/ref_images/ \
+        --overwrite
 """
 
 from __future__ import annotations
@@ -76,20 +64,30 @@ DEFAULT_PROMPTS = [
     "A skateboarder doing a kickflip in an urban plaza, slow motion, golden hour lighting.",
 ]
 
+# R2V prompts pair with --reference-images. Phrasing explicitly references "the
+# subject from the reference image" so prompt and ref_image are semantically
+# coupled — mimics how users actually write R2V prompts in production.
+VACE_DEFAULT_PROMPTS_R2V = [
+    "The subject from the reference image walks confidently through a snowy forest at dusk.",
+    "Recreate the reference subject dancing under spinning disco lights in a vibrant nightclub.",
+    "The reference subject sails across a calm ocean at golden hour, sun glinting off the water.",
+    "Render the reference subject in a cyberpunk cityscape at night, neon reflections on rainy streets.",
+]
+
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--model", required=True, help="Input Wan2.2 diffusers directory or HF id.")
+    p.add_argument("--model", required=True, help="Input Wan VACE diffusers directory or HF id.")
     p.add_argument("--output", required=True, help="Output directory for the ModelOpt FP8 checkpoint.")
     p.add_argument("--dtype", choices=("bfloat16", "float16"), default="bfloat16")
-    p.add_argument("--height", type=int, default=704, help="Calibration video height (Wan2.2 TI2V-5B native: 704).")
-    p.add_argument("--width", type=int, default=1280, help="Calibration video width (Wan2.2 TI2V-5B native: 1280).")
+    p.add_argument("--height", type=int, default=480, help="Calibration video height (VACE 480p default).")
+    p.add_argument("--width", type=int, default=832, help="Calibration video width (VACE 480p default).")
     p.add_argument(
         "--num-frames",
         type=int,
-        default=49,
-        help="Frames per calibration sample. 49 matches the typical short benchmark; "
-        "use 17 to reduce memory pressure during calibration.",
+        default=33,
+        help="Frames per calibration sample. Smaller frame counts reduce memory pressure during "
+        "calibration; amax statistics are largely independent of frame count.",
     )
     p.add_argument("--guidance-scale", type=float, default=5.0)
     p.add_argument(
@@ -98,24 +96,19 @@ def _build_parser() -> argparse.ArgumentParser:
         default=10,
         help="Denoising steps per calibration prompt (10 is enough for amax statistics).",
     )
-    p.add_argument(
-        "--calib-size",
-        type=int,
-        default=8,
-        help="How many prompts to use for calibration. It is now decoupled with "
-        "number of DEFAULT_PROMPTS, i.e. type any size you like",
-    )
+    p.add_argument("--calib-size", type=int, default=8, help="How many prompts to use for calibration.")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
         "--prompt",
         action="append",
         default=[],
-        help="Custom calibration prompt. Repeat to provide multiple.",
+        help="Custom calibration prompt. Repeat to provide multiple. When --reference-images is "
+        "set, every custom prompt is paired with a cycled ref image (assumes R2V phrasing).",
     )
     p.add_argument(
         "--quantize-mha",
         action="store_true",
-        help="Enable FP8 attention K/V/softmax quantizers. Off by default — Wan2.2's long attention "
+        help="Enable FP8 attention K/V/softmax quantizers. Off by default — Wan's long attention "
         "sequences amplified FP8 drift in the online ablation (see #2920).",
     )
     p.add_argument(
@@ -131,27 +124,21 @@ def _build_parser() -> argparse.ArgumentParser:
         "--calib-boundary-ratio",
         type=float,
         default=None,
-        help="Pass-1-only boundary_ratio override for Wan2.2 MoE calibration. Only takes "
-        "effect when the loaded pipeline has transformer_2. Lowering it (e.g. 0.5) shifts "
-        "more denoising steps onto `transformer` so its quantizers see a richer amax "
-        "sample WITHOUT bumping --calib-steps. Pass 2 always restores the model's "
-        "production boundary_ratio (A14B = 0.875) to keep transformer_2's amax in "
-        "production distribution. If unset, both passes use the production value (default).",
-    )
-    p.add_argument(
-        "--is-i2v",
-        action="store_true",
-        help="Set when quantizing a Wan2.2 I2V model (e.g. Wan2.2-I2V-A14B-Diffusers). "
-        "diffusers' WanImageToVideoPipeline takes a required `image` kwarg, so calibration "
-        "must pair every prompt with a reference image — pass --reference-images.",
+        help="Pass-1-only boundary_ratio override for dual-transformer VACE (e.g. Wan2.2-VACE-A14B). "
+        "Lowering it (e.g. 0.5) shifts more denoising steps onto `transformer` so its quantizers "
+        "see a richer amax sample WITHOUT bumping --calib-steps. Pass 2 always restores the "
+        "model's production boundary_ratio. No-op for single-transformer VACE (Wan2.1-VACE-*).",
     )
     p.add_argument(
         "--reference-images",
         type=str,
         default=None,
-        help="Requires --is-i2v. Directory of jpg/jpeg/png/webp files (or a single image). "
-        "Every calibration sample is paired with a cycled ref image since image_embedder "
-        "is required, not optional, in I2V pipelines. Warning: one image per sample",
+        help="Optional. Directory of jpg/jpeg/png/webp files (or a single image). When provided, "
+        "half the calibration samples become R2V (paired with cycled ref images, using "
+        "VACE_DEFAULT_PROMPTS_R2V) so vace_blocks' amax covers real ref-image latent "
+        "distributions; the other half stay T2V (zero-conditioning). When omitted, calibration "
+        "runs T2V-only — vace_blocks see auto-generated zero vace_context, which works but "
+        "amax is conservative for R2V-mode inference.",
     )
     p.add_argument("--overwrite", action="store_true", help="Replace an existing output directory.")
     return p
@@ -211,36 +198,54 @@ def _load_reference_images(spec: str | None) -> list[Any]:
     return [Image.open(f).convert("RGB") for f in image_paths]
 
 
+def _cycle_to_size(items: list, size: int) -> list:
+    if not items:
+        raise SystemExit("Cannot build calibration prompts: pool is empty.")
+    repeats = (size + len(items) - 1) // len(items)
+    return (items * repeats)[:size]
+
+
 def _build_calib_samples(
     args: argparse.Namespace,
-    is_i2v: bool,
     ref_images: list[Any],
 ) -> list[tuple[str, Any]]:
-    """Build calibration (prompt, reference_image_or_None) pairs.
+    """Build calibration (prompt, reference_image_or_None) pairs for VACE.
 
-    - Non-I2V (T2V/TI2V/A14B-T2V): every sample is (prompt, None).
-    - I2V: every sample paired with a cycled ref image (image kwarg is required
-      by diffusers' WanImageToVideoPipeline). Prompt pool is DEFAULT_PROMPTS
-      since the image dominates the visual signal — text mainly drives motion.
+    - No --reference-images: T2V-only calibration. vace_blocks see auto-generated
+      zero vace_context (vae.encode(zeros) + mask=1).
+    - With --reference-images, no --prompt: half samples are T2V (DEFAULT_PROMPTS),
+      half are R2V (VACE_DEFAULT_PROMPTS_R2V paired with cycled ref images),
+      covering both zero- and real-conditioning extremes for vace_blocks' amax.
+    - With --reference-images and --prompt: every user prompt is paired with a
+      cycled ref image (assumes the user wrote R2V-style prompts).
     """
     if args.calib_size <= 0:
         raise SystemExit("--calib-size must be positive.")
 
-    prompts = args.prompt or DEFAULT_PROMPTS
-    if is_i2v:
-        # ref_images is guaranteed non-empty by main()'s validation (--is-i2v
-        # requires --reference-images).
-        return [(prompt, ref_images[i % len(ref_images)]) for i, prompt in enumerate(prompts)]
-    return [(prompt, None) for prompt in prompts]
+    if not ref_images:
+        prompts = args.prompt or DEFAULT_PROMPTS
+        return [(p, None) for p in _cycle_to_size(prompts, args.calib_size)]
+
+    custom_prompts = args.prompt or []
+    if custom_prompts:
+        pool = _cycle_to_size(custom_prompts, args.calib_size)
+        return [(prompt, ref_images[i % len(ref_images)]) for i, prompt in enumerate(pool)]
+
+    n_r2v = min(args.calib_size // 2, len(ref_images))
+    n_t2v = args.calib_size - n_r2v
+    t2v_pool = _cycle_to_size(DEFAULT_PROMPTS, n_t2v) if n_t2v > 0 else []
+    r2v_pool = _cycle_to_size(VACE_DEFAULT_PROMPTS_R2V, n_r2v) if n_r2v > 0 else []
+    samples: list[tuple[str, Any]] = [(p, None) for p in t2v_pool]
+    samples.extend((prompt, ref_images[i % len(ref_images)]) for i, prompt in enumerate(r2v_pool))
+    return samples
 
 
-# Layers to KEEP at full precision. Wan2.2's module naming:
-# - condition_embedder: time_embedder, time_proj, text_embedder, image_embedder (I2V)
-# - patch_embedding: Conv3dLayer (already not Linear, belt-and-suspenders skip)
-# - scale_shift_table: nn.Parameter modulation (not Linear, but pattern guard)
-# - norm_out: AdaLayerNorm final
-# - proj_out: final nn.Linear
-# - timestep_proj_prepare / output_scale_shift_prepare: SP helpers
+# Layers to KEEP at full precision. Wan VACE inherits the base Wan module
+# naming (condition_embedder, patch_embedding, scale_shift_table, norm_out,
+# proj_out, timestep_proj_prepare/output_scale_shift_prepare). vace_blocks
+# carry their own proj_in/proj_out Linears (full path: vace_blocks.{i}.proj_*),
+# which the regex below intentionally does NOT match — they are quantized
+# alongside the rest of the vace_blocks' attention/FFN linears.
 def _filter_func_wan22(name: str) -> bool:
     pattern = re.compile(
         r"(proj_out.*|"
@@ -302,8 +307,8 @@ def _load_pipeline(model_path: str, dtype: torch.dtype) -> DiffusionPipeline:
 
     transformer_2 = getattr(pipe, "transformer_2", None)
     if transformer_2 is not None and torch.cuda.device_count() >= 2:
-        # diffusers' WanPipeline routes between the two by boundary_timestep but does
-        # NOT transfer activations across devices, so this case bridge transformer_2 with
+        # diffusers' WanPipeline routes between the two by boundary_timestep but
+        # does NOT transfer activations across devices; bridge transformer_2 with
         # forward hooks: pre-hook moves inputs cuda:0 -> cuda:1, post-hook moves
         # outputs back cuda:1 -> cuda:0. The pipeline then sees a uniform cuda:0
         # state and scheduler.step works without modification.
@@ -330,9 +335,10 @@ def _build_forward_loop(
 ):
     """Build a forward_loop that drives `pipe` over the calibration samples.
 
-    Samples carrying a reference image are forwarded with `image=PIL.Image`
-    (the kwarg expected by diffusers' WanImageToVideoPipeline). Samples with
-    ref=None call pipe(prompt=...) — the standard T2V path.
+    Samples carrying a reference image are forwarded with `reference_images=[img]`
+    (the kwarg expected by diffusers' WanVACEPipeline). Samples with ref=None
+    call pipe(prompt=...) — diffusers VACE pipeline auto-fills vace_context with
+    zeros + mask=1 in this case (T2V mode).
     """
     generator = torch.Generator(device="cuda")
 
@@ -358,7 +364,7 @@ def _build_forward_loop(
                 generator.manual_seed(args.seed + idx)
                 kwargs = dict(base_kwargs)
                 if ref_image is not None:
-                    kwargs["image"] = ref_image
+                    kwargs["reference_images"] = [ref_image]
                 # Try with guidance_scale first; fall back without on TypeError
                 # for pipelines that take CFG via guider config only.
                 try:
@@ -394,10 +400,9 @@ def _summarize_export(output_dir: Path, subfolder: str = "transformer") -> None:
 def _force_export_quantized_weights(backbone: torch.nn.Module, dtype: torch.dtype) -> int:
     """Convert in-memory weights of quantized modules to actual FP8 storage.
 
-    `export_hf_checkpoint` skips this step for unknown model types (Wan2.2 isn't
-    in ModelOpt's recognized-model registry), so we must call the per-weight
-    export helper ourselves. Same workaround as the HunyuanVideo-1.5 / HunyuanImage-3
-    calibration helpers.
+    `export_hf_checkpoint` skips this step for unknown model types (Wan VACE
+    isn't in ModelOpt's recognized-model registry), so we must call the
+    per-weight export helper ourselves.
     """
     from modelopt.torch.export.quant_utils import (
         QUANTIZATION_NONE,
@@ -428,8 +433,7 @@ def _force_export_quantized_weights(backbone: torch.nn.Module, dtype: torch.dtyp
 
 def _wan22_quant_config_block(weight_block_size: list[int] | None = None) -> dict:
     """Mirror ModelOpt FP8 metadata expected by vllm-omni's adapter (#2913).
-
-    For per-block weight quantization,upstream's FP8_PB_WO hardcodes _WEIGHT_BLOCK_SIZE = (128, 128), so any other
+    For per-block weight quantization, upstream's FP8_PB_WO hardcodes _WEIGHT_BLOCK_SIZE = (128, 128), so any other
     block shape produces a checkpoint vLLM cannot serve.
     """
     if weight_block_size is not None and tuple(weight_block_size) != (128, 128):
@@ -472,9 +476,6 @@ def _patch_quant_config(
 ) -> None:
     """Inject quant_algo: FP8 + config_groups into <subfolder>/config.json so
     vllm-omni's adapter (#2913) recognises the checkpoint as ModelOpt FP8.
-
-    For Wan2.2 MoE (T2V/I2V-A14B), call once per transformer subfolder
-    (`transformer` and `transformer_2`).
     """
     cfg_path = output_dir / subfolder / "config.json"
     with cfg_path.open(encoding="utf-8") as f:
@@ -498,11 +499,7 @@ def _save_pipeline_with_fp8_transformers(
     output_dir: Path,
     max_shard_size: str = "5GB",
 ) -> None:
-    """Copy source dir verbatim minus transformer/(_2), then save quantized transformer(s).
-
-    For Wan2.2 MoE (T2V/I2V-A14B), `pipe.transformer_2` is also saved into the
-    `transformer_2/` subfolder. Single-transformer variants (TI2V-5B) skip it.
-    """
+    """Copy source dir verbatim minus transformer/(_2), then save quantized transformer(s)."""
     from modelopt.torch.export.diffusers_utils import hide_quantizers_from_state_dict
 
     src = Path(model_path)
@@ -539,13 +536,7 @@ def _calibrate(
     forward_loop,
     quantize_mha: bool,
 ) -> torch.nn.Module:
-    """Wrap one transformer backbone with quantizers and run calibration.
-
-    Returns the (possibly replaced) backbone module so the caller can rebind
-    `pipe.transformer` / `pipe.transformer_2` to the wrapped instance. The
-    backbone's weights remain in their original dtype here — call
-    `_force_export` afterwards to commit FP8 storage.
-    """
+    """Wrap one transformer backbone with quantizers and run calibration."""
     print(f"\nCalibrating {label}...")
     quantized = mtq.quantize(backbone, quant_config, forward_loop)
     if quantized is not None:
@@ -556,7 +547,7 @@ def _calibrate(
 
 def _force_export(backbone: torch.nn.Module, label: str, dtype: torch.dtype) -> None:
     """Convert calibrated weights to actual FP8 storage."""
-    print(f"\nForcing FP8 weight serialization for {label} (Wan2.2 isn't in ModelOpt's")
+    print(f"\nForcing FP8 weight serialization for {label} (Wan VACE isn't in ModelOpt's")
     print("recognized-model registry, so we call the per-weight export helper ourselves)...")
     exported = _force_export_quantized_weights(backbone, dtype)
     print(f"  -> {exported} weights converted to FP8 in {label}")
@@ -578,17 +569,10 @@ def main() -> None:
     dtype = _select_dtype(args.dtype)
     weight_block_size = _parse_block_size(args.weight_block_size)
 
-    if args.reference_images is not None and not args.is_i2v:
-        raise SystemExit("--reference-images requires --is-i2v.")
-    if args.is_i2v and args.reference_images is None:
-        raise SystemExit(
-            "--is-i2v requires --reference-images: diffusers' WanImageToVideoPipeline "
-            "takes a required `image` kwarg, so calibration must pair every prompt with "
-            "a reference image."
-        )
-    ref_images = _load_reference_images(args.reference_images) if args.is_i2v else []
-    samples = _build_calib_samples(args, args.is_i2v, ref_images)
-    sample_label = f"I2V={len(samples)}" if args.is_i2v else f"T2V={len(samples)}"
+    ref_images = _load_reference_images(args.reference_images)
+    samples = _build_calib_samples(args, ref_images)
+    n_r2v = sum(1 for _, ref in samples if ref is not None)
+    n_t2v = len(samples) - n_r2v
 
     print("Quantization plan:")
     print(f"  input:           {args.model}")
@@ -596,12 +580,10 @@ def main() -> None:
     print(f"  dtype:           {dtype}")
     print(f"  height/width:    {args.height}x{args.width}")
     print(f"  num_frames:      {args.num_frames}")
-    print(f"  calib_size:      {len(samples)} ({sample_label})")
+    print(f"  calib_size:      {len(samples)} (T2V={n_t2v}, R2V={n_r2v})")
     print(f"  calib_steps:     {args.calib_steps}")
     print(f"  quantize_mha:    {args.quantize_mha}")
-    print(f"  is_i2v:          {args.is_i2v}")
-    if args.is_i2v:
-        print(f"  reference imgs:  {len(ref_images)}")
+    print(f"  reference imgs:  {len(ref_images)}")
     print(
         f"  weight strategy: {'block-wise ' + str(weight_block_size) if weight_block_size else 'per-tensor (default)'}"
     )
@@ -609,13 +591,10 @@ def main() -> None:
     pipe = _load_pipeline(model_path, dtype)
     is_dual = getattr(pipe, "transformer_2", None) is not None
     if is_dual:
-        print("  detected MoE A14B variant (transformer + transformer_2)")
+        print("  detected dual-transformer VACE variant (transformer + transformer_2)")
 
-    # Capture the model's production boundary_ratio (from model_index.json) so
-    # we can restore it before pass 2. --calib-boundary-ratio only overrides
-    # pass 1 to give `transformer` more amax samples; pass 2 must run at the
-    # production boundary so `transformer_2` calibrates on the same noise
-    # distribution it will see at inference time.
+    # Production boundary_ratio captured from model_index.json so pass 2 can
+    # restore it after a --calib-boundary-ratio override on pass 1.
     production_boundary = pipe.config.get("boundary_ratio") if is_dual else None
 
     quant_config = copy.deepcopy(mtq.FP8_DEFAULT_CFG)
@@ -631,14 +610,9 @@ def main() -> None:
 
     forward_loop = _build_forward_loop(pipe, args, samples)
 
-    # Single-transformer (TI2V-5B) does one pass; MoE A14B variants do two.
-    # The diffusers Wan22 pipeline routes between transformer (high noise) and
-    # transformer_2 (low noise) by boundary_timestep, so each forward_loop run
-    # exercises the backbone currently being calibrated. mtq.quantize wraps
-    # quantizers and then drives the forward_loop to collect amax statistics.
-    #
-    # Calibration must complete for BOTH backbones BEFORE any force_export call:
-    # Before _force_export, transformer's weights must still be BF16 at that point.
+    # Single-transformer VACE does one pass; dual-transformer (Wan2.2-VACE-A14B)
+    # does two. Calibration must complete for BOTH backbones BEFORE any
+    # _force_export call — transformer's weights must still be BF16 at that point.
     if is_dual and args.calib_boundary_ratio is not None:
         pipe.register_to_config(boundary_ratio=args.calib_boundary_ratio)
         print(
@@ -685,26 +659,37 @@ def main() -> None:
         _summarize_export(output_dir, subfolder="transformer_2")
 
     print("\nNext: validate the checkpoint with vllm-omni:")
-    if args.is_i2v:
+    if n_r2v > 0:
         print(
-            "  python examples/offline_inference/image_to_video/image_to_video.py \\\n"
+            "  python examples/offline_inference/vace/vace_video_generation.py \\\n"
+            "    --mode r2v \\\n"
             f"    --model {output_dir} \\\n"
             "    --quantization fp8 \\\n"
-            "    --prompt 'A subject from the reference image moves through the scene.' \\\n"
+            "    --prompt 'The subject from the reference image walks through a snowy forest at dusk.' \\\n"
             "    --image <path/to/your/reference.jpg> \\\n"
             f"    --height {args.height} --width {args.width} --num-frames {args.num_frames} \\\n"
-            "    --num-inference-steps 30 --guidance-scale 5.0 --seed 42 \\\n"
-            "    --output outputs/wan22_i2v_modelopt_fp8.mp4"
+            "    --num-inference-steps 30 --guidance-scale 5.0 \\\n"
+            "    --output outputs/wan_vace_r2v_modelopt_fp8.mp4"
+        )
+        print(
+            "\n  (T2V also works with this checkpoint — drop --mode r2v / --image and pass a "
+            "plain prompt; vace_blocks were calibrated on both zero- and real-conditioning samples.)"
         )
     else:
         print(
-            "  python examples/offline_inference/text_to_video/text_to_video.py \\\n"
+            "  python examples/offline_inference/vace/vace_video_generation.py \\\n"
+            "    --mode t2v \\\n"
             f"    --model {output_dir} \\\n"
             "    --quantization fp8 \\\n"
             "    --prompt 'A dog running across a field of golden wheat.' \\\n"
             f"    --height {args.height} --width {args.width} --num-frames {args.num_frames} \\\n"
-            "    --num-inference-steps 30 --guidance-scale 5.0 --seed 42 \\\n"
-            "    --output outputs/wan22_modelopt_fp8.mp4"
+            "    --num-inference-steps 30 --guidance-scale 5.0 \\\n"
+            "    --output outputs/wan_vace_modelopt_fp8.mp4"
+        )
+        print(
+            "\n  (R2V/I2V inference will still work but vace_blocks' amax was calibrated on "
+            "zero vace_context only — re-run quantization with --reference-images for tighter "
+            "R2V scales.)"
         )
     print(
         "\n  (--quantization fp8 is auto-upgraded to ModelOpt FP8 at runtime because the "

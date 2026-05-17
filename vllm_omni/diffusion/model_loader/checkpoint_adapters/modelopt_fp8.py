@@ -54,9 +54,12 @@ class ModelOptFp8CheckpointAdapter:
 
     @staticmethod
     def _is_transformer_source(source: object) -> bool:
-        if getattr(source, "subfolder", None) == "transformer":
+        # Wan2.2 MoE variants (T2V/I2V-A14B) load a second backbone under
+        # `transformer_2/` with prefix `transformer_2.` — accept both subfolders.
+        if getattr(source, "subfolder", None) in ("transformer", "transformer_2"):
             return True
-        return str(getattr(source, "prefix", "")).startswith("transformer.")
+        prefix = str(getattr(source, "prefix", ""))
+        return prefix.startswith("transformer.") or prefix.startswith("transformer_2.")
 
     @staticmethod
     def _is_checkpoint_quant_config(quant_config: object | None) -> bool:

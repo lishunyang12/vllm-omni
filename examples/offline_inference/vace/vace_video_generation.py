@@ -52,6 +52,13 @@ def parse_args() -> argparse.Namespace:
         choices=["t2v", "i2v", "v2lf", "flf2v", "inpaint", "r2v"],
         help="Generation mode.",
     )
+    parser.add_argument(
+        "--quantization",
+        type=str,
+        default=None,
+        choices=["fp8", "gguf"],
+        help="Quantization method for the transformer (fp8 for online FP8 quantization).",
+    )
     parser.add_argument("--prompt", default="A cat walking in a garden", help="Text prompt.")
     parser.add_argument("--negative-prompt", default="", help="Negative prompt.")
     parser.add_argument("--image", type=str, default=None, help="Input image path (for I2V, R2V, FLF2V, inpaint).")
@@ -159,6 +166,7 @@ def main():
         flow_shift=args.flow_shift,
         enforce_eager=args.enforce_eager,
         parallel_config=parallel_config,
+        quantization = args.quantization
     )
 
     prompt_data = build_prompts(args)

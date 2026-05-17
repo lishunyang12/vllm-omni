@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Quantize HunyuanVideo-1.5 (480p T2V) to a ModelOpt FP8 Hugging Face checkpoint.
+"""Quantize HunyuanVideo-1.5 to a ModelOpt FP8 Hugging Face checkpoint.
 
 Calibrates the DiT transformer using a small video prompt set and exports a
 diffusers-style directory whose transformer carries ModelOpt FP8 metadata.
@@ -13,10 +13,36 @@ AdaLayerNorm, entry/exit projections, embeddings, the token refiner path,
 and final proj_out. MHA quantizers are off by default; HV-1.5 self-attention
 empirically degrades under FP8 (see #2920 ablation).
 
-Example:
-    python examples/quantization/quantize_hunyuanvideo_15_modelopt_fp8.py \\
-        --model hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v \\
-        --output ./hv15-480p-modelopt-fp8 \\
+Supported targets (T2V uses HunyuanVideo15Pipeline; I2V uses
+HunyuanVideo15ImageToVideoPipeline. `--variant auto` detects from the loaded
+class, but you can pin it with `--variant t2v|i2v`.):
+- `hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v`
+- `hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_t2v`
+- `hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v`
+- `hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_i2v`
+
+For I2V variants, diffusers' HunyuanVideo15ImageToVideoPipeline takes a
+required `image` kwarg (and derives height/width from the image), so
+calibration must pair every prompt with a reference image — pass
+`--reference-images <dir-or-file>`.
+
+Recommended resolutions per variant (CLI overrides accepted; T2V uses these
+defaults, I2V derives from the reference image and ignores --height/--width):
+- 480p: --height 480 --width 832  (default)
+- 720p: --height 720 --width 1280
+
+Example (480p T2V):
+    python examples/quantization/quantize_hunyuanvideo_15_modelopt_fp8.py \
+        --model hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v \
+        --output ./hv15-480p-t2v-modelopt-fp8 \
+        --overwrite
+
+Example (480p I2V):
+    python examples/quantization/quantize_hunyuanvideo_15_modelopt_fp8.py \
+        --model hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v \
+        --variant i2v \
+        --reference-images /path/to/ref_images \
+        --output ./hv15-480p-i2v-modelopt-fp8 \
         --overwrite
 """
 
@@ -75,6 +101,23 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Custom calibration prompt. Repeat to provide multiple.",
     )
     p.add_argument(
+        "--variant",
+        choices=("auto", "t2v", "i2v"),
+        default="auto",
+        help="HunyuanVideo-1.5 pipeline variant. `auto` detects from the loaded pipeline class "
+        "(HunyuanVideo15Pipeline -> t2v, HunyuanVideo15ImageToVideoPipeline -> i2v). "
+        "Pass `i2v` only if you also pass --reference-images.",
+    )
+    p.add_argument(
+        "--reference-images",
+        type=str,
+        default=None,
+        help="Required for i2v variants. Directory of jpg/jpeg/png/webp files (or a single image). "
+        "Every calibration sample is paired with a cycled ref image since `image` is a required "
+        "kwarg, not optional, in HunyuanVideo15ImageToVideoPipeline. The pipeline derives "
+        "height/width from the image, so --height/--width are ignored under i2v.",
+    )
+    p.add_argument(
         "--quantize-mha",
         action="store_true",
         help="Enable FP8 attention K/V/softmax quantizers. Off by default — empirically degrades HV-1.5 video output.",
@@ -83,9 +126,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--weight-block-size",
         type=str,
         default=None,
-        help="Per-block weight quantization as 'M,N' (e.g. '128,128' for 128x128 tiles). "
-        "Default: per-tensor (one scale per linear). Block-wise typically gives tighter quality at "
-        "negligible memory cost. Static FP8 is exempt from upstream vLLM's online block-wise gate.",
+        help="Per-block weight quantization as 'M,N'. Only '128,128' is accepted because upstream "
+        "vLLM's ModelOptFp8PbWoLinearMethod hardcodes that block shape. Default: per-tensor. "
+        "Block-wise saves checkpoints with FP8_PB_WO routing (per-block static weights + per-token-"
+        "group dynamic activations); per-tensor uses static FP8 with calibrated activation scales.",
     )
     p.add_argument("--overwrite", action="store_true", help="Replace an existing output directory.")
     return p
@@ -136,6 +180,47 @@ def _build_prompts(args: argparse.Namespace) -> list[str]:
     return prompts[: args.calib_size]
 
 
+def _load_reference_images(spec: str | None) -> list[Any]:
+    """Load PIL.Image list from a directory or a single file path."""
+    if spec is None:
+        return []
+    from PIL import Image
+
+    p = Path(spec).expanduser()
+    if not p.exists():
+        raise SystemExit(f"--reference-images path not found: {p}")
+    if p.is_file():
+        return [Image.open(p).convert("RGB")]
+    image_paths = sorted(
+        f for f in p.iterdir() if f.is_file() and f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")
+    )
+    if not image_paths:
+        raise SystemExit(f"No image files (jpg/jpeg/png/webp) found in {p}")
+    return [Image.open(f).convert("RGB") for f in image_paths]
+
+
+def _resolve_variant(pipe: DiffusionPipeline, requested: str) -> str:
+    """Resolve --variant auto by inspecting the loaded pipeline class.
+
+    HunyuanVideo15ImageToVideoPipeline -> i2v
+    HunyuanVideo15Pipeline (or anything else with no `image` kwarg) -> t2v
+    """
+    if requested != "auto":
+        return requested
+    cls_name = pipe.__class__.__name__
+    if "ImageToVideo" in cls_name:
+        return "i2v"
+    return "t2v"
+
+
+def _build_calib_samples(prompts: list[str], variant: str, ref_images: list[Any]) -> list[tuple[str, Any]]:
+    """Pair each calibration prompt with a ref image (i2v) or None (t2v)."""
+    if variant == "i2v":
+        # ref_images is guaranteed non-empty by main()'s validation.
+        return [(prompt, ref_images[i % len(ref_images)]) for i, prompt in enumerate(prompts)]
+    return [(prompt, None) for prompt in prompts]
+
+
 # Layers to KEEP at full precision (mirror of the #2920 wiring + #2728/#2795 skip pattern).
 # - x_embedder, image_embedder, context_embedder*, time_embed*, cond_type_embed: entry/embedding
 # - norm_out, norm1*.linear, norm1_context*.linear, norm2*, norm2_context*: AdaLayerNorm modulation
@@ -175,7 +260,18 @@ def _load_pipeline(model_path: str, dtype: torch.dtype) -> DiffusionPipeline:
     return pipe
 
 
-def _build_forward_loop(pipe: DiffusionPipeline, args: argparse.Namespace, prompts: list[str]):
+def _build_forward_loop(
+    pipe: DiffusionPipeline,
+    args: argparse.Namespace,
+    samples: list[tuple[str, Any]],
+    variant: str,
+):
+    """Build a forward_loop over (prompt, ref_image) calibration samples.
+
+    For i2v: HunyuanVideo15ImageToVideoPipeline derives height/width from the
+    image, so we pass `image=` and drop --height/--width. For t2v: standard
+    prompt-only path with --height/--width honored.
+    """
     generator = torch.Generator(device="cuda")
 
     # Try to set guidance on the pipeline's guider object up front (modern
@@ -188,26 +284,32 @@ def _build_forward_loop(pipe: DiffusionPipeline, args: argparse.Namespace, promp
         except Exception:
             pass
 
-    base_kwargs = dict(
-        height=args.height,
-        width=args.width,
+    base_kwargs: dict[str, Any] = dict(
         num_frames=args.num_frames,
         num_inference_steps=args.calib_steps,
         output_type="latent",
     )
+    if variant != "i2v":
+        # I2V pipeline derives height/width from the input image and rejects
+        # these kwargs; only set them on T2V.
+        base_kwargs["height"] = args.height
+        base_kwargs["width"] = args.width
 
     def forward_loop(*_unused_args, **_unused_kwargs) -> None:
         with torch.inference_mode():
-            for idx, prompt in enumerate(prompts):
+            for idx, (prompt, ref_image) in enumerate(samples):
                 generator.manual_seed(args.seed + idx)
+                kwargs = dict(base_kwargs)
+                if ref_image is not None:
+                    kwargs["image"] = ref_image
                 # Try with guidance_scale first; fall back without on TypeError
                 # for pipelines (like HV-1.5) that take CFG via guider config.
                 try:
-                    pipe(prompt=prompt, generator=generator, guidance_scale=args.guidance_scale, **base_kwargs)
+                    pipe(prompt=prompt, generator=generator, guidance_scale=args.guidance_scale, **kwargs)
                 except TypeError as exc:
                     if "guidance_scale" not in str(exc):
                         raise
-                    pipe(prompt=prompt, generator=generator, **base_kwargs)
+                    pipe(prompt=prompt, generator=generator, **kwargs)
 
     return forward_loop
 
@@ -270,10 +372,15 @@ def _force_export_quantized_weights(backbone: torch.nn.Module, dtype: torch.dtyp
 def _hv15_quant_config_block(weight_block_size: list[int] | None = None) -> dict:
     """Mirror ModelOpt FP8 metadata expected by vllm-omni's adapter (#2913).
 
-    Same shape as the HunyuanImage-3 author's _hunyuan_quant_config(). When
-    `weight_block_size` is given, advertise block-wise weight quantization in
-    the saved metadata (so consumers know to expect multi-element scale tensors).
+    For per-block weight quantization,upstream's FP8_PB_WO hardcodes _WEIGHT_BLOCK_SIZE = (128, 128), so any other
+    block shape produces a checkpoint vLLM cannot serve.
     """
+    if weight_block_size is not None and tuple(weight_block_size) != (128, 128):
+        raise ValueError(
+            f"--weight-block-size {tuple(weight_block_size)} not supported: upstream vLLM's "
+            "ModelOptFp8PbWoLinearMethod hardcodes (128, 128). Pass '128,128' or omit the flag."
+        )
+
     weights_cfg: dict = {"dynamic": False, "num_bits": 8, "type": "float"}
     if weight_block_size is not None:
         weights_cfg["strategy"] = "block"
@@ -302,7 +409,7 @@ def _hv15_quant_config_block(weight_block_size: list[int] | None = None) -> dict
             "x_embedder*",
         ],
         "producer": {"name": "modelopt"},
-        "quant_algo": "FP8",
+        "quant_algo": "FP8_PB_WO" if weight_block_size is not None else "FP8",
         "quant_method": "modelopt",
     }
 
@@ -370,23 +477,41 @@ def main() -> None:
     model_path, output_dir = _ensure_paths(args)
     dtype = _select_dtype(args.dtype)
     prompts = _build_prompts(args)
-
-    print("Quantization plan:")
     weight_block_size = _parse_block_size(args.weight_block_size)
 
+    if args.reference_images is not None and args.variant == "t2v":
+        raise SystemExit("--reference-images is only meaningful with --variant i2v (or auto-detected i2v).")
+
+    pipe = _load_pipeline(model_path, dtype)
+    variant = _resolve_variant(pipe, args.variant)
+    if variant == "i2v" and args.reference_images is None:
+        raise SystemExit(
+            "i2v variant requires --reference-images: HunyuanVideo15ImageToVideoPipeline "
+            "takes a required `image` kwarg, so calibration must pair every prompt with a "
+            "reference image."
+        )
+    ref_images = _load_reference_images(args.reference_images) if variant == "i2v" else []
+    samples = _build_calib_samples(prompts, variant, ref_images)
+    sample_label = f"i2v={len(samples)}" if variant == "i2v" else f"t2v={len(samples)}"
+
+    print("Quantization plan:")
     print(f"  input:           {args.model}")
     print(f"  output:          {output_dir}")
     print(f"  dtype:           {dtype}")
-    print(f"  height/width:    {args.height}x{args.width}")
+    print(f"  variant:         {variant} (requested={args.variant}, class={pipe.__class__.__name__})")
+    if variant == "i2v":
+        print("  height/width:    derived from reference image (i2v ignores --height/--width)")
+        print(f"  reference imgs:  {len(ref_images)}")
+    else:
+        print(f"  height/width:    {args.height}x{args.width}")
     print(f"  num_frames:      {args.num_frames}")
-    print(f"  calib_size:      {len(prompts)}")
+    print(f"  calib_size:      {len(samples)} ({sample_label})")
     print(f"  calib_steps:     {args.calib_steps}")
     print(f"  quantize_mha:    {args.quantize_mha}")
     print(
         f"  weight strategy: {'block-wise ' + str(weight_block_size) if weight_block_size else 'per-tensor (default)'}"
     )
 
-    pipe = _load_pipeline(model_path, dtype)
     backbone = pipe.transformer
 
     quant_config = copy.deepcopy(mtq.FP8_DEFAULT_CFG)
@@ -402,7 +527,7 @@ def main() -> None:
             f"({weight_block_size[0]}x{weight_block_size[1]} tiles)"
         )
 
-    forward_loop = _build_forward_loop(pipe, args, prompts)
+    forward_loop = _build_forward_loop(pipe, args, samples, variant)
     quantized = mtq.quantize(backbone, quant_config, forward_loop)
     if quantized is not None:
         pipe.transformer = quantized
@@ -428,16 +553,29 @@ def main() -> None:
     _summarize_export(output_dir)
 
     print("\nNext: validate the checkpoint with vllm-omni:")
-    print(
-        "  python examples/offline_inference/text_to_video/text_to_video.py \\\n"
-        f"    --model {output_dir} \\\n"
-        "    --quantization fp8 \\\n"
-        "    --prompt 'A dog running across a field of golden wheat.' \\\n"
-        f"    --height {args.height} --width {args.width} --num-frames {args.num_frames} \\\n"
-        "    --num-inference-steps 30 --guidance-scale 6.0 --seed 42 \\\n"
-        "    --output outputs/hv15_modelopt_fp8.mp4 \\\n"
-        "    --enforce-eager"
-    )
+    if variant == "i2v":
+        print(
+            "  python examples/offline_inference/image_to_video/image_to_video.py \\\n"
+            f"    --model {output_dir} \\\n"
+            "    --quantization fp8 \\\n"
+            "    --prompt 'A subject from the reference image moves through the scene.' \\\n"
+            "    --image <path/to/your/reference.jpg> \\\n"
+            f"    --num-frames {args.num_frames} \\\n"
+            "    --num-inference-steps 30 --guidance-scale 6.0 --seed 42 \\\n"
+            "    --output outputs/hv15_i2v_modelopt_fp8.mp4 \\\n"
+            "    --enforce-eager"
+        )
+    else:
+        print(
+            "  python examples/offline_inference/text_to_video/text_to_video.py \\\n"
+            f"    --model {output_dir} \\\n"
+            "    --quantization fp8 \\\n"
+            "    --prompt 'A dog running across a field of golden wheat.' \\\n"
+            f"    --height {args.height} --width {args.width} --num-frames {args.num_frames} \\\n"
+            "    --num-inference-steps 30 --guidance-scale 6.0 --seed 42 \\\n"
+            "    --output outputs/hv15_t2v_modelopt_fp8.mp4 \\\n"
+            "    --enforce-eager"
+        )
     print(
         "\n  (--quantization fp8 is auto-upgraded to ModelOpt FP8 at runtime because the "
         "checkpoint's config.json has modelopt metadata.)"

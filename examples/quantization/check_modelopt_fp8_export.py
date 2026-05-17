@@ -49,15 +49,46 @@ def _check_config(transformer_dir: Path) -> int:
     issues = []
     if qc.get("quant_method") != "modelopt":
         issues.append(f"quant_method={qc.get('quant_method')!r} (expected 'modelopt')")
-    if qc.get("quant_algo") != "FP8":
-        issues.append(f"quant_algo={qc.get('quant_algo')!r} (expected 'FP8' — vllm-omni adapter may not auto-detect)")
+
+    quant_algo = qc.get("quant_algo")
+    if quant_algo not in ("FP8", "FP8_PB_WO"):
+        issues.append(
+            f"quant_algo={quant_algo!r} (expected 'FP8' for per-tensor or "
+            "'FP8_PB_WO' for 128x128 block-wise — other algos aren't routed by "
+            "vllm-omni's adapter today)"
+        )
+
+    # Cross-check that the saved weight strategy and the dispatch field agree.
+    # Producer scripts can in principle drift apart (e.g. metadata says "block"
+    # but quant_algo still claims "FP8"), and that lands as an AssertionError at
+    # weight load time because the runtime LinearMethod expects scalar scales but
+    # finds 4D block ones. Failing here is much friendlier.
+    cfg_groups = qc.get("config_groups", {})
+    weight_strategies = {
+        (group or {}).get("weights", {}).get("strategy")
+        for group in cfg_groups.values()
+        if isinstance(group, dict)
+    }
+    weight_strategies.discard(None)
+    if weight_strategies == {"block"} and quant_algo != "FP8_PB_WO":
+        issues.append(
+            f"weights.strategy='block' but quant_algo={quant_algo!r}. Per-block "
+            "weight scales require FP8_PB_WO so upstream vLLM dispatches to "
+            "ModelOptFp8PbWoLinearMethod; FP8 routes to per-tensor and crashes "
+            "on the 4D weight_scale at weight load time."
+        )
+    elif quant_algo == "FP8_PB_WO" and weight_strategies != {"block"}:
+        issues.append(
+            f"quant_algo='FP8_PB_WO' but weights.strategy={weight_strategies!r} "
+            "(expected {'block'}). FP8_PB_WO consumers expect 4D per-block scales."
+        )
 
     if issues:
         print("[A] WARN — config looks incomplete:")
         for issue in issues:
             print(f"    - {issue}")
         return 2
-    print("[A] PASS — config looks correct.")
+    print(f"[A] PASS — config looks correct (quant_algo={quant_algo}).")
     return 0
 
 
@@ -161,10 +192,27 @@ def _disk_size_gib(p: Path) -> float:
     return sum(f.stat().st_size for f in p.rglob("*") if f.is_file()) / (1024**3)
 
 
+def _transformer_subdirs(root: Path) -> list[Path]:
+    """Return [<root>/transformer, <root>/transformer_2] for those that exist.
+
+    Wan2.2 MoE A14B (T2V/I2V) and Wan2.2-VACE-A14B export TWO transformer
+    subfolders; single-transformer checkpoints just have `transformer/`.
+    Falls back to `[root]` if neither exists (e.g., a baseline directory
+    that wasn't structured as a diffusers repo).
+    """
+    found = [root / name for name in ("transformer", "transformer_2") if (root / name).is_dir()]
+    return found if found else [root]
+
+
 def _check_size_vs_baseline(transformer_dir: Path, baseline: str | None) -> int:
     """Returns 0 always (informational only)."""
-    fp8_size = _disk_size_gib(transformer_dir)
-    print(f"\n[C] FP8 transformer disk size: {fp8_size:.2f} GiB")
+    # transformer_dir is <fp8_root>/transformer; walk one level up so we can
+    # also pick up transformer_2/ for Wan2.2 MoE A14B checkpoints.
+    fp8_root = transformer_dir.parent
+    fp8_subdirs = _transformer_subdirs(fp8_root)
+    fp8_size = sum(_disk_size_gib(p) for p in fp8_subdirs)
+    fp8_label = " + ".join(p.name for p in fp8_subdirs)
+    print(f"\n[C] FP8 transformer disk size ({fp8_label}): {fp8_size:.2f} GiB")
 
     if baseline is None:
         print("[C] SKIP — pass --baseline <path or HF id> to compare against BF16.")
@@ -172,26 +220,54 @@ def _check_size_vs_baseline(transformer_dir: Path, baseline: str | None) -> int:
 
     baseline_path = Path(baseline)
     if not baseline_path.exists():
-        # Try HF download.
+        # Treat `baseline` as an HF repo id and read from the local cache.
+        # Don't trigger a download: this script is meant to run AFTER
+        # quantize_*_modelopt_fp8.py, which already pulled the whole repo
+        # into the cache. local_files_only=True makes that assumption
+        # explicit — if the cache is empty we surface a clear error rather
+        # than silently kicking off a multi-GB download.
         try:
             from huggingface_hub import snapshot_download
+            from huggingface_hub.errors import LocalEntryNotFoundError
         except ImportError:
             print("[C] SKIP — huggingface_hub not installed and baseline not a local path.")
             return 0
-        print(f"    Downloading baseline transformer from HF: {baseline}")
-        baseline_path = Path(snapshot_download(baseline, allow_patterns=["transformer/*"]))
+        try:
+            baseline_path = Path(snapshot_download(baseline, local_files_only=True))
+        except LocalEntryNotFoundError:
+            print(
+                f"[C] SKIP — '{baseline}' not found in local HF cache. "
+                "Run the matching quantize_*_modelopt_fp8.py first (it caches the BF16 repo), "
+                "or pass --baseline <local-dir>."
+            )
+            return 0
+        print(f"    Resolved baseline from HF cache: {baseline_path}")
 
-    bf16_dir = baseline_path / "transformer" if (baseline_path / "transformer").exists() else baseline_path
-    bf16_size = _disk_size_gib(bf16_dir)
+    bf16_subdirs = _transformer_subdirs(baseline_path)
+    bf16_size = sum(_disk_size_gib(p) for p in bf16_subdirs)
     if bf16_size == 0:
-        print(f"[C] WARN — baseline transformer dir empty: {bf16_dir}")
+        print(f"[C] WARN — baseline transformer dir empty: {baseline_path}")
         return 0
 
+    bf16_label = " + ".join(p.name for p in bf16_subdirs)
     reduction = (1 - fp8_size / bf16_size) * 100
-    print(f"[C] BF16 baseline transformer disk size: {bf16_size:.2f} GiB ({bf16_dir})")
-    print(f"[C] Disk reduction: {reduction:.1f}%  (FP8 transformer is {fp8_size / bf16_size:.0%} of BF16)")
+    print(f"[C] BF16 baseline transformer disk size ({bf16_label}): {bf16_size:.2f} GiB ({baseline_path})")
+    print(f"[C] Disk reduction: {reduction:.1f}%  (FP8 is {fp8_size / bf16_size:.0%} of BF16)")
     if reduction < 30:
         print("[C] WARN — FP8 should typically reduce disk by ~40-50%; <30% suggests partial quantization.")
+
+    # Whole-repo view: includes VAE / text_encoder / tokenizer / scheduler /
+    # top-level metadata. Quantization only touches transformer(s) so this
+    # reduction is always smaller than the transformer-only one — but it's
+    # what the deployment footprint actually is.
+    fp8_total = _disk_size_gib(fp8_root)
+    bf16_total = _disk_size_gib(baseline_path)
+    if bf16_total > 0:
+        total_reduction = (1 - fp8_total / bf16_total) * 100
+        print(
+            f"[C] Whole-repo: FP8 {fp8_total:.2f} GiB / BF16 {bf16_total:.2f} GiB "
+            f"(reduction {total_reduction:.1f}%, deployment footprint)"
+        )
     return 0
 
 
