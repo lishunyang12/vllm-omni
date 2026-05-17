@@ -97,13 +97,13 @@ def _time_call(fn, *args, warmup: int = 3, iters: int = 10) -> tuple[float, str]
     try:
         for _ in range(warmup):
             fn(*args)
-        torch.cuda.synchronize()
+        torch.accelerator.synchronize()
         times = []
         for _ in range(iters):
-            torch.cuda.synchronize()
+            torch.accelerator.synchronize()
             t0 = time.perf_counter()
             fn(*args)
-            torch.cuda.synchronize()
+            torch.accelerator.synchronize()
             times.append((time.perf_counter() - t0) * 1000.0)
         times.sort()
         return times[len(times) // 2], ""

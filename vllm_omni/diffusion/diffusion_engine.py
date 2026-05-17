@@ -682,11 +682,7 @@ class DiffusionEngine:
         # Audio pipelines round audio token count from num_frames; the default
         # of 1 yields seq_len=1 K/V which cuDNN SDPA refuses under torch.compile.
         # 2 is the minimum that produces audio_num_frames > 1.
-        num_frames = (
-            2
-            if supports_audio_input or supports_audio_output(self.od_config.model_class_name)
-            else 1
-        )
+        num_frames = 2 if supports_audio_input or supports_audio_output(self.od_config.model_class_name) else 1
         req = OmniDiffusionRequest(
             prompts=[prompt],
             request_ids=["dummy_req_id"],
