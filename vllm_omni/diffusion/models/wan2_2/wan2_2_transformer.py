@@ -3,7 +3,7 @@
 
 import math
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -19,8 +19,8 @@ from vllm.distributed import (
 from vllm.logger import init_logger
 from vllm.model_executor.layers.conv import Conv3dLayer
 from vllm.model_executor.layers.linear import ColumnParallelLinear, QKVParallelLinear, RowParallelLinear
+from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
-from vllm.model_executor.models.utils import WeightsMapper
 
 from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
 from vllm_omni.diffusion.attention.layer import Attention
@@ -31,41 +31,10 @@ from vllm_omni.diffusion.distributed.sp_plan import (
 from vllm_omni.diffusion.forward_context import get_forward_context
 from vllm_omni.diffusion.layers.adalayernorm import AdaLayerNorm
 from vllm_omni.diffusion.layers.norm import LayerNorm, RMSNorm
+from vllm_omni.diffusion.layers.rope import RotaryEmbeddingWan
 from vllm_omni.platforms import current_omni_platform
 
-if TYPE_CHECKING:
-    from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
-
 logger = init_logger(__name__)
-
-
-def apply_rotary_emb_wan(
-    hidden_states: torch.Tensor,
-    freqs_cos: torch.Tensor,
-    freqs_sin: torch.Tensor,
-) -> torch.Tensor:
-    """
-    Apply rotary embeddings to input tensors using the given frequency tensors.
-
-    Args:
-        hidden_states: Input tensor of shape [B, S, H, D]
-        freqs_cos: Cosine frequencies
-        freqs_sin: Sine frequencies
-
-    Returns:
-        Tensor with rotary embeddings applied
-    """
-    x1, x2 = hidden_states.unflatten(-1, (-1, 2)).unbind(-1)
-    cos = freqs_cos[..., 0::2]
-    sin = freqs_sin[..., 1::2]
-    rotated = torch.stack(
-        (
-            x1 * cos - x2 * sin,
-            x1 * sin + x2 * cos,
-        ),
-        dim=-1,
-    )
-    return rotated.flatten(-2, -1).to(hidden_states.dtype)
 
 
 class DistributedRMSNorm(nn.Module):
@@ -111,7 +80,7 @@ class ColumnParallelGELU(nn.Module):
         *,
         approximate: str = "tanh",
         bias: bool = True,
-        quant_config: "QuantizationConfig | None" = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
         super().__init__()
@@ -122,7 +91,7 @@ class ColumnParallelGELU(nn.Module):
             gather_output=False,
             return_bias=False,
             quant_config=quant_config,
-            prefix=f"{prefix}.proj",
+            prefix=f"{prefix}.proj" if prefix else "proj",
         )
         self.approximate = approximate
 
@@ -143,7 +112,7 @@ class WanFeedForward(nn.Module):
         inner_dim: int,
         dim_out: int | None = None,
         bias: bool = True,
-        quant_config: "QuantizationConfig | None" = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ) -> None:
         super().__init__()
@@ -151,7 +120,12 @@ class WanFeedForward(nn.Module):
 
         # ColumnParallel: scatter to each tp_rank
         self.net_0 = ColumnParallelGELU(
-            dim, inner_dim, approximate="tanh", bias=bias, quant_config=quant_config, prefix=f"{prefix}.net_0"
+            dim,
+            inner_dim,
+            approximate="tanh",
+            bias=bias,
+            quant_config=quant_config,
+            prefix=f"{prefix}.net_0" if prefix else "net_0",
         )
         # Placeholder for weight loading compatibility
         self.net_1 = nn.Identity()
@@ -163,7 +137,7 @@ class WanFeedForward(nn.Module):
             input_is_parallel=True,
             return_bias=False,
             quant_config=quant_config,
-            prefix=f"{prefix}.net_2",
+            prefix=f"{prefix}.net_2" if prefix else "net_2",
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
@@ -378,7 +352,7 @@ class WanSelfAttention(nn.Module):
         head_dim: int,
         eps: float = 1e-5,
         dropout: float = 0.0,
-        quant_config: "QuantizationConfig | None" = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
         super().__init__()
@@ -395,7 +369,7 @@ class WanSelfAttention(nn.Module):
             total_num_heads=num_heads,
             bias=True,
             quant_config=quant_config,
-            prefix=f"{prefix}.to_qkv",
+            prefix=f"{prefix}.to_qkv" if prefix else "to_qkv",
         )
 
         self.num_heads = self.to_qkv.num_heads
@@ -417,7 +391,7 @@ class WanSelfAttention(nn.Module):
             input_is_parallel=True,
             return_bias=False,
             quant_config=quant_config,
-            prefix=f"{prefix}.to_out",
+            prefix=f"{prefix}.to_out" if prefix else "to_out",
         )
         self.dropout = nn.Dropout(dropout)
 
@@ -428,16 +402,16 @@ class WanSelfAttention(nn.Module):
             num_kv_heads=self.num_kv_heads,
             softmax_scale=1.0 / (head_dim**0.5),
             causal=False,
+            role="self",
+            prefix=prefix,
         )
 
     def forward(
         self,
         hidden_states: torch.Tensor,
         rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
-        attn_mask: torch.Tensor | None = None,
+        attn_metadata: AttentionMetadata | None = None,
     ) -> torch.Tensor:
-        # Ensure contiguous for FP8 quantized linear layers
-        hidden_states = hidden_states.contiguous()
         # Fused QKV projection
         qkv, _ = self.to_qkv(hidden_states)
 
@@ -456,14 +430,10 @@ class WanSelfAttention(nn.Module):
 
         # Apply rotary embeddings
         if rotary_emb is not None:
+            self.rotary_embedding = RotaryEmbeddingWan(is_neox_style=False, half_head_dim=True)
             freqs_cos, freqs_sin = rotary_emb
-            query = apply_rotary_emb_wan(query, freqs_cos, freqs_sin)
-            key = apply_rotary_emb_wan(key, freqs_cos, freqs_sin)
-
-        # Create attention metadata if mask is provided
-        attn_metadata = None
-        if attn_mask is not None:
-            attn_metadata = AttentionMetadata(attn_mask=attn_mask)
+            query = self.rotary_embedding(query, freqs_cos, freqs_sin)
+            key = self.rotary_embedding(key, freqs_cos, freqs_sin)
 
         # Compute attention using unified attention layer
         hidden_states = self.attn(query, key, value, attn_metadata)
@@ -491,7 +461,7 @@ class WanCrossAttention(nn.Module):
         eps: float = 1e-5,
         dropout: float = 0.0,
         added_kv_proj_dim: int | None = None,
-        quant_config: "QuantizationConfig | None" = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
         super().__init__()
@@ -510,7 +480,7 @@ class WanCrossAttention(nn.Module):
             gather_output=False,
             return_bias=False,
             quant_config=quant_config,
-            prefix=f"{prefix}.to_q",
+            prefix=f"{prefix}.to_q" if prefix else "to_q",
         )
 
         # Separate K and V projections for cross-attention
@@ -521,7 +491,7 @@ class WanCrossAttention(nn.Module):
             gather_output=False,
             return_bias=False,
             quant_config=quant_config,
-            prefix=f"{prefix}.to_k",
+            prefix=f"{prefix}.to_k" if prefix else "to_k",
         )
 
         self.to_v = ColumnParallelLinear(
@@ -531,7 +501,7 @@ class WanCrossAttention(nn.Module):
             gather_output=False,
             return_bias=False,
             quant_config=quant_config,
-            prefix=f"{prefix}.to_v",
+            prefix=f"{prefix}.to_v" if prefix else "to_v",
         )
 
         tp_size = get_tensor_model_parallel_world_size()
@@ -556,7 +526,7 @@ class WanCrossAttention(nn.Module):
                 gather_output=False,
                 return_bias=False,
                 quant_config=quant_config,
-                prefix=f"{prefix}.add_k_proj",
+                prefix=f"{prefix}.add_k_proj" if prefix else "add_k_proj",
             )
             self.add_v_proj = ColumnParallelLinear(
                 added_kv_proj_dim,
@@ -565,7 +535,7 @@ class WanCrossAttention(nn.Module):
                 gather_output=False,
                 return_bias=False,
                 quant_config=quant_config,
-                prefix=f"{prefix}.add_v_proj",
+                prefix=f"{prefix}.add_v_proj" if prefix else "add_v_proj",
             )
             if get_tensor_model_parallel_world_size() > 1:
                 self.norm_added_k = DistributedRMSNorm(self.tp_inner_dim, eps=eps)
@@ -584,7 +554,7 @@ class WanCrossAttention(nn.Module):
             input_is_parallel=True,
             return_bias=False,
             quant_config=quant_config,
-            prefix=f"{prefix}.to_out",
+            prefix=f"{prefix}.to_out" if prefix else "to_out",
         )
         self.dropout = nn.Dropout(dropout)
 
@@ -595,17 +565,22 @@ class WanCrossAttention(nn.Module):
             num_kv_heads=self.num_heads,
             softmax_scale=1.0 / (head_dim**0.5),
             causal=False,
+            role="cross",
+            qkv_layout="BSND",
+            prefix=prefix,
             skip_sequence_parallel=True,
+            # Wan2.2 cross-attn operates on short text-encoder sequences; per-block
+            # FP8 quant offers no perf win and degrades quality. Opt out until a
+            # dedicated quant backend handles this case.
+            disable_kv_quant=True,
         )
 
     def forward(
         self,
         hidden_states: torch.Tensor,
         encoder_hidden_states: torch.Tensor,
+        attn_metadata: AttentionMetadata | None = None,
     ) -> torch.Tensor:
-        # Ensure contiguous for FP8 quantized linear layers
-        hidden_states = hidden_states.contiguous()
-        encoder_hidden_states = encoder_hidden_states.contiguous()
         # Handle I2V case where encoder_hidden_states contains both image and text
         encoder_hidden_states_img = None
         if self.add_k_proj is not None:
@@ -638,12 +613,12 @@ class WanCrossAttention(nn.Module):
             key_img = key_img.unflatten(2, (self.num_heads, self.head_dim))
             value_img = value_img.unflatten(2, (self.num_heads, self.head_dim))
 
-            hidden_states_img = self.attn(query, key_img, value_img)
+            hidden_states_img = self.attn(query, key_img, value_img, attn_metadata)
             hidden_states_img = hidden_states_img.flatten(2, 3)
             hidden_states_img = hidden_states_img.type_as(query)
 
         # Main cross-attention using unified attention layer
-        hidden_states = self.attn(query, key, value)
+        hidden_states = self.attn(query, key, value, attn_metadata)
         hidden_states = hidden_states.flatten(2, 3)
         hidden_states = hidden_states.type_as(query)
 
@@ -672,7 +647,7 @@ class WanTransformerBlock(nn.Module):
         eps: float = 1e-6,
         added_kv_proj_dim: int | None = None,
         cross_attn_norm: bool = False,
-        quant_config: "QuantizationConfig | None" = None,
+        quant_config: QuantizationConfig | None = None,
         prefix: str = "",
     ):
         super().__init__()
@@ -687,7 +662,7 @@ class WanTransformerBlock(nn.Module):
             head_dim=head_dim,
             eps=eps,
             quant_config=quant_config,
-            prefix=f"{prefix}.attn1",
+            prefix=f"{prefix}.attn1" if prefix else "attn1",
         )
 
         # 2. Cross-attention
@@ -698,13 +673,17 @@ class WanTransformerBlock(nn.Module):
             eps=eps,
             added_kv_proj_dim=added_kv_proj_dim,
             quant_config=quant_config,
-            prefix=f"{prefix}.attn2",
+            prefix=f"{prefix}.attn2" if prefix else "attn2",
         )
         self.norm2 = LayerNorm(dim, eps, elementwise_affine=True) if cross_attn_norm else nn.Identity()
 
         # 3. Feed-forward
         self.ffn = WanFeedForward(
-            dim=dim, inner_dim=ffn_dim, dim_out=dim, quant_config=quant_config, prefix=f"{prefix}.ffn"
+            dim=dim,
+            inner_dim=ffn_dim,
+            dim_out=dim,
+            quant_config=quant_config,
+            prefix=f"{prefix}.ffn" if prefix else "ffn",
         )
         self.norm3 = AdaLayerNorm(dim, elementwise_affine=False, eps=eps)
 
@@ -738,12 +717,13 @@ class WanTransformerBlock(nn.Module):
 
         # 1. Self-attention
         norm_hidden_states = self.norm1(hidden_states, scale_msa, shift_msa).type_as(hidden_states)
-        attn_output = self.attn1(norm_hidden_states, rotary_emb, hidden_states_mask)
+        self_attn_metadata = AttentionMetadata(attn_mask=hidden_states_mask)
+        attn_output = self.attn1(norm_hidden_states, rotary_emb, self_attn_metadata)
         hidden_states = (hidden_states + attn_output * gate_msa).type_as(hidden_states)
 
         # 2. Cross-attention
         norm_hidden_states = self.norm2(hidden_states).type_as(hidden_states)
-        attn_output = self.attn2(norm_hidden_states, encoder_hidden_states)
+        attn_output = self.attn2(norm_hidden_states, encoder_hidden_states, None)
         hidden_states = hidden_states + attn_output
 
         # 3. Feed-forward
@@ -794,17 +774,6 @@ class WanTransformer3DModel(nn.Module):
     packed_modules_mapping = {
         "to_qkv": ["to_q", "to_k", "to_v"],
     }
-
-    # Diffusers → vllm-omni weight-name translation. Used by the ModelOpt FP8
-    # checkpoint adapter (#2913) to remap scale tensor names: diffusers stores
-    # FFN as `ffn.net.0.proj` / `ffn.net.2` (dotted), vllm-omni's WanFeedForward
-    # uses `ffn.net_0.proj` / `ffn.net_2` (underscore).
-    hf_to_vllm_mapper = WeightsMapper(
-        orig_to_new_substr={
-            ".ffn.net.0.": ".ffn.net_0.",
-            ".ffn.net.2.": ".ffn.net_2.",
-        },
-    )
 
     @staticmethod
     def _is_transformer_block(name: str, module) -> bool:
@@ -872,7 +841,7 @@ class WanTransformer3DModel(nn.Module):
         added_kv_proj_dim: int | None = None,
         rope_max_seq_len: int = 1024,
         pos_embed_seq_len: int | None = None,
-        quant_config: "QuantizationConfig | None" = None,
+        quant_config: QuantizationConfig | None = None,
     ):
         super().__init__()
 
@@ -932,9 +901,9 @@ class WanTransformer3DModel(nn.Module):
                     added_kv_proj_dim,
                     cross_attn_norm,
                     quant_config=quant_config,
-                    prefix=f"blocks.{i}",
+                    prefix=f"blocks.{layer_idx}",
                 )
-                for i in range(num_layers)
+                for layer_idx in range(num_layers)
             ]
         )
 
@@ -945,6 +914,10 @@ class WanTransformer3DModel(nn.Module):
         # SP helper modules
         self.timestep_proj_prepare = TimestepProjPrepare()
         self.output_scale_shift_prepare = OutputScaleShiftPrepare(inner_dim)
+
+        # ROPE helper
+        self._cached_rope_emb = None
+        self._cached_rope_resolution = None
 
     @property
     def dtype(self) -> torch.dtype:
@@ -967,7 +940,14 @@ class WanTransformer3DModel(nn.Module):
         post_patch_width = width // p_w
 
         # Compute RoPE embeddings (sharded by _sp_plan via split_output=True)
-        rotary_emb = self.rope(hidden_states)
+        current_rope_resolution = (post_patch_num_frames, post_patch_height, post_patch_width)
+        if self._cached_rope_resolution == current_rope_resolution and self._cached_rope_emb is not None:
+            rotary_emb = self._cached_rope_emb
+        else:
+            freqs_cos, freqs_sin = self.rope(hidden_states)
+            rotary_emb = (freqs_cos[..., 0::2].to(hidden_states.dtype), freqs_sin[..., 1::2].to(hidden_states.dtype))
+            self._hidden_states_shape = hidden_states.shape
+            self._cached_rope_emb = rotary_emb
 
         # Patch embedding and flatten to sequence
         # (hidden_states is sharded at blocks.0 input by _sp_plan)
@@ -1017,7 +997,13 @@ class WanTransformer3DModel(nn.Module):
 
         # Transformer blocks
         for block in self.blocks:
-            hidden_states = block(hidden_states, encoder_hidden_states, timestep_proj, rotary_emb, hidden_states_mask)
+            hidden_states = block(
+                hidden_states,
+                encoder_hidden_states,
+                timestep_proj,
+                rotary_emb,
+                hidden_states_mask,
+            )
 
         # Output norm, projection & unpatchify
         shift, scale = self.output_scale_shift_prepare(temb)
@@ -1081,11 +1067,15 @@ class WanTransformer3DModel(nn.Module):
             original_name = name
             lookup_name = name
 
-            # Handle QKV fusion
+            # Handle QKV fusion for weight tensors (separate to_q/k/v → fused to_qkv).
+            # Pre-fused to_qkv tensors (from offline MXFP8 merged checkpoint) fall
+            # through to the else branch and are loaded directly.
             for param_name, weight_name, shard_id in stacked_params_mapping:
                 if weight_name not in original_name:
                     continue
                 lookup_name = original_name.replace(weight_name, param_name)
+                if lookup_name not in params_dict:
+                    break
                 param = params_dict[lookup_name]
                 weight_loader = param.weight_loader
                 weight_loader(param, loaded_weight, shard_id)

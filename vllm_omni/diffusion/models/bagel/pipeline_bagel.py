@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import dataclass
 from math import isqrt
+from typing import ClassVar
 
 import numpy as np
 import torch
@@ -26,6 +27,7 @@ from vllm.transformers_utils.configs.bagel import BagelConfig
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
 from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
+from vllm_omni.diffusion.models.interface import SupportsComponentDiscovery
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.model_executor.model_loader.weight_utils import download_weights_from_hf_specific
@@ -148,11 +150,24 @@ class SiglipNaViTWrapper(nn.Module):
         return outputs.last_hidden_state.squeeze(0)
 
 
-class BagelPipeline(nn.Module, DiffusionPipelineProfilerMixin):
+class BagelPipeline(nn.Module, SupportsComponentDiscovery, DiffusionPipelineProfilerMixin):
     """Bagel generation pipeline (MoT) packaged for vllm-omni diffusion engine.
 
     This pipeline is self-contained and uses the ported Bagel core files.
     """
+
+    _dit_modules: ClassVar[list[str]] = ["language_model.model"]
+    _encoder_modules: ClassVar[list[str]] = []
+    _vae_modules: ClassVar[list[str]] = ["vae"]
+    _resident_modules: ClassVar[list[str]] = [
+        "bagel.time_embedder",
+        "bagel.vae2llm",
+        "bagel.llm2vae",
+        "bagel.latent_pos_embed",
+        "bagel.vit_model",
+        "bagel.connector",
+        "bagel.vit_pos_embed",
+    ]
 
     def __init__(self, *, od_config: OmniDiffusionConfig, prefix: str = ""):
         super().__init__()
@@ -236,6 +251,7 @@ class BagelPipeline(nn.Module, DiffusionPipelineProfilerMixin):
         self.language_model = Qwen2MoTForCausalLM(
             llm_config, parallel_config=parallel_config, quant_config=quant_config, prefix="bagel.language_model"
         )
+        self.transformer = self.language_model.model
         ae_params: AutoEncoderParams = default_ae_params()
         self.vae = AutoEncoder(ae_params)
 
@@ -269,11 +285,15 @@ class BagelPipeline(nn.Module, DiffusionPipelineProfilerMixin):
             )
         ]
 
-        # When quantization is enabled, vLLM linear layers live on meta
-        # device until the weight loader materializes them. Calling
-        # .to(device) would fail on those meta tensors, so we skip it
-        # entirely and let the weight loader handle device placement.
-        if quant_config is None:
+        # Defer device placement to the weight-loading/offload path in three cases:
+        # 1. Quantization: When quantization is enabled, vLLM linear layers live on meta
+        #    device until the weight loader materializes them. Calling .to(device) would fail on those meta tensors,
+        #    so we skip it entirely and let the weight loader handle device placement.
+        # 2. Layerwise offload: modules should be initialized on CPU first, then
+        #    selectively materialized/moved by the offloader.
+        # 3. HSDP: weights should be loaded on CPU first and sharded afterwards,
+        #    rather than eagerly placing the full model on one GPU.
+        if quant_config is None and not (od_config.enable_layerwise_offload or od_config.parallel_config.use_hsdp):
             self.to(self.device)
         self.setup_diffusion_pipeline_profiler(
             enable_diffusion_pipeline_profiler=self.od_config.enable_diffusion_pipeline_profiler

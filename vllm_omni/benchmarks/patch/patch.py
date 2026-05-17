@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import contextlib
 import io
 import json
@@ -9,12 +8,14 @@ import ssl
 import sys
 import time
 import traceback
+import wave
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
 import aiohttp
+import pybase64 as base64
 from pydub import AudioSegment
 from tqdm.asyncio import tqdm
 from vllm.benchmarks import datasets
@@ -40,7 +41,9 @@ from vllm_omni.benchmarks.data_modules.random_multi_modal_dataset import OmniRan
 from vllm_omni.benchmarks.data_modules.seed_tts_dataset import (
     SEED_TTS_DEFAULT_OMNI_SYSTEM_PROMPT,
     SeedTTSDataset,
+    SeedTTSDesignDataset,
     SeedTTSSampleRequest,
+    SeedTTSTextDataset,
 )
 
 get_samples_old = datasets.get_samples
@@ -85,23 +88,16 @@ def _attach_daily_omni_to_request_func_input(sample: SampleRequest, rfi: Request
 
 
 def _attach_seed_tts_to_request_func_input(sample: SampleRequest, rfi: RequestFuncInput) -> None:
-    """Merge Seed-TTS per-row TTS fields (ref_audio, ref_text, task_type, …) into ``extra_body``.
+    """Merge Seed-TTS per-row TTS fields into ``extra_body`` and mark for PCM capture.
 
-    Used by both ``/v1/audio/speech`` and ``/v1/chat/completions`` (flattened into JSON body).
-    For ``openai-chat-omni``, also sets ``omni_chat_messages`` (system + user) so Qwen3-Omni
-    follows the same role layout as official TTS / multimodal demos. ``/v1/audio/speech`` ignores
-    ``messages`` and only uses ``input`` + body fields.
-    Flags ``openai-chat-omni`` to request audio output and optionally export PCM for WER.
+    Always sets ``seed_tts_row=True`` on the RequestFuncInput for any
+    :class:`SeedTTSSampleRequest` subclass (including text-only and design
+    variants that carry no ``ref_audio``).  This enables PCM capture for WER /
+    UTMOS evaluation even when there is no reference audio.
     """
     if not isinstance(sample, SeedTTSSampleRequest):
         return
-    ex = sample.seed_tts_speech_extra
-    if not ex:
-        return
-    base = dict(rfi.extra_body) if rfi.extra_body else {}
-    base.update(ex)
-    rfi.extra_body = base
-    # Used by request funcs to force streaming TTS behavior and to export PCM when WER is on.
+    # Mark for PCM capture (WER / UTMOS eval) regardless of extra body presence.
     setattr(rfi, "seed_tts_row", True)
     sys_prompt = (sample.seed_tts_system_prompt or "").strip() or SEED_TTS_DEFAULT_OMNI_SYSTEM_PROMPT
     setattr(
@@ -112,6 +108,12 @@ def _attach_seed_tts_to_request_func_input(sample: SampleRequest, rfi: RequestFu
             {"role": "user", "content": [{"type": "text", "text": sample.prompt}]},
         ],
     )
+    ex = sample.seed_tts_speech_extra
+    if not ex:
+        return  # voice comes from --extra-body in config; no ref_audio to merge
+    base = dict(rfi.extra_body) if rfi.extra_body else {}
+    base.update(ex)
+    rfi.extra_body = base
 
 
 def _daily_omni_repo_from_args(args) -> str | None:
@@ -136,7 +138,7 @@ def get_samples(args, tokenizer):
     is_daily_omni = args.dataset_name == "daily-omni" or (
         args.dataset_name == "hf" and _daily_omni_repo_from_args(args) is not None
     )
-    is_seed_tts = args.dataset_name == "seed-tts"
+    is_seed_tts = args.dataset_name in ("seed-tts", "seed-tts-text", "seed-tts-design")
 
     # Check if we need to handle omni-related backends/datasets
     is_omni_backend = args.backend in ["openai-chat-omni", "openai-audio-speech", "daily-omni"]
@@ -249,7 +251,13 @@ def get_samples(args, tokenizer):
                 "--hf-name for the Hub dataset id."
             )
 
-        dataset = SeedTTSDataset(
+        _cls_map = {
+            "seed-tts": SeedTTSDataset,
+            "seed-tts-text": SeedTTSTextDataset,
+            "seed-tts-design": SeedTTSDesignDataset,
+        }
+        DatasetCls = _cls_map[args.dataset_name]
+        dataset = DatasetCls(
             dataset_path=repo_id,
             random_seed=args.seed,
             locale=getattr(args, "seed_tts_locale", "en"),
@@ -367,6 +375,14 @@ async def async_request_openai_chat_omni_completions(
         # outputs or metrics from previous attempts.
         generated_text = ""
         generated_audio = None
+        # For wav responses, accumulate decoded PCM bytes per chunk
+        # to avoid repeated AudioSegment decode/concat.
+        wav_pcm_buffer = bytearray()
+        wav_audio_params: tuple[int, int, int] | None = None
+        wav_inconsistent_chunk_count = 0
+        first_inconsistent_wav_params: tuple[int, int, int] | None = None
+        # For non-wav responses, accumulate encoded bytes then decode once.
+        audio_bytes_buffer = bytearray()
         ttft = 0.0
         st = time.perf_counter()
         output.start_time = st
@@ -433,12 +449,28 @@ async def async_request_openai_chat_omni_completions(
                                         audio_generate_time = timestamp - st
                                         if content:
                                             audio_bytes = base64.b64decode(content)
-                                            seg = AudioSegment.from_file(io.BytesIO(audio_bytes))
-                                            if seg is not None:
-                                                if generated_audio is None:
-                                                    generated_audio = seg
-                                                else:
-                                                    generated_audio = generated_audio + seg
+                                            if response_format == "wav":
+                                                try:
+                                                    with wave.open(io.BytesIO(audio_bytes), "rb") as wav_reader:
+                                                        params = (
+                                                            wav_reader.getnchannels(),
+                                                            wav_reader.getsampwidth(),
+                                                            wav_reader.getframerate(),
+                                                        )
+                                                        if wav_audio_params is None:
+                                                            wav_audio_params = params
+                                                        elif wav_audio_params != params:
+                                                            wav_inconsistent_chunk_count += 1
+                                                            if first_inconsistent_wav_params is None:
+                                                                first_inconsistent_wav_params = params
+                                                            continue
+                                                        wav_pcm_buffer.extend(
+                                                            wav_reader.readframes(wav_reader.getnframes())
+                                                        )
+                                                except Exception as ex:
+                                                    logger.warning("Failed to parse wav audio chunk: %s", ex)
+                                            else:
+                                                audio_bytes_buffer.extend(audio_bytes)
 
                                 if metrics := data.get("metrics"):
                                     output.output_tokens = metrics.get("num_tokens_out", 0)
@@ -447,8 +479,34 @@ async def async_request_openai_chat_omni_completions(
                                     if (pt := usage.get("prompt_tokens")) is not None:
                                         output.prompt_len = pt
 
+                    if wav_inconsistent_chunk_count > 0:
+                        logger.warning(
+                            "Dropped %d wav chunks with inconsistent params during benchmark "
+                            "(expected=%s, first_inconsistent=%s). "
+                            "Audio frames/duration may be undercounted.",
+                            wav_inconsistent_chunk_count,
+                            wav_audio_params,
+                            first_inconsistent_wav_params,
+                        )
+
                     output.latency = timestamp - st
                     output.generated_text = generated_text
+                    if response_format == "wav" and wav_pcm_buffer and wav_audio_params is not None:
+                        channels, sample_width, frame_rate = wav_audio_params
+                        generated_audio = AudioSegment(
+                            data=bytes(wav_pcm_buffer),
+                            sample_width=sample_width,
+                            frame_rate=frame_rate,
+                            channels=channels,
+                        )
+                    elif audio_bytes_buffer:
+                        try:
+                            generated_audio = AudioSegment.from_file(
+                                io.BytesIO(bytes(audio_bytes_buffer)),
+                                format=response_format,
+                            )
+                        except Exception as ex:
+                            logger.warning("Failed to decode accumulated audio bytes: %s", ex)
                     if generated_audio is not None:
                         output.audio_duration = len(generated_audio) / 1000.0
                         frame_width = generated_audio.frame_width
@@ -613,7 +671,8 @@ if "daily-omni" not in OPENAI_COMPATIBLE_BACKENDS:
 # ruff: noqa: E402
 # Prevent import order from causing patch failures
 from vllm.benchmarks import serve
-from vllm.benchmarks.serve import TaskType, calculate_metrics_for_embeddings, get_request, wait_for_endpoint
+from vllm.benchmarks.lib.ready_checker import wait_for_endpoint
+from vllm.benchmarks.serve import TaskType, calculate_metrics_for_embeddings, get_request
 
 from vllm_omni.benchmarks.metrics.metrics import MultiModalsBenchmarkMetrics, calculate_metrics
 

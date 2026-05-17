@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from torch import nn
 
-from .modelopt_fp8 import ModelOptFp8CheckpointAdapter
+from .modelopt import ModelOptFp8CheckpointAdapter
 
 
 def get_checkpoint_adapter(

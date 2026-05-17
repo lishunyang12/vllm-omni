@@ -5,27 +5,19 @@ import os
 import pytest
 import torch
 
-from tests.conftest import OmniRunner
-from tests.utils import hardware_test
+from tests.helpers.mark import hardware_test
+from tests.helpers.runtime import OmniRunner
+from tests.helpers.stage_config import get_deploy_config_path
 
 VOXCPM2_MODEL = "openbmb/VoxCPM2"
-STAGE_CONFIG = os.path.join(
-    os.path.dirname(__file__),
-    "..",
-    "..",
-    "..",
-    "vllm_omni",
-    "model_executor",
-    "stage_configs",
-    "voxcpm2.yaml",
-)
+DEPLOY_CONFIG = get_deploy_config_path("voxcpm2.yaml")
 SAMPLE_RATE = 48000
 
 
 @pytest.fixture(scope="module")
 def voxcpm2_engine():
     """Create VoxCPM2 engine for testing."""
-    with OmniRunner(VOXCPM2_MODEL, stage_configs_path=STAGE_CONFIG) as runner:
+    with OmniRunner(VOXCPM2_MODEL, stage_configs_path=DEPLOY_CONFIG) as runner:
         yield runner.omni
 
 
@@ -49,7 +41,8 @@ def _extract_audio(multimodal_output: dict) -> torch.Tensor:
 
 
 @pytest.mark.core_model
-@pytest.mark.omni
+@pytest.mark.advanced_model
+@pytest.mark.tts
 @hardware_test(res={"cuda": "L4"}, num_cards=1)
 def test_voxcpm2_zero_shot_001(voxcpm2_engine):
     """Test zero-shot TTS produces valid audio output."""
@@ -62,7 +55,8 @@ def test_voxcpm2_zero_shot_001(voxcpm2_engine):
 
 
 @pytest.mark.core_model
-@pytest.mark.omni
+@pytest.mark.advanced_model
+@pytest.mark.tts
 @hardware_test(res={"cuda": "L4"}, num_cards=1)
 def test_voxcpm2_voice_clone_002(voxcpm2_engine):
     """Test voice cloning with a reference audio file.
@@ -103,7 +97,8 @@ def test_voxcpm2_voice_clone_002(voxcpm2_engine):
 
 
 @pytest.mark.core_model
-@pytest.mark.omni
+@pytest.mark.advanced_model
+@pytest.mark.tts
 @hardware_test(res={"cuda": "L4"}, num_cards=1)
 def test_voxcpm2_prefill_decode_mixed_batch_003(voxcpm2_engine):
     """Regression: prefill+decode mixed batch must not crash (PR #2903)."""

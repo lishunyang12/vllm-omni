@@ -5,6 +5,7 @@ from contextlib import nullcontext
 from typing import Any
 
 import torch
+import torch.nn as nn
 from vllm.logger import init_logger
 from vllm_ascend.platform import NPUPlatform
 
@@ -12,6 +13,12 @@ from vllm_omni.diffusion.attention.backends.registry import DiffusionAttentionBa
 from vllm_omni.platforms.interface import OmniPlatform, OmniPlatformEnum
 
 logger = init_logger(__name__)
+
+_DIFFUSION_PACKED_MODULES_MAPPING = {
+    "HunyuanImage3Pipeline": {
+        "experts": ["experts.0.gate_up_proj", "experts.0.down_proj"],
+    },
+}
 
 
 class NPUOmniPlatform(OmniPlatform, NPUPlatform):
@@ -54,6 +61,13 @@ class NPUOmniPlatform(OmniPlatform, NPUPlatform):
         prepare_hunyuan_fused_moe_runtime()
 
     @classmethod
+    def get_diffusion_packed_modules_mapping(
+        cls,
+        model_class: type[nn.Module],
+    ) -> dict[str, list[str]] | None:
+        return _DIFFUSION_PACKED_MODULES_MAPPING.get(model_class.__name__, None)
+
+    @classmethod
     def get_diffusion_attn_backend_cls(
         cls,
         selected_backend: str | None,
@@ -64,7 +78,7 @@ class NPUOmniPlatform(OmniPlatform, NPUPlatform):
         if selected_backend is not None:
             backend_upper = selected_backend.upper()
             backend = DiffusionAttentionBackendEnum[backend_upper]
-            logger.info("Using diffusion attention backend '%s'", backend_upper)
+            logger.debug("Using diffusion attention backend '%s'", backend_upper)
             return backend.get_path()
 
         # Try FLASH_ATTN if mindiesd is available, otherwise fall back to SDPA
@@ -72,10 +86,10 @@ class NPUOmniPlatform(OmniPlatform, NPUPlatform):
             # Configure ASCEND_CUSTOM_OPP_PATH for mindiesd custom ops upon import
             import mindiesd  # noqa: F401
 
-            logger.info("Defaulting to diffusion attention backend FLASH_ATTN")
+            logger.debug("Defaulting to diffusion attention backend FLASH_ATTN")
             return DiffusionAttentionBackendEnum.FLASH_ATTN.get_path()
 
-        logger.info("Falling back to diffusion attention backend SDPA")
+        logger.debug("Falling back to diffusion attention backend SDPA")
         return DiffusionAttentionBackendEnum.TORCH_SDPA.get_path()
 
     @classmethod

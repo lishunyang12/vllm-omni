@@ -236,7 +236,7 @@ def test_transformer_config_auto_detects_modelopt_fp8():
 def test_supported_methods_includes_vllm():
     from vllm_omni.quantization import SUPPORTED_QUANTIZATION_METHODS
 
-    for method in ["fp8", "gguf", "awq", "gptq", "bitsandbytes", "modelopt", "modelopt_fp4"]:
+    for method in ["fp8", "gguf", "awq", "gptq", "bitsandbytes", "modelopt"]:
         assert method in SUPPORTED_QUANTIZATION_METHODS, f"{method} missing"
 
 
@@ -282,14 +282,10 @@ def test_per_component_routing_with_default():
     assert resolved.get_name() == "fp8"
 
 
-@pytest.mark.parametrize(
-    "quant_algo",
-    ["FP8", "NVFP4"],
-    ids=["modelopt_fp8", "modelopt_nvfp4"],
-)
+@pytest.mark.parametrize("quant_algo", ["FP8"], ids=["modelopt_fp8"])
 def test_omni_convertor_thinker_finds_text_config_quant(quant_algo):
     """Thinker stage should discover quantization_config from
-    thinker_config.text_config for both FP8 and NVFP4 modelopt checkpoints."""
+    thinker_config.text_config for verified modelopt FP8 checkpoints."""
     from types import SimpleNamespace
 
     from vllm_omni.config.model import OmniModelArchConfigConvertor

@@ -4,7 +4,7 @@
 from typing import Any
 
 import vllm.forward_context as _vllm_fc
-from vllm.model_executor.layers.fused_moe import SharedFusedMoE
+from vllm.model_executor.layers.fused_moe import FusedMoE
 from vllm.utils.import_utils import resolve_obj_by_qualname
 
 from vllm_omni.platforms import current_omni_platform
@@ -13,7 +13,7 @@ from vllm_omni.platforms import current_omni_platform
 def _set_forward_context_num_tokens(num_tokens: int) -> None:
     """Set num_tokens on the vLLM ForwardContext for MoE routing.
 
-    After the rebase to vLLM 0.18.0, SharedFusedMoE expects
+    After the rebase to vLLM 0.18.0, FusedMoE expects
     ForwardContext.num_tokens to be set. Without it, MoE expert
     routing may produce incorrect results (silent correctness bug).
     """
@@ -25,8 +25,10 @@ def _set_forward_context_num_tokens(num_tokens: int) -> None:
         forward_context.in_profile_run = False
 
 
-class HunyuanFusedMoEDefault(SharedFusedMoE):
+class HunyuanFusedMoEDefault(FusedMoE):
     def __init__(self, *, prefix: str = "", **kwargs: Any) -> None:
+        # Current vLLM FusedMoE handles output reduction internally.
+        kwargs.pop("reduce_results", None)
         super().__init__(prefix=prefix, **kwargs)
         self._prefix = prefix
         self._init_hook_handle = self.register_forward_pre_hook(self._initialize_kernel_hook, with_kwargs=True)

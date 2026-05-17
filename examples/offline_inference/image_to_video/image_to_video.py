@@ -33,7 +33,7 @@ Usage:
 """
 
 import argparse
-import os
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -47,6 +47,16 @@ from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 from vllm_omni.outputs import OmniRequestOutput
 from vllm_omni.platforms import current_omni_platform
+
+
+def parse_profiler_config(value: str) -> dict[str, Any]:
+    try:
+        config = json.loads(value)
+    except json.JSONDecodeError as e:
+        raise argparse.ArgumentTypeError(f"--profiler-config must be valid JSON: {e}") from e
+    if not isinstance(config, dict):
+        raise argparse.ArgumentTypeError("--profiler-config must be a JSON object")
+    return config
 
 
 def parse_args() -> argparse.Namespace:
@@ -91,6 +101,24 @@ def parse_args() -> argparse.Namespace:
         default="unipc",
         choices=["unipc", "euler"],
         help="Sampling solver for Wan2.2 pipelines. Use 'euler' for Lightning/Distill setups.",
+    )
+    parser.add_argument(
+        "--diffusion-kv-cache-dtype",
+        type=str,
+        default=None,
+        help="Diffusion attention KV cache dtype (e.g. float8_e4m3fn). Separate from vLLM --kv-cache-dtype.",
+    )
+    parser.add_argument(
+        "--diffusion-kv-cache-skip-steps",
+        type=str,
+        default=None,
+        help="Diffusion KV-cache quantization skip-step selector, e.g. '0-9,20,25-30'.",
+    )
+    parser.add_argument(
+        "--diffusion-kv-cache-skip-layers",
+        type=str,
+        default=None,
+        help="Diffusion KV-cache quantization skip-layer selector, e.g. '0,1,4-8'.",
     )
     parser.add_argument("--output", type=str, default="i2v_output.mp4", help="Path to save the video (mp4).")
     parser.add_argument("--fps", type=int, default=None, help="Frames per second for the output video.")
@@ -191,26 +219,22 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--quantization",
+        type=str,
+        default=None,
+        choices=["fp8", "mxfp8", "int8", "gguf"],
+        help="Quantization method for the transformer. mxfp8: W8A8 MXFP8 online quant (NPU). fp8: online FP8 (GPU).",
+    )
+    parser.add_argument(
         "--enable-diffusion-pipeline-profiler",
         action="store_true",
         help="Enable diffusion pipeline profiler to display stage durations.",
     )
     parser.add_argument(
-        "--quantization",
-        type=str,
+        "--profiler-config",
+        type=parse_profiler_config,
         default=None,
-        choices=["fp8"],
-        help="Quantization method for the transformer. "
-        "Options: 'fp8' (FP8 W8A8 on Ada/Hopper, weight-only on older GPUs). "
-        "Default: None (no quantization, uses BF16).",
-    )
-    parser.add_argument(
-        "--ignored-layers",
-        type=str,
-        default=None,
-        help="Comma-separated list of layer name patterns to skip quantization. "
-        "Only used when --quantization is set. "
-        "Example: --ignored-layers 'to_qkv,to_out'",
+        help='JSON profiler config for torch/cuda profiling, e.g. \'{"profiler":"torch","torch_profiler_dir":"./perf"}\'.',
     )
     return parser.parse_args()
 
@@ -292,8 +316,7 @@ def main():
             "rel_l1_thresh": 0.2,
         }
 
-    # Check if profiling is requested via environment variable
-    profiler_enabled = bool(os.getenv("VLLM_TORCH_PROFILER_DIR"))
+    profiler_enabled = args.profiler_config is not None
     parallel_config = DiffusionParallelConfig(
         ulysses_degree=args.ulysses_degree,
         ring_degree=args.ring_degree,
@@ -304,25 +327,16 @@ def main():
         hsdp_shard_size=args.hsdp_shard_size,
         hsdp_replicate_size=args.hsdp_replicate_size,
     )
-
-    # Build quantization kwargs
-    quant_kwargs: dict[str, Any] = {}
-    ignored_layers = [s.strip() for s in args.ignored_layers.split(",") if s.strip()] if args.ignored_layers else None
-    if args.quantization and ignored_layers:
-        quant_kwargs["quantization_config"] = {
-            "method": args.quantization,
-            "ignored_layers": ignored_layers,
-        }
-    elif args.quantization:
-        quant_kwargs["quantization"] = args.quantization
-
-    omni = Omni(
+    omni_kwargs = dict(
         model=args.model,
         enable_layerwise_offload=args.enable_layerwise_offload,
         vae_use_slicing=args.vae_use_slicing,
         vae_use_tiling=args.vae_use_tiling,
         boundary_ratio=args.boundary_ratio,
         flow_shift=args.flow_shift,
+        diffusion_kv_cache_dtype=args.diffusion_kv_cache_dtype,
+        diffusion_kv_cache_skip_steps=args.diffusion_kv_cache_skip_steps,
+        diffusion_kv_cache_skip_layers=args.diffusion_kv_cache_skip_layers,
         enable_cpu_offload=args.enable_cpu_offload,
         parallel_config=parallel_config,
         enforce_eager=args.enforce_eager,
@@ -330,8 +344,11 @@ def main():
         cache_backend=args.cache_backend,
         cache_config=cache_config,
         enable_diffusion_pipeline_profiler=args.enable_diffusion_pipeline_profiler,
-        **quant_kwargs,
+        profiler_config=args.profiler_config,
     )
+    if args.quantization is not None:
+        omni_kwargs["quantization"] = args.quantization
+    omni = Omni(**omni_kwargs)
 
     if profiler_enabled:
         print("[Profiler] Starting profiling...")
@@ -344,13 +361,13 @@ def main():
     print(f"  Inference steps: {args.num_inference_steps}")
     print(f"  Frames: {args.num_frames}")
     print(f"  Solver: {args.sample_solver}")
+    print(f"  diffusion_kv_cache_dtype(config): {args.diffusion_kv_cache_dtype}")
+    print(f"  diffusion_kv_cache_skip_steps(config): {args.diffusion_kv_cache_skip_steps}")
+    print(f"  diffusion_kv_cache_skip_layers(config): {args.diffusion_kv_cache_skip_layers}")
     print(
         f"  Parallel configuration: cfg_parallel_size={args.cfg_parallel_size},"
         f" tensor_parallel_size={args.tensor_parallel_size}, vae_patch_parallel_size={args.vae_patch_parallel_size}"
     )
-    print(f"  Quantization: {args.quantization if args.quantization else 'None (BF16)'}")
-    if ignored_layers:
-        print(f"  Ignored layers: {ignored_layers}")
     print(f"  Video size: {args.width}x{args.height}")
     print(f"{'=' * 60}\n")
 

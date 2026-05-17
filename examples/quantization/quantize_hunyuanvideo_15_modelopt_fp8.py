@@ -6,7 +6,7 @@
 Calibrates the DiT transformer using a small video prompt set and exports a
 diffusers-style directory whose transformer carries ModelOpt FP8 metadata.
 The exported checkpoint is consumable by vllm-omni's ModelOpt FP8 adapter
-(see vllm_omni/diffusion/model_loader/checkpoint_adapters/modelopt_fp8.py).
+(see vllm_omni/diffusion/model_loader/checkpoint_adapters/modelopt.py).
 
 Layers kept full precision match the #2728 / #2795 pattern: modulation,
 AdaLayerNorm, entry/exit projections, embeddings, the token refiner path,
