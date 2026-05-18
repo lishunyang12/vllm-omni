@@ -108,7 +108,16 @@ class BagelRotaryEmbedding(nn.Module):
     linear, dynamic-NTK, YaRN, …), we delegate the ``inv_freq`` /
     ``attention_scaling`` computation to HF's ``ROPE_INIT_FUNCTIONS`` so
     that the frequency basis and scaling factor are identical to the
-    original checkpoint.  This module has no learnable parameters.
+    original checkpoint.
+
+    For Qwen2.5-VL-style multimodal RoPE (``rope_scaling.rope_type == "mrope"``)
+    the ``inv_freq`` basis is the standard default-rope one; the difference
+    is that position ids are 3-D ``(t, h, w)`` per token and the
+    ``mrope_section`` describes how the head dimension is split across axes.
+    This module accepts either 2-D scalar position ids ``(B, S)`` or 3-D
+    multimodal position ids ``(B, 3, S)`` and dispatches accordingly so the
+    same module works for both BAGEL (1-D rope) and Lance (Qwen2.5-VL mrope).
+    This module has no learnable parameters.
     """
 
     def __init__(self, config):
@@ -122,10 +131,17 @@ class BagelRotaryEmbedding(nn.Module):
         rope_type = (
             rope_scaling.get("rope_type") or rope_scaling.get("type") or rope_parameters.get("rope_type") or "default"
         )
+        # Cache mrope_section for the forward-time section-split.
+        self._mrope_section: list[int] | None = None
+        if rope_type == "mrope":
+            section = rope_scaling.get("mrope_section") or rope_parameters.get("mrope_section")
+            if section is None:
+                raise ValueError("rope_scaling.rope_type == 'mrope' requires 'mrope_section'.")
+            self._mrope_section = list(section)
 
-        if rope_type == "default":
-            # transformers>=5.0 removed the 'default' entry from
-            # ROPE_INIT_FUNCTIONS; use the plain sinusoidal formula.
+        if rope_type in ("default", "mrope"):
+            # mrope shares the default sinusoidal frequency basis; the
+            # multimodal split happens at forward time, not at init.
             rope_theta = (
                 getattr(config, "rope_theta", None)
                 or rope_parameters.get("rope_theta")
@@ -149,11 +165,36 @@ class BagelRotaryEmbedding(nn.Module):
 
         Args:
             x: Input tensor (only used for dtype inference).
-            position_ids: Position indices, shape (batch_size, seq_len).
+            position_ids: Either 2-D scalar ``(batch_size, seq_len)`` for plain
+                1-D RoPE, or 3-D multimodal ``(batch_size, 3, seq_len)`` for
+                Qwen2.5-VL-style mRoPE.  The latter is auto-detected from
+                ``position_ids.ndim``.
 
         Returns:
             cos, sin: Rotary embeddings, each of shape (batch_size, seq_len, dim).
         """
+        if position_ids.ndim == 3 and self._mrope_section is not None:
+            # multimodal path: position_ids is (B, 3, S) with rows = (t, h, w).
+            # Compute per-axis frequencies, then assemble the per-section
+            # rotary basis matching Qwen2-VL's ``apply_multimodal_rotary_pos_emb``.
+            B = position_ids.shape[0]
+            inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand(B, 3, -1, 1)
+            position_ids_expanded = position_ids[:, :, None, :].float()
+            freqs = (inv_freq_expanded @ position_ids_expanded).transpose(2, 3)
+            # ``freqs`` is (B, 3, S, head_dim/2); double along the last axis
+            # to get the full ``head_dim`` rotary basis.
+            emb = torch.cat((freqs, freqs), dim=-1)  # (B, 3, S, head_dim)
+            cos_per_axis = emb.cos() * self.attention_scaling
+            sin_per_axis = emb.sin() * self.attention_scaling
+            # ``mrope_section`` (e.g. [16, 24, 24] for Qwen2.5-VL) sums to
+            # head_dim/2; doubled it sums to head_dim and cycles axis = i % 3.
+            sec_full = self._mrope_section * 2
+            cos_split = cos_per_axis.split(sec_full, dim=-1)
+            sin_split = sin_per_axis.split(sec_full, dim=-1)
+            cos = torch.cat([c[:, i % 3] for i, c in enumerate(cos_split)], dim=-1)
+            sin = torch.cat([s[:, i % 3] for i, s in enumerate(sin_split)], dim=-1)
+            return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+
         inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
         position_ids_expanded = position_ids[:, None, :].float()
         freqs = (inv_freq_expanded @ position_ids_expanded).transpose(1, 2)
@@ -1982,7 +2023,9 @@ class Bagel(nn.Module):
                 "num_branches": num_branches,
                 "seq_len": seq_len,
                 "batched_query_lens": packed_seqlens.repeat(num_branches),
-                "batched_position_ids": torch.cat(branches_pid),
+                # Concatenate along the sequence (last) dim so this works for both
+                # scalar position ids ``(S,)`` and 3-D mRoPE ``(3, S)`` layouts.
+                "batched_position_ids": torch.cat(branches_pid, dim=-1),
                 "batched_kv_lens": torch.cat(branches_kvl),
                 "batched_query_indexes": torch.cat(
                     [qi + merged_offsets[b_idx] for b_idx, qi in enumerate(branches_qi)]

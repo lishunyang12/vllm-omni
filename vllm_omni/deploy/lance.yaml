@@ -1,0 +1,29 @@
+# Lance-3B (ByteDance) deploy — single-stage, CUDA. Target: 1x NVIDIA A100 80GB.
+#
+# Lance is BAGEL-lineage (Qwen2-MoT unified AR+diffusion). The single-stage
+# DiT stage is self-contained: it owns the Qwen2-MoT LLM, the Qwen2.5-VL ViT,
+# the Wan2.2 VAE and the tokenizer (text2img / image_edit / x2t_image).
+#
+# Lance-3B BF16 footprint: ~7GB LLM + Qwen2.5-VL ViT + Wan2.2 VAE — comfortably
+# within one A100 80GB. The video checkpoint (Lance_3B_Video) is a follow-up.
+#
+# Select via:
+#   vllm serve bytedance-research/Lance --omni \
+#       --deploy-config vllm_omni/deploy/lance.yaml
+# or programmatically:
+#   Omni(model="bytedance-research/Lance",
+#        deploy_config_path="vllm_omni/deploy/lance.yaml")
+
+pipeline: lance
+async_chunk: false
+
+stages:
+  - stage_id: 0
+    max_num_batched_tokens: 32768
+    max_num_seqs: 1
+    enforce_eager: true
+    trust_remote_code: true
+    enable_prefix_caching: false
+    devices: "0"
+    default_sampling_params:
+      seed: 42

@@ -495,6 +495,15 @@ _CI_OVERLAYS: dict[str, dict[str, Any]] = {
             },
         ],
     },
+    "lance": {
+        "base_config": "lance.yaml",
+        "stages": [
+            {
+                "stage_id": 0,
+                "max_num_seqs": 1,
+            },
+        ],
+    },
     "bagel_mooncake": {
         "base_config": "bagel.yaml",
         "stages": [
