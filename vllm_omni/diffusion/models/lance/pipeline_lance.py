@@ -52,6 +52,12 @@ from .lance_transformer import (
     Qwen2MoTConfig,
     Qwen2MoTForCausalLM,
 )
+from .prompts import (
+    VIDEO_PAD,
+    VISION_END,
+    VISION_START,
+    render_lance_prompt,
+)
 from .wan_vae import LanceWanVAE
 
 logger = init_logger(__name__)
@@ -417,6 +423,107 @@ class LancePipeline(BagelPipeline):
         return LanceQwen2_5_VLNaViTWrapper(vision, spatial_merge_size=int(vit_cfg_dict.get("spatial_merge_size", 2)))
 
     # ------------------------------------------------------------------ #
+    # Raw-prompt normalization (so the generic example scripts work)
+    # ------------------------------------------------------------------ #
+    # Qwen2.5-VL vision block; upstream Lance uses ``<|video_pad|>`` for
+    # image inputs too.  Identical to the block used by the e2e tests and
+    # the (now-removed) bespoke ``end2end.py`` helper.
+    _LANCE_VISION_BLOCK = f"{VISION_START}{VIDEO_PAD}{VISION_END}"
+    # A prompt whose text already contains this marker is treated as
+    # pre-rendered (OpenAI online server, e2e tests, any legacy caller) and
+    # is passed through untouched — both its text and its explicit
+    # ``modalities`` — so previously verified paths are byte-for-byte
+    # unchanged.
+    _LANCE_RENDERED_MARKER = "<|im_start|>"
+
+    @staticmethod
+    def _lance_infer_task(*, has_image: bool, has_video: bool, want_text: bool, want_video: bool) -> str:
+        """Map (input media, requested output) → upstream Lance task name.
+
+        Mirrors the dispatch the bespoke ``end2end.py`` used to do
+        client-side; see :func:`render_lance_prompt` for the task vocabulary.
+        """
+        if has_video:
+            return "x2t_video" if want_text else "video_edit"
+        if has_image:
+            return "x2t_image" if want_text else "image_edit"
+        if want_video:
+            return "t2v"
+        return "t2i"
+
+    def _lance_normalize_prompts(self, req) -> None:
+        """Render raw user prompts into Lance's chat-template form and tag the
+        dispatch ``modalities`` *inside the pipeline*.
+
+        This is what lets the generic offline example scripts
+        (``text_to_image`` / ``text_to_video`` / ``image_to_image`` /
+        ``video_to_video`` / ``image_to_text`` / ``video_to_text``) drive
+        Lance with a plain ``--model bytedance-research/Lance``: they pass a
+        raw user prompt + optional ``multi_modal_data`` and (for the
+        text-output paths) ``modalities=["text"]``; the Lance-specific
+        system prompt / Qwen chat template / vision-token framing is applied
+        here rather than duplicated in every caller.
+
+        Backward compatible: a prompt whose text already contains
+        ``<|im_start|>`` is left exactly as-is (text *and* modalities), so
+        the OpenAI online server and the e2e tests are unaffected.
+        """
+        prompts = getattr(req, "prompts", None)
+        if not prompts:
+            return
+        for i, p in enumerate(prompts):
+            if isinstance(p, str):
+                text, mm, extra, neg, explicit_modalities, as_dict = p, {}, {}, None, None, False
+            elif isinstance(p, dict):
+                text = p.get("prompt") or ""
+                mm = p.get("multi_modal_data") or {}
+                extra = dict(p.get("extra_args") or {})
+                neg = p.get("negative_prompt")
+                explicit_modalities = p.get("modalities")
+                as_dict = True
+            else:
+                continue
+
+            if self._LANCE_RENDERED_MARKER in text:
+                # Pre-rendered caller — do not touch.
+                continue
+
+            has_image = mm.get("image") is not None or mm.get("img2img") is not None
+            has_video = mm.get("video") is not None
+            out = explicit_modalities or []
+            want_text = "text" in out
+            # Text-only video output is implied by the video checkpoint
+            # (``--model .../Lance_3B_Video``); image is the default.
+            want_video = ("video" in out) or (self._is_video and not has_image and not has_video and not want_text)
+            task = self._lance_infer_task(
+                has_image=has_image,
+                has_video=has_video,
+                want_text=want_text,
+                want_video=want_video,
+            )
+            vision_token = self._LANCE_VISION_BLOCK if (has_image or has_video) else None
+            rendered = render_lance_prompt(task, text, vision_token=vision_token)
+
+            # Dispatch modality consumed by forward() / BagelPipeline.forward.
+            if task in ("video_edit", "t2v"):
+                modality = ["video"]
+            elif task in ("x2t_image", "x2t_video"):
+                modality = ["text"]
+            else:  # image_edit, t2i
+                modality = ["image"]
+
+            new_prompt: dict = dict(p) if as_dict else {}
+            new_prompt["prompt"] = rendered
+            new_prompt["modalities"] = modality
+            if mm:
+                new_prompt["multi_modal_data"] = mm
+            if neg is not None:
+                extra.setdefault("negative_prompt", neg)
+            if extra:
+                new_prompt["extra_args"] = extra
+            prompts[i] = new_prompt
+
+    # ------------------------------------------------------------------ #
     # Lance text-to-video forward path
     # ------------------------------------------------------------------ #
     def forward(self, req):  # type: ignore[override]
@@ -433,7 +540,12 @@ class LancePipeline(BagelPipeline):
           + video gen).
         - Everything else falls through to :meth:`BagelPipeline.forward`
           (t2i, x2t_image).
+
+        Raw prompts from the generic example scripts are first rendered and
+        modality-tagged by :meth:`_lance_normalize_prompts`; pre-rendered
+        callers (online server, e2e tests) pass through unchanged.
         """
+        self._lance_normalize_prompts(req)
         first_prompt = req.prompts[0] if req.prompts else None
         modalities: list[str] = []
         mm_data: dict = {}
@@ -473,7 +585,13 @@ class LancePipeline(BagelPipeline):
         extra_args = {**extra_args, **sp_extra}
 
         # Video shape.  T = number of RGB frames (1..121), H/W in pixels.
-        T = int(extra_args.get("num_frames", 25))
+        # ``extra_args`` wins; otherwise honor OmniDiffusionSamplingParams
+        # ``num_frames`` (how the generic text_to_video.py passes it — its
+        # default of 1 is treated as "unset"); else the Lance default 25.
+        sp_num_frames = getattr(req.sampling_params, "num_frames", None)
+        T = int(
+            extra_args.get("num_frames") or (sp_num_frames if (sp_num_frames and sp_num_frames > 1) else None) or 25
+        )
         H = int(req.sampling_params.height or extra_args.get("video_height", 480))
         W = int(req.sampling_params.width or extra_args.get("video_width", 768))
         max_lat = self.bagel.max_latent_size

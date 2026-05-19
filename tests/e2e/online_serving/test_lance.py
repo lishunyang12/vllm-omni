@@ -11,8 +11,8 @@ Equivalent to running:
     vllm-omni serve "bytedance-research/Lance" --omni \\
         --deploy-config vllm_omni/deploy/lance.yaml --port 8091
 
-    # text2img
-    python3 examples/online_serving/lance/openai_chat_client.py \\
+    # text2img (Lance reuses BAGEL's OpenAI chat client)
+    python3 examples/online_serving/bagel/openai_chat_client.py \\
         --prompt "A cute corgi astronaut" --modality text2img
 """
 
