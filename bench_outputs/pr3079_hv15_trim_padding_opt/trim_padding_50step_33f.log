@@ -1,0 +1,99 @@
+/home/zjy/code/david/vllm-omni-pr3079-bench/vllm_omni/__init__.py:19: RuntimeWarning: Failed to import version from _version.py: No module named 'vllm_omni._version'
+This typically happens in development mode before building.
+Using fallback version 'dev'.
+  from .version import __version__, __version_tuple__  # isort:skip # noqa: F401
+INFO 05-22 09:42:42 [weight_utils.py:50] Using model weights format ['*']
+INFO 05-22 09:42:42 [omni_base.py:172] [Omni] Initializing with model hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v
+INFO 05-22 09:42:42 [async_omni_engine.py:269] [AsyncOmniEngine] Initializing with model hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v
+`Siglip2ImageProcessorFast` is deprecated. The `Fast` suffix for image processors has been removed; use `Siglip2ImageProcessor` instead.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+INFO 05-22 09:42:44 [async_omni_engine.py:331] [AsyncOmniEngine] Launching Orchestrator thread with 1 stages
+INFO 05-22 09:42:44 [stage_init_utils.py:407] [stage_init] Set VLLM_WORKER_MULTIPROC_METHOD=spawn
+INFO 05-22 09:42:44 [stage_utils.py:120] Stage 0 logical-to-physical device mapping: 0->3
+INFO 05-22 09:42:44 [stage_init_utils.py:535] [stage_init] Stage-0 set runtime devices: 3
+INFO 05-22 09:42:44 [data.py:1146] Parsed attention config from DIFFUSION_ATTENTION_BACKEND 'CUDNN_ATTN': default=AttentionSpec(backend='CUDNN_ATTN', extra={}), per_role={}
+INFO 05-22 09:42:44 [multiproc_executor.py:138] Starting server...
+/home/zjy/code/david/vllm-omni-pr3079-bench/vllm_omni/__init__.py:19: RuntimeWarning: Failed to import version from _version.py: No module named 'vllm_omni._version'
+This typically happens in development mode before building.
+Using fallback version 'dev'.
+  from .version import __version__, __version_tuple__  # isort:skip # noqa: F401
+INFO 05-22 09:42:50 [diffusion_worker.py:645] Worker 0 created result MessageQueue
+INFO 05-22 09:42:50 [scheduler.py:239] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 05-22 09:42:50 [vllm.py:886] Asynchronous scheduling is enabled.
+INFO 05-22 09:42:50 [kernel.py:212] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+INFO 05-22 09:42:50 [diffusion_worker.py:232] Final IR op priority after setting vLLM-Omni overrides: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
+INFO 05-22 09:42:50 [diffusion_worker.py:243] Worker 0: Initialized device and distributed environment.
+INFO 05-22 09:42:50 [parallel_state.py:588] Building SP subgroups from explicit sp_group_ranks (sp_size=1, ulysses=1, ring=1, use_ulysses_low=True).
+INFO 05-22 09:42:50 [parallel_state.py:630] SP group details for rank 0: sp_group=[0], ulysses_group=[0], ring_group=[0]
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Fetching 3 files:   0%|          | 0/3 [00:00<?, ?it/s]Fetching 3 files: 100%|██████████| 3/3 [00:00<00:00, 28992.88it/s]
+Loading weights:   0%|          | 0/338 [00:00<?, ?it/s]Loading weights:   4%|▍         | 15/338 [00:00<00:02, 136.56it/s]Loading weights:  15%|█▌        | 51/338 [00:00<00:01, 259.13it/s]Loading weights:  26%|██▌       | 87/338 [00:00<00:00, 293.44it/s]Loading weights:  35%|███▌      | 119/338 [00:00<00:00, 302.76it/s]Loading weights:  44%|████▍     | 150/338 [00:00<00:00, 300.57it/s]Loading weights:  54%|█████▍    | 184/338 [00:00<00:00, 312.86it/s]Loading weights:  65%|██████▍   | 219/338 [00:00<00:00, 324.73it/s]Loading weights:  75%|███████▌  | 255/338 [00:00<00:00, 326.91it/s]Loading weights:  85%|████████▌ | 288/338 [00:00<00:00, 327.76it/s]Loading weights:  95%|█████████▍| 321/338 [00:01<00:00, 321.62it/s]Loading weights: 100%|██████████| 338/338 [00:01<00:00, 312.94it/s]
+/home/zjy/code/david/.venv/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py:205: UserWarning: The `local_dir_use_symlinks` argument is deprecated and ignored in `hf_hub_download`. Downloading to a local directory does not use symlinks anymore.
+  warnings.warn(
+Fetching 2 files:   0%|          | 0/2 [00:00<?, ?it/s]Fetching 2 files: 100%|██████████| 2/2 [00:00<00:00, 18275.83it/s]
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:00<00:00, 193.09it/s]
+INFO 05-22 09:42:55 [selector.py:87] Resolved diffusion attention backend 'CUDNN_ATTN' for role='self' via attention_config.default
+WARNING 05-22 09:42:55 [diffusion_pipeline_profiler.py:68] [DiffusionPipelineProfiler] Method path tokenizer.forward not found
+INFO 05-22 09:42:56 [weight_utils.py:663] No transformer/diffusion_pytorch_model.safetensors.index.json found in remote.
+Multi-thread loading shards:   0% Completed | 0/7 [00:00<?, ?it/s]
+Multi-thread loading shards:  14% Completed | 1/7 [00:00<00:03,  1.69it/s]
+Multi-thread loading shards:  29% Completed | 2/7 [00:01<00:02,  1.83it/s]
+Multi-thread loading shards:  43% Completed | 3/7 [00:01<00:02,  1.90it/s]
+Multi-thread loading shards:  57% Completed | 4/7 [00:02<00:01,  1.89it/s]
+Multi-thread loading shards:  71% Completed | 5/7 [00:02<00:00,  2.04it/s]
+Multi-thread loading shards:  86% Completed | 6/7 [00:03<00:00,  2.02it/s]
+Multi-thread loading shards: 100% Completed | 7/7 [00:03<00:00,  1.98it/s]
+Multi-thread loading shards: 100% Completed | 7/7 [00:03<00:00,  1.95it/s]
+
+INFO 05-22 09:43:00 [weight_utils.py:663] No  found in remote.
+Multi-thread loading shards:   0% Completed | 0/1 [00:00<?, ?it/s]
+Multi-thread loading shards: 100% Completed | 1/1 [00:00<00:00,  7.75it/s]
+Multi-thread loading shards: 100% Completed | 1/1 [00:00<00:00,  7.74it/s]
+
+INFO 05-22 09:43:00 [diffusers_loader.py:375] Loading weights took 4.14 seconds
+INFO 05-22 09:43:01 [diffusion_model_runner.py:144] Model loading took 33.8063 GiB and 11.403404 seconds
+INFO 05-22 09:43:01 [diffusion_model_runner.py:149] Model runner: Model loaded successfully.
+INFO 05-22 09:43:01 [diffusion_model_runner.py:88] Model runner: transformer compiled with torch.compile.
+INFO 05-22 09:43:01 [diffusion_model_runner.py:190] Model runner: Initialization complete.
+INFO 05-22 09:43:02 [diffusion_worker.py:301] Worker 0: Process-scoped GPU memory after model loading: 34.75 GiB.
+INFO 05-22 09:43:02 [manager.py:96] Initializing DiffusionLoRAManager: device=cuda:0, dtype=torch.bfloat16, max_cached_adapters=1, static_lora_path=None
+INFO 05-22 09:43:02 [diffusion_worker.py:202] Worker 0: Initialization complete.
+INFO 05-22 09:43:02 [diffusion_worker.py:816] Worker 0: Scheduler loop started.
+INFO 05-22 09:43:02 [diffusion_worker.py:718] Worker 0 ready to receive requests via shared memory
+INFO 05-22 09:43:02 [diffusion_engine.py:704] dummy run to warm up the model
+INFO 05-22 09:43:02 [diffusion_pipeline_profiler.py:31] [DiffusionPipelineProfiler] HunyuanVideo15Pipeline.text_encoder.forward took 0.570867s
+INFO 05-22 09:43:02 [diffusion_pipeline_profiler.py:31] [DiffusionPipelineProfiler] HunyuanVideo15Pipeline.text_encoder.forward took 0.023569s
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:03<00:00,  3.07s/it]100%|██████████| 1/1 [00:03<00:00,  3.07s/it]
+INFO 05-22 09:43:05 [diffusion_pipeline_profiler.py:31] [DiffusionPipelineProfiler] HunyuanVideo15Pipeline.vae.decode took 0.210075s
+INFO 05-22 09:43:05 [diffusion_pipeline_profiler.py:31] [DiffusionPipelineProfiler] HunyuanVideo15Pipeline.forward took 3.894682s
+INFO 05-22 09:43:05 [inline_stage_diffusion_client.py:72] [InlineStageDiffusionClient] stage-0 [rep-0] initialized inline (batch_size=1)
+INFO 05-22 09:43:05 [async_omni_engine.py:868] [AsyncOmniEngine] Stage 0 replica 0 initialized (diffusion, batch_size=1, devices=0)
+INFO 05-22 09:43:05 [orchestrator.py:164] [Orchestrator] Starting event loop
+INFO 05-22 09:43:05 [async_omni_engine.py:358] [AsyncOmniEngine] Orchestrator ready with 1 stages
+INFO 05-22 09:43:05 [omni_base.py:185] [Omni] AsyncOmniEngine initialized in 23.23 seconds
+INFO 05-22 09:43:05 [omni_base.py:202] [Omni] Initialized with 1 stages for model hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v
+
+============================================================
+Generation Configuration:
+  Model: hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v
+  Inference steps: 50
+  Frames: 33
+  Parallel configuration: ulysses_degree=1, ring_degree=1, cfg_parallel_size=1, tensor_parallel_size=1, vae_patch_parallel_size=1, enable_expert_parallel=False
+  Video size: 832x480
+============================================================
+
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s]INFO 05-22 09:43:06 [diffusion_pipeline_profiler.py:31] [DiffusionPipelineProfiler] HunyuanVideo15Pipeline.text_encoder.forward took 0.024225s
+INFO 05-22 09:43:06 [diffusion_pipeline_profiler.py:31] [DiffusionPipelineProfiler] HunyuanVideo15Pipeline.text_encoder.forward took 0.023429s
+  0%|          | 0/50 [00:00<?, ?it/s]  2%|▏         | 1/50 [00:00<00:17,  2.79it/s]  4%|▍         | 2/50 [00:00<00:13,  3.56it/s]  6%|▌         | 3/50 [00:00<00:13,  3.42it/s]  8%|▊         | 4/50 [00:01<00:13,  3.35it/s] 10%|█         | 5/50 [00:01<00:13,  3.32it/s] 12%|█▏        | 6/50 [00:01<00:13,  3.30it/s] 14%|█▍        | 7/50 [00:02<00:13,  3.29it/s] 16%|█▌        | 8/50 [00:02<00:12,  3.28it/s] 18%|█▊        | 9/50 [00:02<00:12,  3.27it/s] 20%|██        | 10/50 [00:03<00:12,  3.27it/s] 22%|██▏       | 11/50 [00:03<00:11,  3.26it/s] 24%|██▍       | 12/50 [00:03<00:11,  3.26it/s] 26%|██▌       | 13/50 [00:03<00:11,  3.25it/s] 28%|██▊       | 14/50 [00:04<00:11,  3.25it/s] 30%|███       | 15/50 [00:04<00:10,  3.25it/s] 32%|███▏      | 16/50 [00:04<00:10,  3.25it/s] 34%|███▍      | 17/50 [00:05<00:10,  3.25it/s] 36%|███▌      | 18/50 [00:05<00:09,  3.25it/s] 38%|███▊      | 19/50 [00:05<00:09,  3.25it/s] 40%|████      | 20/50 [00:06<00:09,  3.25it/s] 42%|████▏     | 21/50 [00:06<00:08,  3.25it/s] 44%|████▍     | 22/50 [00:06<00:08,  3.25it/s] 46%|████▌     | 23/50 [00:07<00:08,  3.24it/s] 48%|████▊     | 24/50 [00:07<00:08,  3.24it/s] 50%|█████     | 25/50 [00:07<00:07,  3.24it/s] 52%|█████▏    | 26/50 [00:07<00:07,  3.24it/s] 54%|█████▍    | 27/50 [00:08<00:07,  3.24it/s] 56%|█████▌    | 28/50 [00:08<00:06,  3.25it/s] 58%|█████▊    | 29/50 [00:08<00:06,  3.25it/s] 60%|██████    | 30/50 [00:09<00:06,  3.26it/s] 62%|██████▏   | 31/50 [00:09<00:05,  3.26it/s] 64%|██████▍   | 32/50 [00:09<00:05,  3.26it/s] 66%|██████▌   | 33/50 [00:10<00:05,  3.26it/s] 68%|██████▊   | 34/50 [00:10<00:04,  3.26it/s] 70%|███████   | 35/50 [00:10<00:04,  3.27it/s] 72%|███████▏  | 36/50 [00:11<00:04,  3.27it/s] 74%|███████▍  | 37/50 [00:11<00:03,  3.27it/s] 76%|███████▌  | 38/50 [00:11<00:03,  3.26it/s] 78%|███████▊  | 39/50 [00:11<00:03,  3.26it/s] 80%|████████  | 40/50 [00:12<00:03,  3.27it/s] 82%|████████▏ | 41/50 [00:12<00:02,  3.27it/s] 84%|████████▍ | 42/50 [00:12<00:02,  3.27it/s] 86%|████████▌ | 43/50 [00:13<00:02,  3.26it/s] 88%|████████▊ | 44/50 [00:13<00:01,  3.27it/s] 90%|█████████ | 45/50 [00:13<00:01,  3.27it/s] 92%|█████████▏| 46/50 [00:14<00:01,  3.27it/s] 94%|█████████▍| 47/50 [00:14<00:00,  3.27it/s] 96%|█████████▌| 48/50 [00:14<00:00,  3.27it/s] 98%|█████████▊| 49/50 [00:15<00:00,  3.27it/s]100%|██████████| 50/50 [00:15<00:00,  3.27it/s]100%|██████████| 50/50 [00:15<00:00,  3.26it/s]
+INFO 05-22 09:43:22 [diffusion_pipeline_profiler.py:31] [DiffusionPipelineProfiler] HunyuanVideo15Pipeline.vae.decode took 0.993689s
+INFO 05-22 09:43:22 [diffusion_pipeline_profiler.py:31] [DiffusionPipelineProfiler] HunyuanVideo15Pipeline.forward took 16.448194s
+Processed prompts: 100%|██████████| 1/1 [00:16<00:00, 16.83s/it]Processed prompts: 100%|██████████| 1/1 [00:16<00:00, 16.83s/it]
+Total generation time: 16.8355 seconds (16835.51 ms)
+Saved generated video to bench_outputs/trim_encoder_padding_opt/hv15_trim_encoder_padding_50step.mp4
+INFO 05-22 09:43:23 [async_omni_engine.py:2174] [AsyncOmniEngine] Shutting down Orchestrator
+INFO 05-22 09:43:23 [orchestrator.py:230] [Orchestrator] Received shutdown signal
+INFO 05-22 09:43:23 [orchestrator.py:1115] [Orchestrator] Shutting down all 1 client(s)
+INFO 05-22 09:43:23 [diffusion_worker.py:758] Worker 0: Received shutdown message
+INFO 05-22 09:43:23 [diffusion_worker.py:779] event loop terminated.
+INFO 05-22 09:43:23 [diffusion_worker.py:824] Worker 0: Shutdown complete.
+INFO 05-22 09:43:25 [stage_pool.py:408] [StagePool] Stage 0 replica 0 shut down
