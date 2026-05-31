@@ -72,6 +72,7 @@ from .lance_transformer import (
     Qwen2MoTConfig,
     Qwen2MoTForCausalLM,
 )
+from .prompts import SYSTEM_PROMPTS
 from .wan_vae import LanceWanVAE
 
 logger = init_logger(__name__)
@@ -483,6 +484,147 @@ class LancePipeline(BagelPipeline):
         return LanceQwen2_5_VLNaViTWrapper(vision, spatial_merge_size=int(vit_cfg_dict.get("spatial_merge_size", 2)))
 
     # ------------------------------------------------------------------ #
+    # Shared prefill helpers used by image_edit / i2v / video_edit.
+    # Each mutates ``ctx`` in place: ``ctx["past_key_values"]`` /
+    # ``ctx["kv_lens"]`` / ``ctx["ropes"]``.
+    # ------------------------------------------------------------------ #
+    def _autocast_kwargs(self) -> dict:
+        return dict(
+            device_type=self.device.type,
+            enabled=self.device.type != "cpu",
+            dtype=self.od_config.dtype,
+        )
+
+    def _new_gen_context(self) -> dict:
+        from .lance_transformer import NaiveCache
+
+        return {
+            "kv_lens": [0],
+            "ropes": [0],
+            "past_key_values": NaiveCache(self.bagel.config.llm_config.num_hidden_layers),
+        }
+
+    @staticmethod
+    def _segment_strings(task: str, modality: str) -> tuple[str, str]:
+        sys_prompt = SYSTEM_PROMPTS[(task, modality)]
+        return (
+            f"<|im_start|>system\n{sys_prompt}<|im_end|>\n<|im_start|>user\n",
+            "<|im_end|>\n<|im_start|>assistant\n",
+        )
+
+    def _raw_text_prefill(self, ctx: dict, text_str: str) -> None:
+        """Tokenize ``text_str`` (no bos/eos) and append to ``ctx`` KV cache."""
+        text_ids = self.tokenizer.encode(text_str, add_special_tokens=False)
+        if not text_ids:
+            return
+        curr_kvlen = ctx["kv_lens"][0]
+        curr_rope = ctx["ropes"][0]
+        seq_len = len(text_ids)
+        inp = {
+            "text_token_lens": torch.tensor([seq_len], dtype=torch.int, device=self.device),
+            "packed_text_ids": torch.tensor(text_ids, dtype=torch.long, device=self.device),
+            "packed_text_position_ids": torch.arange(
+                curr_rope, curr_rope + seq_len, dtype=torch.long, device=self.device
+            ),
+        }
+        with torch.autocast(**self._autocast_kwargs()):
+            ctx["past_key_values"] = self.bagel.forward_cache_update_text(ctx["past_key_values"], **inp)
+        ctx["kv_lens"] = [curr_kvlen + seq_len]
+        ctx["ropes"] = [curr_rope + seq_len]
+
+    # ``prepare_vit_*`` returns ``packed_indexes`` / ``packed_key_value_indexes``
+    # / ``key_values_lens`` for historical reasons; ``forward_cache_update_vit``
+    # post-main-merge no longer accepts them.
+    _STALE_PREFILL_KEYS = ("packed_indexes", "packed_key_value_indexes", "key_values_lens")
+
+    def _vit_image_prefill(self, ctx: dict, images: list, transforms) -> None:
+        """ViT prefill from PIL images via ``prepare_vit_images``."""
+        inp, new_kvlens, new_rope = self.bagel.prepare_vit_images(
+            curr_kvlens=ctx["kv_lens"],
+            curr_rope=ctx["ropes"],
+            images=images,
+            transforms=transforms,
+            new_token_ids=self.new_token_ids,
+        )
+        for k, v in inp.items():
+            if torch.is_tensor(v):
+                inp[k] = v.to(self.device)
+        for k in self._STALE_PREFILL_KEYS:
+            inp.pop(k, None)
+        with torch.autocast(**self._autocast_kwargs()):
+            ctx["past_key_values"] = self.bagel.forward_cache_update_vit(ctx["past_key_values"], **inp)
+        ctx["kv_lens"] = new_kvlens
+        ctx["ropes"] = new_rope
+
+    def _vit_video_prefill(
+        self,
+        ctx: dict,
+        videos: list,
+        precomputed_vit: list | None = None,
+    ) -> None:
+        """ViT prefill from videos via ``prepare_vit_videos``.
+
+        Pass ``precomputed_vit=[(pixels, grid_thw)]`` to bypass the
+        Qwen2VLImageProcessor smart-resize and feed already-bucketed
+        ViT patches directly (used by i2v / video_edit to keep grid
+        dimensions aligned with the ref VAE block).  Omit it to let
+        ``prepare_vit_videos`` run the processor itself (x2t_video).
+        """
+        kwargs = dict(
+            curr_kvlens=ctx["kv_lens"],
+            curr_rope=ctx["ropes"],
+            videos=videos,
+            new_token_ids=self.new_token_ids,
+        )
+        if precomputed_vit is not None:
+            kwargs["precomputed_vit"] = precomputed_vit
+        inp, new_kvlens, new_rope = self.bagel.prepare_vit_videos(**kwargs)
+        for k, v in inp.items():
+            if torch.is_tensor(v):
+                inp[k] = v.to(self.device)
+        for k in self._STALE_PREFILL_KEYS:
+            inp.pop(k, None)
+        with torch.autocast(**self._autocast_kwargs()):
+            ctx["past_key_values"] = self.bagel.forward_cache_update_vit(ctx["past_key_values"], **inp)
+        ctx["kv_lens"] = new_kvlens
+        ctx["ropes"] = new_rope
+
+    def _vae_ref_prefill(
+        self,
+        ctx: dict,
+        images: list,
+        transforms,
+        *,
+        is_video: bool,
+        latent_cache: list,
+    ) -> None:
+        """VAE prefill of a reference image / video at timestep 0.
+
+        ``latent_cache`` is a single-slot list used to share the encoded
+        posterior between the gen branch and the cfg_text branch — Wan2.2's
+        ``mu + std * randn_like(std)`` samples a fresh latent every call,
+        which otherwise drifts the two branches' KV caches.
+        """
+        inp, new_kvlens, new_rope = self.bagel._lance_native_prepare_vae_images(
+            curr_kvlens=ctx["kv_lens"],
+            curr_rope=ctx["ropes"],
+            images=images,
+            transforms=transforms,
+            new_token_ids=self.new_token_ids,
+            is_video=is_video,
+        )
+        for k, v in inp.items():
+            if torch.is_tensor(v):
+                inp[k] = v.to(self.device)
+        if not latent_cache:
+            latent_cache.append(self.vae.encode(inp["padded_images"].to(self.device)))
+        inp["precomputed_latent"] = latent_cache[0]
+        with torch.autocast(**self._autocast_kwargs()):
+            ctx["past_key_values"] = self.bagel.forward_cache_update_vae(self.vae, ctx["past_key_values"], **inp)
+        ctx["kv_lens"] = new_kvlens
+        ctx["ropes"] = new_rope
+
+    # ------------------------------------------------------------------ #
     # Lance text-to-video forward path
     # ------------------------------------------------------------------ #
     def forward(self, req):  # type: ignore[override]
@@ -742,7 +884,6 @@ class LancePipeline(BagelPipeline):
         from vllm_omni.diffusion.data import DiffusionOutput
 
         from .lance_transformer import NaiveCache
-        from .prompts import SYSTEM_PROMPTS
 
         first_prompt = req.prompts[0]
         assert isinstance(first_prompt, dict), "image_edit requires dict-style prompt"
@@ -820,111 +961,22 @@ class LancePipeline(BagelPipeline):
             "past_key_values": NaiveCache(self.bagel.config.llm_config.num_hidden_layers),
         }
 
-        autocast_kwargs = dict(
-            device_type=self.device.type,
-            enabled=self.device.type != "cpu",
-            dtype=self.od_config.dtype,
-        )
-
-        # ----- prefill helpers (no bos/eos wrapping — that's only for free-
-        # form prompts; the segmented template provides its own markers) -----
-        def _raw_text_prefill(ctx, text_str):
-            """Prefill `text_str` as-is — no automatic bos/eos.
-
-            ``Bagel.prepare_prompts`` wraps with ``[bos] + ids + [eos]`` which
-            is fine for a single user prompt but breaks segment-by-segment
-            templating where each segment already carries its own framing
-            tokens.  This helper tokenizes raw and feeds the LLM directly.
-            """
-            text_ids = self.tokenizer.encode(text_str, add_special_tokens=False)
-            if not text_ids:
-                return
-            curr_kvlen = ctx["kv_lens"][0]
-            curr_rope = ctx["ropes"][0]
-            seq_len = len(text_ids)
-            # ``forward_cache_update_text`` post-main-merge derives the
-            # remaining positions from ``past_key_values`` + the query
-            # length; the old ``packed_text_indexes`` /
-            # ``packed_key_value_indexes`` / ``key_values_lens`` kwargs
-            # were dropped from its signature.
-            inp = {
-                "text_token_lens": torch.tensor([seq_len], dtype=torch.int, device=self.device),
-                "packed_text_ids": torch.tensor(text_ids, dtype=torch.long, device=self.device),
-                "packed_text_position_ids": torch.arange(
-                    curr_rope, curr_rope + seq_len, dtype=torch.long, device=self.device
-                ),
-            }
-            with torch.autocast(**autocast_kwargs):
-                ctx["past_key_values"] = self.bagel.forward_cache_update_text(ctx["past_key_values"], **inp)
-            ctx["kv_lens"] = [curr_kvlen + seq_len]
-            ctx["ropes"] = [curr_rope + seq_len]
-
-        def _vit_prefill(ctx):
-            inp, new_kvlens, new_rope = self.bagel.prepare_vit_images(
-                curr_kvlens=ctx["kv_lens"],
-                curr_rope=ctx["ropes"],
-                images=image_input,
-                transforms=vit_transforms,
-                new_token_ids=self.new_token_ids,
-            )
-            for k, v in inp.items():
-                if torch.is_tensor(v):
-                    inp[k] = v.to(self.device)
-            # ``prepare_vit_images`` still returns ``packed_indexes`` /
-            # ``packed_key_value_indexes`` / ``key_values_lens`` for
-            # historical reasons; ``forward_cache_update_vit`` post-main
-            # no longer accepts them — pop before unpacking.
-            for _drop in ("packed_indexes", "packed_key_value_indexes", "key_values_lens"):
-                inp.pop(_drop, None)
-            with torch.autocast(**autocast_kwargs):
-                ctx["past_key_values"] = self.bagel.forward_cache_update_vit(ctx["past_key_values"], **inp)
-            ctx["kv_lens"] = new_kvlens
-            ctx["ropes"] = new_rope
-
-        # Encode the reference image ONCE so both gen and cfg branches share
-        # the same posterior sample.  ``LanceWanVAE.encode`` uses
-        # ``mu + std * randn_like(std)`` (Wan2.2 VAE's reparameterize path)
-        # which yields a different latent every call; calling it separately
-        # per branch drifts gen-branch K, V cache from cfg-branch by ~6%
-        # rel_l2 even though both should see the same ref.
-        _ref_padded_latent_cache = {"v": None}
-
-        def _vae_prefill(ctx):
-            inp, new_kvlens, new_rope = self.bagel._lance_native_prepare_vae_images(
-                curr_kvlens=ctx["kv_lens"],
-                curr_rope=ctx["ropes"],
-                images=image_input,
-                transforms=vae_transforms,
-                new_token_ids=self.new_token_ids,
-                is_video=False,
-            )
-            for k, v in inp.items():
-                if torch.is_tensor(v):
-                    inp[k] = v.to(self.device)
-            # Compute the ref VAE latent on the first prefill call; reuse
-            # for subsequent branches.
-            if _ref_padded_latent_cache["v"] is None:
-                _ref_padded_latent_cache["v"] = self.vae.encode(inp["padded_images"].to(self.device))
-            inp["precomputed_latent"] = _ref_padded_latent_cache["v"]
-            with torch.autocast(**autocast_kwargs):
-                ctx["past_key_values"] = self.bagel.forward_cache_update_vae(self.vae, ctx["past_key_values"], **inp)
-            ctx["kv_lens"] = new_kvlens
-            ctx["ropes"] = new_rope
+        # Single-slot cache shared between gen + cfg branches so the Wan2.2
+        # VAE's ``mu + std * randn_like(std)`` sample is computed once.
+        ref_latent_cache: list = []
 
         # ----- prefill segments in upstream order -----
-        sys_prompt = SYSTEM_PROMPTS[("image_edit", "image")]
-        seg1_str = f"<|im_start|>system\n{sys_prompt}<|im_end|>\n<|im_start|>user\n"
-        seg5_str = "<|im_end|>\n<|im_start|>assistant\n"
+        seg1_str, seg5_str = self._segment_strings("image_edit", "image")
 
         # seg1: system + user header  (shared)
-        _raw_text_prefill(gen_context, seg1_str)
+        self._raw_text_prefill(gen_context, seg1_str)
         if cfg_text_scale > 1.0:
-            _raw_text_prefill(cfg_text_context, seg1_str)
+            self._raw_text_prefill(cfg_text_context, seg1_str)
 
         # seg2: ViT(ref)  (shared)
-        _vit_prefill(gen_context)
+        self._vit_image_prefill(gen_context, image_input, vit_transforms)
         if cfg_text_scale > 1.0:
-            _vit_prefill(cfg_text_context)
+            self._vit_image_prefill(cfg_text_context, image_input, vit_transforms)
 
         # seg3: VAE(ref) with timestep=0  (shared)
         #
@@ -942,9 +994,11 @@ class LancePipeline(BagelPipeline):
         # that as the gen latent's ``curr_rope`` below.
         rope_before_vae = gen_context["ropes"][0]
         cfg_rope_before_vae = cfg_text_context["ropes"][0] if cfg_text_scale > 1.0 else rope_before_vae
-        _vae_prefill(gen_context)
+        self._vae_ref_prefill(gen_context, image_input, vae_transforms, is_video=False, latent_cache=ref_latent_cache)
         if cfg_text_scale > 1.0:
-            _vae_prefill(cfg_text_context)
+            self._vae_ref_prefill(
+                cfg_text_context, image_input, vae_transforms, is_video=False, latent_cache=ref_latent_cache
+            )
 
         # seg4: user instruction  (gen only).  Upstream Lance's cfg_text
         # branch is a SHORTER sequence with the user_text segment REMOVED
@@ -953,13 +1007,13 @@ class LancePipeline(BagelPipeline):
         # past the user_text region.  seg5 (separator) therefore lands at
         # different absolute rope positions in gen vs cfg branches — that's
         # the intended behavior.
-        _raw_text_prefill(gen_context, user_text)
+        self._raw_text_prefill(gen_context, user_text)
 
         # seg5: separator + assistant header  (gen + cfg).  Each branch
         # places it at its OWN current rope.
-        _raw_text_prefill(gen_context, seg5_str)
+        self._raw_text_prefill(gen_context, seg5_str)
         if cfg_text_scale > 1.0:
-            _raw_text_prefill(cfg_text_context, seg5_str)
+            self._raw_text_prefill(cfg_text_context, seg5_str)
 
         # -- (4) Gen latent at the SAME rope position as the ref VAE block.
         # See the comment on `rope_before_vae` above.  Note the KV cache
@@ -992,7 +1046,7 @@ class LancePipeline(BagelPipeline):
 
         self._regen_init_noise_on_device(gen_input_lat, req.sampling_params.seed)
 
-        with torch.autocast(**autocast_kwargs):
+        with torch.autocast(**self._autocast_kwargs()):
             # ``prepare_video_latent`` / ``prepare_vae_latent`` still return
             # ``key_values_lens`` / ``packed_indexes`` / ``packed_key_value_indexes``
             # but post-main-merge ``generate_image`` doesn't accept them — drop
@@ -1068,7 +1122,6 @@ class LancePipeline(BagelPipeline):
         from vllm_omni.diffusion.data import DiffusionOutput
 
         from .lance_transformer import NaiveCache
-        from .prompts import SYSTEM_PROMPTS
 
         first_prompt = req.prompts[0]
         assert isinstance(first_prompt, dict), "i2v requires dict-style prompt"
@@ -1123,10 +1176,13 @@ class LancePipeline(BagelPipeline):
         timestep_shift = float(extra_args.get("timestep_shift", LANCE_DEFAULTS.timestep_shift))
         num_timesteps = int(req.sampling_params.num_inference_steps or LANCE_DEFAULTS.num_timesteps)
 
-        # Bucket-resize + VAE/ViT preprocess the 1-frame "video" (image).
+        # Bucket-resize + VAE preprocess the 1-frame "video" (image).  i2v
+        # does not run a ViT prefill on the ref (the first-frame latent pin
+        # provides all the image conditioning), so the ViT outputs are
+        # discarded — see the comment further down on upstream PR #33.
         from .lance_transformer import LanceBagel as _LanceBagel
 
-        vae_video, vit_pixels, vit_grid_thw, _ = _LanceBagel._lance_video_preprocess(video_raw, origin_fps)
+        vae_video, _, _, _ = _LanceBagel._lance_video_preprocess(video_raw, origin_fps)
         T_ref = int(vae_video.shape[1])
         H_ref = int(vae_video.shape[2])
         W_ref = int(vae_video.shape[3])
@@ -1167,87 +1223,8 @@ class LancePipeline(BagelPipeline):
             "past_key_values": NaiveCache(self.bagel.config.llm_config.num_hidden_layers),
         }
 
-        autocast_kwargs = dict(
-            device_type=self.device.type,
-            enabled=self.device.type != "cpu",
-            dtype=self.od_config.dtype,
-        )
-
-        def _raw_text_prefill(ctx, text_str):
-            text_ids = self.tokenizer.encode(text_str, add_special_tokens=False)
-            if not text_ids:
-                return
-            curr_kvlen = ctx["kv_lens"][0]
-            curr_rope = ctx["ropes"][0]
-            seq_len = len(text_ids)
-            # ``forward_cache_update_text`` post-main-merge derives the
-            # remaining positions from ``past_key_values`` + the query
-            # length; the old ``packed_text_indexes`` /
-            # ``packed_key_value_indexes`` / ``key_values_lens`` kwargs
-            # were dropped from its signature.
-            inp = {
-                "text_token_lens": torch.tensor([seq_len], dtype=torch.int, device=self.device),
-                "packed_text_ids": torch.tensor(text_ids, dtype=torch.long, device=self.device),
-                "packed_text_position_ids": torch.arange(
-                    curr_rope, curr_rope + seq_len, dtype=torch.long, device=self.device
-                ),
-            }
-            with torch.autocast(**autocast_kwargs):
-                ctx["past_key_values"] = self.bagel.forward_cache_update_text(ctx["past_key_values"], **inp)
-            ctx["kv_lens"] = [curr_kvlen + seq_len]
-            ctx["ropes"] = [curr_rope + seq_len]
-
-        def _vit_prefill(ctx):
-            inp, new_kvlens, new_rope = self.bagel.prepare_vit_videos(
-                curr_kvlens=ctx["kv_lens"],
-                curr_rope=ctx["ropes"],
-                videos=[video_raw],
-                new_token_ids=self.new_token_ids,
-                precomputed_vit=[(vit_pixels, vit_grid_thw)],
-            )
-            for k, v in inp.items():
-                if torch.is_tensor(v):
-                    inp[k] = v.to(self.device)
-            # ``prepare_vit_images`` still returns ``packed_indexes`` /
-            # ``packed_key_value_indexes`` / ``key_values_lens`` for
-            # historical reasons; ``forward_cache_update_vit`` post-main
-            # no longer accepts them — pop before unpacking.
-            for _drop in ("packed_indexes", "packed_key_value_indexes", "key_values_lens"):
-                inp.pop(_drop, None)
-            with torch.autocast(**autocast_kwargs):
-                ctx["past_key_values"] = self.bagel.forward_cache_update_vit(ctx["past_key_values"], **inp)
-            ctx["kv_lens"] = new_kvlens
-            ctx["ropes"] = new_rope
-
-        _ref_padded_latent_cache = {"v": None}
-
-        def _vae_transforms(_):
-            return vae_video
-
-        def _vae_prefill(ctx):
-            inp, new_kvlens, new_rope = self.bagel._lance_native_prepare_vae_images(
-                curr_kvlens=ctx["kv_lens"],
-                curr_rope=ctx["ropes"],
-                images=[vae_video],
-                transforms=_vae_transforms,
-                new_token_ids=self.new_token_ids,
-                is_video=True,
-            )
-            for k, v in inp.items():
-                if torch.is_tensor(v):
-                    inp[k] = v.to(self.device)
-            if _ref_padded_latent_cache["v"] is None:
-                _ref_padded_latent_cache["v"] = self.vae.encode(inp["padded_images"].to(self.device))
-            inp["precomputed_latent"] = _ref_padded_latent_cache["v"]
-            with torch.autocast(**autocast_kwargs):
-                ctx["past_key_values"] = self.bagel.forward_cache_update_vae(self.vae, ctx["past_key_values"], **inp)
-            ctx["kv_lens"] = new_kvlens
-            ctx["ropes"] = new_rope
-
         # i2v system prompt (matches t2v wording per upstream).
-        sys_prompt = SYSTEM_PROMPTS[("i2v", "video")]
-        seg1_str = f"<|im_start|>system\n{sys_prompt}<|im_end|>\n<|im_start|>user\n"
-        seg5_str = "<|im_end|>\n<|im_start|>assistant\n"
+        seg1_str, seg5_str = self._segment_strings("i2v", "video")
 
         # Upstream Lance PR #33 i2v does NOT prefill the input image via
         # ViT/VAE as a "reference".  The image conditioning happens entirely
@@ -1256,19 +1233,19 @@ class LancePipeline(BagelPipeline):
         # is text-only: system prompt → user instruction → assistant header.
         # Adding ViT/VAE prefill (which video_edit does) over-constrains the
         # generation and prevents the prompt-driven motion from developing.
-        _raw_text_prefill(gen_context, seg1_str)
+        self._raw_text_prefill(gen_context, seg1_str)
         if cfg_text_scale > 1.0:
-            _raw_text_prefill(cfg_text_context, seg1_str)
+            self._raw_text_prefill(cfg_text_context, seg1_str)
 
         # Snapshot rope BEFORE adding user text; gen latent will use this
         # as its starting rope (matches upstream's modality==1≡2 trick).
         rope_before_vae = gen_context["ropes"][0]
         cfg_rope_before_vae = cfg_text_context["ropes"][0] if cfg_text_scale > 1.0 else rope_before_vae
 
-        _raw_text_prefill(gen_context, user_text)
-        _raw_text_prefill(gen_context, seg5_str)
+        self._raw_text_prefill(gen_context, user_text)
+        self._raw_text_prefill(gen_context, seg5_str)
         if cfg_text_scale > 1.0:
-            _raw_text_prefill(cfg_text_context, seg5_str)
+            self._raw_text_prefill(cfg_text_context, seg5_str)
 
         # GEN LATENT — at OUTPUT shape (not ref shape).  Place at rope
         # starting from rope_before_vae (the modality==1≡2 trick).  The KV
@@ -1327,7 +1304,7 @@ class LancePipeline(BagelPipeline):
         full_pixel_tensor[:, :4, :, :] = img_chw.to(self.device).unsqueeze(1).repeat(1, 4, 1, 1)
         full_pixel_5d = full_pixel_tensor.unsqueeze(0)  # (1, 3, num_frames_out, H, W)
 
-        with torch.autocast(**autocast_kwargs):
+        with torch.autocast(**self._autocast_kwargs()):
             image_latent_5d = self.vae.encode(full_pixel_5d)  # (1, 48, T_lat, h_lat, w_lat)
 
         # Extract first latent frame in (h_lat, w_lat, 48) layout, then
@@ -1356,7 +1333,7 @@ class LancePipeline(BagelPipeline):
             first_slice_n,
         )
 
-        with torch.autocast(**autocast_kwargs):
+        with torch.autocast(**self._autocast_kwargs()):
             # ``prepare_video_latent`` / ``prepare_vae_latent`` still return
             # ``key_values_lens`` / ``packed_indexes`` / ``packed_key_value_indexes``
             # but post-main-merge ``generate_image`` doesn't accept them — drop
@@ -1431,7 +1408,6 @@ class LancePipeline(BagelPipeline):
         from vllm_omni.diffusion.data import DiffusionOutput
 
         from .lance_transformer import NaiveCache
-        from .prompts import SYSTEM_PROMPTS
 
         first_prompt = req.prompts[0]
         assert isinstance(first_prompt, dict), "video_edit requires dict-style prompt"
@@ -1547,123 +1523,47 @@ class LancePipeline(BagelPipeline):
             "past_key_values": NaiveCache(self.bagel.config.llm_config.num_hidden_layers),
         }
 
-        autocast_kwargs = dict(
-            device_type=self.device.type,
-            enabled=self.device.type != "cpu",
-            dtype=self.od_config.dtype,
-        )
-
-        def _raw_text_prefill(ctx, text_str):
-            """Prefill ``text_str`` as raw token ids — no bos/eos wrapping."""
-            text_ids = self.tokenizer.encode(text_str, add_special_tokens=False)
-            if not text_ids:
-                return
-            curr_kvlen = ctx["kv_lens"][0]
-            curr_rope = ctx["ropes"][0]
-            seq_len = len(text_ids)
-            # ``forward_cache_update_text`` post-main-merge derives the
-            # remaining positions from ``past_key_values`` + the query
-            # length; the old ``packed_text_indexes`` /
-            # ``packed_key_value_indexes`` / ``key_values_lens`` kwargs
-            # were dropped from its signature.
-            inp = {
-                "text_token_lens": torch.tensor([seq_len], dtype=torch.int, device=self.device),
-                "packed_text_ids": torch.tensor(text_ids, dtype=torch.long, device=self.device),
-                "packed_text_position_ids": torch.arange(
-                    curr_rope, curr_rope + seq_len, dtype=torch.long, device=self.device
-                ),
-            }
-            with torch.autocast(**autocast_kwargs):
-                ctx["past_key_values"] = self.bagel.forward_cache_update_text(ctx["past_key_values"], **inp)
-            ctx["kv_lens"] = [curr_kvlen + seq_len]
-            ctx["ropes"] = [curr_rope + seq_len]
-
-        def _vit_prefill(ctx):
-            # Feed the bucket-resized + patchified ViT pixels directly so the
-            # Qwen2VLImageProcessor path (smart-resize, wrong grid) is bypassed.
-            inp, new_kvlens, new_rope = self.bagel.prepare_vit_videos(
-                curr_kvlens=ctx["kv_lens"],
-                curr_rope=ctx["ropes"],
-                videos=[video_raw],  # passed through for length/iter only
-                new_token_ids=self.new_token_ids,
-                precomputed_vit=[(vit_pixels, vit_grid_thw)],
-            )
-            for k, v in inp.items():
-                if torch.is_tensor(v):
-                    inp[k] = v.to(self.device)
-            # ``prepare_vit_images`` still returns ``packed_indexes`` /
-            # ``packed_key_value_indexes`` / ``key_values_lens`` for
-            # historical reasons; ``forward_cache_update_vit`` post-main
-            # no longer accepts them — pop before unpacking.
-            for _drop in ("packed_indexes", "packed_key_value_indexes", "key_values_lens"):
-                inp.pop(_drop, None)
-            with torch.autocast(**autocast_kwargs):
-                ctx["past_key_values"] = self.bagel.forward_cache_update_vit(ctx["past_key_values"], **inp)
-            ctx["kv_lens"] = new_kvlens
-            ctx["ropes"] = new_rope
-
-        # Encode the reference video ONCE so both gen and cfg branches share
-        # the same posterior sample (see image_edit fix — Wan2.2 VAE's
-        # ``mu + std * randn_like(std)`` would otherwise drift between
-        # branches).
-        _ref_padded_latent_cache = {"v": None}
+        # Shared latent cache so gen + cfg branches see the same VAE sample.
+        ref_latent_cache: list = []
 
         def _vae_transforms(_):
             return video_chw
 
-        def _vae_prefill(ctx):
-            inp, new_kvlens, new_rope = self.bagel._lance_native_prepare_vae_images(
-                curr_kvlens=ctx["kv_lens"],
-                curr_rope=ctx["ropes"],
-                images=[video_chw],
-                transforms=_vae_transforms,
-                new_token_ids=self.new_token_ids,
-                is_video=True,
-            )
-            for k, v in inp.items():
-                if torch.is_tensor(v):
-                    inp[k] = v.to(self.device)
-            if _ref_padded_latent_cache["v"] is None:
-                _ref_padded_latent_cache["v"] = self.vae.encode(inp["padded_images"].to(self.device))
-            inp["precomputed_latent"] = _ref_padded_latent_cache["v"]
-            with torch.autocast(**autocast_kwargs):
-                ctx["past_key_values"] = self.bagel.forward_cache_update_vae(self.vae, ctx["past_key_values"], **inp)
-            ctx["kv_lens"] = new_kvlens
-            ctx["ropes"] = new_rope
-
         # ----- prefill segments in upstream order -----
-        sys_prompt = SYSTEM_PROMPTS[("video_edit", "video")]
-        seg1_str = f"<|im_start|>system\n{sys_prompt}<|im_end|>\n<|im_start|>user\n"
-        seg5_str = "<|im_end|>\n<|im_start|>assistant\n"
+        seg1_str, seg5_str = self._segment_strings("video_edit", "video")
 
         # seg1: system + user header  (shared)
-        _raw_text_prefill(gen_context, seg1_str)
+        self._raw_text_prefill(gen_context, seg1_str)
         if cfg_text_scale > 1.0:
-            _raw_text_prefill(cfg_text_context, seg1_str)
+            self._raw_text_prefill(cfg_text_context, seg1_str)
 
-        # seg2: ViT(ref)  (shared)
-        _vit_prefill(gen_context)
+        # seg2: ViT(ref)  (shared) — feed pre-bucketed patches directly so
+        # the Qwen2VLImageProcessor smart-resize is bypassed.
+        precomputed_vit = [(vit_pixels, vit_grid_thw)]
+        self._vit_video_prefill(gen_context, [video_raw], precomputed_vit=precomputed_vit)
         if cfg_text_scale > 1.0:
-            _vit_prefill(cfg_text_context)
+            self._vit_video_prefill(cfg_text_context, [video_raw], precomputed_vit=precomputed_vit)
 
         # seg3: VAE(ref) — snapshot rope BEFORE the prefill so the gen noise
         # latent can be placed at the SAME rope range (matches upstream's
         # modality==1≡2 trick).
         rope_before_vae = gen_context["ropes"][0]
         cfg_rope_before_vae = cfg_text_context["ropes"][0] if cfg_text_scale > 1.0 else rope_before_vae
-        _vae_prefill(gen_context)
+        self._vae_ref_prefill(gen_context, [video_chw], _vae_transforms, is_video=True, latent_cache=ref_latent_cache)
         if cfg_text_scale > 1.0:
-            _vae_prefill(cfg_text_context)
+            self._vae_ref_prefill(
+                cfg_text_context, [video_chw], _vae_transforms, is_video=True, latent_cache=ref_latent_cache
+            )
 
         # seg4: user instruction  (gen only — cfg branch skips per upstream).
-        _raw_text_prefill(gen_context, user_text)
+        self._raw_text_prefill(gen_context, user_text)
 
         # seg5: separator + assistant header  (both gen and cfg, each at its
         # own current rope; cfg's lands earlier than gen's because cfg
         # skipped seg4).
-        _raw_text_prefill(gen_context, seg5_str)
+        self._raw_text_prefill(gen_context, seg5_str)
         if cfg_text_scale > 1.0:
-            _raw_text_prefill(cfg_text_context, seg5_str)
+            self._raw_text_prefill(cfg_text_context, seg5_str)
 
         # seg6 (noise QUERY): gen latent at the SAME rope as the ref VAE
         # block.  KV cache still contains sys+ViT+VAE_ref+user_text+sep at
@@ -1693,7 +1593,7 @@ class LancePipeline(BagelPipeline):
 
         self._regen_init_noise_on_device(gen_input_lat, req.sampling_params.seed)
 
-        with torch.autocast(**autocast_kwargs):
+        with torch.autocast(**self._autocast_kwargs()):
             # ``prepare_video_latent`` / ``prepare_vae_latent`` still return
             # ``key_values_lens`` / ``packed_indexes`` / ``packed_key_value_indexes``
             # but post-main-merge ``generate_image`` doesn't accept them — drop
@@ -1776,48 +1676,21 @@ class LancePipeline(BagelPipeline):
             if self.device.type == "cuda":
                 torch.cuda.manual_seed(req.sampling_params.seed)
 
-        autocast_kwargs = dict(
-            device_type=self.device.type,
-            enabled=self.device.type != "cpu",
-            dtype=self.od_config.dtype,
-        )
-
         gen_context = {
             "kv_lens": [0],
             "ropes": [0],
             "past_key_values": NaiveCache(self.bagel.config.llm_config.num_hidden_layers),
         }
 
-        self._x2t_raw_text_prefill(gen_context, prefix_text, autocast_kwargs)
-
-        gen_input_vit, newlens_vit, new_rope_vit = self.bagel.prepare_vit_videos(
-            curr_kvlens=gen_context["kv_lens"],
-            curr_rope=gen_context["ropes"],
-            videos=videos,
-            new_token_ids=self.new_token_ids,
-        )
-        for k, v in gen_input_vit.items():
-            if torch.is_tensor(v):
-                gen_input_vit[k] = v.to(self.device)
-        # Post-main-merge ``forward_cache_update_vit`` drops the
-        # legacy ``packed_indexes`` / ``packed_key_value_indexes`` /
-        # ``key_values_lens`` kwargs.
-        for _drop in ("packed_indexes", "packed_key_value_indexes", "key_values_lens"):
-            gen_input_vit.pop(_drop, None)
-        with torch.autocast(**autocast_kwargs):
-            gen_context["past_key_values"] = self.bagel.forward_cache_update_vit(
-                gen_context["past_key_values"], **gen_input_vit
-            )
-        gen_context["kv_lens"] = newlens_vit
-        gen_context["ropes"] = new_rope_vit
-
-        self._x2t_raw_text_prefill(gen_context, suffix_text, autocast_kwargs)
+        self._raw_text_prefill(gen_context, prefix_text)
+        self._vit_video_prefill(gen_context, videos)
+        self._raw_text_prefill(gen_context, suffix_text)
 
         start_input = self._x2t_prepare_assistant_start(gen_context)
         for k, v in start_input.items():
             if torch.is_tensor(v):
                 start_input[k] = v.to(self.device)
-        with torch.autocast(**autocast_kwargs):
+        with torch.autocast(**self._autocast_kwargs()):
             token_ids = self.bagel.generate_text(
                 past_key_values=gen_context["past_key_values"],
                 max_length=max_text_tokens,
@@ -1898,49 +1771,21 @@ class LancePipeline(BagelPipeline):
         def vit_transforms(img):
             return self.image_processor(images=img, return_tensors="pt").pixel_values[0]
 
-        autocast_kwargs = dict(
-            device_type=self.device.type,
-            enabled=self.device.type != "cpu",
-            dtype=self.od_config.dtype,
-        )
-
         gen_context = {
             "kv_lens": [0],
             "ropes": [0],
             "past_key_values": NaiveCache(self.bagel.config.llm_config.num_hidden_layers),
         }
 
-        self._x2t_raw_text_prefill(gen_context, prefix_text, autocast_kwargs)
-
-        gen_input_vit, newlens_vit, new_rope_vit = self.bagel.prepare_vit_images(
-            curr_kvlens=gen_context["kv_lens"],
-            curr_rope=gen_context["ropes"],
-            images=images,
-            transforms=vit_transforms,
-            new_token_ids=self.new_token_ids,
-        )
-        for k, v in gen_input_vit.items():
-            if torch.is_tensor(v):
-                gen_input_vit[k] = v.to(self.device)
-        # Post-main-merge ``forward_cache_update_vit`` drops the
-        # legacy ``packed_indexes`` / ``packed_key_value_indexes`` /
-        # ``key_values_lens`` kwargs.
-        for _drop in ("packed_indexes", "packed_key_value_indexes", "key_values_lens"):
-            gen_input_vit.pop(_drop, None)
-        with torch.autocast(**autocast_kwargs):
-            gen_context["past_key_values"] = self.bagel.forward_cache_update_vit(
-                gen_context["past_key_values"], **gen_input_vit
-            )
-        gen_context["kv_lens"] = newlens_vit
-        gen_context["ropes"] = new_rope_vit
-
-        self._x2t_raw_text_prefill(gen_context, suffix_text, autocast_kwargs)
+        self._raw_text_prefill(gen_context, prefix_text)
+        self._vit_image_prefill(gen_context, images, vit_transforms)
+        self._raw_text_prefill(gen_context, suffix_text)
 
         start_input = self._x2t_prepare_assistant_start(gen_context)
         for k, v in start_input.items():
             if torch.is_tensor(v):
                 start_input[k] = v.to(self.device)
-        with torch.autocast(**autocast_kwargs):
+        with torch.autocast(**self._autocast_kwargs()):
             token_ids = self.bagel.generate_text(
                 past_key_values=gen_context["past_key_values"],
                 max_length=max_text_tokens,
@@ -2042,34 +1887,6 @@ class LancePipeline(BagelPipeline):
             "packed_start_tokens": torch.tensor(packed_start_tokens, dtype=torch.long),
             "packed_query_position_ids": torch.tensor(packed_query_position_ids, dtype=torch.long),
         }
-
-    def _x2t_raw_text_prefill(self, gen_context, text_str, autocast_kwargs):
-        """Tokenize ``text_str`` *raw* (no bos/eos wrapping) and append it
-        to ``gen_context``'s KV cache.  ``prepare_prompts`` is unusable
-        here because it would inject ``[bos] + ids + [eos]`` around each
-        segment, breaking the chat template framing."""
-        if not text_str:
-            return
-        text_ids = self.tokenizer.encode(text_str, add_special_tokens=False)
-        if not text_ids:
-            return
-        curr_kvlen = gen_context["kv_lens"][0]
-        curr_rope = gen_context["ropes"][0]
-        seq_len = len(text_ids)
-        inp = {
-            "text_token_lens": torch.tensor([seq_len], dtype=torch.int, device=self.device),
-            "packed_text_ids": torch.tensor(text_ids, dtype=torch.long, device=self.device),
-            "packed_text_position_ids": torch.arange(
-                curr_rope, curr_rope + seq_len, dtype=torch.long, device=self.device
-            ),
-            # ``packed_text_indexes`` / ``packed_key_value_indexes`` /
-            # ``key_values_lens`` removed from ``forward_cache_update_text``
-            # post-main-merge (derived from ``past_key_values``).
-        }
-        with torch.autocast(**autocast_kwargs):
-            gen_context["past_key_values"] = self.bagel.forward_cache_update_text(gen_context["past_key_values"], **inp)
-        gen_context["kv_lens"] = [curr_kvlen + seq_len]
-        gen_context["ropes"] = [curr_rope + seq_len]
 
     @staticmethod
     def _decode_video_from_latent(
