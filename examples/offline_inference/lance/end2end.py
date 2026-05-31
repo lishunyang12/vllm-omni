@@ -210,6 +210,12 @@ def main():
     args = parse_args()
     os.makedirs(args.output, exist_ok=True)
 
+    # Lance aligns more naturally with upstream when using FLASH_ATTN
+    # (upstream uses flash_attn_varlen_func; SDPA accumulates ~5x more
+    # numerical drift through the 36-layer Qwen2 stack on B300).  Default
+    # to flash_attn when the user hasn't explicitly set a backend.
+    os.environ.setdefault("DIFFUSION_ATTENTION_BACKEND", "FLASH_ATTN")
+
     if args.txt_prompts:
         with open(args.txt_prompts, encoding="utf-8") as f:
             prompts = [ln.strip() for ln in f if ln.strip()]

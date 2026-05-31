@@ -1237,6 +1237,11 @@ def build_ui(
 
 def main():
     args = parse_args()
+    # Lance aligns better with upstream when using FLASH_ATTN
+    # (upstream uses flash_attn_varlen_func; SDPA accumulates ~5x more
+    # numerical drift through the 36-layer Qwen2 stack).  Default to
+    # flash_attn unless the user explicitly set a backend.
+    os.environ.setdefault("DIFFUSION_ATTENTION_BACKEND", "FLASH_ATTN")
     print("=" * 60, flush=True)
     print("[unified] Lance × vllm-omni demo", flush=True)
     print(f"  snapshot:      {args.model}", flush=True)
