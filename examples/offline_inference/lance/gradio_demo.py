@@ -288,11 +288,19 @@ def _init_models(
         f"  replicas={replicas_per_omni}...",
         flush=True,
     )
-    # Lance needs ``vllm_omni/deploy/lance.yaml`` as the pipeline-selector
-    # (Lance HF config has no ``model_type`` field for auto-detect).  Pass
-    # via ``deploy_config`` — flat kwargs alone don't trigger pipeline
-    # resolution.
-    lance_engine_defaults = dict(deploy_config="vllm_omni/deploy/lance.yaml")
+    # Lance single-stage engine defaults — mirrors the offline ``end2end.py``
+    # flat-kwargs path so this demo does not depend on ``deploy/lance.yaml``.
+    # ``pipeline="lance"`` is the explicit selector (Lance HF config has no
+    # ``model_type`` field, so auto-detect from the model dir alone fails).
+    lance_engine_defaults = dict(
+        pipeline="lance",
+        max_num_batched_tokens=32768,
+        max_num_seqs=1,
+        enforce_eager=True,
+        trust_remote_code=True,
+        enable_prefix_caching=False,
+        async_chunk=False,
+    )
 
     img_kwargs: dict = {"model": img_ckpt, **lance_engine_defaults}
     if img_devices != "0":
