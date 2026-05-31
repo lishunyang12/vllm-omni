@@ -1179,6 +1179,14 @@ class Bagel(nn.Module):
         self.config = config
         self._init_weights()
 
+        # Layer-by-layer dump hooks (no-op unless ``LANCE_DUMP_DIR`` is set).
+        try:
+            from ._dump_hooks import install_if_env
+
+            install_if_env(self)
+        except Exception as _e:
+            print(f"[bagel] dump hook install failed (ignored): {_e}", flush=True)
+
     @property
     def _sp_size(self) -> int:
         if self.parallel_config is None:
@@ -1904,6 +1912,10 @@ class Bagel(nn.Module):
                     [packed_vae_token_indexes + b_idx * seq_len for b_idx in range(num_branches)]
                 ),
                 "merged_cache": self._merge_naive_caches(branches_cache),
+                # Per-branch metadata needed for sequential CFG (the batched
+                # forward path is currently buggy — see Bagel.forward).
+                "_branches_pids": branches_pid,
+                "_branches_caches": branches_cache,
             }
 
         if return_trajectory_latents and len(timesteps) > 0:
@@ -2308,43 +2320,45 @@ class Bagel(nn.Module):
         cfg_img_v_t = None
 
         if use_cfg and cfg_batched is not None:
-            # ── Batched CFG: single LLM forward for all branches ──
-            seq_len = cfg_batched["seq_len"]
-            num_branches = cfg_batched["num_branches"]
-
-            batched_sequence = packed_sequence.repeat(num_branches, 1)
-
+            # ── Per-branch sequential CFG forwards (matches upstream Lance) ──
+            # Concatenating cond+cfg into a single LLM forward without a
+            # block-diagonal attention mask leaks attention across branches —
+            # the existing batched path drops the block mask after the
+            # flash_attn_varlen removal (PR #3728).  Until the mask plumbing
+            # is restored, run each branch's forward separately, exactly like
+            # upstream lance.py does.  Each branch shares the noise query
+            # (``packed_sequence``) and varies only past_key_values +
+            # packed_position_ids.
             if self.use_moe:
-                extra_inputs["packed_text_indexes"] = cfg_batched["batched_text_indexes"]
-                extra_inputs["packed_vae_token_indexes"] = cfg_batched["batched_vae_indexes"]
+                extra_inputs["packed_vae_token_indexes"] = packed_vae_token_indexes
+                extra_inputs["packed_text_indexes"] = packed_text_indexes
 
-            output = self.language_model.forward(
-                packed_query_sequence=batched_sequence,
-                query_lens=cfg_batched["batched_query_lens"],
-                packed_query_position_ids=cfg_batched["batched_position_ids"],
-                past_key_values=cfg_batched["merged_cache"],
-                update_past_key_values=False,
-                is_causal=False,
-                **extra_inputs,
-            )
+            def _run_branch(branch_pkv, branch_pids):
+                out = self.language_model.forward(
+                    packed_query_sequence=packed_sequence,
+                    query_lens=packed_seqlens,
+                    packed_query_position_ids=branch_pids,
+                    past_key_values=branch_pkv,
+                    update_past_key_values=False,
+                    is_causal=False,
+                    **extra_inputs,
+                )
+                return self.llm2vae(out.packed_query_sequence)[packed_vae_token_indexes]
 
-            # Extract per-branch velocities from batched output
-            all_hidden = output.packed_query_sequence
-            assert all_hidden.shape[0] == seq_len * num_branches, (
-                f"Expected packed sequence length {seq_len * num_branches}, but got {all_hidden.shape[0]}"
-            )
+            # Branch 0 (cond): packed_position_ids + past_key_values come from
+            # the call site; ``cfg_batched`` holds them on first slot too but
+            # we already have them as ``packed_position_ids`` / ``past_key_values``.
+            v_t = _run_branch(past_key_values, packed_position_ids)
 
-            v_t = self.llm2vae(all_hidden[:seq_len])[packed_vae_token_indexes]
+            # Branch 1 (cfg_text): always present when use_cfg.
+            branches_pids = cfg_batched.get("_branches_pids")
+            branches_caches = cfg_batched.get("_branches_caches")
+            if branches_pids is None or branches_caches is None:
+                raise RuntimeError("cfg_batched is missing per-branch pids/caches needed for sequential CFG")
+            cfg_text_v_t = _run_branch(branches_caches[1], branches_pids[1])
 
-            branch_idx = 1
-            cfg_text_v_t = self.llm2vae(all_hidden[branch_idx * seq_len : (branch_idx + 1) * seq_len])[
-                packed_vae_token_indexes
-            ]
-            branch_idx += 1
-            if cfg_img_scale > 1.0:
-                cfg_img_v_t = self.llm2vae(all_hidden[branch_idx * seq_len : (branch_idx + 1) * seq_len])[
-                    packed_vae_token_indexes
-                ]
+            if cfg_img_scale > 1.0 and len(branches_caches) > 2:
+                cfg_img_v_t = _run_branch(branches_caches[2], branches_pids[2])
         else:
             # ── Single forward (no CFG or outside cfg_interval) ──
             if self.use_moe:

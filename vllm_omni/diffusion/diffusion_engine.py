@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import inspect
+import os
 import queue
 import threading
 import time
@@ -171,12 +172,18 @@ class DiffusionEngine:
         self._rpc_queue: queue.Queue[_RpcTask] = queue.Queue()
         self.execute_fn = self.executor.execute_step if self.step_execution else self.executor.execute_request
 
-        try:
-            self._dummy_run()
-        except Exception as e:
-            logger.error(f"Dummy run failed: {e}")
-            self.close()
-            raise e
+        # Skip warmup when alignment dumps are active — the dummy run's
+        # 512x512 input contaminates the dump harness's per-call state
+        # before the first real request arrives.
+        if not os.environ.get("LANCE_DUMP_DIR"):
+            try:
+                self._dummy_run()
+            except Exception as e:
+                logger.error(f"Dummy run failed: {e}")
+                self.close()
+                raise e
+        else:
+            logger.info("LANCE_DUMP_DIR set; skipping dummy_run warmup for byte-aligned dumps")
 
     async def _check_and_start_background_loop(self):
         if self._closed:
