@@ -319,6 +319,27 @@ class BagelPipeline(nn.Module, SupportsComponentDiscovery, DiffusionPipelineProf
         image = (image * 0.5 + 0.5).clamp(0, 1)[0].permute(1, 2, 0) * 255
         return Image.fromarray(image.to(torch.uint8).cpu().numpy())
 
+    def _regen_init_noise_on_device(self, gen_input: dict, seed: int | None) -> None:
+        """Resample ``gen_input["packed_init_noises"]`` on-device with a fresh
+        per-call ``torch.Generator``.
+
+        ``Bagel.prepare_input`` (and the Lance video equivalent) call
+        ``torch.randn`` with no device or generator, falling back to CPU+fp32
+        via the global RNG.  Upstream Lance samples directly on CUDA+bf16 via
+        ``torch.Generator(device=cuda).manual_seed(seed)`` (lance.py:1536),
+        so for the same seed the two sides land on different noise streams.
+        Mutates ``gen_input`` in place; no-op if seed is unset or device is CPU.
+        """
+        if seed is None or self.device.type != "cuda":
+            return
+        ref = gen_input["packed_init_noises"]
+        gen_input["packed_init_noises"] = torch.randn(
+            ref.shape,
+            generator=torch.Generator(device=self.device).manual_seed(int(seed)),
+            device=self.device,
+            dtype=self.od_config.dtype,
+        )
+
     @torch.inference_mode()
     def forward(self, req: OmniDiffusionRequest) -> DiffusionOutput:
         if len(req.prompts) > 1:
@@ -756,22 +777,7 @@ class BagelPipeline(nn.Module, SupportsComponentDiscovery, DiffusionPipelineProf
             if torch.is_tensor(v):
                 generation_input[k] = v.to(self.device)
 
-        # Deterministic init-noise regen: ``prepare_vae_latent`` samples on
-        # CPU+fp32 via the global ``torch.randn`` which (a) uses CPU's RNG
-        # algorithm (different stream from CUDA) and (b) requires a cast to
-        # bf16 on copy. Upstream Lance samples directly on CUDA+bf16 via a
-        # ``torch.Generator(device=cuda).manual_seed(seed)`` (see
-        # modeling/lance/lance.py:1536). Match that here so CK1 matches
-        # byte-for-byte when the same seed is set.
-        if req.sampling_params.seed is not None and self.device.type == "cuda":
-            noise_gen = torch.Generator(device=self.device).manual_seed(int(req.sampling_params.seed))
-            init_noises_tensor = generation_input["packed_init_noises"]
-            generation_input["packed_init_noises"] = torch.randn(
-                init_noises_tensor.shape,
-                generator=noise_gen,
-                device=self.device,
-                dtype=self.od_config.dtype,
-            )
+        self._regen_init_noise_on_device(generation_input, req.sampling_params.seed)
 
         # text cfg
         generation_input_cfg_text = self.bagel.prepare_vae_latent_cfg(

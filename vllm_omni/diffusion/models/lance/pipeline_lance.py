@@ -663,16 +663,7 @@ class LancePipeline(BagelPipeline):
             if torch.is_tensor(v):
                 cfg_img_lat[k] = v.to(self.device)
 
-        # Deterministic init-noise regen — see _forward_i2v comment for why.
-        if req.sampling_params.seed is not None and self.device.type == "cuda":
-            noise_gen = torch.Generator(device=self.device).manual_seed(int(req.sampling_params.seed))
-            init_noises_tensor = gen_input_lat["packed_init_noises"]
-            gen_input_lat["packed_init_noises"] = torch.randn(
-                init_noises_tensor.shape,
-                generator=noise_gen,
-                device=self.device,
-                dtype=self.od_config.dtype,
-            )
+        self._regen_init_noise_on_device(gen_input_lat, req.sampling_params.seed)
 
         # ---- Denoising loop (Bagel.generate_image is rank-agnostic over packed tokens) ----
         with torch.autocast(
@@ -999,16 +990,7 @@ class LancePipeline(BagelPipeline):
         # cond's lat metadata so shapes/types are fine.
         cfg_img_lat = cfg_text_lat
 
-        # Deterministic init-noise regen — see _forward_i2v comment for why.
-        if req.sampling_params.seed is not None and self.device.type == "cuda":
-            noise_gen = torch.Generator(device=self.device).manual_seed(int(req.sampling_params.seed))
-            init_noises_tensor = gen_input_lat["packed_init_noises"]
-            gen_input_lat["packed_init_noises"] = torch.randn(
-                init_noises_tensor.shape,
-                generator=noise_gen,
-                device=self.device,
-                dtype=self.od_config.dtype,
-            )
+        self._regen_init_noise_on_device(gen_input_lat, req.sampling_params.seed)
 
         with torch.autocast(**autocast_kwargs):
             # ``prepare_video_latent`` / ``prepare_vae_latent`` still return
@@ -1312,25 +1294,7 @@ class LancePipeline(BagelPipeline):
                 cfg_text_lat[k] = v.to(self.device)
         cfg_img_lat = cfg_text_lat
 
-        # Deterministic init-noise regeneration.  ``prepare_video_latent``
-        # builds packed_init_noises via ``torch.randn(...)`` against the
-        # GLOBAL CUDA RNG state, which is contaminated by everything the
-        # prefill phase (text + ViT + VAE) consumed before this point.
-        # vllm-omni and upstream interleave RNG-consuming ops differently
-        # in prefill, so even with ``torch.manual_seed(seed)`` at the top
-        # the two sides land at different RNG positions when randn is called.
-        # Upstream uses ``torch.Generator(device).manual_seed(seed)`` AT the
-        # randn call (modeling/lance/lance.py:1533) so its noise depends
-        # only on the seed. Match that here.
-        if req.sampling_params.seed is not None:
-            noise_gen = torch.Generator(device=self.device).manual_seed(int(req.sampling_params.seed))
-            init_noises_tensor = gen_input_lat["packed_init_noises"]
-            gen_input_lat["packed_init_noises"] = torch.randn(
-                init_noises_tensor.shape,
-                generator=noise_gen,
-                device=self.device,
-                dtype=init_noises_tensor.dtype,
-            )
+        self._regen_init_noise_on_device(gen_input_lat, req.sampling_params.seed)
 
         # ── First-frame conditioning: VAE-encode the FULL pixel-space
         # target tensor (matches upstream Lance PR #33's ff2v_sample):
@@ -1727,16 +1691,7 @@ class LancePipeline(BagelPipeline):
         # arg surface but skips the branch when scale<=1.0.
         cfg_img_lat = cfg_text_lat
 
-        # Deterministic init-noise regen — see _forward_i2v comment for why.
-        if req.sampling_params.seed is not None and self.device.type == "cuda":
-            noise_gen = torch.Generator(device=self.device).manual_seed(int(req.sampling_params.seed))
-            init_noises_tensor = gen_input_lat["packed_init_noises"]
-            gen_input_lat["packed_init_noises"] = torch.randn(
-                init_noises_tensor.shape,
-                generator=noise_gen,
-                device=self.device,
-                dtype=self.od_config.dtype,
-            )
+        self._regen_init_noise_on_device(gen_input_lat, req.sampling_params.seed)
 
         with torch.autocast(**autocast_kwargs):
             # ``prepare_video_latent`` / ``prepare_vae_latent`` still return
