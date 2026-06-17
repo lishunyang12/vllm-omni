@@ -6,10 +6,11 @@ JoyVL is proactive: every free tick it decides speak / silence / delegate from
 the control tokens, instead of waiting for a ``video.query``. The decision lives
 in the model; this handler only triggers per tick, assembles a stable-head /
 append-only prompt (system + memory prefix, then the changing frames) for
-prefix-cache reuse, and folds spoken turns into Q&A memory via SessionBrain."""
+prefix-cache reuse, and folds spoken turns into Q&A memory via InteractionBrain."""
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from vllm_omni.entrypoints.openai.video_stream_base import (
@@ -20,21 +21,25 @@ from vllm_omni.entrypoints.openai.video_stream_base import (
 )
 from vllm_omni.interaction.output_parser import Action, parse_action
 from vllm_omni.interaction.prompts import SYSTEM_PROMPTS, USER_QUERY_HEADER
-from vllm_omni.interaction.state import SessionBrain
+from vllm_omni.interaction.state import InteractionBrain
 
 _DEFAULT_PERSONA = "default"
 _FRAME_SECONDS = 1.0
+_CHUNK_FRAMES = 200
 
 
 class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
     """Proactive JoyVL pipeline on the shared streaming-video endpoint."""
 
     persona: str = _DEFAULT_PERSONA
+    chunk_frames: int = _CHUNK_FRAMES
 
     # ----- pipeline hooks ------------------------------------------------- #
 
     def create_message_history(self, config: StreamingVideoSessionConfig) -> Any:
-        return SessionBrain(frame_seconds=_FRAME_SECONDS)
+        # No summarizer wired on the WS base yet, so flush archives Q&A only
+        # (mid/long-term activate once a summarizer is injected here).
+        return InteractionBrain(chunk_frames=self.chunk_frames, frame_seconds=_FRAME_SECONDS)
 
     def should_trigger_turn(self, trigger: VideoStreamTurnTrigger) -> bool:
         # Proactive: run a turn whenever the model is free and a frame exists.
@@ -43,7 +48,7 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
         return not trigger.is_generating and trigger.frame_count >= 1
 
     def on_frame_buffered(self, raw_bytes: bytes, frame_b64: str, message_history: Any, config) -> None:
-        if isinstance(message_history, SessionBrain):
+        if isinstance(message_history, InteractionBrain):
             message_history.tick()
 
     def build_engine_prompt(
@@ -55,7 +60,7 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
         query_text: str,
         prewarmed_frames: dict[str, tuple[Any, str]],
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        brain: SessionBrain = message_history
+        brain: InteractionBrain = message_history
         brain.update_query(query_text)
 
         system_prompt = config.system_prompt or SYSTEM_PROMPTS.get(self.persona, SYSTEM_PROMPTS["default"])
@@ -68,8 +73,9 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
 
         user_content.extend(self._frame_parts(frame_buffer, config, prewarmed_frames))
 
-        # A freshly-issued query rides in this turn's message (append-only),
-        # moving into the stable head once its chunk is evicted.
+        # The active query rides in the turn message while its chunk is live
+        # (this transport keeps no per-turn history); it moves into the stable
+        # head once the chunk is evicted.
         if brain.current_query and brain.query_in_current_chunk:
             user_content.append({"type": "text", "text": f"{USER_QUERY_HEADER}\n{brain.current_query}"})
 
@@ -78,11 +84,14 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
         return messages, user_message
 
     def on_turn_complete(self, message_history: Any, user_message: dict[str, Any], response_text: str) -> None:
-        brain: SessionBrain = message_history
+        brain: InteractionBrain = message_history
         action = parse_action(response_text)
         if action.action is not Action.SILENCE and brain.current_query:
             brain.record_response(action.text)
-        brain.end_turn()
+        if brain.should_flush():
+            # Async so chunk summarization (when a summarizer is wired) hides
+            # behind the next turn's inference rather than blocking it.
+            asyncio.create_task(brain.flush([]))
 
     # ----- helpers -------------------------------------------------------- #
 
