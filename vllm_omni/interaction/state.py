@@ -45,6 +45,7 @@ class InteractionBrain:
         self.frame_index = 0
         self.chunk_index = 1
         self._chunk_frame_count = 0
+        self.working_frames: list[tuple[str, str]] = []
         self.response_records: list[tuple[str, str]] = []
         self._pending_delegations: list[dict[str, str]] = []
 
@@ -57,6 +58,15 @@ class InteractionBrain:
     def tick(self, n: int = 1) -> None:
         self.frame_index += n
         self._chunk_frame_count += n
+
+    def observe(self, time_range: str, data_url: str) -> None:
+        self.tick()
+        self.working_frames.append((time_range, data_url))
+
+    def take_working_frames(self) -> list[tuple[str, str]]:
+        frames = self.working_frames
+        self.working_frames = []
+        return frames
 
     def should_flush(self) -> bool:
         return self._chunk_frames > 0 and self._chunk_frame_count >= self._chunk_frames

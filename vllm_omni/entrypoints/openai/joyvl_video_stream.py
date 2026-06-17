@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any
 
 from vllm_omni.entrypoints.openai.video_stream_base import (
@@ -12,13 +13,23 @@ from vllm_omni.entrypoints.openai.video_stream_base import (
     StreamingVideoSessionConfig,
     VideoStreamTurnTrigger,
 )
+from vllm_omni.interaction.backend import OpenAIBackend
 from vllm_omni.interaction.delegation import StubDelegationBridge
+from vllm_omni.interaction.memory import Summarizer
 from vllm_omni.interaction.output_parser import ParsedAction
 from vllm_omni.interaction.policy import JoyVLPolicy, sample_frames
 
 _DEFAULT_PERSONA = "default"
 _FRAME_SECONDS = 1.0
 _CHUNK_FRAMES = 16
+
+
+def _summarizer_from_env() -> Summarizer | None:
+    url = os.environ.get("JOYVL_SUMMARIZER_URL")
+    if not url:
+        return None
+    model = os.environ.get("JOYVL_SUMMARIZER_MODEL", "JoyAI-VL-Interaction-Preview")
+    return Summarizer(OpenAIBackend(url, model))
 
 
 class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
@@ -32,6 +43,7 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
             num_frames=config.num_frames,
             chunk_frames=self.chunk_frames,
             frame_seconds=_FRAME_SECONDS,
+            summarizer=_summarizer_from_env(),
             delegation=StubDelegationBridge(),
         )
 
@@ -40,7 +52,8 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
 
     def on_frame_buffered(self, raw_bytes: bytes, frame_b64: str, message_history: Any, config) -> None:
         if isinstance(message_history, JoyVLPolicy):
-            message_history.tick()
+            time_range = message_history.brain.now()
+            message_history.observe(time_range, f"data:image/jpeg;base64,{frame_b64}")
 
     def build_engine_prompt(
         self,
@@ -62,10 +75,10 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
         asyncio.create_task(self._post_turn(policy, action))
 
     async def _post_turn(self, policy: JoyVLPolicy, action: ParsedAction) -> None:
-        await policy.submit_if_delegate(action)
+        await policy.submit_if_delegate(action, list(policy.working_frames))
         await policy.fold_delegations()
         if policy.needs_flush():
-            await policy.flush()
+            await policy.consolidate(policy.close_chunk(), policy.take_working_frames())
 
     def _frame_parts(
         self,

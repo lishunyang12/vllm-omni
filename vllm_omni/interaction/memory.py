@@ -12,8 +12,6 @@ from vllm_omni.interaction.backend import ModelBackend
 
 @dataclass
 class WorkingChunk:
-    frames: list[tuple[str, str]] = field(default_factory=list)
-
     messages: list[dict[str, Any]] = field(default_factory=list)
 
 

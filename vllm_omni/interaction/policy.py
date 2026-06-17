@@ -51,6 +51,16 @@ class JoyVLPolicy:
     def tick(self, n: int = 1) -> None:
         self.brain.tick(n)
 
+    def observe(self, time_range: str, data_url: str) -> None:
+        self.brain.observe(time_range, data_url)
+
+    @property
+    def working_frames(self) -> list[tuple[str, str]]:
+        return self.brain.working_frames
+
+    def take_working_frames(self) -> list[tuple[str, str]]:
+        return self.brain.take_working_frames()
+
     def set_query(self, query: str | None) -> bool:
         return self.brain.update_query(query)
 

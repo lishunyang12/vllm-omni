@@ -76,12 +76,11 @@ class InteractionSession:
         delegation_info = await policy.fold_delegations()
 
         if policy.needs_flush():
-            self._spawn_consolidation(policy.close_chunk(), self.chunk.frames)
+            self._spawn_consolidation(policy.close_chunk(), policy.take_working_frames())
             self.chunk = WorkingChunk()
 
         for tr, url in zip(time_ranges, frames):
-            policy.tick()
-            self.chunk.frames.append((tr, url))
+            policy.observe(tr, url)
         self.chunk.messages.append(self._frame_message(time_ranges, frames, include_query=query_is_fresh))
 
         if self.config.force_silence_before_query and not brain.current_query:
@@ -92,7 +91,7 @@ class InteractionSession:
             skipped = False
         self.chunk.messages.append({"role": "assistant", "content": action.raw or "</silence>"})
 
-        submitted = await policy.submit_if_delegate(action, list(self.chunk.frames))
+        submitted = await policy.submit_if_delegate(action, list(policy.working_frames))
         if submitted:
             delegation_info = submitted
 
