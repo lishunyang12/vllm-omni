@@ -6,11 +6,10 @@ JoyVL is proactive: every free tick it decides speak / silence / delegate from
 the control tokens, instead of waiting for a ``video.query``. The decision lives
 in the model; this handler only triggers per tick, assembles a stable-head /
 append-only prompt (system + memory prefix, then the changing frames) for
-prefix-cache reuse, and folds spoken turns into a Q&A memory."""
+prefix-cache reuse, and folds spoken turns into Q&A memory via SessionBrain."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any
 
 from vllm_omni.entrypoints.openai.video_stream_base import (
@@ -19,23 +18,12 @@ from vllm_omni.entrypoints.openai.video_stream_base import (
     StreamingVideoSessionConfig,
     VideoStreamTurnTrigger,
 )
-from vllm_omni.interaction.memory import QAEntry, SessionMemory, build_memory_prefix
 from vllm_omni.interaction.output_parser import Action, parse_action
 from vllm_omni.interaction.prompts import SYSTEM_PROMPTS, USER_QUERY_HEADER
+from vllm_omni.interaction.state import SessionBrain
 
 _DEFAULT_PERSONA = "default"
 _FRAME_SECONDS = 1.0
-
-
-@dataclass
-class JoyVLSessionState:
-    """Per-session JoyVL state (returned by ``create_message_history``)."""
-
-    memory: SessionMemory = field(default_factory=SessionMemory)
-    current_query: str | None = None
-    query_time: str | None = None
-    query_in_current_chunk: bool = False
-    frame_index: int = 0
 
 
 class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
@@ -46,7 +34,7 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
     # ----- pipeline hooks ------------------------------------------------- #
 
     def create_message_history(self, config: StreamingVideoSessionConfig) -> Any:
-        return JoyVLSessionState()
+        return SessionBrain(frame_seconds=_FRAME_SECONDS)
 
     def should_trigger_turn(self, trigger: VideoStreamTurnTrigger) -> bool:
         # Proactive: run a turn whenever the model is free and a frame exists.
@@ -55,8 +43,8 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
         return not trigger.is_generating and trigger.frame_count >= 1
 
     def on_frame_buffered(self, raw_bytes: bytes, frame_b64: str, message_history: Any, config) -> None:
-        if isinstance(message_history, JoyVLSessionState):
-            message_history.frame_index += 1
+        if isinstance(message_history, SessionBrain):
+            message_history.tick()
 
     def build_engine_prompt(
         self,
@@ -67,44 +55,34 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
         query_text: str,
         prewarmed_frames: dict[str, tuple[Any, str]],
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        state: JoyVLSessionState = message_history
-        self._update_query(state, query_text)
+        brain: SessionBrain = message_history
+        brain.update_query(query_text)
 
         system_prompt = config.system_prompt or SYSTEM_PROMPTS.get(self.persona, SYSTEM_PROMPTS["default"])
         messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
         user_content: list[dict[str, Any]] = []
-        # Stable head: long-term + mid-term + Q&A history (+ carried-over query).
-        prefix = build_memory_prefix(
-            state.memory,
-            current_query=state.current_query,
-            include_query=bool(state.current_query) and not state.query_in_current_chunk,
-            keep_qa_history=True,
-        )
+        prefix = brain.build_prefix()
         if prefix:
             user_content.append({"type": "text", "text": prefix})
 
-        for part in self._frame_parts(frame_buffer, config, prewarmed_frames):
-            user_content.append(part)
+        user_content.extend(self._frame_parts(frame_buffer, config, prewarmed_frames))
 
         # A freshly-issued query rides in this turn's message (append-only),
         # moving into the stable head once its chunk is evicted.
-        if state.current_query and state.query_in_current_chunk:
-            user_content.append({"type": "text", "text": f"{USER_QUERY_HEADER}\n{state.current_query}"})
+        if brain.current_query and brain.query_in_current_chunk:
+            user_content.append({"type": "text", "text": f"{USER_QUERY_HEADER}\n{brain.current_query}"})
 
         user_message = {"role": "user", "content": user_content}
         messages.append(user_message)
         return messages, user_message
 
     def on_turn_complete(self, message_history: Any, user_message: dict[str, Any], response_text: str) -> None:
-        state: JoyVLSessionState = message_history
+        brain: SessionBrain = message_history
         action = parse_action(response_text)
-        if action.action is Action.SILENCE:
-            return
-        # Record what was spoken against the active query for long-horizon recall.
-        if state.current_query:
-            self._record_response(state, action.text)
-        state.query_in_current_chunk = False
+        if action.action is not Action.SILENCE and brain.current_query:
+            brain.record_response(action.text)
+        brain.end_turn()
 
     # ----- helpers -------------------------------------------------------- #
 
@@ -134,22 +112,3 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
             else:
                 parts.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{frame_b64}"}})
         return parts
-
-    def _update_query(self, state: JoyVLSessionState, query_text: str) -> None:
-        query = (query_text or "").strip()
-        if not query or query == state.current_query:
-            return
-        time_range = f"{state.frame_index * _FRAME_SECONDS:.1f}s"
-        state.current_query = query
-        state.query_time = time_range
-        state.query_in_current_chunk = True
-
-    def _record_response(self, state: JoyVLSessionState, text: str) -> None:
-        if not text:
-            return
-        time_range = f"{state.frame_index * _FRAME_SECONDS:.1f}s"
-        history = state.memory.qa_history
-        if history and history[-1].query == state.current_query:
-            history[-1].responses.append((time_range, text))
-        else:
-            history.append(QAEntry(state.current_query or "", state.query_time or time_range, [(time_range, text)]))
