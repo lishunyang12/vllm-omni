@@ -31,7 +31,6 @@ class OutputChunk:
 
     modality: str  # "text" | "audio" | ...
     data: Any
-    final: bool = False
 
 
 @runtime_checkable

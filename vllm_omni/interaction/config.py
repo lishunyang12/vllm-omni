@@ -37,7 +37,6 @@ class InteractionConfig:
     # --- per-tick behaviour ------------------------------------------------- #
     persona: str = "default"  # key into prompts.SYSTEM_PROMPTS
     frame_seconds: float = 1.0
-    max_pixels: int = 262144
     sampling: SamplingConfig = field(default_factory=SamplingConfig)
     #: Skip the model call and stay silent until the first user query arrives.
     #: This "arms" proactive monitoring with an instruction (e.g. "alert me if...").

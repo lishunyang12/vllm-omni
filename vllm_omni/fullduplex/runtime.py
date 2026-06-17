@@ -23,12 +23,17 @@ class DuplexRuntime:
     def __init__(self, session: DuplexSession, adapter: DuplexAdapter) -> None:
         self.session = session
         self.adapter = adapter
+        self._capabilities = adapter.capabilities()
 
     async def run(self, inputs: AsyncIterator[dict], emit: Emit) -> None:
         async for event in inputs:
             etype = event.get("type")
             if etype == ev.INPUT_APPEND:
-                await self.adapter.on_input(self.session, event.get("modality", ""), event.get("data"))
+                modality = event.get("modality", "")
+                if modality not in self._capabilities.input_modalities:
+                    await emit(ev.error(f"unsupported input modality: {modality}"))
+                    continue
+                await self.adapter.on_input(self.session, modality, event.get("data"))
                 self.session.state = DuplexState.LISTENING
                 if self.session.config.proactive and self.adapter.should_respond(self.session):
                     await self._respond(emit)
@@ -52,6 +57,8 @@ class DuplexRuntime:
                 if self.session.is_stale(epoch):  # barged in -> drop stale output
                     return
                 await emit(ev.delta(response_index, chunk.modality, chunk.data))
+        except Exception as err:  # noqa: BLE001 - surface adapter failures, don't hang the session
+            await emit(ev.error(f"response failed: {err}"))
         finally:
             if not self.session.is_stale(epoch):
                 await emit(ev.done(response_index))

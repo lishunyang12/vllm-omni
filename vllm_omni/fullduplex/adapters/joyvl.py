@@ -15,20 +15,12 @@ from typing import Any
 
 from vllm_omni.fullduplex.adapter import DuplexCapability, OutputChunk
 from vllm_omni.fullduplex.session import DuplexSession
-from vllm_omni.interaction.output_parser import Action, parse_action
-from vllm_omni.interaction.prompts import SYSTEM_PROMPTS, USER_QUERY_HEADER
+from vllm_omni.interaction.output_parser import Action
+from vllm_omni.interaction.prompts import SYSTEM_PROMPTS
 from vllm_omni.interaction.state import InteractionBrain
+from vllm_omni.interaction.turn import build_user_content, commit_turn, sample_frames
 
 GenerateFn = Callable[[list[dict[str, Any]]], Awaitable[str]]
-
-
-def _sample(frames: list[str], num: int) -> list[str]:
-    n = len(frames)
-    if n <= num:
-        return list(frames)
-    stride = max(1, n // num)
-    idx = [i * stride for i in range(num - 1)] + [n - 1]
-    return [frames[i] for i in idx]
 
 
 class JoyVLDuplexAdapter:
@@ -70,24 +62,15 @@ class JoyVLDuplexAdapter:
         brain.update_query(self._pending_query)
         self._pending_query = None
 
-        content: list[dict[str, Any]] = []
-        prefix = brain.build_prefix()
-        if prefix:
-            content.append({"type": "text", "text": prefix})
-        for frame in _sample(self._frames, self._num_frames):
-            content.append({"type": "image_url", "image_url": {"url": frame}})
-        if brain.current_query and brain.query_in_current_chunk:
-            content.append({"type": "text", "text": f"{USER_QUERY_HEADER}\n{brain.current_query}"})
+        parts = [{"type": "image_url", "image_url": {"url": f}} for f in sample_frames(self._frames, self._num_frames)]
         messages = [
             {"role": "system", "content": self._system_prompt},
-            {"role": "user", "content": content},
+            {"role": "user", "content": build_user_content(brain, parts)},
         ]
 
-        action = parse_action(await self._generate(messages))
-        if action.action is not Action.SILENCE and brain.current_query:
-            brain.record_response(action.text)
+        action = commit_turn(brain, await self._generate(messages))
         if action.action is not Action.SILENCE and action.text:
-            yield OutputChunk("text", action.text, final=True)
+            yield OutputChunk("text", action.text)
 
         if brain.should_flush():
             await brain.flush([(str(i), f) for i, f in enumerate(self._frames)])

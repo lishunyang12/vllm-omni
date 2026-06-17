@@ -20,18 +20,12 @@ from vllm_omni.interaction.backend import ModelBackend
 
 @dataclass
 class WorkingChunk:
-    """Live frames + dialogue for the current chunk."""
+    """The HTTP transport's live chunk: frames + the multi-turn message buffer."""
 
     #: ``(time_range, image_data_url)`` for every frame in the chunk.
     frames: list[tuple[str, str]] = field(default_factory=list)
     #: Internal chat messages (user frame turns + assistant replies).
     messages: list[dict[str, Any]] = field(default_factory=list)
-    #: ``(time_range, response_text)`` spoken while the current query was active.
-    response_records: list[tuple[str, str]] = field(default_factory=list)
-
-    @property
-    def frame_count(self) -> int:
-        return len(self.frames)
 
 
 @dataclass

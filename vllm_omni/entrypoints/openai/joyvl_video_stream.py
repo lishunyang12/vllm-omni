@@ -19,9 +19,9 @@ from vllm_omni.entrypoints.openai.video_stream_base import (
     StreamingVideoSessionConfig,
     VideoStreamTurnTrigger,
 )
-from vllm_omni.interaction.output_parser import Action, parse_action
-from vllm_omni.interaction.prompts import SYSTEM_PROMPTS, USER_QUERY_HEADER
+from vllm_omni.interaction.prompts import SYSTEM_PROMPTS
 from vllm_omni.interaction.state import InteractionBrain
+from vllm_omni.interaction.turn import build_user_content, commit_turn, sample_frames
 
 _DEFAULT_PERSONA = "default"
 _FRAME_SECONDS = 1.0
@@ -62,32 +62,14 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         brain: InteractionBrain = message_history
         brain.update_query(query_text)
-
         system_prompt = config.system_prompt or SYSTEM_PROMPTS.get(self.persona, SYSTEM_PROMPTS["default"])
-        messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
-
-        user_content: list[dict[str, Any]] = []
-        prefix = brain.build_prefix()
-        if prefix:
-            user_content.append({"type": "text", "text": prefix})
-
-        user_content.extend(self._frame_parts(frame_buffer, config, prewarmed_frames))
-
-        # The active query rides in the turn message while its chunk is live
-        # (this transport keeps no per-turn history); it moves into the stable
-        # head once the chunk is evicted.
-        if brain.current_query and brain.query_in_current_chunk:
-            user_content.append({"type": "text", "text": f"{USER_QUERY_HEADER}\n{brain.current_query}"})
-
-        user_message = {"role": "user", "content": user_content}
-        messages.append(user_message)
-        return messages, user_message
+        parts = self._frame_parts(frame_buffer, config.num_frames, prewarmed_frames)
+        user_message = {"role": "user", "content": build_user_content(brain, parts)}
+        return [{"role": "system", "content": system_prompt}, user_message], user_message
 
     def on_turn_complete(self, message_history: Any, user_message: dict[str, Any], response_text: str) -> None:
         brain: InteractionBrain = message_history
-        action = parse_action(response_text)
-        if action.action is not Action.SILENCE and brain.current_query:
-            brain.record_response(action.text)
+        commit_turn(brain, response_text)
         if brain.should_flush():
             # Async so chunk summarization (when a summarizer is wired) hides
             # behind the next turn's inference rather than blocking it.
@@ -98,20 +80,14 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
     def _frame_parts(
         self,
         frame_buffer: list[str],
-        config: StreamingVideoSessionConfig,
+        num_frames: int,
         prewarmed_frames: dict[str, tuple[Any, str]],
     ) -> list[dict[str, Any]]:
-        n = len(frame_buffer)
-        if n <= config.num_frames:
-            frames = list(frame_buffer)
-        else:
-            stride = max(1, n // config.num_frames)
-            idx = [i * stride for i in range(config.num_frames - 1)] + [n - 1]
-            frames = [frame_buffer[i] for i in idx]
-
+        # Frame parts are transport-specific: this path can reuse prewarmed PIL
+        # decodes (image_pil) to skip re-decoding base64 at query time.
         prewarmed = prewarmed_frames or {}
         parts: list[dict[str, Any]] = []
-        for frame_b64 in frames:
+        for frame_b64 in sample_frames(frame_buffer, num_frames):
             cached = prewarmed.get(frame_b64)
             if cached is _BAD_FRAME:
                 continue
