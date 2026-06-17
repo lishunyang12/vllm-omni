@@ -177,6 +177,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "examples/**" = ["E501"]  # Allow long lines in examples
 "tests/**" = ["E501"]  # Allow long lines in tests
+# Prompt prose: wrapping these lines would change the text the model reads.
+"vllm_omni/interaction/prompts.py" = ["E501"]
 # MiniCPM-o reference modeling code vendored from upstream HF/transformers/MiniCPM-o.
 # These files keep upstream conventions (star imports, long lines, math-symbol
 # argument names) so they stay easy to diff against upstream releases.
