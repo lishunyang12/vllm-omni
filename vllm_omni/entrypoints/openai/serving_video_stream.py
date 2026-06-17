@@ -26,8 +26,10 @@ Protocol:
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
+from vllm_omni.entrypoints.openai.joyvl_video_stream import JoyVLStreamingVideoHandler
 from vllm_omni.entrypoints.openai.video_stream_base import (
     _BAD_FRAME,
     _DEFAULT_CONFIG_TIMEOUT,
@@ -133,6 +135,12 @@ class QwenOmniStreamingVideoHandler(OmniStreamingVideoHandlerBase):
     _build_messages = build_engine_prompt
 
 
+_PIPELINES: dict[str, type[OmniStreamingVideoHandlerBase]] = {
+    "qwen": QwenOmniStreamingVideoHandler,
+    "joyvl": JoyVLStreamingVideoHandler,
+}
+
+
 def create_streaming_video_handler(
     chat_service: Any,
     idle_timeout: float = _DEFAULT_IDLE_TIMEOUT,
@@ -141,10 +149,12 @@ def create_streaming_video_handler(
 ) -> OmniStreamingVideoHandlerBase:
     """Create the handler for ``/v1/video/chat/stream``.
 
-    Returns :class:`QwenOmniStreamingVideoHandler` today. Additional pipelines
-    can be selected here in follow-up PRs.
+    Defaults to :class:`QwenOmniStreamingVideoHandler`; set
+    ``VLLM_OMNI_VIDEO_STREAM_PIPELINE=joyvl`` to use the proactive JoyVL handler.
     """
-    return QwenOmniStreamingVideoHandler(
+    pipeline = os.getenv("VLLM_OMNI_VIDEO_STREAM_PIPELINE", "qwen").lower()
+    handler_cls = _PIPELINES.get(pipeline, QwenOmniStreamingVideoHandler)
+    return handler_cls(
         chat_service=chat_service,
         idle_timeout=idle_timeout,
         config_timeout=config_timeout,
