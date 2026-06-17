@@ -67,4 +67,19 @@ TTS_URL=ws://127.0.0.1:8092/v1/tts bash scripts/start_server.sh   # (in the webu
 ```
 
 `tts_bridge.py` is standalone (`aiohttp`), so it can also front any other
-`/v1/audio/speech/stream` backend. ASR (Qwen3-ASR) wiring is the next step.
+`/v1/audio/speech/stream` backend.
+
+## Voice input (ASR) with the JD webui
+
+Symmetric to TTS. `asr_bridge.py` translates the webui's `ASR_URL` protocol
+(binary `>iii`+PCM16 frames in, `IS_PARTIAL`/`IS_FINAL` JSON out) to an
+OpenAI-compatible `/v1/audio/transcriptions` backend:
+
+```bash
+python asr_bridge.py --backend-url http://<asr-host>:<port> --model qwen3-asr   # :8093
+ASR_URL=ws://127.0.0.1:8093/v1/asr bash scripts/start_server.sh                 # (in the webui repo)
+```
+
+Note: vLLM-Omni does not yet ship a standalone Qwen3-ASR server (ASR lives inside
+Qwen3-Omni / the realtime transcription path), so the bridge needs a transcription
+endpoint pointed at it. Voice input is optional — typed queries work without ASR.
