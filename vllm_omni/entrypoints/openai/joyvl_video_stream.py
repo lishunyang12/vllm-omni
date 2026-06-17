@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""JoyVL streaming-video handler on the shared OmniStreamingVideoHandler base.
+"""JoyVL streaming-video transport on the shared OmniStreamingVideoHandler base.
 
-JoyVL is proactive: every free tick it decides speak / silence / delegate from
-the control tokens, instead of waiting for a ``video.query``. The decision lives
-in the model; this handler only triggers per tick, assembles a stable-head /
-append-only prompt (system + memory prefix, then the changing frames) for
-prefix-cache reuse, and folds spoken turns into Q&A memory via InteractionBrain."""
+A thin shim over :class:`JoyVLPolicy`: it triggers a turn per tick, maps the
+frame buffer to engine prompt parts, and routes the model output back through
+the policy. All JoyVL decision/memory/delegation logic lives in the policy."""
 
 from __future__ import annotations
 
@@ -19,9 +17,9 @@ from vllm_omni.entrypoints.openai.video_stream_base import (
     StreamingVideoSessionConfig,
     VideoStreamTurnTrigger,
 )
-from vllm_omni.interaction.prompts import SYSTEM_PROMPTS
-from vllm_omni.interaction.state import InteractionBrain
-from vllm_omni.interaction.turn import build_user_content, commit_turn, sample_frames
+from vllm_omni.interaction.delegation import StubDelegationBridge
+from vllm_omni.interaction.output_parser import ParsedAction
+from vllm_omni.interaction.policy import JoyVLPolicy, sample_frames
 
 _DEFAULT_PERSONA = "default"
 _FRAME_SECONDS = 1.0
@@ -34,21 +32,24 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
     persona: str = _DEFAULT_PERSONA
     chunk_frames: int = _CHUNK_FRAMES
 
-    # ----- pipeline hooks ------------------------------------------------- #
-
     def create_message_history(self, config: StreamingVideoSessionConfig) -> Any:
-        # No summarizer wired on the WS base yet, so flush archives Q&A only
-        # (mid/long-term activate once a summarizer is injected here).
-        return InteractionBrain(chunk_frames=self.chunk_frames, frame_seconds=_FRAME_SECONDS)
+        # No summarizer on the WS base yet, so flush archives Q&A only;
+        # mid/long-term activate once one is passed here.
+        return JoyVLPolicy(
+            persona=self.persona,
+            system_prompt=config.system_prompt,
+            num_frames=config.num_frames,
+            chunk_frames=self.chunk_frames,
+            frame_seconds=_FRAME_SECONDS,
+            delegation=StubDelegationBridge(),
+        )
 
     def should_trigger_turn(self, trigger: VideoStreamTurnTrigger) -> bool:
         # Proactive: run a turn whenever the model is free and a frame exists.
-        # The model itself emits </silence> when there is nothing to say, so we
-        # do not gate on a pending user query.
         return not trigger.is_generating and trigger.frame_count >= 1
 
     def on_frame_buffered(self, raw_bytes: bytes, frame_b64: str, message_history: Any, config) -> None:
-        if isinstance(message_history, InteractionBrain):
+        if isinstance(message_history, JoyVLPolicy):
             message_history.tick()
 
     def build_engine_prompt(
@@ -60,22 +61,22 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
         query_text: str,
         prewarmed_frames: dict[str, tuple[Any, str]],
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        brain: InteractionBrain = message_history
-        brain.update_query(query_text)
-        system_prompt = config.system_prompt or SYSTEM_PROMPTS.get(self.persona, SYSTEM_PROMPTS["default"])
-        parts = self._frame_parts(frame_buffer, config.num_frames, prewarmed_frames)
-        user_message = {"role": "user", "content": build_user_content(brain, parts)}
-        return [{"role": "system", "content": system_prompt}, user_message], user_message
+        policy: JoyVLPolicy = message_history
+        policy.set_query(query_text)
+        return policy.build_messages(self._frame_parts(frame_buffer, policy.num_frames, prewarmed_frames))
 
     def on_turn_complete(self, message_history: Any, user_message: dict[str, Any], response_text: str) -> None:
-        brain: InteractionBrain = message_history
-        commit_turn(brain, response_text)
-        if brain.should_flush():
-            # Async so chunk summarization (when a summarizer is wired) hides
-            # behind the next turn's inference rather than blocking it.
-            asyncio.create_task(brain.flush([]))
+        policy: JoyVLPolicy = message_history
+        action = policy.commit(response_text)
+        # The base hooks are sync; run the async lifecycle (delegation + chunk
+        # flush) off-thread so it hides behind the next turn's inference.
+        asyncio.create_task(self._post_turn(policy, action))
 
-    # ----- helpers -------------------------------------------------------- #
+    async def _post_turn(self, policy: JoyVLPolicy, action: ParsedAction) -> None:
+        await policy.submit_if_delegate(action)
+        await policy.fold_delegations()
+        if policy.needs_flush():
+            await policy.flush()
 
     def _frame_parts(
         self,
@@ -83,7 +84,7 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
         num_frames: int,
         prewarmed_frames: dict[str, tuple[Any, str]],
     ) -> list[dict[str, Any]]:
-        # Frame parts are transport-specific: this path can reuse prewarmed PIL
+        # Frame parts are transport-specific: this path reuses prewarmed PIL
         # decodes (image_pil) to skip re-decoding base64 at query time.
         prewarmed = prewarmed_frames or {}
         parts: list[dict[str, Any]] = []

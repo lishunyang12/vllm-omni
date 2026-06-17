@@ -1,16 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""HTTP per-session interaction loop.
+"""HTTP interaction transport — a thin shim over :class:`JoyVLPolicy`.
 
-This is the HTTP transport over the shared :class:`InteractionBrain`: it owns the
-multi-turn chunk message buffer and frame list and runs inference via a
-``ModelBackend``, but delegates all query / Q&A / memory / chunk-flush /
-delegation state to the brain so that logic lives in one place (shared with the
-streaming-video handler).
+It owns only the HTTP-specific bits: the multi-turn chunk message buffer and
+running inference via a ``ModelBackend``. Query / Q&A / memory / chunk-flush /
+delegation all live in the policy (shared with the streaming-video and
+full-duplex transports).
 
-Message layout is stable-head / append-only for prefix-cache reuse: the head
+Prompt layout is stable-head / append-only for prefix-cache reuse: the head
 (system prompt + memory prefix) only changes at chunk-flush boundaries; a newly
-issued query rides in that tick's appended message, and moves into the head once
+issued query rides in that tick's appended message and moves into the head once
 its chunk is evicted."""
 
 from __future__ import annotations
@@ -23,9 +22,9 @@ from vllm_omni.interaction.backend import ModelBackend
 from vllm_omni.interaction.config import InteractionConfig
 from vllm_omni.interaction.delegation import DelegationBridge
 from vllm_omni.interaction.memory import Summarizer, WorkingChunk
-from vllm_omni.interaction.output_parser import Action, ParsedAction, parse_action
+from vllm_omni.interaction.output_parser import Action, ParsedAction
+from vllm_omni.interaction.policy import JoyVLPolicy
 from vllm_omni.interaction.prompts import SYSTEM_PROMPTS, USER_QUERY_HEADER
-from vllm_omni.interaction.state import InteractionBrain
 
 
 @dataclass
@@ -52,7 +51,8 @@ class InteractionSession:
         self.session_id = session_id
         self.config = config
         self._backend = backend
-        self._brain = InteractionBrain(
+        self._policy = JoyVLPolicy(
+            persona=config.persona,
             summarizer=summarizer,
             delegation=delegation,
             chunk_frames=config.chunk_frames,
@@ -75,20 +75,21 @@ class InteractionSession:
     async def step(self, frames: list[str], query: str | None = None, t: float | None = None) -> StepResult:
         self.last_access = time.monotonic()
         started = time.perf_counter()
-        brain = self._brain
+        policy = self._policy
+        brain = policy.brain
 
         base = t if t is not None else brain.frame_index * self.config.frame_seconds
         time_ranges = [f"{base + i * self.config.frame_seconds:.1f}s" for i in range(len(frames))]
 
-        query_is_fresh = brain.update_query(query)
-        delegation_info = await brain.fold_delegations()
+        query_is_fresh = policy.set_query(query)
+        delegation_info = await policy.fold_delegations()
 
-        if brain.should_flush():
-            await brain.flush(self.chunk.frames)
+        if policy.needs_flush():
+            await policy.flush(self.chunk.frames)
             self.chunk = WorkingChunk()
 
         for tr, url in zip(time_ranges, frames):
-            brain.tick()
+            policy.tick()
             self.chunk.frames.append((tr, url))
         self.chunk.messages.append(self._frame_message(time_ranges, frames, include_query=query_is_fresh))
 
@@ -96,13 +97,11 @@ class InteractionSession:
             action = ParsedAction(Action.SILENCE, raw="</silence>")
             skipped = True
         else:
-            action = await self._infer()
+            action = policy.commit(await self._infer())
             skipped = False
         self.chunk.messages.append({"role": "assistant", "content": action.raw or "</silence>"})
 
-        if action.spoke:
-            brain.record_response(action.text)
-        submitted = await brain.submit_delegation(action, list(self.chunk.frames))
+        submitted = await policy.submit_if_delegate(action, list(self.chunk.frames))
         if submitted:
             delegation_info = submitted
 
@@ -121,10 +120,10 @@ class InteractionSession:
         )
 
     def reset(self) -> None:
-        self._brain.reset()
+        self._policy.brain.reset()
         self.chunk = WorkingChunk()
 
-    async def _infer(self) -> ParsedAction:
+    async def _infer(self) -> str:
         s = self.config.sampling
         extra_body = {
             "skip_special_tokens": False,
@@ -139,12 +138,12 @@ class InteractionSession:
             top_p=s.top_p,
             extra_body=extra_body,
         )
-        return parse_action(raw)
+        return raw
 
     def _build_api_messages(self) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = [{"role": "system", "content": self._system_prompt}]
         chunk_messages = [dict(m) for m in self.chunk.messages]
-        prefix = self._brain.build_prefix()
+        prefix = self._policy.brain.build_prefix()
         if prefix and chunk_messages:
             head = chunk_messages[0]
             head["content"] = [{"type": "text", "text": prefix}] + list(head["content"])
@@ -153,8 +152,9 @@ class InteractionSession:
 
     def _frame_message(self, time_ranges: list[str], frames: list[str], include_query: bool) -> dict[str, Any]:
         content: list[dict[str, Any]] = []
-        if include_query and self._brain.current_query:
-            content.append({"type": "text", "text": f"{USER_QUERY_HEADER}\n{self._brain.current_query.strip()}"})
+        query = self._policy.brain.current_query
+        if include_query and query:
+            content.append({"type": "text", "text": f"{USER_QUERY_HEADER}\n{query.strip()}"})
         for tr, url in zip(time_ranges, frames):
             content.append({"type": "text", "text": f"<{tr}>"})
             content.append({"type": "image_url", "image_url": {"url": url}})
