@@ -91,20 +91,28 @@ class InteractionBrain:
             keep_qa_history=self._keep_qa_history,
         )
 
-    async def flush(self, frames: list[tuple[str, str]]) -> None:
+    def close_chunk(self) -> int:
         self.archive_query()
-        if self._summarizer is not None and frames:
-            frame_range = f"{frames[0][0]}-{frames[-1][0]}"
-            summary = await self._summarizer.summarize_chunk(self.chunk_index, frame_range, frames)
-            self.memory.mid_term_summaries.append(MidTermSummary(self.chunk_index, frame_range, summary))
-            if len(self.memory.mid_term_summaries) >= self._long_term_every_n:
-                self.memory.long_term_memory = await self._summarizer.compress_to_long_term(
-                    self.memory.long_term_memory, self.memory.mid_term_summaries
-                )
-                self.memory.mid_term_summaries.clear()
+        closed = self.chunk_index
         self.chunk_index += 1
         self._chunk_frame_count = 0
         self.query_in_current_chunk = False
+        return closed
+
+    async def consolidate(self, chunk_index: int, frames: list[tuple[str, str]]) -> None:
+        if self._summarizer is None or not frames:
+            return
+        frame_range = f"{frames[0][0]}-{frames[-1][0]}"
+        summary = await self._summarizer.summarize_chunk(chunk_index, frame_range, frames)
+        self.memory.mid_term_summaries.append(MidTermSummary(chunk_index, frame_range, summary))
+        if len(self.memory.mid_term_summaries) >= self._long_term_every_n:
+            self.memory.long_term_memory = await self._summarizer.compress_to_long_term(
+                self.memory.long_term_memory, self.memory.mid_term_summaries
+            )
+            self.memory.mid_term_summaries.clear()
+
+    async def flush(self, frames: list[tuple[str, str]]) -> None:
+        await self.consolidate(self.close_chunk(), frames)
 
     async def submit_delegation(self, action: ParsedAction, frames: list[tuple[str, str]]) -> dict[str, Any] | None:
         if action.action is not Action.DELEGATE or self._delegation is None or not self._enable_delegation:

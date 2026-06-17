@@ -18,7 +18,7 @@ from vllm_omni.interaction.policy import JoyVLPolicy, sample_frames
 
 _DEFAULT_PERSONA = "default"
 _FRAME_SECONDS = 1.0
-_CHUNK_FRAMES = 200
+_CHUNK_FRAMES = 16
 
 
 class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):

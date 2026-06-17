@@ -88,5 +88,11 @@ class JoyVLPolicy:
     def needs_flush(self) -> bool:
         return self.brain.should_flush()
 
+    def close_chunk(self) -> int:
+        return self.brain.close_chunk()
+
+    async def consolidate(self, chunk_index: int, frames: list[tuple[str, str]] | None = None) -> None:
+        await self.brain.consolidate(chunk_index, frames or [])
+
     async def flush(self, frames: list[tuple[str, str]] | None = None) -> None:
         await self.brain.flush(frames or [])

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -53,6 +54,7 @@ class InteractionSession:
         self.chunk = WorkingChunk()
         self._system_prompt = config.system_prompt
         self.last_access = time.monotonic()
+        self._consolidating: set[asyncio.Task] = set()
 
     def set_persona(self, persona: str) -> bool:
         prompt = SYSTEM_PROMPTS.get(persona)
@@ -74,7 +76,7 @@ class InteractionSession:
         delegation_info = await policy.fold_delegations()
 
         if policy.needs_flush():
-            await policy.flush(self.chunk.frames)
+            self._spawn_consolidation(policy.close_chunk(), self.chunk.frames)
             self.chunk = WorkingChunk()
 
         for tr, url in zip(time_ranges, frames):
@@ -109,8 +111,16 @@ class InteractionSession:
         )
 
     def reset(self) -> None:
+        for task in self._consolidating:
+            task.cancel()
+        self._consolidating.clear()
         self._policy.brain.reset()
         self.chunk = WorkingChunk()
+
+    def _spawn_consolidation(self, chunk_index: int, frames: list[tuple[str, str]]) -> None:
+        task = asyncio.create_task(self._policy.consolidate(chunk_index, frames))
+        self._consolidating.add(task)
+        task.add_done_callback(self._consolidating.discard)
 
     async def _infer(self) -> str:
         s = self.config.sampling
