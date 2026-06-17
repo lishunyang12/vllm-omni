@@ -72,14 +72,20 @@ TTS_URL=ws://127.0.0.1:8092/v1/tts bash scripts/start_server.sh   # (in the webu
 ## Voice input (ASR) with the JD webui
 
 Symmetric to TTS. `asr_bridge.py` translates the webui's `ASR_URL` protocol
-(binary `>iii`+PCM16 frames in, `IS_PARTIAL`/`IS_FINAL` JSON out) to an
-OpenAI-compatible `/v1/audio/transcriptions` backend:
+(binary `>iii`+PCM16 frames in, `IS_PARTIAL`/`IS_FINAL` JSON out) and transcribes
+each utterance against a served **Qwen3-ASR-1.7B** — the same audio-LLM AURA runs
+as its ASR stage. Qwen3-ASR is audio-in/text-out, so the bridge calls
+chat-completions with an `input_audio` part (not whisper-style
+`/v1/audio/transcriptions`).
 
 ```bash
-python asr_bridge.py --backend-url http://<asr-host>:<port> --model qwen3-asr   # :8093
-ASR_URL=ws://127.0.0.1:8093/v1/asr bash scripts/start_server.sh                 # (in the webui repo)
+# serves Qwen3-ASR (:8094) + the bridge (:8093)
+GPU=2 bash start_asr.sh
+
+# then launch the webui pointed at the bridge
+ASR_URL=ws://127.0.0.1:8093/v1/asr bash scripts/start_server.sh   # (in the webui repo)
 ```
 
-Note: vLLM-Omni does not yet ship a standalone Qwen3-ASR server (ASR lives inside
-Qwen3-Omni / the realtime transcription path), so the bridge needs a transcription
-endpoint pointed at it. Voice input is optional — typed queries work without ASR.
+Voice input is optional — typed queries work without ASR. The bridge currently
+emits one `IS_FINAL` per utterance; streaming partials can be added on top of a
+streaming-transcription backend.

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Bridge the JoyVL webui's ASR WebSocket protocol to an OpenAI-compatible
-``/v1/audio/transcriptions`` backend (e.g. a served Qwen3-ASR).
+"""Bridge the JoyVL webui's ASR WebSocket protocol to a served Qwen3-ASR.
 
 The webui's ``ASR_URL`` streams microphone audio as binary frames
 ``struct.pack(">iii", seqid, 0, 0) + pcm16`` (a negative ``seqid`` marks the
@@ -9,9 +8,11 @@ final frame) and reads JSON results shaped like
 ``{"asr_response": {"event_type": "IS_FINAL",
 "recognition_result": {"hypothesis": [{"text": ...}]}}}``.
 
-This bridge accumulates the PCM, and on the final frame transcribes the whole
-utterance and returns one ``IS_FINAL`` result. Streaming partials can be added
-once a streaming transcription backend is available.
+Qwen3-ASR-1.7B is an audio-LLM (the same model AURA runs as its ASR stage), so
+this bridge transcribes via chat-completions with an ``input_audio`` part rather
+than a whisper-style ``/v1/audio/transcriptions`` endpoint. It accumulates the
+PCM and, on the final frame, transcribes the whole utterance and returns one
+``IS_FINAL`` result.
 
     ASR_URL=ws://127.0.0.1:8093/v1/asr
 """
@@ -19,6 +20,7 @@ once a streaming transcription backend is available.
 from __future__ import annotations
 
 import argparse
+import base64
 import io
 import json
 import struct
@@ -29,16 +31,17 @@ from aiohttp import web
 
 _HEADER = struct.Struct(">iii")
 _SAMPLE_RATE = 16000
+_DEFAULT_PROMPT = "Transcribe the audio."
 
 
-def _pcm_to_wav(pcm: bytes, sample_rate: int = _SAMPLE_RATE) -> bytes:
+def _pcm_to_wav_b64(pcm: bytes, sample_rate: int) -> str:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wav:
         wav.setnchannels(1)
         wav.setsampwidth(2)
         wav.setframerate(sample_rate)
         wav.writeframes(pcm)
-    return buf.getvalue()
+    return base64.b64encode(buf.getvalue()).decode()
 
 
 def _result(text: str, *, final: bool) -> dict:
@@ -56,15 +59,29 @@ def _result(text: str, *, final: bool) -> dict:
 async def _transcribe(cfg: dict, pcm: bytes) -> str:
     if not pcm:
         return ""
-    wav = _pcm_to_wav(pcm, cfg["sample_rate"])
-    form = aiohttp.FormData()
-    form.add_field("model", cfg["model"])
-    form.add_field("file", wav, filename="audio.wav", content_type="audio/wav")
-    url = cfg["backend_url"].rstrip("/") + "/v1/audio/transcriptions"
+    wav_b64 = _pcm_to_wav_b64(pcm, cfg["sample_rate"])
+    body = {
+        "model": cfg["model"],
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_audio", "input_audio": {"data": wav_b64, "format": "wav"}},
+                    {"type": "text", "text": cfg["prompt"]},
+                ],
+            }
+        ],
+        "temperature": 0.0,
+        "max_tokens": cfg["max_tokens"],
+    }
+    url = cfg["backend_url"].rstrip("/") + "/v1/chat/completions"
     async with aiohttp.ClientSession() as session:
-        async with session.post(url, data=form) as resp:
+        async with session.post(url, json=body) as resp:
             payload = await resp.json()
-    return (payload.get("text") or "").strip()
+    choices = payload.get("choices") or []
+    if not choices:
+        return ""
+    return (choices[0].get("message", {}).get("content") or "").strip()
 
 
 async def _handle(request: web.Request) -> web.WebSocketResponse:
@@ -89,22 +106,31 @@ async def _handle(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
-def create_app(backend_url: str, model: str, sample_rate: int) -> web.Application:
+def create_app(backend_url: str, model: str, sample_rate: int, prompt: str, max_tokens: int) -> web.Application:
     app = web.Application()
-    app["cfg"] = {"backend_url": backend_url, "model": model, "sample_rate": sample_rate}
+    app["cfg"] = {
+        "backend_url": backend_url,
+        "model": model,
+        "sample_rate": sample_rate,
+        "prompt": prompt,
+        "max_tokens": max_tokens,
+    }
     app.router.add_get("/v1/asr", _handle)
     return app
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="JoyVL webui <-> ASR transcription bridge")
+    parser = argparse.ArgumentParser(description="JoyVL webui <-> Qwen3-ASR (chat input_audio) bridge")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8093)
     parser.add_argument("--backend-url", default="http://127.0.0.1:8094")
-    parser.add_argument("--model", default="qwen3-asr")
+    parser.add_argument("--model", default="Qwen/Qwen3-ASR-1.7B")
     parser.add_argument("--sample-rate", type=int, default=_SAMPLE_RATE)
+    parser.add_argument("--prompt", default=_DEFAULT_PROMPT)
+    parser.add_argument("--max-tokens", type=int, default=256)
     args = parser.parse_args()
-    web.run_app(create_app(args.backend_url, args.model, args.sample_rate), host=args.host, port=args.port)
+    app = create_app(args.backend_url, args.model, args.sample_rate, args.prompt, args.max_tokens)
+    web.run_app(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
