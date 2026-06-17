@@ -17,7 +17,7 @@ Choose this when you observe something worth reporting or a significant state ch
 DEFAULT_SYSTEM_PROMPT = (
     _ACTION_FORMAT + "\n\n**Delegate** — when a question is too hard or error-prone to answer reliably yourself, "
     "speak a brief note that you're delegating, then hand the question to the background solver:\n"
-    "</response> Brief note that you're delegating. <delegation> <the question>"
+    "</response> Brief note that you're delegating. </delegation> <the question>"
 )
 
 SILENT_SYSTEM_PROMPT = (

@@ -8,7 +8,8 @@ from dataclasses import dataclass
 
 SILENCE_TOKEN = "</silence>"
 RESPONSE_TOKEN = "</response>"
-DELEGATION_TAG = "<delegation>"
+DELEGATION_TAG = "</delegation>"
+_DELEGATION_MARKERS = ("</delegation>", "<delegation>")
 
 
 class Action(enum.Enum):
@@ -42,14 +43,15 @@ def parse_action(raw: str) -> ParsedAction:
         return ParsedAction(Action.SILENCE, raw=raw)
 
     payload = text[marker + len(RESPONSE_TOKEN) :].strip()
-    if DELEGATION_TAG in payload:
-        note, question = payload.split(DELEGATION_TAG, 1)
-        return ParsedAction(
-            Action.DELEGATE,
-            text=_collapse(note),
-            delegated_question=_collapse(question) or None,
-            raw=raw,
-        )
+    for tag in _DELEGATION_MARKERS:
+        if tag in payload:
+            note, question = payload.split(tag, 1)
+            return ParsedAction(
+                Action.DELEGATE,
+                text=_collapse(note),
+                delegated_question=_collapse(question) or None,
+                raw=raw,
+            )
     return ParsedAction(Action.RESPONSE, text=_collapse(payload), raw=raw)
 
 
