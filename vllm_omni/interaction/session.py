@@ -1,16 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""HTTP interaction transport — a thin shim over :class:`JoyVLPolicy`.
-
-It owns only the HTTP-specific bits: the multi-turn chunk message buffer and
-running inference via a ``ModelBackend``. Query / Q&A / memory / chunk-flush /
-delegation all live in the policy (shared with the streaming-video and
-full-duplex transports).
-
-Prompt layout is stable-head / append-only for prefix-cache reuse: the head
-(system prompt + memory prefix) only changes at chunk-flush boundaries; a newly
-issued query rides in that tick's appended message and moves into the head once
-its chunk is evicted."""
 
 from __future__ import annotations
 
@@ -61,7 +50,7 @@ class InteractionSession:
             frame_seconds=config.frame_seconds,
             enable_delegation=config.enable_delegation,
         )
-        self.chunk = WorkingChunk()  # transport-local: multi-turn messages + frames
+        self.chunk = WorkingChunk()
         self._system_prompt = config.system_prompt
         self.last_access = time.monotonic()
 

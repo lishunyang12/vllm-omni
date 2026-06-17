@@ -1,12 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Parse the interaction model's per-tick control tokens into an action.
-
-The model emits one of ``</silence>``, ``</response> <text>``, or
-``</response> <note> <delegation> <question>``. It must be served with
-``skip_special_tokens=False`` so the tokens survive into the completion;
-if they are stripped, any non-empty text is treated as a response.
-"""
 
 from __future__ import annotations
 
@@ -61,7 +54,6 @@ def parse_action(raw: str) -> ParsedAction:
 
 
 def to_token_form(action: ParsedAction) -> str:
-    """Serialize back to the model's control-token form (what UIs expect)."""
     if action.action is Action.SILENCE:
         return SILENCE_TOKEN
     if action.action is Action.DELEGATE:

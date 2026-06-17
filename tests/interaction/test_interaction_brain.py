@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Unit tests for the shared InteractionBrain core."""
 
 import pytest
 
@@ -39,7 +38,7 @@ def test_query_freshness_and_archive_on_change():
     assert b.update_query("count bottles") is True
     assert b.update_query("count bottles") is False
     b.record_response("1 bottle")
-    assert b.update_query("now describe") is True  # change -> archives previous
+    assert b.update_query("now describe") is True
     assert b.memory.qa_history[-1].query == "count bottles"
     assert b.memory.qa_history[-1].responses == [("0.0s", "1 bottle")]
 
@@ -48,9 +47,9 @@ def test_fresh_query_rides_then_carries_into_head():
     b = InteractionBrain(frame_seconds=1.0)
     b.tick(3)
     b.update_query("alert me if a fire breaks out")
-    assert "alert me if a fire breaks out" not in b.build_prefix()  # fresh -> not in head
+    assert "alert me if a fire breaks out" not in b.build_prefix()
     b.record_response("a fire is breaking out")
-    b.query_in_current_chunk = False  # simulate chunk boundary having passed
+    b.query_in_current_chunk = False
     prefix = b.build_prefix()
     assert "alert me if a fire breaks out" in prefix
 
@@ -66,8 +65,8 @@ async def test_flush_archives_qa_and_summarizes():
     await b.flush([("0.0s", "u0"), ("2.0s", "u2")])
     assert summ.chunks == 1
     assert b.chunk_index == 2
-    assert b.should_flush() is False  # counter reset
-    assert b.memory.qa_history[-1].responses == [("2.0s", "a person enters")]  # last frame seen
+    assert b.should_flush() is False
+    assert b.memory.qa_history[-1].responses == [("2.0s", "a person enters")]
     assert len(b.memory.mid_term_summaries) == 1
 
 
@@ -78,7 +77,7 @@ async def test_long_term_compression_after_n_chunks():
     for _ in range(2):
         await b.flush([("0.0s", "u")])
     assert b.memory.long_term_memory.startswith("compressed(")
-    assert b.memory.mid_term_summaries == []  # rolled into long-term
+    assert b.memory.mid_term_summaries == []
 
 
 @pytest.mark.asyncio

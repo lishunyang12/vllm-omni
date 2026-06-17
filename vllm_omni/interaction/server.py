@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""OpenAI-compatible front end for the interaction loop.
-
-Each ``/v1/chat/completions`` call is one tick: the request carries the current
-frame(s) as ``image_url`` content and an optional text query; the response is the
-model's action (spoken text, or empty on silence) plus an ``interaction`` field
-with the raw action, memory snapshot, and any delegation. Sessions are keyed by
-the ``X-Session-Id`` header (or ``session_id``/``user`` in the body).
-"""
 
 from __future__ import annotations
 
@@ -129,8 +121,6 @@ def _completion_response(model: str, result: StepResult) -> dict[str, Any]:
         "object": "chat.completion",
         "created": int(time.time()),
         "model": model,
-        # Control-token form (</silence> / </response> ...): the live-vlm webui and
-        # the reference adapter both parse these out of `content` themselves.
         "choices": [
             {
                 "index": 0,
@@ -139,12 +129,10 @@ def _completion_response(model: str, result: StepResult) -> dict[str, Any]:
             }
         ],
         "usage": None,
-        # streamingharness: consumed by the webui for the memory/latency panels.
         "streamingharness": {
             "memory": memory,
             "timing": {"adapter_total_ms": result.latency_ms},
         },
-        # interaction: structured view for programmatic clients (our own demos).
         "interaction": {
             "action": action.action.value,
             "spoke": action.spoke,

@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Three-tier memory: working chunk (raw frames) -> mid-term (one text summary
-per evicted chunk) -> long-term (mid-terms periodically compressed). Tiers above
-the working chunk are text, assembled by ``build_memory_prefix`` into the stable
-head so the engine's prefix cache is reused across ticks."""
 
 from __future__ import annotations
 
@@ -13,18 +9,11 @@ from typing import Any
 from vllm_omni.interaction import prompts
 from vllm_omni.interaction.backend import ModelBackend
 
-# --------------------------------------------------------------------------- #
-# State containers
-# --------------------------------------------------------------------------- #
-
 
 @dataclass
 class WorkingChunk:
-    """The HTTP transport's live chunk: frames + the multi-turn message buffer."""
-
-    #: ``(time_range, image_data_url)`` for every frame in the chunk.
     frames: list[tuple[str, str]] = field(default_factory=list)
-    #: Internal chat messages (user frame turns + assistant replies).
+
     messages: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -49,11 +38,6 @@ class SessionMemory:
     qa_history: list[QAEntry] = field(default_factory=list)
 
 
-# --------------------------------------------------------------------------- #
-# Prefix assembly (prefix-cache friendly)
-# --------------------------------------------------------------------------- #
-
-
 def build_memory_prefix(
     memory: SessionMemory,
     *,
@@ -61,10 +45,6 @@ def build_memory_prefix(
     include_query: bool,
     keep_qa_history: bool,
 ) -> str:
-    """Build the text prefix (video history + Q&A history + current query).
-
-    Returned text is injected ahead of the first frame in the chunk.
-    """
     sections: list[str] = []
 
     history_parts: list[str] = []
@@ -90,13 +70,7 @@ def build_memory_prefix(
     return "\n\n".join(sections)
 
 
-# --------------------------------------------------------------------------- #
-# Summarizer (mid-term + long-term consolidation)
-# --------------------------------------------------------------------------- #
-
-
 def _sample_indices(n: int, budget: int) -> list[int]:
-    """Uniformly sample up to ``budget`` indices from ``range(n)``."""
     if n == 0 or budget <= 0:
         return []
     if n <= budget:
@@ -107,12 +81,6 @@ def _sample_indices(n: int, budget: int) -> list[int]:
 
 
 class Summarizer:
-    """Builds mid-term chunk summaries and compresses them into long-term memory.
-
-    Runs against any chat backend (often a small Qwen3-VL served alongside the
-    main model, or the main model itself).
-    """
-
     def __init__(
         self,
         backend: ModelBackend,
@@ -134,7 +102,6 @@ class Summarizer:
         frame_range: str,
         frames: list[tuple[str, str]],
     ) -> str:
-        """Produce a mid-term text summary for one evicted chunk."""
         if not frames:
             return prompts.EMPTY_CHUNK_SUMMARY.format(frame_range=frame_range)
 
@@ -163,7 +130,6 @@ class Summarizer:
         existing_long_term: str,
         mid_terms: list[MidTermSummary],
     ) -> str:
-        """Compress new mid-term summaries and append to long-term memory."""
         if not mid_terms:
             return existing_long_term
 

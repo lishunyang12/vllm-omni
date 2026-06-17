@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Unit tests for the consolidated JoyVLPolicy."""
 
 import pytest
 
@@ -20,7 +19,7 @@ def test_build_messages_stable_head_and_query():
     p.set_query("count the bottles")
     msgs, user = p.build_messages([{"type": "image_url", "image_url": {"url": "x"}}])
     assert msgs[0]["role"] == "system" and "</silence>" in msgs[0]["content"]
-    # fresh query rides in the turn message, not the head prefix
+
     assert any("count the bottles" in part.get("text", "") for part in user["content"])
 
 

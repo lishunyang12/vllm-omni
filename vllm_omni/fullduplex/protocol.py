@@ -1,26 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Realtime event vocabulary for the duplex runtime.
-
-Aligned with the OpenAI Realtime-style events the demos use; transports
-(``/v1/duplex``, ``/v1/realtime?duplex=1``) translate their wire JSON to/from
-these. Kept as plain string types + dict builders so any transport can map them."""
 
 from __future__ import annotations
 
 from typing import Any
 
-# client -> server
-INPUT_APPEND = "input.append"  # {"modality","data"}
+INPUT_APPEND = "input.append"
 INPUT_COMMIT = "input.commit"
 RESPONSE_CREATE = "response.create"
-RESPONSE_CANCEL = "response.cancel"  # barge-in
-PLAYBACK_ACK = "playback.ack"  # {"cursor"}
+RESPONSE_CANCEL = "response.cancel"
+PLAYBACK_ACK = "playback.ack"
 CLOSE = "close"
 
-# server -> client
+
 RESPONSE_CREATED = "response.created"
-RESPONSE_DELTA = "response.delta"  # {"modality","data"}; audio uses response.audio.delta downstream
+RESPONSE_DELTA = "response.delta"
 RESPONSE_DONE = "response.done"
 RESPONSE_CANCELLED = "response.cancelled"
 ERROR = "error"

@@ -1,17 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Transport-agnostic interaction core.
-
-``InteractionBrain`` owns everything that is *not* prompt assembly or inference:
-the three-tier memory, the current-query / Q&A bookkeeping, chunk-flush +
-summarization, and the delegation bridge. Both the HTTP session and the
-streaming-video handler delegate to it, so the per-tick state machine (and the
-sliding QA history the prefix cache reuses) lives in exactly one place.
-
-It is frame-agnostic: each transport manages its own frame buffer and passes the
-frames to summarize into :meth:`flush`. ``flush`` is async (summarization calls a
-model); the HTTP path ``await``s it, the sync WS hooks schedule it as a task.
-"""
 
 from __future__ import annotations
 
@@ -60,14 +48,10 @@ class InteractionBrain:
         self.response_records: list[tuple[str, str]] = []
         self._pending_delegations: list[dict[str, str]] = []
 
-    # ----- time / frames -------------------------------------------------- #
-
     def now(self) -> str:
-        """Timestamp of the next frame (used for a query as it arrives)."""
         return f"{self.frame_index * self._frame_seconds:.1f}s"
 
     def last_frame_time(self) -> str:
-        """Timestamp of the most recently seen frame (used for a response)."""
         return f"{max(0, self.frame_index - 1) * self._frame_seconds:.1f}s"
 
     def tick(self, n: int = 1) -> None:
@@ -77,10 +61,7 @@ class InteractionBrain:
     def should_flush(self) -> bool:
         return self._chunk_frames > 0 and self._chunk_frame_count >= self._chunk_frames
 
-    # ----- query / Q&A ---------------------------------------------------- #
-
     def update_query(self, query: str | None) -> bool:
-        """Adopt a new/changed query; archive the previous one. Returns True if fresh."""
         q = (query or "").strip()
         if not q or q == self.current_query:
             return False
@@ -110,11 +91,7 @@ class InteractionBrain:
             keep_qa_history=self._keep_qa_history,
         )
 
-    # ----- chunk flush / summarization ------------------------------------ #
-
     async def flush(self, frames: list[tuple[str, str]]) -> None:
-        """Evict the current chunk: archive Q&A and (if a summarizer is wired)
-        fold the chunk's frames into mid-/long-term memory."""
         self.archive_query()
         if self._summarizer is not None and frames:
             frame_range = f"{frames[0][0]}-{frames[-1][0]}"
@@ -128,8 +105,6 @@ class InteractionBrain:
         self.chunk_index += 1
         self._chunk_frame_count = 0
         self.query_in_current_chunk = False
-
-    # ----- delegation ----------------------------------------------------- #
 
     async def submit_delegation(self, action: ParsedAction, frames: list[tuple[str, str]]) -> dict[str, Any] | None:
         if action.action is not Action.DELEGATE or self._delegation is None or not self._enable_delegation:

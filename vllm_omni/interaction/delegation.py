@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Background-agent delegation bridge: a background-agnostic text contract
-(question in, digest out) so a hard task runs async while the real-time loop
-stays live. ``StubDelegationBridge`` fulfils it with a canned digest; implement
-``DelegationBridge`` to wire a real agent/API."""
 
 from __future__ import annotations
 
@@ -14,7 +10,7 @@ from typing import Any, Protocol
 @dataclass
 class DelegationResult:
     task_id: str
-    status: str  # "pending" | "ready" | "error"
+    status: str
     digest: str = ""
 
     @property
@@ -23,24 +19,12 @@ class DelegationResult:
 
 
 class DelegationBridge(Protocol):
-    """Async background-brain contract."""
+    async def submit(self, question: str, note: str, frames: list[tuple[str, str]]) -> str: ...
 
-    async def submit(self, question: str, note: str, frames: list[tuple[str, str]]) -> str:
-        """Accept a delegated question; return a task id."""
-        ...
-
-    async def poll(self, task_id: str) -> DelegationResult:
-        """Return the current status/digest for a previously submitted task."""
-        ...
+    async def poll(self, task_id: str) -> DelegationResult: ...
 
 
 class StubDelegationBridge:
-    """A placeholder brain: marks a task ready after ``ready_after_ticks`` polls.
-
-    Replace with a bridge to a real agent/API by implementing
-    :class:`DelegationBridge`.
-    """
-
     def __init__(self, ready_after_ticks: int = 2) -> None:
         self._ready_after = max(1, ready_after_ticks)
         self._tasks: dict[str, dict[str, Any]] = {}

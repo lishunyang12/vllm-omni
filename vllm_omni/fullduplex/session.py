@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Full-duplex session lifecycle state (model-agnostic)."""
 
 from __future__ import annotations
 
@@ -20,8 +19,7 @@ class DuplexSessionConfig:
     input_modalities: tuple[str, ...] = ("audio",)
     output_modalities: tuple[str, ...] = ("audio",)
     sample_rate: int = 24000
-    #: When True the adapter may start a response on its own (proactive), e.g.
-    #: JoyVL per-tick; when False responses start only on an explicit commit.
+
     proactive: bool = False
 
 
@@ -30,15 +28,13 @@ class DuplexSession:
     session_id: str
     config: DuplexSessionConfig = field(default_factory=DuplexSessionConfig)
     state: DuplexState = DuplexState.IDLE
-    #: Bumped on every barge-in/cancel; output produced under a stale epoch is
-    #: dropped, which is how interruption invalidates in-flight responses.
+
     epoch: int = 0
     response_index: int = 0
-    #: How much produced output the client has acknowledged playing back.
+
     playback_cursor: int = 0
 
     def begin_response(self) -> tuple[int, int]:
-        """Start a new response; return its (response_index, epoch) for staleness checks."""
         self.response_index += 1
         self.state = DuplexState.RESPONDING
         return self.response_index, self.epoch
@@ -48,7 +44,6 @@ class DuplexSession:
             self.state = DuplexState.LISTENING
 
     def barge_in(self) -> int:
-        """Invalidate any in-flight response; return the new epoch."""
         self.epoch += 1
         self.state = DuplexState.LISTENING
         return self.epoch

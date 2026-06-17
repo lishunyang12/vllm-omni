@@ -1,11 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""JoyVL full-duplex adapter — a thin transport over :class:`JoyVLPolicy`.
-
-Video frames stream in, the model decides speak/silence/delegate, and text comes
-out (speech stays external — ASR/TTS bridges). All JoyVL logic lives in the
-policy; this adapter only buffers frames and runs inference via an injected async
-``generate(messages) -> str``."""
 
 from __future__ import annotations
 

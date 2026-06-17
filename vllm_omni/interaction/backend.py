@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Backend seam to the VLM. ``OpenAIBackend`` talks to a plain ``vllm serve``
-today; the in-process engine can be dropped in behind ``ModelBackend`` later."""
 
 from __future__ import annotations
 
@@ -11,8 +9,6 @@ from openai import AsyncOpenAI
 
 
 class ModelBackend(Protocol):
-    """A chat-completable VLM backend."""
-
     async def generate(
         self,
         messages: list[dict[str, Any]],
@@ -21,14 +17,10 @@ class ModelBackend(Protocol):
         temperature: float,
         top_p: float,
         extra_body: dict[str, Any] | None = None,
-    ) -> tuple[str, dict[str, Any] | None]:
-        """Return ``(completion_text, usage)`` for one chat request."""
-        ...
+    ) -> tuple[str, dict[str, Any] | None]: ...
 
 
 class OpenAIBackend:
-    """:class:`ModelBackend` backed by an OpenAI-compatible server."""
-
     def __init__(
         self,
         base_url: str,

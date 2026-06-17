@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Tests for the model-agnostic duplex runtime + the JoyVL adapter."""
 
 from collections.abc import AsyncIterator
 
@@ -30,7 +29,7 @@ def _collector():
 class _FakeAdapter:
     def __init__(self, chunks, barge_after=None):
         self._chunks = chunks
-        self._barge_after = barge_after  # index after which to self-interrupt
+        self._barge_after = barge_after
 
     def capabilities(self):
         return DuplexCapability(frozenset({"text"}), frozenset({"text"}), proactive=False)
@@ -44,7 +43,7 @@ class _FakeAdapter:
     async def respond(self, session) -> AsyncIterator[OutputChunk]:
         for i, c in enumerate(self._chunks):
             if self._barge_after is not None and i == self._barge_after:
-                session.barge_in()  # simulate an interruption arriving mid-response
+                session.barge_in()
             yield OutputChunk("text", c)
 
     async def on_barge_in(self, session):
@@ -72,8 +71,8 @@ async def test_runtime_barge_in_drops_stale_output():
     out, emit = _collector()
     await rt.run(_feed([{"type": ev.INPUT_COMMIT}, {"type": ev.CLOSE}]), emit)
     data = [e["data"] for e in out if e["type"] == ev.RESPONSE_DELTA]
-    assert data == ["a"]  # "b"/"c" produced under a stale epoch are dropped
-    assert ev.RESPONSE_DONE not in [e["type"] for e in out]  # interrupted -> no done
+    assert data == ["a"]
+    assert ev.RESPONSE_DONE not in [e["type"] for e in out]
 
 
 @pytest.mark.asyncio
@@ -99,6 +98,6 @@ async def test_joyvl_adapter_speaks_then_silences():
         emit,
     )
     deltas = [e["data"] for e in out if e["type"] == ev.RESPONSE_DELTA]
-    assert "a fire is breaking out" in deltas  # first tick spoke
-    # second video tick -> model returned </silence> -> a response opened but no text delta
+    assert "a fire is breaking out" in deltas
+
     assert deltas.count("a fire is breaking out") == 1

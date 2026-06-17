@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Streaming VL interaction serving: per-tick speak/silence/delegate over a
-continuous video stream, with three-tier memory and a delegation bridge."""
 
 from vllm_omni.interaction.config import InteractionConfig
 from vllm_omni.interaction.output_parser import (

@@ -1,10 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""JoyVL streaming-video transport on the shared OmniStreamingVideoHandler base.
-
-A thin shim over :class:`JoyVLPolicy`: it triggers a turn per tick, maps the
-frame buffer to engine prompt parts, and routes the model output back through
-the policy. All JoyVL decision/memory/delegation logic lives in the policy."""
 
 from __future__ import annotations
 
@@ -27,14 +22,10 @@ _CHUNK_FRAMES = 200
 
 
 class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
-    """Proactive JoyVL pipeline on the shared streaming-video endpoint."""
-
     persona: str = _DEFAULT_PERSONA
     chunk_frames: int = _CHUNK_FRAMES
 
     def create_message_history(self, config: StreamingVideoSessionConfig) -> Any:
-        # No summarizer on the WS base yet, so flush archives Q&A only;
-        # mid/long-term activate once one is passed here.
         return JoyVLPolicy(
             persona=self.persona,
             system_prompt=config.system_prompt,
@@ -45,7 +36,6 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
         )
 
     def should_trigger_turn(self, trigger: VideoStreamTurnTrigger) -> bool:
-        # Proactive: run a turn whenever the model is free and a frame exists.
         return not trigger.is_generating and trigger.frame_count >= 1
 
     def on_frame_buffered(self, raw_bytes: bytes, frame_b64: str, message_history: Any, config) -> None:
@@ -68,8 +58,7 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
     def on_turn_complete(self, message_history: Any, user_message: dict[str, Any], response_text: str) -> None:
         policy: JoyVLPolicy = message_history
         action = policy.commit(response_text)
-        # The base hooks are sync; run the async lifecycle (delegation + chunk
-        # flush) off-thread so it hides behind the next turn's inference.
+
         asyncio.create_task(self._post_turn(policy, action))
 
     async def _post_turn(self, policy: JoyVLPolicy, action: ParsedAction) -> None:
@@ -84,8 +73,6 @@ class JoyVLStreamingVideoHandler(OmniStreamingVideoHandler):
         num_frames: int,
         prewarmed_frames: dict[str, tuple[Any, str]],
     ) -> list[dict[str, Any]]:
-        # Frame parts are transport-specific: this path reuses prewarmed PIL
-        # decodes (image_pil) to skip re-decoding base64 at query time.
         prewarmed = prewarmed_frames or {}
         parts: list[dict[str, Any]] = []
         for frame_b64 in sample_frames(frame_buffer, num_frames):

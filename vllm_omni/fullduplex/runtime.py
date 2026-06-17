@@ -1,12 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""The transport-agnostic full-duplex event loop.
-
-Drives a :class:`DuplexSession` + :class:`DuplexAdapter` from an inbound event
-stream, emitting realtime output events. Owns the lifecycle so adapters don't:
-input append/commit, proactive responses, and epoch-based barge-in (output
-produced under a stale epoch is dropped, so a long response stays interruptible).
-A WebSocket transport just feeds it decoded events and forwards what it emits."""
 
 from __future__ import annotations
 
@@ -54,10 +47,10 @@ class DuplexRuntime:
         await emit(ev.created(response_index))
         try:
             async for chunk in self.adapter.respond(self.session):
-                if self.session.is_stale(epoch):  # barged in -> drop stale output
+                if self.session.is_stale(epoch):
                     return
                 await emit(ev.delta(response_index, chunk.modality, chunk.data))
-        except Exception as err:  # noqa: BLE001 - surface adapter failures, don't hang the session
+        except Exception as err:
             await emit(ev.error(f"response failed: {err}"))
         finally:
             if not self.session.is_stale(epoch):

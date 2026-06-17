@@ -1,10 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""System prompts, memory headers, and summarizer prompts."""
 
 from __future__ import annotations
-
-# default allows delegation; silent forbids it; talkative nudges toward commentary.
 
 _ACTION_FORMAT = """\
 You are a real-time video streaming assistant observing a continuous camera feed frame by frame. The last frame represents the current moment.
@@ -41,7 +38,6 @@ SYSTEM_PROMPTS = {
     "talkative": TALKATIVE_SYSTEM_PROMPT,
 }
 
-# memory / query headers, injected into the stable head (see memory.py)
 
 USER_QUERY_HEADER = "[User Query (IMPORTANT — follow this instruction)]"
 
@@ -59,7 +55,6 @@ QA_HISTORY_HEADER = "[Q&A History]\nThe following are previous queries and the s
 QA_QUERY_LABEL = "Query"
 QA_RESPONSE_LABEL = "Response"
 
-# summarizer prompts (mid-term per-chunk summary, long-term compression)
 
 EMPTY_CHUNK_SUMMARY = "No visually significant change is evident in frames {frame_range}."
 
