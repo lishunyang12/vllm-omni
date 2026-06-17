@@ -22,7 +22,7 @@ class InteractionBrain:
         *,
         summarizer: Summarizer | None = None,
         delegation: DelegationBridge | None = None,
-        chunk_frames: int = 200,
+        chunk_frames: int = 16,
         long_term_every_n_chunks: int = 5,
         keep_qa_history: bool = True,
         frame_seconds: float = 1.0,

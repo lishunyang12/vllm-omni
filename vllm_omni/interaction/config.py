@@ -35,7 +35,8 @@ class InteractionConfig:
     summarizer_backend_url: str | None = None
     summarizer_model: str | None = None
 
-    chunk_frames: int = 200
+    # raw-vision window; stays under --limit-mm-per-prompt, evicted chunks become summaries
+    chunk_frames: int = 16
 
     mid_term_key_frames: int = 8
 

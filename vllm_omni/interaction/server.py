@@ -193,10 +193,11 @@ def _build_config(args: argparse.Namespace) -> InteractionConfig:
         enable_memory=not args.no_memory,
         summarizer_backend_url=args.summarizer_backend_url,
         summarizer_model=args.summarizer_model,
-        chunk_frames=args.chunk_frames,
         enable_delegation=not args.no_delegation,
         force_silence_before_query=not args.no_force_silence,
     )
+    if args.chunk_frames is not None:
+        config.chunk_frames = args.chunk_frames
     config.sampling.max_tokens = args.max_tokens
     config.sampling.temperature = args.temperature
     return config
@@ -211,7 +212,7 @@ def main() -> None:
     parser.add_argument("--persona", default="default", choices=["default", "silent", "talkative"])
     parser.add_argument("--summarizer-backend-url", default=None)
     parser.add_argument("--summarizer-model", default=None)
-    parser.add_argument("--chunk-frames", type=int, default=200)
+    parser.add_argument("--chunk-frames", type=int, default=None)
     parser.add_argument("--max-tokens", type=int, default=128)
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--no-memory", action="store_true", help="disable mid/long-term summarizer memory")
