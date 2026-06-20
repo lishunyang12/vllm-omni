@@ -11,7 +11,26 @@ import logging
 import aiohttp
 from aiohttp import web
 
+try:
+    import cn2an  # optional: Arabic-digit -> Chinese number normalization
+except ImportError:
+    cn2an = None
+
 logger = logging.getLogger("tts_bridge")
+
+
+def _normalize(text: str) -> str:
+    """Spell out Arabic digits in Chinese so short counting outputs synthesize
+    intelligibly: bare "1次" garbles on Qwen3-TTS (and others), while "一次"
+    is clean. ``cn2an.transform`` rewrites digits in place ("第3次"->"第三次")
+    and is pure-Python (~microseconds). No-op if cn2an is unavailable."""
+    if not cn2an or not text:
+        return text
+    try:
+        return cn2an.transform(text, "an2cn")
+    except Exception as err:  # never let TN break synthesis
+        logger.debug("cn2an normalize skipped: %s", err)
+        return text
 
 
 async def _pump_backend_to_front(back: aiohttp.ClientWebSocketResponse, front: web.WebSocketResponse) -> None:
@@ -38,6 +57,7 @@ async def _handle(request: web.Request) -> web.WebSocketResponse:
     session = aiohttp.ClientSession()
     back: aiohttp.ClientWebSocketResponse | None = None
     pump: asyncio.Task | None = None
+    parts: list[str] = []
     try:
         async for msg in front:
             if msg.type != web.WSMsgType.TEXT:
@@ -52,8 +72,11 @@ async def _handle(request: web.Request) -> web.WebSocketResponse:
                 )
                 pump = asyncio.create_task(_pump_backend_to_front(back, front))
             elif data.get("type") == "input_text.append" and back is not None:
-                await back.send_str(json.dumps({"type": "input.text", "text": data.get("text", "")}))
+                parts.append(data.get("text", ""))
             elif data.get("type") == "input_text.commit" and back is not None:
+                # Normalize the full utterance once (digits may span chunks), then send.
+                await back.send_str(json.dumps({"type": "input.text", "text": _normalize("".join(parts))}))
+                parts = []
                 await back.send_str(json.dumps({"type": "input.done"}))
                 if pump is not None:
                     await pump
