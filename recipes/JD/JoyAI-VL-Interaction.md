@@ -53,6 +53,34 @@ all env-configurable). The JD webui frontend is external — set `WEBUI_DIR` to 
 bash examples/online_serving/joyvl_interaction/scripts/start_all.sh
 ```
 
+## Delegation (background brain)
+
+When the model judges a question too hard, it emits `</delegation> <question>` and the
+orchestrator hands it to a **background brain** — any OpenAI-compatible endpoint you
+self-host. Enable it by pointing the orchestrator at one:
+
+```bash
+python -m vllm_omni.experimental.fullduplex.joyvl.serving.server --port 8070 \
+  --main-backend-url http://127.0.0.1:8061/v1 --main-model <model-name> \
+  --delegation-backend-url <brain-endpoint>/v1 \
+  --delegation-model <brain-model> --delegation-kind chat
+```
+
+`--delegation-kind` picks the bridge:
+
+- `chat` — a stronger text/VL model answers (`/chat/completions`)
+- `image` — a text-to-image model generates a picture (`/images/generations`, e.g. Qwen-Image)
+- `edit` — an image-edit model restyles the current frame (e.g. Qwen-Image-Edit)
+- `router` — dispatch each request to chat / image / edit by inspecting it (set
+  `--delegation-image-url` / `--delegation-edit-url` for the latter two)
+
+The brain is **bring-your-own**: a larger vLLM you serve, or any OpenAI-compatible API
+(e.g. `--delegation-backend-url https://api.anthropic.com/v1/ --delegation-model claude-...
+--delegation-api-key …`). The reference deployment instead drives the `codex` CLI as the
+brain via a separate background-agent service; that agent runs with its own credentials
+and bypasses its sandbox, so it is **not bundled here** — self-host a plain
+OpenAI-compatible endpoint instead. Omit `--delegation-backend-url` to keep delegation off.
+
 ## Host a demo (Gradio)
 
 A self-contained browser demo ships in-repo — no external webui needed. It talks to the
