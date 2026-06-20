@@ -70,8 +70,8 @@ curl -s http://127.0.0.1:8070/v1/chat/completions \
 ```
 
 Send the standing instruction once (it persists for the session); subsequent turns send
-just the frame. Ready-made clients: `cli/run_cli_demo.py` (headless timeline) and
-`app.py` (Gradio). Reset a session with `POST /reset {"session_id": "..."}`.
+just the frame. Ready-made headless client: `cli/run_cli_demo.py`. Reset a session with
+`POST /reset {"session_id": "..."}`.
 
 **What to ask it** — give a standing task and let it act on its own each second:
 
@@ -119,19 +119,22 @@ brain via a separate background-agent service; that agent runs with its own cred
 and bypasses its sandbox, so it is **not bundled here** — self-host a plain
 OpenAI-compatible endpoint instead. Omit `--delegation-backend-url` to keep delegation off.
 
-## Host a demo (Gradio)
+## Host the WebUI demo
 
-A self-contained browser demo ships in-repo — no external webui needed. It talks to the
-orchestrator over its HTTP API only:
+For the full browser experience — live webcam / RTSP input, voice (ASR/TTS), and the
+per-tick decision stream — run JD's official WebUI in front of the orchestrator. Clone the
+model repo and start its WebUI pointed at the orchestrator (`:8070`):
 
 ```bash
-uv pip install vllm-omni[demo]       # gradio + opencv-python + requests
-python examples/online_serving/joyvl_interaction/app.py --server http://127.0.0.1:8070
+git clone https://github.com/jd-opensource/JoyAI-VL-Interaction.git
+cd JoyAI-VL-Interaction/services/webui
+uv venv && uv pip install -e .
+bash scripts/start_server.sh --api-base http://127.0.0.1:8070/v1
 ```
 
-Open the printed URL, upload a clip (or record from webcam), optionally give a standing
-instruction (e.g. "Alert me if a fire breaks out"), and the per-tick speak / silence /
-delegate decisions stream into a timeline. Add `--share` for a temporary public link.
+Open the printed HTTPS URL, allow the camera (or enter an RTSP URL), and give a standing
+instruction. `examples/online_serving/joyvl_interaction/scripts/start_all.sh` can launch
+the model + orchestrator + WebUI together — point `WEBUI_DIR` at your clone.
 
 ## Verification
 

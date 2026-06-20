@@ -51,7 +51,7 @@ def stream(
     """Send each sampled frame as one chat completion; yield the parsed action.
 
     ``query`` is attached to the first tick to arm the session; inject later
-    queries by posting to the server out of band (see the Gradio demo).
+    queries by posting another frame turn with a new text part.
     """
     url = server.rstrip("/") + "/v1/chat/completions"
     requests.post(server.rstrip("/") + "/reset", json={"session_id": session_id}, timeout=10)
