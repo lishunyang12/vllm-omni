@@ -182,10 +182,6 @@ def _completion_response(model: str, result: StepResult) -> dict[str, Any]:
             }
         ],
         "usage": None,
-        "streamingharness": {
-            "memory": memory,
-            "timing": {"adapter_total_ms": result.latency_ms},
-        },
         "interaction": {
             "action": action.action.value,
             "spoke": action.spoke,

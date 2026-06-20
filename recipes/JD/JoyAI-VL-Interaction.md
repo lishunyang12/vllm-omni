@@ -134,6 +134,9 @@ the audio-track caveat.
 
 - `--omni` is **not** used: the model is standard Qwen3-VL, so stock `vllm serve`
   runs the forward pass; this recipe only adds the interaction/serving layer.
+- On a host without `nvcc` / `ninja`, `vllm serve` of the 8B can crash engine-core in the
+  FlashInfer sampler JIT (`FileNotFoundError: 'ninja'`) during `profile_run`. Set
+  `VLLM_USE_FLASHINFER_SAMPLER=0` (or install `ninja`) to work around it.
 - `force_silence_before_query` is on by default — the model stays silent until an
   instruction arrives; give a standing task (e.g. "translate the on-screen text")
   to arm proactive output.
