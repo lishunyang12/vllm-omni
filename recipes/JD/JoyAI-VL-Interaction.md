@@ -53,6 +53,44 @@ all env-configurable). The JD webui frontend is external — set `WEBUI_DIR` to 
 bash examples/online_serving/joyvl_interaction/scripts/start_all.sh
 ```
 
+## Using the model
+
+The orchestrator is OpenAI-compatible: send **one user turn per video frame** (~1 fps) to
+`/v1/chat/completions` with an `x-session-id` header, and attach an optional **standing
+instruction** as a text part. Each reply carries an `interaction` block — `action` is
+`silence` / `response` / `delegate` and `text` is what to say:
+
+```bash
+curl -s http://127.0.0.1:8070/v1/chat/completions \
+  -H 'x-session-id: s1' -H 'content-type: application/json' -d '{
+    "messages": [{"role": "user", "content": [
+      {"type": "text", "text": "Alert me if a fire breaks out"},
+      {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}}
+    ]}]}' | jq .interaction
+```
+
+Send the standing instruction once (it persists for the session); subsequent turns send
+just the frame. Ready-made clients: `cli/run_cli_demo.py` (headless timeline) and
+`app.py` (Gradio). Reset a session with `POST /reset {"session_id": "..."}`.
+
+**What to ask it** — give a standing task and let it act on its own each second:
+
+- **Proactive alerting** — "tell me when someone enters", "alert me if a fire breaks out"
+- **Streaming Q&A** — ask about what's on screen; it answers once it has the evidence
+- **Time & memory** — "how many people have walked past?", "what did you see earlier?"
+  (the 3-tier summary memory lets it recall beyond the live frame window)
+- **Read & translate** — "translate the on-screen text as it appears"
+- **Delegate hard questions** — handed to a background brain (see below)
+- **Live commentary** — `--persona talkative` for continuous, danmaku-style narration
+
+**Personas** (`--persona`): `default` (speak on meaningful events or to answer), `silent`
+(answer only when asked, never delegate), `talkative` (proactively narrate).
+
+**Tuning:** `--chunk-frames` (short-term window `T_s`), `--response-dedup-threshold`
+(lower drops more near-duplicate narration), and `--no-memory` to disable the 3-tier
+summaries. The model stays silent until the first instruction arrives
+(`force_silence_before_query`, on by default).
+
 ## Delegation (background brain)
 
 When the model judges a question too hard, it emits `</delegation> <question>` and the
