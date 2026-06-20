@@ -19,6 +19,8 @@ class ModelBackend(Protocol):
         extra_body: dict[str, Any] | None = None,
     ) -> tuple[str, dict[str, Any] | None]: ...
 
+    async def aclose(self) -> None: ...
+
 
 class OpenAIBackend:
     def __init__(
@@ -53,3 +55,6 @@ class OpenAIBackend:
         text = response.choices[0].message.content or ""
         usage = response.usage.model_dump() if getattr(response, "usage", None) else None
         return text, usage
+
+    async def aclose(self) -> None:
+        await self._client.close()

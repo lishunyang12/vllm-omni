@@ -221,6 +221,56 @@ async def test_delegation_cancel_drops_task():
 
 
 @pytest.mark.asyncio
+async def test_delegation_aclose_clears_pending():
+    from vllm_omni.experimental.fullduplex.joyvl.bridges.delegation import StubDelegationBridge
+
+    b = StubDelegationBridge(ready_after_ticks=5)
+    task_id = await b.submit("q", "", [])
+    await b.aclose()
+    assert (await b.poll(task_id)).status == "error"
+
+
+@pytest.mark.asyncio
+async def test_session_reset_cancels_and_awaits_consolidation():
+    from vllm_omni.experimental.fullduplex.joyvl.serving.config import InteractionConfig
+    from vllm_omni.experimental.fullduplex.joyvl.serving.session import InteractionSession
+
+    class _Backend:
+        async def generate(self, *a, **k):
+            return "</silence>", None
+
+        async def aclose(self):
+            pass
+
+    class _Summarizer:
+        async def summarize_chunk(self, *a, **k):
+            await asyncio.sleep(100)  # hang so the consolidation task is in-flight
+            return "x"
+
+        async def compress_to_long_term(self, *a, **k):
+            return ""
+
+        async def aclose(self):
+            pass
+
+    sess = InteractionSession("s", InteractionConfig(), _Backend(), summarizer=_Summarizer())
+    sess._spawn_consolidation(1, [("0.0s", "u")])
+    assert len(sess._consolidating) == 1
+    await sess.reset()  # must cancel AND await the in-flight task, not just clear the set
+    assert len(sess._consolidating) == 0
+
+
+@pytest.mark.asyncio
+async def test_manager_aclose_closes_without_error():
+    from vllm_omni.experimental.fullduplex.joyvl.serving.config import InteractionConfig
+    from vllm_omni.experimental.fullduplex.joyvl.serving.server import SessionManager
+
+    mgr = SessionManager(InteractionConfig(enable_memory=False, enable_delegation=False))
+    await mgr.aclose()
+    await mgr.aclose()  # idempotent
+
+
+@pytest.mark.asyncio
 async def test_delegation_submit_and_fold():
     p = JoyVLPolicy(delegation=_Delegation())
     action = p.commit("</response> hold on <delegation> hard question")

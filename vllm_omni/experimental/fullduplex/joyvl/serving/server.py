@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import time
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any
 
 import uvicorn
@@ -112,21 +114,33 @@ class SessionManager:
         return session
 
     async def step(self, session_id: str, frames: list[str], query: str | None) -> StepResult:
-        self._evict_expired()
+        await self._evict_expired()
+        # capture session + lock together (no await between) so a concurrent reset cannot
+        # swap them out from under us; the lock then serializes step against reset.
         session = self._get(session_id)
-        async with self._locks[session_id]:
+        lock = self._locks[session_id]
+        async with lock:
             return await session.step(frames, query)
 
-    def reset(self, session_id: str) -> None:
-        session = self._sessions.pop(session_id, None)
-        if session is not None:
-            session.reset()
-        self._locks.pop(session_id, None)
+    async def reset(self, session_id: str) -> None:
+        # Acquire the per-session lock so reset waits for any in-flight step() to finish
+        # instead of mutating/dropping a session mid-request.
+        lock = self._locks.get(session_id)
+        if lock is None:
+            return
+        async with lock:
+            session = self._sessions.pop(session_id, None)
+            self._locks.pop(session_id, None)
+            if session is not None:
+                await session.reset()
 
-    def set_persona(self, session_id: str, persona: str) -> bool:
-        return self._get(session_id).set_persona(persona)
+    async def set_persona(self, session_id: str, persona: str) -> bool:
+        session = self._get(session_id)
+        lock = self._locks[session_id]
+        async with lock:
+            return session.set_persona(persona)
 
-    def _evict_expired(self) -> None:
+    async def _evict_expired(self) -> None:
         ttl = self.config.session_timeout_seconds
         if ttl <= 0:
             return
@@ -137,7 +151,22 @@ class SessionManager:
             if now - sess.last_access > ttl and not self._locks[sid].locked()
         ]
         for sid in expired:
-            self.reset(sid)
+            await self.reset(sid)
+
+    async def aclose(self) -> None:
+        for sid in list(self._sessions):
+            lock = self._locks.get(sid)
+            if lock is not None:
+                async with lock:
+                    session = self._sessions.pop(sid, None)
+                    self._locks.pop(sid, None)
+                    if session is not None:
+                        await session.aclose()
+        await self._backend.aclose()
+        if self._summarizer is not None:
+            await self._summarizer.aclose()
+        if self._delegation is not None:
+            await self._delegation.aclose()
 
 
 def _extract_frames_and_query(payload: dict[str, Any]) -> tuple[list[str], str | None]:
@@ -205,8 +234,17 @@ def _completion_response(model: str, result: StepResult) -> dict[str, Any]:
 
 
 def create_app(config: InteractionConfig) -> FastAPI:
-    app = FastAPI(title="vLLM-Omni Interaction Server")
     manager = SessionManager(config)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            # close httpx/AsyncOpenAI clients and cancel+await pending tasks on shutdown/reload
+            await manager.aclose()
+
+    app = FastAPI(title="vLLM-Omni Interaction Server", lifespan=lifespan)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -229,13 +267,13 @@ def create_app(config: InteractionConfig) -> FastAPI:
     @app.post("/v1/streaming/reset")
     async def reset(request: Request) -> dict[str, str]:
         payload = await request.json() if await request.body() else {}
-        manager.reset(_session_id(request, payload))
+        await manager.reset(_session_id(request, payload))
         return {"status": "reset"}
 
     @app.post("/v1/streaming/persona")
     async def persona(request: Request) -> dict[str, Any]:
         payload = await request.json() if await request.body() else {}
-        ok = manager.set_persona(_session_id(request, payload), payload.get("persona", "default"))
+        ok = await manager.set_persona(_session_id(request, payload), payload.get("persona", "default"))
         return {"status": "ok" if ok else "unknown_persona"}
 
     return app

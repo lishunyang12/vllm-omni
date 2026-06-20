@@ -19,6 +19,16 @@ def _cancel_task(tasks: dict[str, asyncio.Task], task_id: str) -> None:
         task.cancel()
 
 
+async def _aclose_tasks(tasks: dict[str, asyncio.Task]) -> None:
+    pending = list(tasks.values())
+    for task in pending:
+        if not task.done():
+            task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+    tasks.clear()
+
+
 @dataclass
 class DelegationResult:
     task_id: str
@@ -42,6 +52,10 @@ class DelegationBridge(Protocol):
         Called when a session is reset/evicted so finished-but-unpolled tasks do not
         accumulate on a long-lived shared bridge.
         """
+        ...
+
+    async def aclose(self) -> None:
+        """Cancel+await all pending tasks and close any held client (server shutdown)."""
         ...
 
 
@@ -73,6 +87,9 @@ class StubDelegationBridge:
 
     def cancel(self, task_id: str) -> None:
         self._tasks.pop(task_id, None)
+
+    async def aclose(self) -> None:
+        self._tasks.clear()
 
 
 class OpenAIDelegationBridge:
@@ -149,6 +166,10 @@ class OpenAIDelegationBridge:
     def cancel(self, task_id: str) -> None:
         _cancel_task(self._tasks, task_id)
 
+    async def aclose(self) -> None:
+        await _aclose_tasks(self._tasks)
+        await self._client.close()
+
 
 class ImageGenDelegationBridge:
     """Delegate an image-generation request to a text-to-image model over the
@@ -208,6 +229,9 @@ class ImageGenDelegationBridge:
 
     def cancel(self, task_id: str) -> None:
         _cancel_task(self._tasks, task_id)
+
+    async def aclose(self) -> None:
+        await _aclose_tasks(self._tasks)
 
 
 def _extract_image_url(data: dict[str, Any]) -> str | None:
@@ -298,6 +322,9 @@ class ImageEditDelegationBridge:
     def cancel(self, task_id: str) -> None:
         _cancel_task(self._tasks, task_id)
 
+    async def aclose(self) -> None:
+        await _aclose_tasks(self._tasks)
+
 
 _EDIT_STYLE_KW = ("卡通", "漫画", "动漫", "cartoon", "anime", "风格", "restyle", "变成", "画成")
 _EDIT_SCENE_KW = ("看到", "画面", "当前", "现在", "this", "what you see", "场景", "镜头")
@@ -354,3 +381,9 @@ class RoutingDelegationBridge:
         if entry is not None:
             bridge, inner_id = entry
             bridge.cancel(inner_id)
+
+    async def aclose(self) -> None:
+        self._route.clear()
+        for bridge in (self._chat, self._image, self._edit):
+            if bridge is not None:
+                await bridge.aclose()

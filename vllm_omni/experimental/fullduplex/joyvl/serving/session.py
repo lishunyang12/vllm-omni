@@ -114,12 +114,21 @@ class InteractionSession:
             delegation=delegation_info,
         )
 
-    def reset(self) -> None:
-        for task in self._consolidating:
-            task.cancel()
-        self._consolidating.clear()
+    async def reset(self) -> None:
+        await self._cancel_consolidation()
         self._policy.brain.reset()
         self.chunk = WorkingChunk()
+
+    async def aclose(self) -> None:
+        await self._cancel_consolidation()
+
+    async def _cancel_consolidation(self) -> None:
+        tasks = list(self._consolidating)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._consolidating.clear()
 
     def _spawn_consolidation(self, chunk_index: int, frames: list[tuple[str, str]]) -> None:
         task = asyncio.create_task(self._policy.consolidate(chunk_index, frames))

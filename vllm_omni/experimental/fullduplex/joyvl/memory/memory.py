@@ -162,6 +162,9 @@ class Summarizer:
         block = f"<{merged_range}>\n{compressed.strip()}"
         return f"{existing_long_term.rstrip()}\n\n{block}" if existing_long_term else block
 
+    async def aclose(self) -> None:
+        await self._backend.aclose()
+
 
 def _range_start(frame_range: str) -> str:
     for sep in (" ~ ", "-"):
