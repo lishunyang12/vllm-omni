@@ -39,6 +39,11 @@ class InteractionBrain:
         self.reset()
 
     def reset(self) -> None:
+        # Cancel any in-flight/finished-but-unpolled delegations so the shared bridge
+        # does not accumulate abandoned tasks when a session is reset or evicted.
+        if self._delegation is not None:
+            for task in getattr(self, "_pending_delegations", []):
+                self._delegation.cancel(task["task_id"])
         self.memory = SessionMemory()
         self.current_query: str | None = None
         self.query_time: str | None = None

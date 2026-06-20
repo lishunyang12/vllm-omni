@@ -195,6 +195,31 @@ class _Delegation:
         return DelegationResult(task_id, "ready", digest="background answer")
 
 
+def test_build_delegation_off_unless_backend_configured():
+    from vllm_omni.experimental.fullduplex.joyvl.serving.config import InteractionConfig
+    from vllm_omni.experimental.fullduplex.joyvl.serving.server import SessionManager
+
+    # No backend URL -> delegation disabled (None), NOT a silent stub that folds fake answers.
+    assert SessionManager._build_delegation(InteractionConfig()) is None
+    assert SessionManager._build_delegation(InteractionConfig(delegation_kind="router")) is None
+    # Stub only on explicit opt-in.
+    assert SessionManager._build_delegation(InteractionConfig(delegation_kind="stub")) is not None
+    # A real chat backend -> a live bridge.
+    cfg = InteractionConfig(delegation_backend_url="http://x/v1", delegation_model="m")
+    assert SessionManager._build_delegation(cfg) is not None
+
+
+@pytest.mark.asyncio
+async def test_delegation_cancel_drops_task():
+    from vllm_omni.experimental.fullduplex.joyvl.bridges.delegation import StubDelegationBridge
+
+    b = StubDelegationBridge(ready_after_ticks=1)
+    task_id = await b.submit("q", "", [])
+    b.cancel(task_id)
+    # after cancel the task is gone -> poll reports it as unknown rather than leaking
+    assert (await b.poll(task_id)).status == "error"
+
+
 @pytest.mark.asyncio
 async def test_delegation_submit_and_fold():
     p = JoyVLPolicy(delegation=_Delegation())

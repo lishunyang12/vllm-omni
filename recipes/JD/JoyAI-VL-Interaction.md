@@ -111,13 +111,16 @@ python -m vllm_omni.experimental.fullduplex.joyvl.serving.server --port 8070 \
 - `edit` — an image-edit model restyles the current frame (e.g. Qwen-Image-Edit)
 - `router` — dispatch each request to chat / image / edit by inspecting it (set
   `--delegation-image-url` / `--delegation-edit-url` for the latter two)
+- `stub` — canned answers for tests/demos only (no backend needed)
 
-The brain is **bring-your-own**: a larger vLLM you serve, or any OpenAI-compatible API
-(e.g. `--delegation-backend-url https://api.anthropic.com/v1/ --delegation-model claude-...
+`chat`/`image`/`edit`/`router` each need a backend URL — **without one, delegation stays
+off** (the model's delegate note is still spoken, but nothing is folded back). The brain is
+**bring-your-own**: a larger vLLM you serve, or any OpenAI-compatible API (e.g.
+`--delegation-backend-url https://api.anthropic.com/v1/ --delegation-model claude-...
 --delegation-api-key …`). The reference deployment instead drives the `codex` CLI as the
 brain via a separate background-agent service; that agent runs with its own credentials
 and bypasses its sandbox, so it is **not bundled here** — self-host a plain
-OpenAI-compatible endpoint instead. Omit `--delegation-backend-url` to keep delegation off.
+OpenAI-compatible endpoint instead.
 
 ## Host the WebUI demo
 

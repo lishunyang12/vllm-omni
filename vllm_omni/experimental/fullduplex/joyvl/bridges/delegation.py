@@ -13,6 +13,12 @@ from openai import AsyncOpenAI
 from vllm_omni.experimental.fullduplex.joyvl.decision.prompts import DELEGATION_SOLVER_PROMPT
 
 
+def _cancel_task(tasks: dict[str, asyncio.Task], task_id: str) -> None:
+    task = tasks.pop(task_id, None)
+    if task is not None and not task.done():
+        task.cancel()
+
+
 @dataclass
 class DelegationResult:
     task_id: str
@@ -29,6 +35,14 @@ class DelegationBridge(Protocol):
     async def submit(self, question: str, note: str, frames: list[tuple[str, str]]) -> str: ...
 
     async def poll(self, task_id: str) -> DelegationResult: ...
+
+    def cancel(self, task_id: str) -> None:
+        """Drop a task and cancel its background work if still running.
+
+        Called when a session is reset/evicted so finished-but-unpolled tasks do not
+        accumulate on a long-lived shared bridge.
+        """
+        ...
 
 
 class StubDelegationBridge:
@@ -56,6 +70,9 @@ class StubDelegationBridge:
             "ready",
             digest=f"(background result for: {question}) — stub digest; wire a real brain here.",
         )
+
+    def cancel(self, task_id: str) -> None:
+        self._tasks.pop(task_id, None)
 
 
 class OpenAIDelegationBridge:
@@ -129,6 +146,9 @@ class OpenAIDelegationBridge:
             return ""
         return (response.choices[0].message.content or "").strip()
 
+    def cancel(self, task_id: str) -> None:
+        _cancel_task(self._tasks, task_id)
+
 
 class ImageGenDelegationBridge:
     """Delegate an image-generation request to a text-to-image model over the
@@ -185,6 +205,9 @@ class ImageGenDelegationBridge:
             resp = await client.post(f"{self._base_url}/images/generations", json=payload)
             resp.raise_for_status()
             return resp.json()
+
+    def cancel(self, task_id: str) -> None:
+        _cancel_task(self._tasks, task_id)
 
 
 def _extract_image_url(data: dict[str, Any]) -> str | None:
@@ -272,6 +295,9 @@ class ImageEditDelegationBridge:
             resp.raise_for_status()
             return resp.json()
 
+    def cancel(self, task_id: str) -> None:
+        _cancel_task(self._tasks, task_id)
+
 
 _EDIT_STYLE_KW = ("卡通", "漫画", "动漫", "cartoon", "anime", "风格", "restyle", "变成", "画成")
 _EDIT_SCENE_KW = ("看到", "画面", "当前", "现在", "this", "what you see", "场景", "镜头")
@@ -322,3 +348,9 @@ class RoutingDelegationBridge:
         if res.status in ("ready", "error"):
             self._route.pop(task_id, None)
         return DelegationResult(task_id, res.status, res.digest, res.media)
+
+    def cancel(self, task_id: str) -> None:
+        entry = self._route.pop(task_id, None)
+        if entry is not None:
+            bridge, inner_id = entry
+            bridge.cancel(inner_id)

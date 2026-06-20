@@ -53,7 +53,10 @@ class SessionManager:
         self._locks: dict[str, asyncio.Lock] = {}
 
     @staticmethod
-    def _build_delegation(config: InteractionConfig) -> DelegationBridge:
+    def _build_delegation(config: InteractionConfig) -> DelegationBridge | None:
+        # Returns None (delegation off) unless a real backend is configured. The stub is
+        # only returned on explicit opt-in (--delegation-kind stub) for tests/demos — it
+        # would otherwise fold fake answers into session memory.
         kind = config.delegation_kind
         url = config.delegation_backend_url
 
@@ -66,7 +69,11 @@ class SessionManager:
                 timeout=config.request_timeout_seconds,
             )
 
+        if kind == "stub":
+            return StubDelegationBridge()
         if kind == "router":
+            if not (url or config.delegation_image_url or config.delegation_edit_url):
+                return None
             return RoutingDelegationBridge(
                 chat=chat_bridge(url) if url else None,
                 image=ImageGenDelegationBridge(config.delegation_image_url, timeout=config.request_timeout_seconds)
@@ -88,7 +95,7 @@ class SessionManager:
             )
         if url:
             return chat_bridge(url)
-        return StubDelegationBridge()
+        return None
 
     def _get(self, session_id: str) -> InteractionSession:
         session = self._sessions.get(session_id)
@@ -294,8 +301,10 @@ def main() -> None:
     parser.add_argument(
         "--delegation-kind",
         default="chat",
-        choices=["chat", "image", "edit", "router"],
-        help="chat = text/VL brain; image = text-to-image; edit = restyle the frame; router = dispatch by request",
+        choices=["chat", "image", "edit", "router", "stub"],
+        help="chat = text/VL brain; image = text-to-image; edit = restyle the frame; "
+        "router = dispatch by request; stub = canned demo/test answers. chat/image/edit/router "
+        "need a backend URL — without one, delegation stays off.",
     )
     parser.add_argument("--delegation-image-url", default=None, help="router mode: text-to-image endpoint")
     parser.add_argument("--delegation-edit-url", default=None, help="router mode: image-edit endpoint")

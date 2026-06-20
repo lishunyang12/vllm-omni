@@ -50,8 +50,13 @@ class DuplexRuntime:
         self.session.state = DuplexState.CLOSED
 
     async def _start_response(self, prev: asyncio.Task | None, emit: Emit) -> asyncio.Task:
+        # A new response supersedes any in-flight one. Mark the old response stale and
+        # cancel it (barge-in) instead of awaiting its full stream — otherwise the input
+        # loop would block until the old response finishes and could not service a
+        # cancel / barge-in event in time, breaking the full-duplex contract.
         if prev is not None and not prev.done():
-            await prev
+            await self._barge_in()
+            await self._cancel(prev)
         return asyncio.create_task(self._respond(emit))
 
     @staticmethod

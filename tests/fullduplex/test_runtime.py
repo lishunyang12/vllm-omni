@@ -121,6 +121,30 @@ async def test_runtime_cancel_event_interrupts_active_response():
 
 
 @pytest.mark.asyncio
+async def test_runtime_new_response_supersedes_inflight_without_blocking():
+    # A second response trigger arriving while the first is still streaming must
+    # supersede it (barge-in) rather than block the input loop until it finishes.
+    session = DuplexSession("s")
+    rt = DuplexRuntime(session, _SlowAdapter())
+    out, emit = _collector()
+
+    async def feed():
+        yield {"type": ev.INPUT_COMMIT}
+        await asyncio.sleep(0.03)  # let the first response emit ~one chunk
+        yield {"type": ev.INPUT_COMMIT}  # supersedes the in-flight first response
+        await asyncio.sleep(0.2)  # let the second response finish
+        yield {"type": ev.CLOSE}
+
+    await rt.run(feed(), emit)
+    created = [e for e in out if e["type"] == ev.RESPONSE_CREATED]
+    done = [e for e in out if e["type"] == ev.RESPONSE_DONE]
+    # two responses created; only the latest one completes (the first was cancelled)
+    assert len(created) == 2
+    assert len(done) == 1
+    assert done[0]["response_index"] == created[-1]["response_index"]
+
+
+@pytest.mark.asyncio
 async def test_joyvl_adapter_speaks_then_silences():
     replies = iter(["</response> a fire is breaking out", "</silence>"])
 
