@@ -56,7 +56,17 @@ def build(server_default: str) -> gr.Blocks:
         with gr.Row():
             video = gr.Video(label="Video", sources=["upload", "webcam"])
             with gr.Column():
-                query = gr.Textbox(label="Instruction (optional)", placeholder="Alert me if a fire breaks out")
+                query = gr.Textbox(label="Instruction (optional)", placeholder="实时解说我的表情和动作")
+                gr.Examples(
+                    examples=[
+                        ["实时解说我的表情和动作"],
+                        ["结合画面内容，生成一张水彩风格的图像"],
+                        ["现在我们玩一个快问快答的游戏，限时30秒，迅速回答问题，结束提醒我"],
+                        ["每当一个瓶子出现时，介绍它的样子～"],
+                    ],
+                    inputs=[query],
+                    label="Example instructions",
+                )
                 server = gr.Textbox(label="Orchestrator URL", value=server_default)
                 fps = gr.Slider(0.5, 4.0, value=1.0, step=0.5, label="Sample FPS")
                 session_id = gr.Textbox(label="Session ID", value="gradio")
