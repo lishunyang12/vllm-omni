@@ -265,7 +265,7 @@ def main() -> None:
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8070)
     parser.add_argument("--main-backend-url", default="http://127.0.0.1:8061/v1")
-    parser.add_argument("--main-model", default="")
+    parser.add_argument("--main-model", default="JoyAI-VL-Interaction-Preview")
     parser.add_argument("--persona", default="default", choices=["default", "silent", "talkative"])
     parser.add_argument("--summarizer-backend-url", default=None)
     parser.add_argument("--summarizer-model", default=None)

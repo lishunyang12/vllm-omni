@@ -21,7 +21,7 @@ class SamplingConfig:
 @dataclass
 class InteractionConfig:
     main_backend_url: str = "http://127.0.0.1:8061/v1"
-    main_model: str = ""
+    main_model: str = "JoyAI-VL-Interaction-Preview"
     api_key: str = "EMPTY"
 
     persona: str = "default"

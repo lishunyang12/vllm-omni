@@ -3,8 +3,8 @@
 # standard Qwen3-VL autoregressive model, not an omni/diffusion model).
 set -euo pipefail
 
-MODEL="${MODEL:-}"
-SERVED_NAME="${SERVED_NAME:-}"
+MODEL="${MODEL:-jdopensource/JoyAI-VL-Interaction-Preview}"
+SERVED_NAME="${SERVED_NAME:-JoyAI-VL-Interaction-Preview}"
 PORT="${PORT:-8061}"
 GPU="${GPU:-0}"
 # Covers the default short-term window (chunk_frames=100) + key_frames=0 (all frames

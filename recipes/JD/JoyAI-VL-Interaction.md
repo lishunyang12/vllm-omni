@@ -5,7 +5,7 @@
 ## Summary
 
 - Vendor: JD (Joy Future Academy)
-- Model: 8B vanilla Qwen3-VL interaction weights (checkpoint pending public release)
+- Model: [`jdopensource/JoyAI-VL-Interaction-Preview`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-Preview) (8B, vanilla Qwen3-VL weights)
 - Task: Per-tick proactive interaction over a live video stream — the model decides
   on its own each second to speak, stay silent, or delegate a hard question
 - Mode: Online serving — an OpenAI-compatible interaction orchestrator in front of
@@ -36,14 +36,14 @@ From repository root:
 # 1. Serve the model (plain `vllm serve`, NOT --omni; it is vanilla Qwen3-VL).
 #    The image limit must cover the short-term frame window (chunk_frames, default 100 = T_s);
 #    prefix caching keeps the accumulating window cheap. Lower both for smaller GPUs.
-vllm serve <model-path> \
-  --served-model-name <model-name> --port 8061 \
+vllm serve jdopensource/JoyAI-VL-Interaction-Preview \
+  --served-model-name JoyAI-VL-Interaction-Preview --port 8061 \
   --max-model-len 131072 --enable-prefix-caching \
   --limit-mm-per-prompt '{"image":256,"video":1}'
 
 # 2. Interaction orchestrator (OpenAI-compatible, :8070)
 python -m vllm_omni.experimental.fullduplex.joyvl.serving.server --port 8070 \
-  --main-backend-url http://127.0.0.1:8061/v1 --main-model <model-name>
+  --main-backend-url http://127.0.0.1:8061/v1 --main-model JoyAI-VL-Interaction-Preview
 ```
 
 Optional one-shot launch (model + orchestrator + JD webui + ASR/TTS/background,
@@ -99,7 +99,7 @@ self-host. Enable it by pointing the orchestrator at one:
 
 ```bash
 python -m vllm_omni.experimental.fullduplex.joyvl.serving.server --port 8070 \
-  --main-backend-url http://127.0.0.1:8061/v1 --main-model <model-name> \
+  --main-backend-url http://127.0.0.1:8061/v1 --main-model JoyAI-VL-Interaction-Preview \
   --delegation-backend-url <brain-endpoint>/v1 \
   --delegation-model <brain-model> --delegation-kind chat
 ```

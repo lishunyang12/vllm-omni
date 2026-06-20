@@ -4,7 +4,7 @@ set -euo pipefail
 
 PORT="${PORT:-8070}"
 MAIN_BACKEND_URL="${MAIN_BACKEND_URL:-http://127.0.0.1:8061/v1}"
-MAIN_MODEL="${MAIN_MODEL:-}"
+MAIN_MODEL="${MAIN_MODEL:-JoyAI-VL-Interaction-Preview}"
 PERSONA="${PERSONA:-default}"
 
 # By default memory reuses the main model as its own summarizer. Set
