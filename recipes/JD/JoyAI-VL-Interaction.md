@@ -87,7 +87,7 @@ A self-contained browser demo ships in-repo — no external webui needed. It tal
 orchestrator over its HTTP API only:
 
 ```bash
-pip install vllm-omni[demo]          # gradio + opencv-python + requests
+uv pip install vllm-omni[demo]       # gradio + opencv-python + requests
 python examples/online_serving/joyvl_interaction/app.py --server http://127.0.0.1:8070
 ```
 
@@ -99,7 +99,7 @@ delegate decisions stream into a timeline. Add `--share` for a temporary public 
 
 ```bash
 # headless: stream a clip and print the per-tick decision timeline
-# (the CLI reads video frames via OpenCV: `pip install opencv-python`)
+# (the CLI reads video frames via OpenCV: `uv pip install opencv-python`)
 python examples/online_serving/joyvl_interaction/cli/run_cli_demo.py \
   path/to/video.mp4 --query "Alert me if a fire breaks out"
 

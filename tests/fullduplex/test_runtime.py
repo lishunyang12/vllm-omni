@@ -12,6 +12,8 @@ from vllm_omni.experimental.fullduplex.core.runtime import DuplexRuntime
 from vllm_omni.experimental.fullduplex.core.session import DuplexSession, DuplexSessionConfig
 from vllm_omni.experimental.fullduplex.joyvl.adapter import JoyVLDuplexAdapter
 
+pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
+
 
 async def _feed(events):
     for e in events:

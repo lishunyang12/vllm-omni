@@ -13,6 +13,8 @@ from vllm_omni.experimental.fullduplex.joyvl.bridges.delegation import (
 )
 from vllm_omni.experimental.fullduplex.joyvl.decision.policy import JoyVLPolicy, sample_frames
 
+pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
+
 
 def test_sample_frames_keeps_recent():
     assert sample_frames(["a", "b"], 4) == ["a", "b"]

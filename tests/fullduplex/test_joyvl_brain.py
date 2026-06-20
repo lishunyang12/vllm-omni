@@ -6,6 +6,8 @@ import pytest
 from vllm_omni.experimental.fullduplex.joyvl.decision.output_parser import parse_action
 from vllm_omni.experimental.fullduplex.joyvl.memory.brain import InteractionBrain
 
+pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
+
 
 class _FakeSummarizer:
     def __init__(self):
