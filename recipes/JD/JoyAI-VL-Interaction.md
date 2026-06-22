@@ -206,6 +206,13 @@ the audio-track caveat.
 - `force_silence_before_query` is on by default — the model stays silent until an
   instruction arrives; give a standing task (e.g. "translate the on-screen text")
   to arm proactive output.
+- **Frame resolution is the main latency knob.** The system/memory prefix is prefix-cached,
+  so per-tick *new* compute is dominated by the new frame's vision tokens. Measured on the
+  8B: ~256×192 frames hit Qwen3-VL's min-pixel floor (~72 vision tokens, ~17 ms/tick) vs
+  ~302 tokens / ~38 ms at 640×480 — about 2× cheaper. Downsample frames to ~256×192 for the
+  tightest latency / highest concurrency; one GPU then sustains ~150–180 concurrent 1 fps
+  streams with p95 < 200 ms. Per-tick latency is already far inside the 1 fps budget, so
+  serving is rarely the bottleneck — resolution is the lever if you need more headroom.
 - Speech is external and pluggable: point `ASR_URL` / `TTS_URL` at the bridges in
   `examples/online_serving/joyvl_interaction/bridges/` or any compatible service.
 - The decision prompts, sampling, and 3-tier summary memory (`T_s=100`, mid→long every
