@@ -25,7 +25,8 @@ framework internals and how to add another full-duplex model, see
 - OS: Linux
 - Python: 3.10+
 - Hardware: 1x GPU. The default `T_s=100` frame window + `--max-model-len 131072` wants
-  ≈48GB+; for ~24GB, lower `--chunk-frames`, `--max-model-len`, and the image limit together
+  ≈48GB+; for ~24GB, lower `--chunk-frames`, `--max-model-len`, and the image limit together,
+  and/or load the weights in fp8 (see "Smaller GPU: fp8 weights" below — ~9.9 GiB vs 16.8 GiB)
 - vLLM / vLLM-Omni: versions from your current checkout
 
 ## Start server
@@ -45,6 +46,26 @@ vllm serve jdopensource/JoyAI-VL-Interaction-Preview \
 python -m vllm_omni.experimental.fullduplex.joyvl.serving.server --port 8070 \
   --main-backend-url http://127.0.0.1:8061/v1 --main-model JoyAI-VL-Interaction-Preview
 ```
+
+### Smaller GPU: fp8 weights
+
+Add `--quantization fp8` to the step-1 `vllm serve` to load the weights in fp8 online
+from the bf16 checkpoint (no separate quantized checkpoint needed; uses vLLM's generic
+fp8 path, since the model is a standard Qwen3-VL VLM):
+
+```bash
+vllm serve jdopensource/JoyAI-VL-Interaction-Preview \
+  --served-model-name JoyAI-VL-Interaction-Preview --port 8061 \
+  --quantization fp8 --max-model-len 131072 --enable-prefix-caching \
+  --limit-mm-per-prompt '{"image":256,"video":1}'
+```
+
+Measured here: model weights **9.9 GiB** vs **16.8 GiB** bf16 (**−41%**), which lets the 8B
+fit a much smaller card. This is a **memory** option, not a speed one: at one request per
+tick (the streaming regime) fp8 was **not** faster (≈19% slower in our test) because
+single-stream decode is memory-latency-bound and pays fp8's dynamic-scale overhead; its
+throughput gain needs batching. Decisions stay coherent, but fp8 can shift the
+speak/silence boundary, so for timing-critical alerting validate output against bf16 first.
 
 Optional one-shot launch (model + orchestrator + JD webui + ASR/TTS/background,
 all env-configurable). The JD webui frontend is external — set `WEBUI_DIR` to point at it:
