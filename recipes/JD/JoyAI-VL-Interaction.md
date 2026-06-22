@@ -5,7 +5,7 @@
 ## Summary
 
 - Vendor: JD (Joy Future Academy)
-- Model: [`jdopensource/JoyAI-VL-Interaction-Preview`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-Preview) (8B, vanilla Qwen3-VL weights)
+- Model: [`jdopensource/JoyAI-VL-Interaction-Preview`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-Preview) (8B, Qwen3-VL architecture with weights retrained for streaming interaction)
 - Task: Per-tick proactive interaction over a live video stream — the model decides
   on its own each second to speak, stay silent, or delegate a hard question
 - Mode: Online serving — an OpenAI-compatible interaction orchestrator in front of
@@ -33,7 +33,7 @@ framework internals and how to add another full-duplex model, see
 From repository root:
 
 ```bash
-# 1. Serve the model (plain `vllm serve`, NOT --omni; it is vanilla Qwen3-VL).
+# 1. Serve the model (plain `vllm serve`, NOT --omni; it uses the Qwen3-VL architecture).
 #    The image limit must cover the short-term frame window (chunk_frames, default 100 = T_s);
 #    prefix caching keeps the accumulating window cheap. Lower both for smaller GPUs.
 vllm serve jdopensource/JoyAI-VL-Interaction-Preview \
@@ -176,8 +176,9 @@ the audio-track caveat.
 
 ## Notes
 
-- `--omni` is **not** used: the model is standard Qwen3-VL, so stock `vllm serve`
-  runs the forward pass; this recipe only adds the interaction/serving layer.
+- `--omni` is **not** used: the model keeps the Qwen3-VL architecture (only the
+  weights are retrained), so stock `vllm serve` runs the forward pass; this recipe
+  only adds the interaction/serving layer.
 - On a host without `nvcc` / `ninja`, `vllm serve` of the 8B can crash engine-core in the
   FlashInfer sampler JIT (`FileNotFoundError: 'ninja'`) during `profile_run`. Set
   `VLLM_USE_FLASHINFER_SAMPLER=0` (or install `ninja`) to work around it.
