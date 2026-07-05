@@ -12,6 +12,34 @@
   a plain `vllm serve` backend
 - Maintainer: Community
 
+## Quick start
+
+Three commands: serve the model, start the interaction server, try it on a video.
+
+```bash
+# 1. Serve the model — fp8 shrinks the 8B to ~10 GiB of weights so it fits small cards
+#    (drop `--quantization fp8` on 48GB+ GPUs for full precision)
+vllm serve jdopensource/JoyAI-VL-Interaction-Preview \
+  --served-model-name JoyAI-VL-Interaction-Preview --port 8061 \
+  --quantization fp8 --max-model-len 131072 --enable-prefix-caching \
+  --limit-mm-per-prompt '{"image":256,"video":1}'
+
+# 2. Start the interaction server (OpenAI-compatible, port 8070)
+python -m vllm_omni.experimental.fullduplex.joyvl.serving.server --port 8070 \
+  --main-backend-url http://127.0.0.1:8061/v1 --main-model JoyAI-VL-Interaction-Preview
+
+# 3. Stream a video through it and watch the per-second decisions
+#    (frame reading needs: uv pip install opencv-python)
+python examples/online_serving/joyvl_interaction/cli/run_cli_demo.py \
+  path/to/video.mp4 --query "Alert me if a fire breaks out"
+```
+
+That's it — the model watches the video and decides each second whether to stay silent,
+speak up, or hand a hard question to a background brain. For the full browser demo
+(live webcam, voice in/out) see [Host the WebUI demo](#host-the-webui-demo), or launch
+everything at once with
+`bash examples/online_serving/joyvl_interaction/scripts/start_all.sh`.
+
 ## When to use this recipe
 
 Use this to stand up the streaming-interaction serving layer (`vllm_omni/experimental/fullduplex/`).
@@ -24,55 +52,25 @@ framework internals and how to add another full-duplex model, see
 
 - OS: Linux
 - Python: 3.10+
-- Hardware: 1x GPU. The default `T_s=100` frame window + `--max-model-len 131072` wants
-  ≈48GB+; for ~24GB, lower `--chunk-frames`, `--max-model-len`, and the image limit together,
-  and/or load the weights in fp8 (see "Smaller GPU: fp8 weights" below — ~9.9 GiB vs 16.8 GiB)
+- Hardware: 1x GPU. The fp8 quick start fits much smaller cards (~10 GiB weights vs
+  16.8 GiB bf16); bf16 at the default settings wants ≈48GB+. On small cards also lower
+  `--chunk-frames`, `--max-model-len`, and the image limit together (see "Serving notes")
 - vLLM / vLLM-Omni: versions from your current checkout
 
-## Start server
+## Serving notes
 
-From repository root:
-
-```bash
-# 1. Serve the model (plain `vllm serve`, NOT --omni; it uses the Qwen3-VL architecture).
-#    The image limit must cover the short-term frame window (chunk_frames, default 100 = T_s);
-#    prefix caching keeps the accumulating window cheap. Lower both for smaller GPUs.
-vllm serve jdopensource/JoyAI-VL-Interaction-Preview \
-  --served-model-name JoyAI-VL-Interaction-Preview --port 8061 \
-  --max-model-len 131072 --enable-prefix-caching \
-  --limit-mm-per-prompt '{"image":256,"video":1}'
-
-# 2. Interaction orchestrator (OpenAI-compatible, :8070)
-python -m vllm_omni.experimental.fullduplex.joyvl.serving.server --port 8070 \
-  --main-backend-url http://127.0.0.1:8061/v1 --main-model JoyAI-VL-Interaction-Preview
-```
-
-### Smaller GPU: fp8 weights
-
-Add `--quantization fp8` to the step-1 `vllm serve` to load the weights in fp8 online
-from the bf16 checkpoint (no separate quantized checkpoint needed; uses vLLM's generic
-fp8 path, since the model is a standard Qwen3-VL VLM):
-
-```bash
-vllm serve jdopensource/JoyAI-VL-Interaction-Preview \
-  --served-model-name JoyAI-VL-Interaction-Preview --port 8061 \
-  --quantization fp8 --max-model-len 131072 --enable-prefix-caching \
-  --limit-mm-per-prompt '{"image":256,"video":1}'
-```
-
-Measured here: model weights **9.9 GiB** vs **16.8 GiB** bf16 (**−41%**), which lets the 8B
-fit a much smaller card. This is a **memory** option, not a speed one: at one request per
-tick (the streaming regime) fp8 was **not** faster (≈19% slower in our test) because
-single-stream decode is memory-latency-bound and pays fp8's dynamic-scale overhead; its
-throughput gain needs batching. Decisions stay coherent, but fp8 can shift the
-speak/silence boundary, so for timing-critical alerting validate output against bf16 first.
-
-Optional one-shot launch (model + orchestrator + JD webui + ASR/TTS/background,
-all env-configurable). The JD webui frontend is external — set `WEBUI_DIR` to point at it:
-
-```bash
-bash examples/online_serving/joyvl_interaction/scripts/start_all.sh
-```
+- Plain `vllm serve`, **not** `--omni` — the model keeps the Qwen3-VL architecture,
+  so stock vLLM runs the forward pass; this recipe only adds the interaction layer.
+- The quick start loads the weights in fp8 **online from the bf16 checkpoint** — no
+  separate quantized checkpoint needed (standard Qwen3-VL, so vLLM's generic fp8 path
+  applies). Measured here: **9.9 GiB** weights vs **16.8 GiB** bf16 (**−41%**).
+- fp8 is a **memory** option, not a speed one: at one request per tick (the streaming
+  regime) it was not faster in our test — single-stream decode is memory-latency-bound
+  and pays fp8's dynamic-scale overhead. Decisions stay coherent, but fp8 can shift the
+  speak/silence boundary, so for timing-critical alerting validate output against bf16 first.
+- The `--limit-mm-per-prompt` image limit must cover the short-term frame window
+  (`--chunk-frames`, default 100); prefix caching keeps the accumulating window cheap.
+  On smaller GPUs lower `--chunk-frames`, `--max-model-len`, and the image limit together.
 
 ## Using the model
 
@@ -203,9 +201,6 @@ the audio-track caveat.
 
 ## Notes
 
-- `--omni` is **not** used: the model keeps the Qwen3-VL architecture (only the
-  weights are retrained), so stock `vllm serve` runs the forward pass; this recipe
-  only adds the interaction/serving layer.
 - On a host without `nvcc` / `ninja`, `vllm serve` of the 8B can crash engine-core in the
   FlashInfer sampler JIT (`FileNotFoundError: 'ninja'`) during `profile_run`. Set
   `VLLM_USE_FLASHINFER_SAMPLER=0` (or install `ninja`) to work around it.
