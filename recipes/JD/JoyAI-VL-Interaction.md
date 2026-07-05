@@ -34,19 +34,9 @@ python examples/online_serving/joyvl_interaction/cli/run_cli_demo.py \
   path/to/video.mp4 --query "Alert me if a fire breaks out"
 ```
 
-That's it — the model watches the video and decides each second whether to stay silent,
-speak up, or hand a hard question to a background brain. For the full browser demo
-(live webcam, voice in/out) see [Host the WebUI demo](#host-the-webui-demo), or launch
-everything at once with
+For the browser demo (live webcam, voice in/out) see
+[Host the WebUI demo](#host-the-webui-demo), or launch everything at once with
 `bash examples/online_serving/joyvl_interaction/scripts/start_all.sh`.
-
-## When to use this recipe
-
-Use this to stand up the streaming-interaction serving layer (`vllm_omni/experimental/fullduplex/`).
-The model is served unchanged by `vllm serve`; this layer adds session state, 3-tier
-summary memory, the per-tick decision, and pluggable ASR / TTS / delegation. For the
-framework internals and how to add another full-duplex model, see
-[`vllm_omni/experimental/fullduplex/README.md`](../../vllm_omni/experimental/fullduplex/README.md).
 
 ## Environment
 
@@ -59,18 +49,12 @@ framework internals and how to add another full-duplex model, see
 
 ## Serving notes
 
-- Plain `vllm serve`, **not** `--omni` — the model keeps the Qwen3-VL architecture,
-  so stock vLLM runs the forward pass; this recipe only adds the interaction layer.
-- The quick start loads the weights in fp8 **online from the bf16 checkpoint** — no
-  separate quantized checkpoint needed (standard Qwen3-VL, so vLLM's generic fp8 path
-  applies). Measured here: **9.9 GiB** weights vs **16.8 GiB** bf16 (**−41%**).
-- fp8 is a **memory** option, not a speed one: at one request per tick (the streaming
-  regime) it was not faster in our test — single-stream decode is memory-latency-bound
-  and pays fp8's dynamic-scale overhead. Decisions stay coherent, but fp8 can shift the
-  speak/silence boundary, so for timing-critical alerting validate output against bf16 first.
-- The `--limit-mm-per-prompt` image limit must cover the short-term frame window
-  (`--chunk-frames`, default 100); prefix caching keeps the accumulating window cheap.
-  On smaller GPUs lower `--chunk-frames`, `--max-model-len`, and the image limit together.
+- Use plain `vllm serve`, **not** `--omni`.
+- fp8 loads online from the bf16 checkpoint — nothing extra to download. It saves
+  memory (~10 GiB vs 16.8 GiB weights), not speed; for timing-critical alerting,
+  validate output against bf16 first.
+- Keep the `--limit-mm-per-prompt` image limit ≥ `--chunk-frames` (default 100).
+  On small GPUs lower `--chunk-frames`, `--max-model-len`, and the image limit together.
 
 ## Using the model
 
@@ -133,13 +117,9 @@ python -m vllm_omni.experimental.fullduplex.joyvl.serving.server --port 8070 \
 - `stub` — canned answers for tests/demos only (no backend needed)
 
 `chat`/`image`/`edit`/`router` each need a backend URL — **without one, delegation stays
-off** (the model's delegate note is still spoken, but nothing is folded back). The brain is
-**bring-your-own**: a larger vLLM you serve, or any OpenAI-compatible API (e.g.
-`--delegation-backend-url https://api.anthropic.com/v1/ --delegation-model claude-...
---delegation-api-key …`). The reference deployment instead drives the `codex` CLI as the
-brain via a separate background-agent service; that agent runs with its own credentials
-and bypasses its sandbox, so it is **not bundled here** — self-host a plain
-OpenAI-compatible endpoint instead.
+off**. The brain is bring-your-own: a larger vLLM you serve, or any OpenAI-compatible
+API (e.g. `--delegation-backend-url https://api.anthropic.com/v1/
+--delegation-model claude-... --delegation-api-key …`).
 
 ## Host the WebUI demo
 
@@ -155,31 +135,19 @@ bash scripts/start_server.sh --api-base http://127.0.0.1:8070/v1
 ```
 
 Open the printed HTTPS URL, allow the camera (or enter an RTSP URL), and give a standing
-instruction. `examples/online_serving/joyvl_interaction/scripts/start_all.sh` can launch
-the model + orchestrator + WebUI together — point `WEBUI_DIR` at your clone. For webui-side
-deployment issues, see the upstream
+instruction. For webui-side deployment issues, see the upstream
 [Troubleshooting Guide](https://github.com/jd-opensource/JoyAI-VL-Interaction/blob/main/doc/troubleshooting.md).
-
-The webui attaches per-turn frame timestamps (`frame_time_range(s)` in the request body);
-the orchestrator honors them and falls back to its own 1 fps clock when absent, so older
-clients keep working unchanged.
 
 ## Verification
 
 ```bash
-# headless: stream a clip and print the per-tick decision timeline
-# (the CLI reads video frames via OpenCV: `uv pip install opencv-python`)
-python examples/online_serving/joyvl_interaction/cli/run_cli_demo.py \
-  path/to/video.mp4 --query "Alert me if a fire breaks out"
-
 pytest tests/fullduplex   # framework + JoyVL unit tests
 ```
 
 ## Testing with an RTSP stream (optional)
 
-RTSP is a **webui-side input** — the browser pulls the stream and feeds frames to the
-orchestrator over the normal API; no serving-layer code is involved. To simulate an RTSP
-camera from a local video file (no physical IP camera needed), use the helper scripts in
+To simulate an RTSP camera from a local video file (no physical IP camera needed),
+enter its stream URL in the WebUI RTSP box, using the helper scripts in
 [`examples/online_serving/joyvl_interaction/rtsp/`](../../examples/online_serving/joyvl_interaction/rtsp/),
 which wrap [MediaMTX](https://github.com/bluenviron/mediamtx/releases) + `ffmpeg`:
 
@@ -201,22 +169,12 @@ the audio-track caveat.
 
 ## Notes
 
-- On a host without `nvcc` / `ninja`, `vllm serve` of the 8B can crash engine-core in the
-  FlashInfer sampler JIT (`FileNotFoundError: 'ninja'`) during `profile_run`. Set
-  `VLLM_USE_FLASHINFER_SAMPLER=0` (or install `ninja`) to work around it.
-- `force_silence_before_query` is on by default — the model stays silent until an
-  instruction arrives; give a standing task (e.g. "translate the on-screen text")
-  to arm proactive output.
-- **Frame resolution is the main latency knob.** The system/memory prefix is prefix-cached,
-  so per-tick *new* compute is dominated by the new frame's vision tokens. Measured on the
-  8B: ~256×192 frames hit Qwen3-VL's min-pixel floor (~72 vision tokens, ~17 ms/tick) vs
-  ~302 tokens / ~38 ms at 640×480 — about 2× cheaper. Downsample frames to ~256×192 for the
-  tightest latency / highest concurrency; one GPU then sustains ~150–180 concurrent 1 fps
-  streams with p95 < 200 ms. Per-tick latency is already far inside the 1 fps budget, so
-  serving is rarely the bottleneck — resolution is the lever if you need more headroom.
-- Speech is external and pluggable: point `ASR_URL` / `TTS_URL` at the bridges in
+- If `vllm serve` crashes with `FileNotFoundError: 'ninja'` (FlashInfer sampler JIT),
+  set `VLLM_USE_FLASHINFER_SAMPLER=0` or install `ninja`.
+- The model stays silent until the first instruction arrives — give a standing task
+  (e.g. "translate the on-screen text") to arm proactive output.
+- Downsample frames to ~256×192 for the lowest latency and highest concurrency
+  (~2× cheaper per tick than 640×480; one GPU sustains ~150–180 concurrent 1 fps
+  streams with p95 < 200 ms).
+- Speech is pluggable: point `ASR_URL` / `TTS_URL` at the bridges in
   `examples/online_serving/joyvl_interaction/bridges/` or any compatible service.
-- The decision prompts, sampling, and 3-tier summary memory (`T_s=100`, mid→long every
-  5 chunks, `key_frames=0` = summarize all chunk frames) are aligned to the JoyVL
-  reference adapter so per-tick behavior matches the released model; the framework only
-  supplies the serving structure.
