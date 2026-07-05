@@ -14,10 +14,10 @@
 
 ## Quick start
 
-Three commands: serve the model, start the interaction server, try it on a video.
+Serve the model in fp8 (fits small GPUs without OOM), then put JD's official WebUI on top.
 
 ```bash
-# 1. Serve the model — fp8 shrinks the 8B to ~10 GiB of weights so it fits small cards
+# 1. Serve the model — fp8 shrinks the 8B to ~10 GiB of weights
 #    (drop `--quantization fp8` on 48GB+ GPUs for full precision)
 vllm serve jdopensource/JoyAI-VL-Interaction-Preview \
   --served-model-name JoyAI-VL-Interaction-Preview --port 8061 \
@@ -28,15 +28,21 @@ vllm serve jdopensource/JoyAI-VL-Interaction-Preview \
 python -m vllm_omni.experimental.fullduplex.joyvl.serving.server --port 8070 \
   --main-backend-url http://127.0.0.1:8061/v1 --main-model JoyAI-VL-Interaction-Preview
 
-# 3. Stream a video through it and watch the per-second decisions
-#    (frame reading needs: uv pip install opencv-python)
-python examples/online_serving/joyvl_interaction/cli/run_cli_demo.py \
-  path/to/video.mp4 --query "Alert me if a fire breaks out"
+# 3. Run JD's official WebUI, pointed at the interaction server
+git clone https://github.com/jd-opensource/JoyAI-VL-Interaction.git
+cd JoyAI-VL-Interaction/services/webui
+uv venv && uv pip install -e .
+bash scripts/start_server.sh --api-base http://127.0.0.1:8070/v1
 ```
 
-For the browser demo (live webcam, voice in/out) see
-[Host the WebUI demo](#host-the-webui-demo), or launch everything at once with
-`bash examples/online_serving/joyvl_interaction/scripts/start_all.sh`.
+Open the printed HTTPS URL, allow the camera (or enter an RTSP URL), and type a standing
+instruction — e.g. "Alert me if a fire breaks out". The model then decides each second on
+its own to stay silent, speak, or delegate a hard question.
+
+One-shot alternative for steps 1–3:
+`bash examples/online_serving/joyvl_interaction/scripts/start_all.sh` (set `WEBUI_DIR`
+to your WebUI clone). For webui-side issues, see the upstream
+[Troubleshooting Guide](https://github.com/jd-opensource/JoyAI-VL-Interaction/blob/main/doc/troubleshooting.md).
 
 ## Environment
 
@@ -121,26 +127,14 @@ off**. The brain is bring-your-own: a larger vLLM you serve, or any OpenAI-compa
 API (e.g. `--delegation-backend-url https://api.anthropic.com/v1/
 --delegation-model claude-... --delegation-api-key …`).
 
-## Host the WebUI demo
-
-For the full browser experience — live webcam / RTSP input, voice (ASR/TTS), and the
-per-tick decision stream — run JD's official WebUI in front of the orchestrator. Clone the
-model repo and start its WebUI pointed at the orchestrator (`:8070`):
-
-```bash
-git clone https://github.com/jd-opensource/JoyAI-VL-Interaction.git
-cd JoyAI-VL-Interaction/services/webui
-uv venv && uv pip install -e .
-bash scripts/start_server.sh --api-base http://127.0.0.1:8070/v1
-```
-
-Open the printed HTTPS URL, allow the camera (or enter an RTSP URL), and give a standing
-instruction. For webui-side deployment issues, see the upstream
-[Troubleshooting Guide](https://github.com/jd-opensource/JoyAI-VL-Interaction/blob/main/doc/troubleshooting.md).
-
 ## Verification
 
 ```bash
+# headless smoke test: stream a clip and print the per-second decisions
+# (needs: uv pip install opencv-python)
+python examples/online_serving/joyvl_interaction/cli/run_cli_demo.py \
+  path/to/video.mp4 --query "Alert me if a fire breaks out"
+
 pytest tests/fullduplex   # framework + JoyVL unit tests
 ```
 
