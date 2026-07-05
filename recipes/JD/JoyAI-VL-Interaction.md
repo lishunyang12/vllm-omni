@@ -158,7 +158,13 @@ bash scripts/start_server.sh --api-base http://127.0.0.1:8070/v1
 
 Open the printed HTTPS URL, allow the camera (or enter an RTSP URL), and give a standing
 instruction. `examples/online_serving/joyvl_interaction/scripts/start_all.sh` can launch
-the model + orchestrator + WebUI together — point `WEBUI_DIR` at your clone.
+the model + orchestrator + WebUI together — point `WEBUI_DIR` at your clone. For webui-side
+deployment issues, see the upstream
+[Troubleshooting Guide](https://github.com/jd-opensource/JoyAI-VL-Interaction/blob/main/doc/troubleshooting.md).
+
+The webui attaches per-turn frame timestamps (`frame_time_range(s)` in the request body);
+the orchestrator honors them and falls back to its own 1 fps clock when absent, so older
+clients keep working unchanged.
 
 ## Verification
 
