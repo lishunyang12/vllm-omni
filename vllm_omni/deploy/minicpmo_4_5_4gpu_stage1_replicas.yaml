@@ -1,0 +1,16 @@
+# MiniCPM-o 4.5 deploy: one thinker and three Stage1 replicas.
+#
+# Stage 0: GPU 0
+# Stage 1: replicas on GPU 1, 2, and 3
+base_config: minicpmo_4_5.yaml
+pipeline: minicpmo_4_5
+session_mode: duplex
+
+stages:
+  - stage_id: 0
+    async_scheduling: false
+
+  - stage_id: 1
+    devices: "1,2,3"
+    num_replicas: 3
+    async_scheduling: false

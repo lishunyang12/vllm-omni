@@ -10,23 +10,23 @@ The UI supports:
 
 ## 1. Start the backend server
 
-Pick a stage config that matches your GPU layout:
+Pick a deploy config that matches your GPU layout:
 
 | config | GPUs | TP | Notes |
 |---|---|---|---|
-| `minicpmo45_2gpu.yaml` | 2 | 1 | Thinker on GPU0, talker+t2w on GPU1. |
-| `minicpmo45_3gpu.yaml` | 3 | 2 | Thinker 2-way TP on GPU0/1, talker+t2w share GPU2. |
-| `minicpmo45_8x4090.yaml` | 8 | - | Full 8x4090 layout. |
-| `minicpmo45_3gpu_stage1_replicas.yaml` | 3 | 1 | Thinker on GPU0, two talker+Token2wav replicas on GPU1/2 for concurrent text+audio serving. |
-| `minicpmo45_4gpu_stage1_replicas.yaml` | 4 | 1 | Thinker on GPU0, three talker+Token2wav replicas on GPU1/2/3. |
-| `minicpmo45_8x4090_stage1_replicas.yaml` | 8 | 4 | Thinker 4-way TP on GPU0-3, four talker+Token2wav replicas on GPU4-7. |
+| `minicpmo_4_5.yaml` | 2 | 1 | Thinker on GPU0, talker+t2w on GPU1. |
+| `minicpmo_4_5_3gpu.yaml` | 3 | 2 | Thinker 2-way TP on GPU0/1, talker+t2w share GPU2. |
+| `minicpmo_4_5_8x4090.yaml` | 8 | 4 | Thinker 4-way TP on GPU0-3, talker+t2w on GPU4. |
+| `minicpmo_4_5_3gpu_stage1_replicas.yaml` | 3 | 1 | Thinker on GPU0, two talker+Token2wav replicas on GPU1/2 for concurrent text+audio serving. |
+| `minicpmo_4_5_4gpu_stage1_replicas.yaml` | 4 | 1 | Thinker on GPU0, three talker+Token2wav replicas on GPU1/2/3. |
+| `minicpmo_4_5_8x4090_stage1_replicas.yaml` | 8 | 4 | Thinker 4-way TP on GPU0-3, four talker+Token2wav replicas on GPU4-7. |
 
 Then:
 
 ```bash
 vllm-omni serve openbmb/MiniCPM-o-4_5 \
     --omni \
-    --stage-configs-path vllm_omni/model_executor/stage_configs/minicpmo45_2gpu.yaml \
+    --deploy-config vllm_omni/deploy/minicpmo_4_5.yaml \
     --trust-remote-code \
     --host 0.0.0.0 --port 8099
 ```
@@ -37,14 +37,14 @@ a local ModelScope-downloaded checkpoint path instead of `openbmb/MiniCPM-o-4_5`
 ### TTS throughput notes
 
 MiniCPM-o 4.5's remote-code `MiniCPMTTS.generate()` currently runs as a
-single-request whole-waveform path, so the stage configs keep Stage1
+single-request whole-waveform path, so the deploy configs keep Stage1
 `max_num_seqs: 1`. Use the `*_stage1_replicas.yaml` configs to scale concurrent
 text+audio throughput horizontally.
 
 ```bash
 vllm-omni serve /path/to/MiniCPM-o-4_5 \
     --omni \
-    --stage-configs-path vllm_omni/model_executor/stage_configs/minicpmo45_4gpu_stage1_replicas.yaml \
+    --deploy-config vllm_omni/deploy/minicpmo_4_5_4gpu_stage1_replicas.yaml \
     --trust-remote-code \
     --host 0.0.0.0 --port 8099
 ```
@@ -68,14 +68,14 @@ cancellation, and runtime-control acknowledgements. Generic non-native sessions
 can still fall back to normal chat streaming requests; MiniCPM-o 4.5 native
 sessions use the scheduler data-plane path described below.
 
-Start the server with the duplex-specific stage config. The regular
-`minicpmo45_2gpu.yaml` config does not opt into duplex sessions and keeps the
+Start the server with the duplex-specific deploy config. The regular
+`minicpmo_4_5.yaml` deploy does not opt into duplex sessions and keeps the
 non-streaming Stage1 token budget.
 
 ```bash
 vllm-omni serve openbmb/MiniCPM-o-4_5 \
     --omni \
-    --stage-configs-path vllm_omni/model_executor/stage_configs/minicpmo45_2gpu_streaming.yaml \
+    --deploy-config vllm_omni/deploy/minicpmo_4_5_duplex.yaml \
     --trust-remote-code \
     --host 0.0.0.0 --port 8099
 ```

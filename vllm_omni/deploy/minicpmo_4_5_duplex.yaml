@@ -1,0 +1,20 @@
+# MiniCPM-o 4.5 native duplex deployment.
+#
+# The registered minicpmo_4_5 pipeline owns the fixed Stage0 -> Stage1
+# topology and llm2tts bridge. This overlay only changes session lifetime and
+# the Stage1 token budget needed to drain streaming audio segments.
+base_config: minicpmo_4_5.yaml
+pipeline: minicpmo_4_5
+session_mode: duplex
+active_stream_window: 1
+
+stages:
+  - stage_id: 0
+    async_scheduling: false
+
+  - stage_id: 1
+    async_scheduling: false
+    default_sampling_params:
+      max_tokens: 4096
+      extra_args:
+        stop_token_names: ["<|im_end|>"]
