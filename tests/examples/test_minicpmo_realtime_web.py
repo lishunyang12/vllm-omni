@@ -1,5 +1,6 @@
 import importlib.util
 import sys
+import wave
 from pathlib import Path
 
 import pytest
@@ -212,6 +213,64 @@ def test_realtime_duplex_demo_gate_rejects_terminal_only_stale_tail():
     )
 
     assert result["empty_turns_ok"] is False
+
+
+def test_realtime_duplex_demo_gate_rejects_audio_without_transcript():
+    demo = _load_demo_module()
+    state = demo.DemoState()
+    _add_response_transcript(
+        state,
+        "resp-audio-no-text",
+        transcript="",
+        audio=True,
+    )
+
+    result = demo._evaluate_transcript_integrity(
+        state,
+        ["resp-audio-no-text"],
+        expected_empty_response_ids=set(),
+        require_cross_turn_independence=False,
+    )
+
+    assert result["nonempty_audio_has_transcript_ok"] is False
+
+
+def test_realtime_duplex_demo_gate_rejects_incomplete_model_turn_sentence():
+    demo = _load_demo_module()
+    state = demo.DemoState()
+    _add_response_transcript(state, "resp-1", transcript="哎，不是说好不")
+
+    result = demo._evaluate_transcript_integrity(
+        state,
+        ["resp-1"],
+        expected_empty_response_ids=set(),
+        require_cross_turn_independence=False,
+        require_terminal_punctuation=True,
+    )
+
+    assert result["terminal_punctuation_ok"] is False
+
+
+def test_realtime_duplex_demo_writes_audio_per_response(tmp_path):
+    demo = _load_demo_module()
+    state = demo.DemoState()
+    for response_id, payload in (("resp-1", b"\x01\x00"), ("resp-2", b"\x02\x00")):
+        state.add({"type": "response.created", "response": {"id": response_id}})
+        state.add(
+            {
+                "type": "response.audio.delta",
+                "response_id": response_id,
+                "delta": demo.base64.b64encode(payload).decode(),
+                "sample_rate_hz": 24000,
+            }
+        )
+
+    demo._write_demo_artifacts(state, tmp_path, output_audio_format="pcm16")
+
+    for index, expected in enumerate((b"\x01\x00", b"\x02\x00"), start=1):
+        with wave.open(str(tmp_path / f"response_{index:02d}.wav"), "rb") as wf:
+            assert wf.getframerate() == 24000
+            assert wf.readframes(wf.getnframes()) == expected
 
 
 def test_realtime_web_defaults_to_streaming_playback():

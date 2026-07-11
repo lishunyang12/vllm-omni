@@ -308,6 +308,7 @@ class DuplexCommittedInput:
     message: dict[str, object]
     turn_id: int
     epoch: int
+    input_commit_seq: int
 
 
 @dataclass
@@ -325,6 +326,7 @@ class DuplexSession:
     turn_state: DuplexTurnState = DuplexTurnState.IDLE
     epoch: int = 0
     turn_id: int = 0
+    input_commit_seq: int = 0
     created_at: float = field(default_factory=time.monotonic)
     updated_at: float = field(default_factory=time.monotonic)
     history: list[dict[str, object]] = field(default_factory=list)
@@ -400,14 +402,19 @@ class DuplexSession:
         else:
             content = text
 
-        self.turn_id += 1
+        self.input_commit_seq += 1
         message = {"role": "user", "content": content}
         self.history.append(message)
         self.pending_text.clear()
         self.pending_audio.clear()
         self.turn_state = DuplexTurnState.USER_COMMITTED
         self.touch()
-        return DuplexCommittedInput(message=message, turn_id=self.turn_id, epoch=self.epoch)
+        return DuplexCommittedInput(
+            message=message,
+            turn_id=self.turn_id,
+            epoch=self.epoch,
+            input_commit_seq=self.input_commit_seq,
+        )
 
     def commit_native_audio_input(self, *, transcript: str | None = None) -> DuplexCommittedInput:
         input_audio_part: dict[str, object] = {
@@ -416,7 +423,7 @@ class DuplexSession:
         }
         if transcript:
             input_audio_part["transcript"] = transcript
-        self.turn_id += 1
+        self.input_commit_seq += 1
         message = {"role": "user", "content": [input_audio_part]}
         if transcript:
             message["transcript"] = transcript
@@ -425,7 +432,19 @@ class DuplexSession:
         self.pending_audio.clear()
         self.turn_state = DuplexTurnState.USER_COMMITTED
         self.touch()
-        return DuplexCommittedInput(message=message, turn_id=self.turn_id, epoch=self.epoch)
+        return DuplexCommittedInput(
+            message=message,
+            turn_id=self.turn_id,
+            epoch=self.epoch,
+            input_commit_seq=self.input_commit_seq,
+        )
+
+    def complete_model_turn(self, turn_id: int) -> None:
+        """Advance the model-owned output identity after its terminal signal."""
+        completed_turn_id = int(turn_id)
+        if completed_turn_id >= self.turn_id:
+            self.turn_id = completed_turn_id + 1
+        self.touch()
 
     def begin_response(self, *, turn_id: int | None = None) -> str:
         self.active_response_id = f"resp-{self.session_id}-{self.epoch}-{uuid4().hex[:8]}"
@@ -495,6 +514,7 @@ class DuplexSession:
         *,
         commit_text: bool = True,
         playback_commit_policy: str | None = None,
+        preserve_request: bool = False,
     ) -> dict[str, object] | None:
         assistant_text = "".join(self.assistant_text_buffer).strip()
         message = None
@@ -512,7 +532,8 @@ class DuplexSession:
             message = {"role": "assistant", "content": committed_text}
             self.history.append(message)
         self.assistant_text_buffer.clear()
-        self.active_request_id = None
+        if not preserve_request:
+            self.active_request_id = None
         self.active_response_id = None
         self.active_response_turn_id = None
         self.turn_state = DuplexTurnState.IDLE

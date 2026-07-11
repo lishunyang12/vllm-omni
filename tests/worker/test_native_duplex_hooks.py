@@ -913,7 +913,7 @@ def test_minicpmo_stage0_data_plane_prefill_matches_official_unit_format():
     assert result["prompt_suffix_len"] == 0
 
 
-def test_minicpmo_stage0_data_plane_new_speech_keeps_turn_ended_until_model_speaks():
+def test_minicpmo_stage0_data_plane_new_speech_reinjects_previous_listen():
     import torch
 
     from vllm_omni.experimental.fullduplex.minicpmo45.runtime import (
@@ -972,9 +972,9 @@ def test_minicpmo_stage0_data_plane_new_speech_keeps_turn_ended_until_model_spea
     )
 
     assert result["success"] is True
-    assert result["input_token_ids"] == [2, 1, 11]
+    assert result["input_token_ids"] == [3, 2, 1, 11]
     assert state.pending_terminator_token is None
-    assert state.last_terminator_token is None
+    assert state.last_terminator_token == 3
     assert state.current_turn_ended is True
 
 
@@ -1024,9 +1024,9 @@ def test_minicpmo_stage0_data_plane_new_user_turn_inserts_official_prefix_after_
     state = _MiniCPMO45Stage0SessionState(
         session_id="sid-new-user-turn-prefill",
         audio_chunk_idx=1,
-        pending_terminator_token=8,
-        last_terminator_token=8,
-        current_turn_ended=False,
+        pending_terminator_token=10,
+        last_terminator_token=10,
+        current_turn_ended=True,
     )
 
     result = runtime._stage_prefill_embeddings_only(
@@ -1038,9 +1038,9 @@ def test_minicpmo_stage0_data_plane_new_user_turn_inserts_official_prefix_after_
     )
 
     assert result["success"] is True
-    assert result["input_token_ids"] == [2, 1, 11]
+    assert result["input_token_ids"] == [10, 2, 1, 11]
     assert state.pending_terminator_token is None
-    assert state.last_terminator_token is None
+    assert state.last_terminator_token == 10
     assert state.current_turn_ended is True
 
 
@@ -1093,8 +1093,8 @@ def test_minicpmo_stage0_data_plane_new_user_turn_uses_clean_done_prefix_variant
     state = _MiniCPMO45Stage0SessionState(
         session_id="sid-new-user-turn-clean-prefill",
         audio_chunk_idx=1,
-        pending_terminator_token=8,
-        last_terminator_token=8,
+        pending_terminator_token=10,
+        last_terminator_token=10,
         current_turn_ended=True,
     )
 
@@ -1108,10 +1108,10 @@ def test_minicpmo_stage0_data_plane_new_user_turn_uses_clean_done_prefix_variant
     )
 
     assert result["success"] is True
-    assert result["input_token_ids"] == [2, 1, 11]
+    assert result["input_token_ids"] == [10, 2, 1, 11]
 
 
-def test_minicpmo_stage0_data_plane_new_user_turn_resets_audio_cache():
+def test_minicpmo_stage0_data_plane_new_user_turn_preserves_audio_cache():
     import torch
 
     from vllm_omni.experimental.fullduplex.minicpmo45.policy import (
@@ -1122,11 +1122,13 @@ def test_minicpmo_stage0_data_plane_new_user_turn_resets_audio_cache():
         _MiniCPMO45Stage0SessionState,
     )
 
+    stale_cache = object()
+
     class _StageModel(torch.nn.Module):
         def __init__(self):
             super().__init__()
             self.embed = torch.nn.Embedding(256, 2)
-            self.audio_past_key_values = object()
+            self.audio_past_key_values = stale_cache
 
         def get_input_embeddings(self):
             return self.embed
@@ -1158,7 +1160,6 @@ def test_minicpmo_stage0_data_plane_new_user_turn_resets_audio_cache():
     runtime.device = "cpu"
     runtime.session_config = {}
     runtime._init_token_ids()
-    stale_cache = object()
     state = _MiniCPMO45Stage0SessionState(
         session_id="sid-new-user-turn-audio-cache",
         audio_chunk_idx=1,
@@ -1178,11 +1179,11 @@ def test_minicpmo_stage0_data_plane_new_user_turn_resets_audio_cache():
     )
 
     assert result["success"] is True
-    assert state.audio_past_key_values is None
-    assert runtime.thinker.audio_past_key_values is None
+    assert state.audio_past_key_values is stale_cache
+    assert runtime.thinker.audio_past_key_values is stale_cache
 
 
-def test_minicpmo_stage0_data_plane_first_chunk_matches_official_padding():
+def test_minicpmo_stage0_data_plane_final_first_chunk_does_not_add_silence_unit():
     import torch
 
     from vllm_omni.experimental.fullduplex.minicpmo45.runtime import (
@@ -1245,6 +1246,7 @@ def test_minicpmo_stage0_data_plane_first_chunk_matches_official_padding():
         state,
         np.arange(8, dtype=np.float32),
         seq=1,
+        final=True,
     )
 
     assert result["success"] is True

@@ -122,27 +122,16 @@ class MiniCPMO45PcmAppendBuffer:
         return self.append(payload, chunk_period_ms=chunk_period_ms, flush=True)
 
     def commit(self, *, chunk_period_ms: int) -> MiniCPMO45CommittedInput:
-        """Finish one user turn without depending on residual PCM bytes.
+        """Commit the real residual PCM and reset per-client-input accounting.
 
-        Incremental appends commonly drain every complete model unit before
-        commit arrives. Speech accounting therefore spans the whole turn. A
-        spoken turn with no residual bytes still gets one terminal silence
-        unit so MiniCPM receives the official final decision beat.
+        Complete model units are emitted by :meth:`append` as soon as they are
+        available.  A commit at that exact boundary therefore has no payload;
+        synthesizing another unit would add a model decision that does not
+        exist in the official continuous streaming loop.
         """
         had_input = self._turn_had_input
         had_speech = self._turn_had_speech
         payload = self.flush(chunk_period_ms=chunk_period_ms) if had_speech else None
-        if had_speech and payload is None:
-            sample_rate_hz = self._sample_rate_hz or 16_000
-            samples = max(1, int(sample_rate_hz * max(1, chunk_period_ms) / 1000))
-            payload = {
-                "type": "audio",
-                "audio": base64.b64encode(b"\x00" * samples * 4).decode("ascii"),
-                "format": "pcm_f32le",
-                "sample_rate_hz": sample_rate_hz,
-                "is_speech": True,
-                "is_terminal_silence": True,
-            }
         if payload is not None:
             payload["final"] = True
         self.clear()

@@ -165,7 +165,7 @@ def _native_duplex_segment_output_ids(
         return output_ids, output_text
     state = bridge_states.setdefault("minicpmo45_tts_handoff", {})
     duplex_state = bridge_states.get("duplex")
-    turn_id = duplex_state.get("turn_id") if isinstance(duplex_state, dict) else None
+    turn_id = duplex_state.get("model_turn_id", duplex_state.get("turn_id")) if isinstance(duplex_state, dict) else None
     if not isinstance(turn_id, int):
         turn_id = None
     if state.get("request_id") != request_id:
@@ -255,7 +255,7 @@ def _native_duplex_data_plane_metadata(streaming_context) -> dict[str, object] |
     epoch = duplex_state.get("epoch")
     if isinstance(epoch, int):
         metadata["epoch"] = epoch
-    turn_id = duplex_state.get("turn_id")
+    turn_id = duplex_state.get("model_turn_id", duplex_state.get("turn_id"))
     if isinstance(turn_id, int):
         metadata["turn_id"] = turn_id
     session_config = duplex_state.get("session_config")
@@ -606,6 +606,13 @@ def llm2tts(
                 mm_processor_kwargs=None,
             )
         )
+        if native_turn_end_handoff:
+            bridge_states = getattr(_streaming_context, "bridge_states", None)
+            duplex_state = bridge_states.get("duplex") if isinstance(bridge_states, dict) else None
+            if isinstance(duplex_state, dict):
+                current_model_turn_id = duplex_state.get("model_turn_id", duplex_state.get("turn_id", 0))
+                if isinstance(current_model_turn_id, int):
+                    duplex_state["model_turn_id"] = current_model_turn_id + 1
 
     return tts_inputs
 

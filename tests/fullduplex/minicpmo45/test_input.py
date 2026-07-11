@@ -19,7 +19,7 @@ def pcm_payload(samples: int, *, speech: bool = True) -> dict[str, object]:
     }
 
 
-def test_commit_preserves_turn_speech_after_incremental_audio_was_drained():
+def test_commit_does_not_add_silence_after_incremental_audio_was_drained():
     buffer = MiniCPMO45PcmAppendBuffer()
 
     emitted = buffer.append(pcm_payload(16_000), chunk_period_ms=1_000)
@@ -29,10 +29,7 @@ def test_commit_preserves_turn_speech_after_incremental_audio_was_drained():
     assert not buffer.has_pending()
     assert committed.had_input is True
     assert committed.had_speech is True
-    assert committed.payload is not None
-    assert committed.payload["final"] is True
-    assert committed.payload["is_terminal_silence"] is True
-    assert len(base64.b64decode(str(committed.payload["audio"]))) == 16_000 * 4
+    assert committed.payload is None
 
 
 def test_commit_without_speech_does_not_synthesize_terminal_audio():

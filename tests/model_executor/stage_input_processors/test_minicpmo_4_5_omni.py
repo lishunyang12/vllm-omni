@@ -787,7 +787,7 @@ def test_minicpmo_native_duplex_talker_new_turn_reopens_session_keyed_state(monk
     assert model._talker_turn_states["sid-stage1"].turn_id == 2
 
 
-def test_minicpmo_native_duplex_talker_segment_end_flushes_tail_without_closing_turn(monkeypatch):
+def test_minicpmo_native_duplex_talker_segment_end_preserves_token2wav_stream_until_turn_end(monkeypatch):
     from vllm_omni.model_executor.models.minicpmo_4_5.minicpmo_4_5_omni_tts import (
         MiniCPMO45OmniTTSForConditionalGeneration,
     )
@@ -849,8 +849,25 @@ def test_minicpmo_native_duplex_talker_segment_end_flushes_tail_without_closing_
 
     list(model._create_native_duplex_stream_gen(info))
 
-    assert windows[-1][1] is True
-    assert "duplex-segment-tail-flush" in model._talker_turn_states
+    state = model._talker_turn_states["duplex-segment-tail-flush"]
+    assert windows == []
+    assert state.token2wav_buffer == [4218, 4218, 4218, 33]
+
+    turn_end_info = {
+        **info,
+        "ids": {"tts": [21, 9310]},
+        "hidden_states": {
+            "tts": [
+                [0.1, 0.2, 0.3, 0.4],
+                [0.5, 0.6, 0.7, 0.8],
+            ]
+        },
+        "meta": {"turn_eos_token_id": 9310, "turn_end": True},
+    }
+    list(model._create_native_duplex_stream_gen(turn_end_info))
+
+    assert windows == [([4218, 4218, 4218, 33, 33], True)]
+    assert "duplex-segment-tail-flush" not in model._talker_turn_states
 
 
 def test_tts_scheduler_eos_uses_tokenizer_im_end_when_config_has_no_eos():
@@ -1116,6 +1133,43 @@ def test_llm2tts_native_duplex_marks_talker_handoff_as_data_plane():
     assert duplex["epoch"] == 0
     assert duplex["turn_id"] == 7
     assert duplex["session_config"]["extra_body"]["duplex_stage_sampling_params"]["1"]["stop_token_ids"] == [151645]
+
+
+def test_llm2tts_native_duplex_advances_model_turn_only_after_turn_eos():
+    streaming_context = SimpleNamespace(
+        bridge_states={
+            "duplex": {
+                "session_id": "sid-model-turn",
+                "epoch": 0,
+                "turn_id": 9,
+                "model_turn_id": 0,
+            },
+        }
+    )
+
+    first = _native_duplex_handoff(
+        "duplex-model-turn",
+        [101],
+        [9304, 21, 9310],
+        text="first",
+    )
+    converted_first = llm2tts([first], prompt=[{}], _streaming_context=streaming_context)
+
+    first_duplex = converted_first[0]["model_intermediate_buffer"]["duplex"]
+    assert first_duplex["turn_id"] == 0
+    assert streaming_context.bridge_states["duplex"]["model_turn_id"] == 1
+
+    second = _native_duplex_handoff(
+        "duplex-model-turn",
+        [101, 9304, 21, 9310, 555],
+        [9304, 21, 9310, 9304, 22, 9308],
+        text="second",
+    )
+    converted_second = llm2tts([second], prompt=[{}], _streaming_context=streaming_context)
+
+    second_duplex = converted_second[0]["model_intermediate_buffer"]["duplex"]
+    assert second_duplex["turn_id"] == 1
+    assert streaming_context.bridge_states["duplex"]["model_turn_id"] == 1
 
 
 def test_llm2tts_native_duplex_accumulates_tts_condition_across_handoffs():

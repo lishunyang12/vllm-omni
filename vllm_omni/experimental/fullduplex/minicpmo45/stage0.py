@@ -398,16 +398,8 @@ class MiniCPMO45Stage0DuplexRuntime:
         if audio_waveform is None or len(audio_waveform) == 0:
             return self._stage_prefill_result(False, start_time, "empty audio")
         prefix_new_user_turn = bool(new_user_turn)
-        if new_speech and state.current_turn_ended and not prefix_new_user_turn:
-            state.pending_terminator_token = None
-            state.last_terminator_token = None
         if prefix_new_user_turn:
             state.current_turn_ended = True
-            state.pending_terminator_token = None
-            state.last_terminator_token = None
-            state.audio_past_key_values = None
-            if hasattr(self.thinker, "audio_past_key_values"):
-                self.thinker.audio_past_key_values = None
         state.audio_buffer = np.concatenate([state.audio_buffer, np.asarray(audio_waveform, dtype=np.float32)])
         chunk_size = self._streaming_chunk_size()
         self._pad_first_audio_chunk_if_needed(state)
@@ -430,21 +422,18 @@ class MiniCPMO45Stage0DuplexRuntime:
             token_ids.extend(state.context_token_ids)
 
         # Consume every complete chunk in the buffer so the appended span and
-        # the scheduler's slot reservation for this append agree exactly.
-        # Surplus slots become pad embeddings inside the KV and corrupt the
-        # model, so leftover audio must stay buffered, never padded. A final
-        # append closes the turn with exactly one extra unit: the zero-padded
-        # leftover if any, otherwise one full silence unit, giving the model
-        # the official post-turn silence beat at its decision step.
+        # the scheduler's slot reservation for this append agree exactly. A
+        # final append may zero-pad a real residual chunk, but it must not add
+        # a whole silence unit after all input was already consumed: official
+        # duplex generation runs once per microphone unit and client commit is
+        # not an additional model decision.
         units_built = 0
-        final_extra_done = False
         while True:
             if len(state.audio_buffer) < chunk_size:
-                if not final or final_extra_done:
+                if not final or len(state.audio_buffer) == 0:
                     break
                 pad = np.zeros(chunk_size - len(state.audio_buffer), dtype=np.float32)
                 state.audio_buffer = np.concatenate([state.audio_buffer, pad])
-                final_extra_done = True
             audio_chunk = state.audio_buffer[:chunk_size]
             batch_feature = self._process_streaming_audio(audio_chunk, state.audio_chunk_idx)
             for name, value in (

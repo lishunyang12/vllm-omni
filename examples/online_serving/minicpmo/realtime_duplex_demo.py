@@ -49,6 +49,7 @@ PCM16_BYTES_PER_SAMPLE = 2
 class DemoState:
     events: list[dict[str, object]] = field(default_factory=list)
     audio_deltas: list[bytes] = field(default_factory=list)
+    response_audio_deltas: dict[str, list[bytes]] = field(default_factory=dict)
     response_ids: list[str] = field(default_factory=list)
     assistant_item_ids: list[str] = field(default_factory=list)
     done_count: int = 0
@@ -84,7 +85,11 @@ class DemoState:
             delta = event.get("delta") or event.get("audio")
             if isinstance(delta, str) and delta:
                 try:
-                    self.audio_deltas.append(base64.b64decode(delta))
+                    decoded = base64.b64decode(delta)
+                    self.audio_deltas.append(decoded)
+                    response_id = self._event_response_id(event)
+                    if isinstance(response_id, str):
+                        self.response_audio_deltas.setdefault(response_id, []).append(decoded)
                 except Exception:
                     pass
             metadata = event.get("metadata")
@@ -426,6 +431,19 @@ def _write_demo_artifacts(state: DemoState, output_dir: Path, *, output_audio_fo
         )
     elif state.audio_deltas:
         (output_dir / "joined_audio_deltas.bin").write_bytes(b"".join(state.audio_deltas))
+    for index, response_id in enumerate(state.response_ids, start=1):
+        response_audio = state.response_audio_deltas.get(response_id, [])
+        if not response_audio:
+            continue
+        payload = b"".join(response_audio)
+        if output_audio_format == "pcm16":
+            _write_wav(
+                output_dir / f"response_{index:02d}.wav",
+                payload,
+                sample_rate_hz=state.output_sample_rate_hz,
+            )
+        else:
+            (output_dir / f"response_{index:02d}.bin").write_bytes(payload)
     (output_dir / "events.jsonl").write_text(
         "\n".join(json.dumps(event, ensure_ascii=False) for event in state.events) + "\n",
         encoding="utf-8",
@@ -484,17 +502,25 @@ def _reuses_previous_turn_tail(previous: str, current: str) -> bool:
     return any(previous.endswith(current[:overlap]) for overlap in range(max_overlap, 2, -1))
 
 
+def _has_terminal_punctuation(text: str) -> bool:
+    stripped = text.rstrip("\"'”’）)]} ")
+    return bool(stripped) and stripped[-1] in "。！？!?…"
+
+
 def _evaluate_transcript_integrity(
     state: DemoState,
     response_ids: list[str],
     *,
     expected_empty_response_ids: set[str],
     require_cross_turn_independence: bool,
+    require_terminal_punctuation: bool = False,
 ) -> dict[str, object]:
     details: list[dict[str, object]] = []
     transcripts: list[str] = []
     transcript_delta_done_ok = True
     empty_turns_ok = True
+    nonempty_audio_has_transcript_ok = True
+    terminal_punctuation_ok = True
 
     for response_id in response_ids:
         transcript = state.response_transcript_delta(response_id)
@@ -504,11 +530,19 @@ def _evaluate_transcript_integrity(
             len(done_transcripts) == 1 and _canonical_transcript(done_transcripts[0]) == canonical_transcript
         ) or (not done_transcripts and not canonical_transcript)
         expected_empty = response_id in expected_empty_response_ids
-        response_empty_ok = not expected_empty or (
-            not canonical_transcript and state.response_audio_delta_count(response_id) == 0
+        audio_delta_count = state.response_audio_delta_count(response_id)
+        response_empty_ok = not expected_empty or (not canonical_transcript and audio_delta_count == 0)
+        response_audio_has_transcript = expected_empty or audio_delta_count == 0 or bool(canonical_transcript)
+        response_terminal_punctuation_ok = (
+            expected_empty
+            or not canonical_transcript
+            or not require_terminal_punctuation
+            or _has_terminal_punctuation(canonical_transcript)
         )
         transcript_delta_done_ok = transcript_delta_done_ok and response_delta_done
         empty_turns_ok = empty_turns_ok and response_empty_ok
+        nonempty_audio_has_transcript_ok = nonempty_audio_has_transcript_ok and response_audio_has_transcript
+        terminal_punctuation_ok = terminal_punctuation_ok and response_terminal_punctuation_ok
         transcripts.append(canonical_transcript)
         details.append(
             {
@@ -517,6 +551,9 @@ def _evaluate_transcript_integrity(
                 "delta_done_ok": response_delta_done,
                 "expected_empty": expected_empty,
                 "empty_ok": response_empty_ok,
+                "audio_delta_count": audio_delta_count,
+                "audio_has_transcript": response_audio_has_transcript,
+                "terminal_punctuation_ok": response_terminal_punctuation_ok,
             }
         )
 
@@ -534,6 +571,8 @@ def _evaluate_transcript_integrity(
         "transcript_delta_done_ok": transcript_delta_done_ok,
         "cross_turn_independent_ok": cross_turn_independent_ok,
         "empty_turns_ok": empty_turns_ok,
+        "nonempty_audio_has_transcript_ok": nonempty_audio_has_transcript_ok,
+        "terminal_punctuation_ok": terminal_punctuation_ok,
         "transcript_integrity": details,
     }
 
@@ -721,8 +760,6 @@ async def run_demo(args: argparse.Namespace) -> dict[str, object]:
                             "extra_body": {
                                 "auto_response": True,
                                 "force_listen_count": 0,
-                                "listen_prob_scale": 0.5,
-                                "listen_top_k": 0,
                             },
                         },
                     }
@@ -773,6 +810,7 @@ async def run_demo(args: argparse.Namespace) -> dict[str, object]:
         turn_response_ids,
         expected_empty_response_ids=expected_empty_response_ids,
         require_cross_turn_independence=getattr(args, "require_distinct_inputs", False),
+        require_terminal_punctuation=getattr(args, "require_distinct_inputs", False),
     )
     expected_audio_turns = expected_turns - len(expected_empty_turns)
     lifecycle_counts_ok = (
@@ -856,6 +894,8 @@ async def run_demo(args: argparse.Namespace) -> dict[str, object]:
         and transcript_integrity["transcript_delta_done_ok"]
         and transcript_integrity["cross_turn_independent_ok"]
         and transcript_integrity["empty_turns_ok"]
+        and transcript_integrity["nonempty_audio_has_transcript_ok"]
+        and transcript_integrity["terminal_punctuation_ok"]
         and (distinct_turn_inputs or not getattr(args, "require_distinct_inputs", False))
     )
     return result

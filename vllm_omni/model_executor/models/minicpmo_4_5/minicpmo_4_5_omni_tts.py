@@ -794,7 +794,6 @@ class MiniCPMO45OmniTTSForConditionalGeneration(nn.Module, SupportsPP):
         new_tokens: torch.Tensor,
         *,
         turn_end: bool,
-        segment_end: bool,
         force_flush: bool,
         chunk_size: int,
     ) -> list[torch.Tensor]:
@@ -816,7 +815,7 @@ class MiniCPMO45OmniTTSForConditionalGeneration(nn.Module, SupportsPP):
                 pieces.append(self._t2w_stream_window(window, state.prompt_wav_path, last_chunk=False))
                 state.token2wav_buffer = state.token2wav_buffer[chunk_size:]
 
-        if (turn_end or segment_end) and state.token2wav_buffer:
+        if turn_end and state.token2wav_buffer:
             pieces.append(
                 self._t2w_stream_window(
                     list(state.token2wav_buffer),
@@ -998,8 +997,6 @@ class MiniCPMO45OmniTTSForConditionalGeneration(nn.Module, SupportsPP):
             info.get("end_of_turn") or info.get("turn_end") or meta_info.get("end_of_turn") or meta_info.get("turn_end")
         )
         turn_end = explicit_turn_end or (turn_eos_id is not None and turn_eos_id in pending_ids)
-        segment_end = bool(meta_info.get("segment_end") or meta_info.get("chunk_end") or turn_end)
-
         if state is None and not pending_ids:
             # No turn open and nothing new to speak: nothing to synthesize.
             yield self._empty_audio_chunk(), True
@@ -1129,7 +1126,6 @@ class MiniCPMO45OmniTTSForConditionalGeneration(nn.Module, SupportsPP):
             state,
             new_tokens,
             turn_end=turn_end,
-            segment_end=segment_end,
             force_flush=force_flush,
             chunk_size=chunk_size,
         )

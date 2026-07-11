@@ -1,5 +1,6 @@
 from vllm_omni.experimental.fullduplex.openai.protocol import (
     DuplexCapabilities,
+    DuplexSession,
     DuplexSessionConfig,
     DuplexSessionRegistry,
     DuplexTurnController,
@@ -17,7 +18,8 @@ def test_duplex_session_commits_text_and_audio_as_one_turn():
     committed = session.commit_user_input()
 
     assert committed is not None
-    assert committed.turn_id == 1
+    assert committed.turn_id == 0
+    assert committed.input_commit_seq == 1
     assert committed.epoch == 0
     assert len(session.history) == 1
     content = session.history[0]["content"]
@@ -26,6 +28,21 @@ def test_duplex_session_commits_text_and_audio_as_one_turn():
     assert content[1]["type"] == "audio_url"
     assert content[1]["audio_url"]["url"] == "data:audio/wav;base64,YWJj"
     assert session.turn_state == DuplexTurnState.USER_COMMITTED
+
+
+def test_native_input_commit_does_not_advance_model_turn_identity():
+    session = DuplexSession(
+        session_id="sid-model-owned-turn",
+        config=DuplexSessionConfig(extra_body={"auto_response": True}),
+    )
+
+    first = session.commit_native_audio_input(transcript="first chunk")
+    second = session.commit_native_audio_input(transcript="second chunk")
+
+    assert session.input_commit_seq == 2
+    assert first.input_commit_seq == 1
+    assert second.input_commit_seq == 2
+    assert first.turn_id == second.turn_id == session.turn_id == 0
 
 
 def test_duplex_barge_in_advances_epoch_and_drops_uncommitted_assistant_text():
