@@ -36,6 +36,10 @@ class MiniCPMO45ModelEventAdapter:
     def __init__(self) -> None:
         self._speaking_fences: set[DuplexFence] = set()
         self._audio_samples: dict[DuplexFence, int] = {}
+        # Cumulative transcript already emitted per fence: the talker restreams
+        # cumulative text across continuation batches, so only the unseen suffix
+        # is emitted as a delta.
+        self._text_sent: dict[DuplexFence, str] = {}
 
     def map_output(self, output: object, fence: DuplexFence) -> tuple[object, ...]:
         if not isinstance(output, dict):
@@ -43,35 +47,176 @@ class MiniCPMO45ModelEventAdapter:
         meta = output.get("meta")
         metadata = meta if isinstance(meta, dict) else {}
 
-        if output.get("is_listen") is True:
+        # A model-listen decision must be classified and returned BEFORE any
+        # audio work: a listen wrapper carries the thinker hidden states under
+        # "latent", and treating that as a waveform would ratchet the audio
+        # cursor past the talker's real audio. (Mirrors Track B serving.py.)
+        if self._native_decision(output, metadata, fence) == "listen":
             return (ModelListening(fence=fence),)
 
         events: list[object] = []
-        if output.get("is_listen") is False and fence not in self._speaking_fences:
+        if fence not in self._speaking_fences:
             self._speaking_fences.add(fence)
             events.append(ModelSpeaking(fence=fence))
-        text = output.get("text")
-        if isinstance(text, str) and text:
-            events.append(ModelTextDelta(text=text, fence=fence))
 
+        delta_text = self._segment_text_delta(output, fence)
+        if delta_text:
+            events.append(ModelTextDelta(text=delta_text, fence=fence))
+
+        self._attach_new_audio(output, fence)
         audio_delta = self._audio_delta(output, fence)
         if audio_delta is not None:
             events.append(audio_delta)
 
-        segment_end = bool(
-            output.get("segment_end")
-            or output.get("tts_is_last_chunk")
-            or metadata.get("segment_end")
-            or metadata.get("tts_is_last_chunk")
-        )
-        turn_end = bool(output.get("turn_end") or metadata.get("turn_end"))
+        segment_end = self._flag(output, metadata, "segment_end", "tts_is_last_chunk")
+        turn_end = self._flag(output, metadata, "turn_end", "end_of_turn")
         if segment_end:
             events.append(ModelSegmentEnded(fence=fence))
         if turn_end:
             self._speaking_fences.discard(fence)
             self._audio_samples.pop(fence, None)
+            self._text_sent.pop(fence, None)
             events.append(ModelTurnEnded(reason="model_turn_eos", fence=fence))
         return tuple(events)
+
+    def _native_decision(self, output: dict, metadata: dict, fence: DuplexFence) -> str | None:
+        """Classify a finished stage-0 output as ``"listen"`` or a speak (None).
+
+        Honors the orchestrator's explicit listen markers first, then falls back
+        to the trailing token id / stop reason vs the model's listen token id
+        (published in ``meta``). Non-finished or ambiguous outputs return None and
+        flow through the speak path (which may still carry streaming audio).
+        """
+        if output.get("is_listen") is True or output.get("model_listen") is True:
+            return "listen"
+        if output.get("is_listen") is False:
+            return None
+        if output.get("duplex_native_decision") == "listen":
+            return "listen"
+        if not output.get("finished"):
+            return None
+        listen_id = self._listen_token_id(output, metadata)
+        if listen_id is None:
+            return None
+        stop_reason = self._coerce_int(output.get("stop_reason"))
+        if stop_reason == listen_id:
+            return "listen"
+        token_ids = output.get("token_ids")
+        if isinstance(token_ids, list) and token_ids and self._coerce_int(token_ids[-1]) == listen_id:
+            return "listen"
+        return None
+
+    @staticmethod
+    def _listen_token_id(output: dict, metadata: dict) -> int | None:
+        for source in (output.get("special_token_ids"), metadata, output):
+            if not isinstance(source, dict):
+                continue
+            for key in ("listen_token_id", "meta.listen_token_id"):
+                value = MiniCPMO45ModelEventAdapter._coerce_int(source.get(key))
+                if value is not None and value >= 0:
+                    return value
+        return None
+
+    @staticmethod
+    def _coerce_int(value: object) -> int | None:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        if isinstance(value, str):
+            try:
+                return int(value.strip())
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def _flag(output: dict, metadata: dict, *keys: str) -> bool:
+        """Truthy-check boundary flags on the output or its metadata.
+
+        Tolerant of non-scalar values: mm metadata can carry raw tensors under
+        unrelated keys, and ``bool()`` on a multi-element tensor raises, so an
+        unguarded ``or`` chain over metadata keys is unsafe.
+        """
+        for source in (output, metadata):
+            if not isinstance(source, dict):
+                continue
+            for key in keys:
+                value = source.get(key)
+                if value is None:
+                    continue
+                if isinstance(value, bool):
+                    if value:
+                        return True
+                    continue
+                if isinstance(value, int | float):
+                    if value:
+                        return True
+                    continue
+                if isinstance(value, str):
+                    if value.strip().lower() in {"1", "true", "yes", "on"}:
+                        return True
+                    continue
+                try:
+                    if bool(value):
+                        return True
+                except Exception:  # noqa: BLE001 - non-scalar (e.g. tensor); treat as unset
+                    continue
+        return False
+
+    def _segment_text_delta(self, output: dict, fence: DuplexFence) -> str:
+        """Return only the transcript text not yet emitted for this fence."""
+        text = output.get("text")
+        if not isinstance(text, str) or not text:
+            return ""
+        prev = self._text_sent.get(fence, "")
+        if text == prev:
+            return ""
+        delta = text[len(prev):] if text.startswith(prev) else text
+        self._text_sent[fence] = text
+        return delta
+
+    def _attach_new_audio(self, output: dict, fence: DuplexFence) -> None:
+        """Slice the talker's cumulative waveform down to the unsent tail.
+
+        The stage-1 talker streams a cumulative float32 waveform per response;
+        only samples past the fence's emitted cursor are new. The sliced tail is
+        written back as base64 ``pcm_f32le`` so :meth:`_audio_delta` (the shared
+        cursor accounting) turns it into a fenced :class:`ModelAudioDelta`. The
+        ``latent`` key is deliberately excluded — for stage-0 it is hidden state,
+        not audio.
+        """
+        if isinstance(output.get("audio_data"), str) and output["audio_data"]:
+            return
+        raw = None
+        for key in ("audio", "model_outputs"):
+            if output.get(key) is not None:
+                raw = output[key]
+                break
+        if raw is None:
+            return
+        try:
+            import numpy as np
+            import torch
+
+            if isinstance(raw, list):
+                raw = raw[0] if raw else None
+                if raw is None:
+                    return
+            if isinstance(raw, torch.Tensor):
+                arr = raw.detach().float().reshape(-1).cpu().numpy()
+            else:
+                arr = np.asarray(raw, dtype=np.float32).reshape(-1)
+        except Exception:  # noqa: BLE001
+            return
+        total = int(arr.shape[0])
+        sent = self._audio_samples.get(fence, 0)
+        if total <= sent:
+            return
+        tail = np.ascontiguousarray(arr[sent:], dtype=np.float32)
+        output["audio_data"] = base64.b64encode(tail.tobytes()).decode("ascii")
 
     def _audio_delta(self, output: dict, fence: DuplexFence) -> ModelAudioDelta | None:
         """Decode the worker-normalized ``audio_data`` into a fenced audio delta.

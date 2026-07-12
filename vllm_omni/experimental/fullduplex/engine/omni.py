@@ -817,14 +817,28 @@ class OmniDuplexEnginePort:
                 result["is_listen"] = True
             elif decision == "speak" or result.get("audio_data"):
                 result["is_listen"] = False
-        if not result.get("text"):
-            for candidate in (raw, getattr(raw, "request_output", None)):
-                outs = getattr(candidate, "outputs", None)
-                comp = outs[0] if isinstance(outs, list) and outs else None
-                text = getattr(comp, "text", "") if comp is not None else ""
+        # Surface the first completion's text / token ids / stop reason: the
+        # model event adapter needs them to classify listen vs speak (the native
+        # decision keys off the trailing token id and stop reason) and to dedup
+        # the per-segment transcript.
+        completion = None
+        for candidate in (raw, getattr(raw, "request_output", None)):
+            outs = getattr(candidate, "outputs", None)
+            comp = outs[0] if isinstance(outs, list) and outs else None
+            if comp is not None:
+                completion = comp
+                break
+        if completion is not None:
+            if not result.get("text"):
+                text = getattr(completion, "text", "")
                 if isinstance(text, str) and text:
                     result["text"] = text
-                    break
+            if "token_ids" not in result:
+                token_ids = getattr(completion, "token_ids", None)
+                if token_ids is not None:
+                    result["token_ids"] = list(token_ids)
+            if "stop_reason" not in result:
+                result["stop_reason"] = getattr(completion, "stop_reason", None)
         if "finished" not in result:
             result["finished"] = bool(getattr(output_msg, "finished", False))
         return result

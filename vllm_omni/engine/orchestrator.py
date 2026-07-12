@@ -938,7 +938,6 @@ class Orchestrator:
                     kwargs={
                         "session_id": msg.session_id,
                         "epoch": msg.fence.epoch,
-                        "fence": msg.fence,
                         "event": msg.event,
                         "payload": dict(payload),
                     },
