@@ -308,6 +308,7 @@ class _VllmSession:
 
 
 @app.websocket("/ws/duplex")
+@app.websocket("/v1/worker/duplex")
 async def duplex_ws(ws: WebSocket) -> None:
     await ws.accept()
     _state["status"] = "duplex_active"

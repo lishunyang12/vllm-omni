@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import os
 from typing import Any
 
@@ -8,6 +9,7 @@ import numpy as np
 from vllm.multimodal.media import MediaConnector
 
 from vllm_omni.experimental.fullduplex.core.events import (
+    ModelAudioDelta,
     ModelListening,
     ModelSegmentEnded,
     ModelSpeaking,
@@ -20,10 +22,20 @@ from vllm_omni.experimental.fullduplex.openai.protocol import DuplexSessionConfi
 
 
 class MiniCPMO45ModelEventAdapter:
-    """Translate model-owned listen/speak boundaries into domain events."""
+    """Translate model-owned listen/speak boundaries into domain events.
+
+    Playback cursors carried on :class:`ModelAudioDelta` are measured in output
+    audio *samples* (one ``float32`` sample per 4 bytes, at the model's output
+    sample rate, 24 kHz). Samples are exact, so the reducer's monotonic
+    ``committed <= played <= sent <= generated`` invariant holds without the
+    rounding drift a millisecond cursor would introduce. The cursor is
+    cumulative per fence and resets when the turn ends (or when a barge-in mints
+    a new epoch/fence, at which point the reducer also resets its cursor).
+    """
 
     def __init__(self) -> None:
         self._speaking_fences: set[DuplexFence] = set()
+        self._audio_samples: dict[DuplexFence, int] = {}
 
     def map_output(self, output: object, fence: DuplexFence) -> tuple[object, ...]:
         if not isinstance(output, dict):
@@ -42,6 +54,10 @@ class MiniCPMO45ModelEventAdapter:
         if isinstance(text, str) and text:
             events.append(ModelTextDelta(text=text, fence=fence))
 
+        audio_delta = self._audio_delta(output, fence)
+        if audio_delta is not None:
+            events.append(audio_delta)
+
         segment_end = bool(
             output.get("segment_end")
             or output.get("tts_is_last_chunk")
@@ -53,8 +69,36 @@ class MiniCPMO45ModelEventAdapter:
             events.append(ModelSegmentEnded(fence=fence))
         if turn_end:
             self._speaking_fences.discard(fence)
+            self._audio_samples.pop(fence, None)
             events.append(ModelTurnEnded(reason="model_turn_eos", fence=fence))
         return tuple(events)
+
+    def _audio_delta(self, output: dict, fence: DuplexFence) -> ModelAudioDelta | None:
+        """Decode the worker-normalized ``audio_data`` into a fenced audio delta.
+
+        The worker (``normalize_native_audio_result``) turns the stage TTS
+        ``audio_waveform`` into ``audio_data``: base64 of contiguous little-endian
+        ``float32`` PCM. An empty/absent payload (a speak chunk that produced no
+        audio yet) yields no delta.
+        """
+        encoded = output.get("audio_data")
+        if not isinstance(encoded, str) or not encoded:
+            return None
+        try:
+            pcm = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError):
+            return None
+        # float32 samples are 4 bytes; a ragged tail means a corrupt payload.
+        if not pcm or len(pcm) % 4 != 0:
+            return None
+        cursor = self._audio_samples.get(fence, 0) + len(pcm) // 4
+        self._audio_samples[fence] = cursor
+        return ModelAudioDelta(
+            data=pcm,
+            generated_cursor=cursor,
+            sent_cursor=cursor,
+            fence=fence,
+        )
 
 
 class MiniCPMO45NativeDuplexServingAdapter:

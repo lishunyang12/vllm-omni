@@ -14,6 +14,7 @@ from typing import Any, Protocol
 
 from ..core.events import (
     AppendToEngine,
+    EngineAppendAccepted,
     EngineFailed,
     RebuildStage0Context,
     ReserveResponse,
@@ -422,6 +423,33 @@ def duplex_data_plane_request_info(result: dict[str, object]) -> tuple[str | Non
     return None, None
 
 
+def duplex_data_plane_request_ids(result: dict[str, object]) -> list[str]:
+    """All data-plane request ids from an append result, in stage order.
+
+    A two-stage native duplex append (Stage0 listen/speak -> Stage1 TTS) can
+    open more than one data-plane request: Stage1 audio arrives on the session
+    stream under its own request id, not Stage0's. The port must track every
+    data-plane id so :meth:`OmniDuplexEnginePort.events` surfaces Stage1 audio
+    instead of dropping it. ``duplex_data_plane_request_info`` returns only the
+    first (Stage0) id and is kept for the scheduler-reserve callers that need
+    the primary request.
+    """
+    stage_results = result.get("stage_results")
+    if not isinstance(stage_results, list):
+        return []
+    request_ids: list[str] = []
+    for item in stage_results:
+        if not isinstance(item, dict):
+            continue
+        inner = item.get("result")
+        if not isinstance(inner, dict) or inner.get("data_plane_append") is not True:
+            continue
+        request_id = inner.get("request_id")
+        if isinstance(request_id, str) and request_id and request_id not in request_ids:
+            request_ids.append(request_id)
+    return request_ids
+
+
 def duplex_resource_request_id(fence: DuplexFence, role: str) -> str:
     if not role or any(
         character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for character in role
@@ -635,6 +663,7 @@ class OmniDuplexEnginePort:
         self._timeout = timeout
         self._sessions = DuplexSessionRuntimeManager()
         self._request_ids: set[str] = set()
+        self._pending_accept_fences: set[DuplexFence] = set()
         self._session_id: str | None = None
         self._closed = False
 
@@ -652,9 +681,17 @@ class OmniDuplexEnginePort:
             expected_epoch=command.fence.epoch,
             timeout=self._timeout,
         )
-        request_id, _ = duplex_data_plane_request_info(result)
-        if request_id is not None:
+        # Register every data-plane request id, not just Stage0's: Stage1 TTS
+        # audio arrives on the session stream under its own id and would be
+        # dropped by events() if only the primary (Stage0) id were tracked.
+        for request_id in duplex_data_plane_request_ids(result):
             self._request_ids.add(request_id)
+        # A committed turn (final append) must surface EngineAppendAccepted so
+        # the reducer can advance TURN_COMMITTED -> AWAITING_MODEL before any
+        # model output arrives; events() emits it just ahead of that turn's
+        # first mapped output.
+        if command.final:
+            self._pending_accept_fences.add(command.fence)
 
     async def cancel(self, fence: DuplexFence) -> None:
         await self._signal(fence, "response.cancel", {})
@@ -684,7 +721,11 @@ class OmniDuplexEnginePort:
     async def events(self) -> AsyncIterator[EngineEvent]:
         while not self._closed:
             if self._session_id is None:
-                raise RuntimeError("duplex engine port has no open session")
+                # The runtime starts consuming events concurrently with input,
+                # but the engine session opens lazily on the first append. Wait
+                # for it rather than failing the session on this benign race.
+                await asyncio.sleep(0.005)
+                continue
             output = await self._engine.get_duplex_output_async(self._session_id)
             if output is None:
                 await asyncio.sleep(0)
@@ -697,8 +738,15 @@ class OmniDuplexEnginePort:
                 raise DuplexOutputFenceError(output)
             if fence.session_id != self._session_id:
                 raise DuplexFenceMismatchError(DuplexFence(self._session_id), fence)
-            mapped = self._output_mapper(getattr(output, "engine_outputs", output), fence)
+            raw = getattr(output, "engine_outputs", output)
+            normalized = self._normalize_engine_output(raw, output)
+            mapped = self._output_mapper(normalized, fence)
             events = mapped if isinstance(mapped, Iterable) and not hasattr(mapped, "fence") else (mapped,)
+            # Surface the turn's acceptance exactly once, before its first model
+            # output, so the reducer leaves TURN_COMMITTED for AWAITING_MODEL.
+            if fence in self._pending_accept_fences:
+                self._pending_accept_fences.discard(fence)
+                yield EngineAppendAccepted(fence=fence)
             for event in events:
                 event_fence = getattr(event, "fence", None)
                 if not isinstance(event_fence, DuplexFence):
@@ -706,6 +754,80 @@ class OmniDuplexEnginePort:
                 if event_fence != fence:
                     raise DuplexFenceMismatchError(fence, event_fence)
                 yield event
+
+    @staticmethod
+    def _extract_mm_output(raw: object) -> dict:
+        """Pull the multimodal_output mapping out of an engine output.
+
+        Mirrors the Track B serving extraction chain: the duplex data-plane
+        output nests the normalized native result (is_listen / audio_data /
+        text-marks) under ``multimodal_output`` — on the output itself, its
+        first completion, or the wrapped ``request_output``.
+        """
+        from collections.abc import Mapping
+
+        if isinstance(raw, Mapping):
+            return dict(raw)
+        mm = getattr(raw, "multimodal_output", None)
+        if isinstance(mm, Mapping) and mm:
+            return dict(mm)
+        outs = getattr(raw, "outputs", None)
+        comp = outs[0] if isinstance(outs, list) and outs else None
+        if comp is not None:
+            mm = getattr(comp, "multimodal_output", None)
+            if isinstance(mm, Mapping) and mm:
+                return dict(mm)
+        inner = getattr(raw, "request_output", None)
+        if inner is not None and inner is not raw:
+            mm = getattr(inner, "multimodal_output", None)
+            if isinstance(mm, Mapping) and mm:
+                return dict(mm)
+            inner_outs = getattr(inner, "outputs", None)
+            inner_comp = inner_outs[0] if isinstance(inner_outs, list) and inner_outs else None
+            if inner_comp is not None:
+                mm = getattr(inner_comp, "multimodal_output", None)
+                if isinstance(mm, Mapping) and mm:
+                    return dict(mm)
+        return {}
+
+    def _normalize_engine_output(self, raw: object, output_msg: object) -> object:
+        """Normalize an engine output into the flat dict ``map_output`` expects.
+
+        Only real engine request-output wrappers (which carry the native result
+        under ``multimodal_output`` / ``outputs`` / ``request_output``) are
+        flattened. Already-mapped domain events (identified by a ``fence``
+        attribute) and plain mappings are passed through untouched so the
+        mapper's own dispatch still applies.
+        """
+        from collections.abc import Mapping
+
+        if hasattr(raw, "fence") or isinstance(raw, Mapping):
+            return raw
+        has_payload = (
+            getattr(raw, "multimodal_output", None) is not None
+            or getattr(raw, "outputs", None) is not None
+            or getattr(raw, "request_output", None) is not None
+        )
+        if not has_payload:
+            return raw
+        result = self._extract_mm_output(raw)
+        if "is_listen" not in result:
+            decision = result.get("duplex_native_decision")
+            if result.get("model_listen") is True or decision == "listen":
+                result["is_listen"] = True
+            elif decision == "speak" or result.get("audio_data"):
+                result["is_listen"] = False
+        if not result.get("text"):
+            for candidate in (raw, getattr(raw, "request_output", None)):
+                outs = getattr(candidate, "outputs", None)
+                comp = outs[0] if isinstance(outs, list) and outs else None
+                text = getattr(comp, "text", "") if comp is not None else ""
+                if isinstance(text, str) and text:
+                    result["text"] = text
+                    break
+        if "finished" not in result:
+            result["finished"] = bool(getattr(output_msg, "finished", False))
+        return result
 
     async def _ensure_open(self, fence: DuplexFence) -> None:
         if self._session_id is not None and self._session_id != fence.session_id:
@@ -741,10 +863,17 @@ class OmniDuplexEnginePort:
             return {"final": command.final}
         data = command.chunk.data
         if command.chunk.modality == "audio" and isinstance(data, bytes):
+            # Mirror the Track B PCM-buffer payload exactly: type/format/rate +
+            # force_listen + is_speech. Missing "type"/"force_listen" desyncs the
+            # model's audio handling and yields NaN logits. new_user_turn is NOT
+            # set (the opening utterance is not a new user turn).
             return {
+                "type": "audio",
                 "audio": b64encode(data).decode("ascii"),
                 "format": "pcm_f32le",
                 "sample_rate_hz": int(self._session_config.get("sample_rate_hz", 16000)),
+                "force_listen": False,
+                "is_speech": True,
             }
         return {"data": data, "modality": command.chunk.modality}
 
@@ -773,6 +902,7 @@ __all__ = [
     "SessionMode",
     "build_duplex_data_plane_prompt",
     "duplex_data_plane_request_info",
+    "duplex_data_plane_request_ids",
     "duplex_first_append_context_reserve",
     "duplex_first_append_unit_count",
     "duplex_new_user_turn_prefix_reserve",

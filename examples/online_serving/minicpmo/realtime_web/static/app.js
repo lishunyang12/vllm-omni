@@ -45,7 +45,10 @@
     (window.DUPLEX_WS_BASE && window.DUPLEX_WS_BASE.trim()) ||
     sameOriginWsBase();
   const MODEL = 'openbmb/MiniCPM-o-4_5';
-  const WS_URL = `${WS_BASE}/v1/realtime?duplex=1&model=${encodeURIComponent(MODEL)}`;
+  // ?runtime=fsm selects the experimental Track A continuous full-duplex runtime.
+  const RUNTIME = (new URLSearchParams(location.search).get('runtime') || '').toLowerCase();
+  const WS_URL = `${WS_BASE}/v1/realtime?duplex=1&model=${encodeURIComponent(MODEL)}` +
+    (RUNTIME ? `&runtime=${encodeURIComponent(RUNTIME)}` : '');
 
   const TARGET_SR = 16000;     // mic upload rate
   const PLAYBACK_SR = 24000;   // model audio rate

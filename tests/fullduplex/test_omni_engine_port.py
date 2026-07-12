@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
 from collections.abc import AsyncIterator
@@ -190,6 +191,62 @@ async def test_request_id_routes_outputs_without_becoming_identity() -> None:
 
 
 @pytest.mark.asyncio
+async def test_port_surfaces_stage1_output_from_second_data_plane_request() -> None:
+    """Stage1 TTS audio arrives under its own data-plane request id.
+
+    A two-stage native append opens Stage0 (listen/speak) and Stage1 (TTS)
+    data-plane requests. The port must register both so events() surfaces the
+    Stage1 audio output instead of dropping it as an unknown request id.
+    """
+
+    class _TwoStageEngine(_Engine):
+        async def append_duplex_input_fenced_async(self, fence: DuplexFence, **kwargs):
+            self.calls.append(("append", {"fence": fence, **kwargs}))
+            return {
+                "stage_results": [
+                    {"result": {"data_plane_append": True, "request_id": duplex_resource_request_id(fence, "stage0")}},
+                    {"result": {"data_plane_append": True, "request_id": duplex_resource_request_id(fence, "stage1")}},
+                ]
+            }
+
+    engine = _TwoStageEngine()
+    port = OmniDuplexEnginePort(engine)
+    fence = DuplexFence("sid", turn_id=1, response_seq=1)
+    # final=False keeps the focus on request-id routing (no turn-accept synthesis).
+    await port.append(AppendToEngine(fence, final=False))
+    # Output routed under the Stage1 (second) request id — previously dropped.
+    engine.outputs.append(
+        SimpleNamespace(
+            request_id=duplex_resource_request_id(fence, "stage1"),
+            fence=fence,
+            engine_outputs=ModelSpeaking(fence=fence),
+        )
+    )
+
+    assert await _first(port.events()) == ModelSpeaking(fence=fence)
+
+
+@pytest.mark.asyncio
+async def test_final_append_yields_engine_append_accepted_before_model_output() -> None:
+    """A committed turn must surface EngineAppendAccepted ahead of model output."""
+    engine = _Engine()
+    port = OmniDuplexEnginePort(engine, output_mapper=lambda payload, fence: (ModelSpeaking(fence=fence),))
+    fence = DuplexFence("sid", turn_id=1, response_seq=1)
+    await port.append(AppendToEngine(fence, final=True))
+    engine.outputs.append(
+        SimpleNamespace(
+            request_id=duplex_resource_request_id(fence, "stage0"),
+            fence=fence,
+            engine_outputs={"is_listen": False},
+        )
+    )
+
+    gen = port.events()
+    assert await _first(gen) == EngineAppendAccepted(fence=fence)
+    assert await anext(gen) == ModelSpeaking(fence=fence)
+
+
+@pytest.mark.asyncio
 async def test_typed_port_has_no_legacy_identity_fallback() -> None:
     class _LegacyOnlyEngine:
         async def open_duplex_session_async(self, session_id: str, **kwargs):
@@ -260,3 +317,38 @@ def test_engine_port_import_is_canonical() -> None:
     from vllm_omni.experimental.fullduplex.engine.omni import OmniDuplexEnginePort as ImportedPort
 
     assert ImportedPort is OmniDuplexEnginePort
+
+
+@pytest.mark.asyncio
+async def test_events_waits_for_session_open_instead_of_raising() -> None:
+    """events() runs concurrently with input; the session opens lazily on the
+    first append. It must wait for that, not fail the session (regression: the
+    Track A / continuous path closed the socket right after session.created)."""
+
+    class _LazyEngine(_Engine):
+        async def get_duplex_output_async(self, session_id: str):
+            if not self.outputs:
+                await asyncio.sleep(0)
+                return None
+            return self.outputs.pop(0)
+
+    engine = _LazyEngine()
+    port = OmniDuplexEnginePort(engine, output_mapper=lambda payload, fence: (ModelSpeaking(fence=fence),))
+    fence = DuplexFence("sid", turn_id=1, response_seq=1)
+
+    gen = port.events()
+    pending = asyncio.ensure_future(_first(gen))
+    await asyncio.sleep(0.02)
+    assert not pending.done(), "events() must wait for a session, not raise/complete early"
+
+    # Open the session (lazy) and provide a model output.
+    await port.append(AppendToEngine(fence, final=False))
+    engine.outputs.append(
+        SimpleNamespace(
+            request_id=duplex_resource_request_id(fence, "stage0"),
+            fence=fence,
+            engine_outputs={"is_listen": False},
+        )
+    )
+
+    assert await asyncio.wait_for(pending, timeout=1) == ModelSpeaking(fence=fence)

@@ -1,0 +1,23 @@
+# Demo overlay: same as minicpmo_4_5_duplex.yaml but caps GPU memory so it fits
+# alongside other tenants on this shared box (GPUs 0/1 have ~149 GiB free each,
+# so 0.45 * 275 GiB ~= 124 GiB fits; the base 0.7/0.75 would OOM).
+base_config: minicpmo_4_5.yaml
+pipeline: minicpmo_4_5
+session_mode: duplex
+active_stream_window: 1
+
+stages:
+  - stage_id: 0
+    async_scheduling: false
+    gpu_memory_utilization: 0.4
+
+  - stage_id: 1
+    async_scheduling: false
+    # Leave GPU-1 headroom for the in-process ONNX/torch token2wav vocoder
+    # (campplus + speech_tokenizer onnxruntime, flow/hift torch); vllm hogging
+    # 0.45 left too little and the vocoder died silently.
+    gpu_memory_utilization: 0.4
+    default_sampling_params:
+      max_tokens: 4096
+      extra_args:
+        stop_token_names: ["<|im_end|>"]

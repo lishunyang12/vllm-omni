@@ -1641,6 +1641,30 @@ async def realtime_websocket(websocket: WebSocket):
         and (duplex_query in {"1", "true", "True", "on"} or minicpmo45_realtime_model)
     )
     if use_duplex_realtime and duplex_handler is not None:
+        # Opt-in Track A path: continuous full-duplex FSM runtime. Selected with
+        # ?runtime=fsm (or env VLLM_OMNI_DUPLEX_RUNTIME=fsm). Defaults to the
+        # validated imperative handler otherwise.
+        runtime_flag = (
+            websocket.query_params.get("runtime") or os.environ.get("VLLM_OMNI_DUPLEX_RUNTIME") or ""
+        ).lower()
+        if runtime_flag == "fsm":
+            chat_service = getattr(duplex_handler, "_chat_service", None)
+            engine_client = getattr(chat_service, "engine_client", None) if chat_service is not None else None
+            # The typed OmniDuplexEnginePort needs the AsyncOmniEngine (fenced
+            # duplex RPCs); engine_client is the AsyncOmni wrapper, which holds
+            # it as `.engine`.
+            fsm_engine = getattr(engine_client, "engine", engine_client)
+            if fsm_engine is not None:
+                from vllm_omni.experimental.fullduplex.openai.handler import RuntimeDuplexHandler
+
+                model_config = getattr(chat_service, "model_config", None)
+                fsm_handler = RuntimeDuplexHandler(
+                    fsm_engine,
+                    model=realtime_model or getattr(model_config, "model", None),
+                    model_config=model_config,
+                )
+                await fsm_handler.handle_realtime_session(websocket)
+                return
         await duplex_handler.handle_realtime_session(websocket)
         return
 

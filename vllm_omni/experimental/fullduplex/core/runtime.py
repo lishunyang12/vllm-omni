@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator, Coroutine
-from typing import Any
+from collections.abc import AsyncIterator, Callable, Coroutine
+from typing import Any, Protocol
 
 from .events import (
     AppendToEngine,
@@ -23,6 +23,18 @@ from .events import (
 )
 from .ports import DuplexEnginePort, DuplexEventSink
 from .state import DuplexSessionPhase, DuplexSessionState, reduce_event
+
+
+class _DuplexState(Protocol):
+    """Minimal state contract the runtime needs from any reducer's state."""
+
+    session_phase: DuplexSessionPhase
+
+
+Reducer = Callable[
+    [Any, DomainEvent],
+    tuple[Any, tuple[DuplexEffect, ...]],
+]
 
 
 class DuplexShutdownError(RuntimeError):
@@ -43,12 +55,21 @@ class DuplexRuntime:
         *,
         capabilities: frozenset[str] = frozenset(),
         shutdown_timeout: float = 5.0,
+        reduce: Reducer = reduce_event,
+        initial_state: Any | None = None,
     ) -> None:
         if shutdown_timeout <= 0:
             raise ValueError("shutdown_timeout must be positive")
-        self.state = DuplexSessionState.open(
-            session_id,
-            capabilities=capabilities,
+        # The reducer and its state are pluggable: the default is the turn-based
+        # `reduce_event`/`DuplexSessionState`; the continuous full-duplex path
+        # injects `reduce_continuous_event`/`ContinuousDuplexState`. Both expose
+        # `session_phase` and return the same effect types, so the driver below
+        # is reducer-agnostic.
+        self._reduce = reduce
+        self.state = (
+            initial_state
+            if initial_state is not None
+            else DuplexSessionState.open(session_id, capabilities=capabilities)
         )
         self._engine = engine
         self._sink = sink
@@ -97,7 +118,7 @@ class DuplexRuntime:
 
     async def dispatch(self, event: DomainEvent) -> None:
         async with self._dispatch_lock:
-            next_state, effects = reduce_event(self.state, event)
+            next_state, effects = self._reduce(self.state, event)
             self.state = next_state
             for effect in effects:
                 if isinstance(effect, EmitProtocolEvent):
