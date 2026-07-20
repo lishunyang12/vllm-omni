@@ -1,0 +1,39 @@
+{
+  "config_groups": {
+    "group_0": {
+      "algorithm": "skip_softmax",
+      "targets": [
+        "Cosmos3PackedMoTAttention"
+      ],
+      "ignore": [
+        "layers.0.self_attn",
+        "layers.1.self_attn",
+        "layers.62.self_attn",
+        "layers.63.self_attn"
+      ],
+      "threshold_scale_factor": {
+        "formula": "a * exp(b * target_sparsity)",
+        "prefill": {
+          "a": 0.37388076016466615,
+          "b": 10.93840345299318
+        }
+      },
+      "target_sparsity": {
+        "prefill": 0.65
+      }
+    }
+  },
+  "producer": {
+    "name": "modelopt",
+    "version": "0.45.0"
+  },
+  "_provenance": {
+    "source": "ModelOpt triton_skip_softmax calibration (harness/dit_skip_calibrate.py --arch cosmos, skip-first-last=2)",
+    "producer": {
+      "name": "modelopt",
+      "version": "0.45.0"
+    },
+    "calibrated_resolution": "704x1280 / 17f / 12 steps, 8 OpenVid-1M prompts, target_sparsity=0.65",
+    "note": "v2: endpoint blocks (0,1,62,63 self_attn) protected. GQA 64q/8kv. Fit on Triton, served on trtllm-gen."
+  }
+}

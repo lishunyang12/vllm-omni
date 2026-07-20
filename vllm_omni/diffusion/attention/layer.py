@@ -99,6 +99,7 @@ class Attention(nn.Module):
             causal=causal,
             num_kv_heads=num_kv_heads,
             qkv_layout=qkv_layout,
+            prefix=prefix,
             backend_kwargs=backend_kwargs,
         )
         # Instantiate fallback backend for float32 support

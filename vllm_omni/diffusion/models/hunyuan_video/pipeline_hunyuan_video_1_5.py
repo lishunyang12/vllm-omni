@@ -28,6 +28,7 @@ from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineL
 from vllm_omni.diffusion.model_loader.hub_prefetch import from_pretrained_with_prefetch, prefetch_subfolders
 from vllm_omni.diffusion.models.hunyuan_video.hunyuan_video_15_transformer import HunyuanVideo15Transformer3DModel
 from vllm_omni.diffusion.models.interface import SupportsComponentDiscovery
+from vllm_omni.diffusion.forward_context import DenoiseProgressMixin
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.models.t5_encoder import T5EncoderModel
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
@@ -88,7 +89,7 @@ def get_hunyuan_video_15_post_process_func(od_config: OmniDiffusionConfig):
 
 
 class HunyuanVideo15Pipeline(
-    nn.Module, CFGParallelMixin, ProgressBarMixin, DiffusionPipelineProfilerMixin, SupportsComponentDiscovery
+    nn.Module, CFGParallelMixin, ProgressBarMixin, DenoiseProgressMixin, DiffusionPipelineProfilerMixin, SupportsComponentDiscovery
 ):
     _dit_modules: ClassVar[list[str]] = ["transformer"]
     _encoder_modules: ClassVar[list[str]] = ["text_encoder", "text_encoder_2"]
@@ -482,6 +483,8 @@ class HunyuanVideo15Pipeline(
         with self.progress_bar(total=len(timesteps)) as pbar:
             for i, t in enumerate(timesteps):
                 self._current_timestep = t
+                # Publish denoise progress for sparse-attn backends (opt-in / no-op otherwise).
+                self.record_denoise_step(i, t)
 
                 latent_model_input = torch.cat([latents, cond_latents, mask], dim=1)
                 timestep = t.expand(latent_model_input.shape[0]).to(latent_model_input.dtype)

@@ -15,6 +15,7 @@ from vllm_omni.diffusion.attention.backends.abstract import (
 from vllm_omni.diffusion.attention.backends.utils.piecewise_attn import (
     piecewise_attn,
 )
+from vllm_omni.diffusion.attention.backends.utils.ragged import varlen_cu_seqlens
 
 logger = init_logger(__name__)
 
@@ -57,8 +58,8 @@ def _run_varlen_dense(
 ) -> torch.Tensor:
     batch_size, q_len = query.size()[:2]
     k_len = key.size(1)
-    cu_seqlens_q = torch.arange(0, (batch_size + 1) * q_len, step=q_len, dtype=torch.int32, device=query.device)
-    cu_seqlens_k = torch.arange(0, (batch_size + 1) * k_len, step=k_len, dtype=torch.int32, device=query.device)
+    cu_seqlens_q = varlen_cu_seqlens(batch_size, q_len, query.device)
+    cu_seqlens_k = varlen_cu_seqlens(batch_size, k_len, query.device)
 
     out = varlen_func(
         q=query.flatten(0, 1),
