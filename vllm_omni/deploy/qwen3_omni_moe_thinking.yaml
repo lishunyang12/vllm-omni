@@ -1,0 +1,28 @@
+# Qwen3-Omni-MoE Thinking deploy: thinker only (text-only output).
+#
+# For checkpoints such as Qwen3-Omni-30B-A3B-Thinking that ship only the thinker
+# component. The registry auto-selects the thinker-only topology from the HF config
+# (no talker_config -> enable_audio_output is false), so this file carries deployment
+# knobs only.
+#
+# Verified on 2x H100-80G.
+pipeline: qwen3_omni_moe_thinker_only
+trust_remote_code: true
+distributed_executor_backend: mp
+enable_prefix_caching: true
+
+stages:
+  - stage_id: 0
+    devices: "0,1"
+    tensor_parallel_size: 2
+    max_num_seqs: 1
+    gpu_memory_utilization: 0.9
+    enforce_eager: true
+    default_sampling_params:
+      temperature: 0.4
+      top_p: 0.9
+      top_k: 1
+      max_tokens: 2048
+      seed: 42
+      detokenize: true
+      repetition_penalty: 1.05
