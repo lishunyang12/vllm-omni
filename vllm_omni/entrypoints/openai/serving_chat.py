@@ -3022,6 +3022,10 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
             engine_prompt["prompt_token_ids"] = prompt_token_ids
         if system_prompt_type is not None:
             engine_prompt["use_system_prompt"] = system_prompt_type
+        # Forward bot_task so the stage input processor can truncate CoT
+        # text at the correct closing tag (</think> vs </recaption>).
+        if bot_task is not None:
+            engine_prompt["bot_task"] = bot_task
         # DiT's get_system_prompt(use_system_prompt, "image", system_prompt) reads
         # this; omitting it makes sys_type=custom yield an empty DiT prefix.
         if custom_system_prompt is not None:
