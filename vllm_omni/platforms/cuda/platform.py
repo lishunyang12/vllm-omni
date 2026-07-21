@@ -172,9 +172,44 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
                         "SageAttention/sageattention3_blackwell. Falling back to TORCH_SDPA backend."
                     )
                     return DiffusionAttentionBackendEnum.TORCH_SDPA.get_path()
+            if backend_upper == "TRTLLM":
+                # No silent fallback: errors instead of degrading to SDPA. The kernel is
+                # a datacenter-Blackwell build (SM100/SM103), so major == 10 only.
+                trtllm_gen_supported = compute_capability is not None and compute_capability.major == 10
+                if not trtllm_gen_supported:
+                    raise ValueError(
+                        "TRTLLM diffusion attention backend requires a datacenter "
+                        "Blackwell GPU (SM100 / SM103, compute capability 10.x). Select a "
+                        "different --diffusion-attention-backend."
+                    )
+                if not flashinfer_available:
+                    raise ValueError(
+                        "TRTLLM diffusion attention backend requires flashinfer, which is "
+                        "not installed."
+                    )
             backend = DiffusionAttentionBackendEnum[backend_upper]
             logger.debug("Using diffusion attention backend '%s'", backend_upper)
             return backend.get_path()
+
+        # trtllm-gen FMHA is the fastest lossless kernel on datacenter Blackwell for the
+        # DiT head_dim, validated e2e + profiler (>= cuDNN on every model, ~2x faster than
+        # flashinfer/sdpa) and it uniquely carries Skip-Softmax / FP8-SAGE. Prefer it when
+        # it can actually run: datacenter Blackwell (SM100/SM103, major == 10) + head_dim
+        # 128 + flashinfer. Any other case (consumer Blackwell, head_dim != 128 such as
+        # CogVideoX's 64, missing flashinfer) falls through to the cuDNN/SDPA defaults.
+        trtllm_gen_default_ok = (
+            compute_capability is not None
+            and compute_capability.major == 10
+            and head_size == 128
+            and flashinfer_available
+        )
+        if trtllm_gen_default_ok:
+            logger.info(
+                "Defaulting to diffusion attention backend TRTLLM (datacenter Blackwell %s, head_dim %d)",
+                sm_str,
+                head_size,
+            )
+            return DiffusionAttentionBackendEnum.TRTLLM.get_path()
 
         if is_blackwell and cudnn_blackwell_ready:
             logger.info(

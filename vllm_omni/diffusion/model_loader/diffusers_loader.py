@@ -395,7 +395,24 @@ class DiffusersPipelineLoader:
                 model.to("cpu")
                 logger.info("Quantization complete, offloaded model back to CPU")
 
+        self._apply_skip_softmax_calibration(model)
         return model.eval()
+
+    def _apply_skip_softmax_calibration(self, model: nn.Module) -> None:
+        """Stamp hosted/checkpoint skip-softmax curves onto trtllm attention layers by
+        module name, after the pipeline is fully built (the only point the two Wan experts
+        are name-distinguishable). No-op unless a calibration was resolved at config build."""
+        cfg = getattr(self.od_config, "diffusion_attention_config", None)
+        specs = getattr(cfg, "per_role", None)
+        calibration = None
+        for spec in (getattr(cfg, "default", None), *(specs.values() if specs else ())):
+            calibration = calibration or (getattr(spec, "extra", None) or {}).get("skip_calibration")
+        if not calibration:
+            return
+        from vllm_omni.diffusion.attention.sparse_attention import apply_to_pipeline
+
+        stamped = apply_to_pipeline(model, calibration)
+        logger.info("Skip-softmax: stamped calibration onto %d attention layer(s).", stamped)
 
     def _process_weights_after_loading(self, model: nn.Module, target_device: torch.device) -> None:
         """Process weights after loading for quantization methods.

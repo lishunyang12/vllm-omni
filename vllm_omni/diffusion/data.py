@@ -1017,6 +1017,102 @@ class OmniDiffusionConfig:
         """
         self.tf_model_config = tf_config
         self._propagate_quantization_from_tf_config(tf_config)
+        self._propagate_skip_softmax_calibration(tf_config)
+
+    def _parse_secondary_expert_calibration(self, parse_fn) -> dict | None:
+        """Parsed ``sparse_attention_config`` from ``transformer_2/config.json``, or None.
+
+        Only multi-expert checkpoints (Wan 2.2 A14B) carry one; everything else has no
+        ``transformer_2`` and returns None. Failures are non-fatal -- the caller falls back
+        to the single-curve behavior.
+        """
+        import json
+        import os
+
+        if not self.model:
+            return None
+        path = os.path.join(str(self.model), "transformer_2", "config.json")
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, encoding="utf-8") as f:
+                return parse_fn(json.load(f).get("sparse_attention_config"))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Could not read transformer_2 skip-softmax calibration (%s); "
+                "falling back to the transformer curve for both experts.",
+                exc,
+            )
+            return None
+
+    def _propagate_skip_softmax_calibration(self, tf_config: "TransformerConfig") -> None:
+        """Resolve a skip-softmax calibration for this model and stash the PARSED curve(s)
+        on the attention spec's ``extra['skip_calibration']`` for the post-build applier
+        (``sparse_attention.apply_to_pipeline``) to stamp onto each layer by module name.
+
+        Priority: (1) calibration embedded in the checkpoint's ``sparse_attention_config``;
+        (2) a developer-curated calibration hosted in-repo for this model (Wan A14B carries
+        one curve per expert). ``target_sparsity`` requested with neither available (and no
+        calibration-free ``skip_softmax_threshold``) -> raise. The per-layer routing/ignore
+        matching lives entirely in the applier; this method only decides WHICH calibration
+        applies and surfaces its default target_sparsity.
+        """
+        cfg = self.diffusion_attention_config
+        if not isinstance(cfg, AttentionConfig):
+            return
+        specs = [s for s in (cfg.default, *cfg.per_role.values()) if s is not None]
+
+        from vllm_omni.diffusion.attention.sparse_attention import (
+            parse_sparse_attention_config,
+            resolve_calibration,
+        )
+
+        # (1) checkpoint-embedded calibration, else (2) hosted per-model.
+        ckpt = parse_sparse_attention_config(
+            tf_config.get("sparse_attention_config") if tf_config is not None else None
+        )
+        # tf_config is the primary transformer only. A multi-expert checkpoint (Wan A14B)
+        # ships a SECOND, materially different curve under transformer_2/, so read it too
+        # and hand the applier a by_expert map -- otherwise transformer_2 silently inherits
+        # transformer's threshold and is skipped at the wrong rate for half the denoise steps.
+        if ckpt is not None:
+            ckpt2 = self._parse_secondary_expert_calibration(parse_sparse_attention_config)
+            if ckpt2 is not None:
+                ckpt = {"by_expert": {"transformer": ckpt, "transformer_2": ckpt2}}
+        calibration = ckpt or resolve_calibration(self.model)
+
+        def _default_sparsity(cal: dict | None) -> float | None:
+            if not cal:
+                return None
+            entry = next(iter(cal["by_expert"].values())) if cal.get("by_expert") else cal
+            return entry.get("target_sparsity")
+
+        default_sparsity = _default_sparsity(calibration)
+
+        for spec in specs:
+            if calibration is not None:
+                spec.extra.setdefault("skip_calibration", calibration)
+            if default_sparsity is not None:
+                spec.extra.setdefault("target_sparsity", default_sparsity)
+            # target_sparsity requested but nothing to calibrate it with -> hard error.
+            if (
+                spec.extra.get("target_sparsity") is not None
+                and calibration is None
+                and spec.extra.get("skip_softmax_threshold") is None
+            ):
+                raise ValueError(
+                    f"target_sparsity was requested but no skip-softmax calibration is available "
+                    f"for model '{self.model}'. Either use skip_softmax_threshold for the "
+                    f"calibration-free path, load a calibrated checkpoint, or add a hosted "
+                    f"calibration under diffusion/attention/sparse_attention/calibrations/."
+                )
+
+        if calibration is not None:
+            source = "checkpoint" if ckpt is not None else f"hosted ({self.model})"
+            experts = list(calibration["by_expert"]) if calibration.get("by_expert") else ["single"]
+            logger.info(
+                "Loaded skip-softmax calibration from %s (%d curve(s): %s).", source, len(experts), ", ".join(experts)
+            )
 
     def update_multimodal_support(self) -> None:
         # Resolve serving-visible multimodal behavior from shared metadata

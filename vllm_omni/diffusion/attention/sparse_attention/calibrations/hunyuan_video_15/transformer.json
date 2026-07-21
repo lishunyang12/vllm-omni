@@ -1,0 +1,41 @@
+{
+  "config_groups": {
+    "group_0": {
+      "algorithm": "skip_softmax",
+      "targets": [
+        "Attention"
+      ],
+      "ignore": [
+        "context_embedder.token_refiner.refiner_blocks.0.attn",
+        "context_embedder.token_refiner.refiner_blocks.1.attn",
+        "transformer_blocks.0.attn",
+        "transformer_blocks.1.attn",
+        "transformer_blocks.52.attn",
+        "transformer_blocks.53.attn"
+      ],
+      "threshold_scale_factor": {
+        "formula": "a * exp(b * target_sparsity)",
+        "prefill": {
+          "a": 57.15753245428668,
+          "b": 8.255425391713842
+        }
+      },
+      "target_sparsity": {
+        "prefill": 0.65
+      }
+    }
+  },
+  "producer": {
+    "name": "modelopt",
+    "version": "0.45.0"
+  },
+  "_provenance": {
+    "source": "ModelOpt triton_skip_softmax calibration (harness/dit_skip_calibrate.py --arch hunyuan15)",
+    "producer": {
+      "name": "modelopt",
+      "version": "0.45.0"
+    },
+    "calibrated_resolution": "720x1280 / 33f / 30 steps, 24 OpenVid-1M prompts, target_sparsity=0.65, skip-first-last=2",
+    "note": "Fit on ModelOpt's Triton kernel; served on FlashInfer trtllm-gen. Production op point: target_sparsity=0.50, disabled_until_timestep=0.94 (~1.04x, LPIPS ~0.11 near-lossless on B300)."
+  }
+}

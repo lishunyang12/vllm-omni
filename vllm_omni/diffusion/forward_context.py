@@ -28,6 +28,11 @@ class ForwardContext:
     attn_metadata: dict[str, AttentionMetadata] | list[dict[str, AttentionMetadata]] | None = None
     split_text_embed_in_sp: bool = False
     denoise_step_idx: int | None = None
+    # Normalized diffusion timestep of the current denoise step, in [0, 1] (1 = pure
+    # noise -> 0 = clean), sourced from the model's own timestep/sigma input (NOT
+    # derived from step index — scheduler sigma spacing is non-uniform). Consumed by
+    # sparse-attention backends (e.g. trtllm skip-softmax disabled_until_timestep).
+    denoise_timestep: float | None = None
     # Per-request reference latent for img2img DiT models (e.g. Ming)
     ref_latent: torch.Tensor | None = None
     # whether to split the text embed in sequence parallel, if True, the text embed will be split in sequence parallel
@@ -212,6 +217,28 @@ def set_forward_context_denoise_step_idx(step_idx: int | None) -> None:
     """Set the current diffusion denoise step on the active ForwardContext."""
     if _forward_context is not None:
         _forward_context.denoise_step_idx = step_idx
+
+
+class DenoiseProgressMixin:
+    """Publishes per-step denoise progress (step idx + normalized timestep) to the
+    ForwardContext for sparse-attention backends. Mix in and call record_denoise_step
+    once per denoise step. Timestep is opt-in: omit it and only the step index is set;
+    the scheduler defaults to self.scheduler.
+    """
+
+    def record_denoise_step(
+        self,
+        step_idx: int | None,
+        timestep=None,
+        scheduler=None,
+    ) -> None:
+        set_forward_context_denoise_step_idx(step_idx)
+        if timestep is None or _forward_context is None:
+            return
+        # Normalize the model's timestep to [0,1] (1=noise -> 0=clean) via num_train_timesteps.
+        scheduler = scheduler if scheduler is not None else getattr(self, "scheduler", None)
+        ntt = getattr(getattr(scheduler, "config", None), "num_train_timesteps", None)
+        _forward_context.denoise_timestep = float(timestep) / ntt if ntt else None
 
 
 def set_forward_context_ref_latent(ref_latent: torch.Tensor | None) -> None:
