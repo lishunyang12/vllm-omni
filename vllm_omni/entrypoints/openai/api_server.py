@@ -1831,12 +1831,13 @@ async def generate_images(
                     status_code=generation_result.error.code if generation_result.error else 400,
                     content=generation_result.model_dump(),
                 )
-            flat_images, stage_durations, peak_memory_mb, _ = generation_result
+            flat_images, stage_durations, peak_memory_mb, cot_output = generation_result
             image_data = [ImageData(b64_json=encode_image_base64(img), revised_prompt=None) for img in flat_images]
 
             return ImageGenerationResponse(
                 created=int(time.time()),
                 data=image_data,
+                cot_output=cot_output,
                 metrics={
                     "stage_durations": stage_durations or None,
                     "peak_memory_mb": float(peak_memory_mb) if peak_memory_mb else None,
