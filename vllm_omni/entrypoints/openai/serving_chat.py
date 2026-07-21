@@ -2959,7 +2959,19 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
         build_kwargs: dict[str, Any] = {}
         ar_stop_token_ids: list[int] | None = None
 
-        if bot_task is not None or use_system_prompt is not None or custom_system_prompt is not None:
+        # ── HunyuanImage3 AR prompt setup ──────────────────────────
+        # TODO: Abstract to a model-agnostic interface (build_prompt /
+        # build_prompt_tokens / resolve_stop_token_ids) once a second
+        # AR+DiT model is supported.  For now the block is entered when
+        # any Hunyuan-specific param is set, OR when the pipeline stage
+        # declares HunyuanImage3ForCausalMM as its model_arch — this
+        # ensures ar_stop_token_ids is always resolved so the AR stage
+        # stops on <img_ratio_*> even when the caller omits bot_task.
+        _is_hunyuan_image_3 = any(
+            getattr(getattr(s, "engine_args", None), "model_arch", "") == "HunyuanImage3ForCausalMM"
+            for s in stage_configs
+        )
+        if _is_hunyuan_image_3:
             from vllm_omni.diffusion.models.hunyuan_image3.prompt_utils import (
                 build_prompt,
                 build_prompt_tokens,
