@@ -3295,35 +3295,23 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
         peak_memory_mb = result.peak_memory_mb
         cot_output = None
 
-        req_out = getattr(result, "request_output", None)
-        if req_out:
-            prompt_obj = getattr(req_out, "prompt", None)
-            if isinstance(prompt_obj, dict):
-                extra = prompt_obj.get("extra", {})
-                if isinstance(extra, dict):
-                    ar_text = extra.get("ar_generated_text")
-                    if isinstance(ar_text, str) and ar_text.strip():
-                        cot_output = ar_text
-
-        req_out = getattr(result, "request_output", None)
-        if req_out:
-            prompt_obj = getattr(req_out, "prompt", None)
-            if isinstance(prompt_obj, dict):
-                extra = prompt_obj.get("extra", {})
-                if isinstance(extra, dict):
-                    ar_text = extra.get("ar_generated_text")
-                    if isinstance(ar_text, str) and ar_text.strip():
-                        cot_output = ar_text
-
-        req_out = getattr(result, "request_output", None)
-        if req_out:
-            prompt_obj = getattr(req_out, "prompt", None)
-            if isinstance(prompt_obj, dict):
-                extra = prompt_obj.get("extra", {})
-                if isinstance(extra, dict):
-                    ar_text = extra.get("ar_generated_text")
-                    if isinstance(ar_text, str) and ar_text.strip():
-                        cot_output = ar_text
+        # Only return CoT text when the caller explicitly requested it
+        # (bot_task=think/recaption/think_recaption).  In plain mode
+        # (bot_task omitted or None) the AR generates only image-structure
+        # tokens (<answer><boi><img_size_*><img_ratio_*>) which are not
+        # meaningful CoT output — matching the official generate_image()
+        # contract where cot_text stays None when bot_task is None.
+        bot_task = (extra_body or {}).get("bot_task")
+        if bot_task is not None:
+            req_out = getattr(result, "request_output", None)
+            if req_out:
+                prompt_obj = getattr(req_out, "prompt", None)
+                if isinstance(prompt_obj, dict):
+                    extra_prompt = prompt_obj.get("extra", {})
+                    if isinstance(extra_prompt, dict):
+                        ar_text = extra_prompt.get("ar_generated_text")
+                        if isinstance(ar_text, str) and ar_text.strip():
+                            cot_output = ar_text
 
         return self._flatten_diffusion_images(images), stage_durations, peak_memory_mb, cot_output
 
