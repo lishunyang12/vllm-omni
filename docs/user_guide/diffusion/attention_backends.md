@@ -14,7 +14,7 @@ The full set of backends and their platform defaults is in the **Backend Options
 
 | Value | Notes |
 |---|---|
-| `TRTLLM_ATTN` | FlashInfer's trtllm-gen FMHA (TensorRT-LLM's generated kernels, vendored by FlashInfer). BF16, GQA native, `head_dim=128`. Datacenter Blackwell only (sm_100 / sm_103). Supports **Skip-Softmax** sparse attention — see below. Requires `flashinfer`. |
+| `TRTLLM_ATTN` | FlashInfer's trtllm-gen FMHA (TensorRT-LLM's generated kernels, vendored by FlashInfer). BF16, GQA native, `head_dim=128`. Datacenter Blackwell only (sm_100 / sm_103). Supports **Skip-Softmax** sparse attention and **SAGE** quantized attention — see below. Requires `flashinfer`. |
 | `FLASH_ATTN` | Wraps FlashAttention 2. Default on Hopper / Ada / Ampere when `flash-attn` is installed. |
 | `CUDNN_ATTN` | Pins `sdpa_kernel([CUDNN_ATTENTION])`. Default on Blackwell (sm_10x / sm_12x) with cuDNN ≥ 9.5. Wins on mask-heavy DiTs (HunyuanVideo-1.5: 2× e2e vs SDPA). |
 | `FLASHINFER_ATTN` | Calls FlashInfer's dense `single_prefill_with_kv_cache` directly with `custom_mask` for non-causal masked attention. Used as Blackwell fallback when cuDNN is unavailable. Requires `flashinfer`. |
@@ -166,6 +166,55 @@ sequence length, since Skip-Softmax only accelerates attention. Dense BF16 is `T
 
 Requires datacenter Blackwell with `head_dim == 128`; elsewhere, or without FlashInfer, selecting
 `TRTLLM_ATTN` raises rather than silently degrading.
+
+## TRTLLM_ATTN SAGE Quantization
+
+On top of dense/Skip-Softmax, `TRTLLM_ATTN` can run **SAGE** (SageAttention) — the trtllm-gen
+FMHA kernel with per-block quantized Q/K and per-channel fp8 V, so the two attention matmuls run
+in low precision. Enable it through the typed `quant` block on the attention spec:
+
+| Key | Valid values | Meaning |
+|---|---|---|
+| `dtype_qk` | `int8`, `fp8_e4m3` | Quantization dtype for Q and K. Absent ⇒ dense (SAGE off). |
+| `q_block_size` | `1`, `4`, `16` | Per-token block size for Q scales (default `1`). |
+| `k_block_size` | `1`, `4`, `16` | Per-token block size for K scales (default `16`). |
+
+V is always quantized per-channel to fp8_e4m3 and K-smoothing is applied inside the routine, so
+neither is a user knob. Only block sizes `1`, `4`, `16` have compiled kernels.
+
+The `quant` block is a shared `AttnQuantSpec` consumed by more than one backend; each reads the
+fields that apply and rejects the rest. `TRTLLM_ATTN` (SAGE) reads `dtype_qk` (`int8` / `fp8_e4m3`),
+`q_block_size`, and `k_block_size`; `FLASHINFER_ATTN` reads `dtype_qk` (`float16` / `bfloat16`),
+`dtype_vo`, and `flashinfer_backend` (see its section). A `dtype_qk` from the wrong set raises.
+
+```bash
+vllm-omni serve Wan-AI/Wan2.2-T2V-A14B-Diffusers \
+  --diffusion-attention-config '{"default": {"backend": "TRTLLM_ATTN",
+      "quant": {"dtype_qk": "fp8_e4m3", "q_block_size": 1, "k_block_size": 16}}}'
+```
+
+```python
+from vllm_omni.diffusion.data import AttentionConfig, AttentionSpec, AttnQuantSpec
+
+AttentionConfig(
+    default=AttentionSpec(
+        backend="TRTLLM_ATTN",
+        quant=AttnQuantSpec(dtype_qk="fp8_e4m3", q_block_size=1, k_block_size=16),
+    ),
+)
+```
+
+SAGE composes with `skip_softmax` (both apply in one kernel call). Like Skip-Softmax it is lossy —
+the output diverges from dense as a different (equally valid) sample, and the speedup grows with
+sequence length. On a B300 (sm_103) Wan2.2-A14B run (720p / 81 frames / 50 steps), `fp8_e4m3` SAGE
+was ~1.2× faster than dense.
+
+**Requirements.** Needs FlashInfer ≥ 0.6.16rc1 (which provides `trtllm_sage_attention_quantize`,
+FlashInfer PR #3982; the consuming kernel `sage_attn_sfs` shipped earlier in #2711). Kernel
+availability is arch-dependent: `fp8_e4m3` QK has kernels on both **SM100** (B200) and **SM103**
+(B300); `int8` QK kernels are compiled for **SM100 only**, so an int8 request on SM103 fails at
+runtime with a "Missing TRTLLM-GEN kernel" error. Missing routine/kernel raises rather than
+silently degrading.
 
 ## End-to-End Benchmark (BF16, sm_120 RTX Pro 6000 Blackwell)
 
