@@ -204,17 +204,11 @@ AttentionConfig(
 )
 ```
 
-SAGE composes with `skip_softmax` (both apply in one kernel call). Like Skip-Softmax it is lossy —
-the output diverges from dense as a different (equally valid) sample, and the speedup grows with
-sequence length. On a B300 (sm_103) Wan2.2-A14B run (720p / 81 frames / 50 steps), `fp8_e4m3` SAGE
-was ~1.2× faster than dense.
 
 **Requirements.** Needs FlashInfer ≥ 0.6.16rc1 (which provides `trtllm_sage_attention_quantize`,
 FlashInfer PR #3982; the consuming kernel `sage_attn_sfs` shipped earlier in #2711). Kernel
 availability is arch-dependent: `fp8_e4m3` QK has kernels on both **SM100** (B200) and **SM103**
-(B300); `int8` QK kernels are compiled for **SM100 only**, so an int8 request on SM103 fails at
-runtime with a "Missing TRTLLM-GEN kernel" error. Missing routine/kernel raises rather than
-silently degrading.
+(B300); `int8` QK kernels are compiled for **SM100 only**.
 
 ## End-to-End Benchmark (BF16, sm_120 RTX Pro 6000 Blackwell)
 
@@ -229,22 +223,6 @@ Same prompt and seed across runs. `Total generation time` from `text_to_video.py
 
 Pattern: mask-heavy DiTs (HV-1.5, Qwen-Image) favor `CUDNN_ATTN`; lighter-mask DiTs and TP-saturated configs (Wan 2.2, FLUX.2 TP=2) tie within noise.
 
-## Known Limitations
-
-### LTX-2.0: `CUDNN_ATTN` crashes under torch.compile
-
-LTX-2's audio attention has a symbolic head_dim under torch.compile tracing. cuDNN's SDPA backend selector rejects symbolic dims and Dynamo aborts compilation. Tracked in [#3121](https://github.com/vllm-project/vllm-omni/issues/3121).
-
-**Workaround**: explicitly select `FLASHINFER_ATTN` or `TORCH_SDPA` for LTX-2.0:
-
-```bash
-DIFFUSION_ATTENTION_BACKEND=FLASHINFER_ATTN python examples/offline_inference/text_to_video/text_to_video.py \
-    --model Lightricks/LTX-2 ...
-```
-
-### FA4 not yet integrated
-
-FlashAttention-4 (released March 2026) targets Blackwell natively and reportedly beats cuDNN by ~20% on B200. As of this writing the `flash-attn-4 4.0.0b10` wheel crashes with `AttributeError: 'NoneType' object has no attribute '_trait'` during JIT on sm_120. Not yet wired into vLLM-Omni; revisit when stable lands.
 
 ## Choosing a Backend Manually
 
