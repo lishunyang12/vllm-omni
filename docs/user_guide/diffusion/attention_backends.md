@@ -205,8 +205,7 @@ AttentionConfig(
 ```
 
 
-**Requirements.** Needs FlashInfer ≥ 0.6.16rc1 (which provides `trtllm_sage_attention_quantize`,
-FlashInfer PR #3982; the consuming kernel `sage_attn_sfs` shipped earlier in #2711). Kernel
+**Requirements.** Needs FlashInfer ≥ 0.6.16rc1. Kernel
 availability is arch-dependent: `fp8_e4m3` QK has kernels on both **SM100** (B200) and **SM103**
 (B300); `int8` QK kernels are compiled for **SM100 only**.
 
@@ -380,64 +379,3 @@ DIFFUSION_ATTENTION_BACKEND=SAGE_ATTN_3 python examples/offline_inference/text_t
     --tensor-parallel-size 2 \
     --output outputs/hv15_sage3.mp4
 ```
-
-### Mixed backends across roles
-
-Use `FLASH_ATTN` for self-attention and `TORCH_SDPA` for cross-attention:
-
-```bash
-python examples/offline_inference/text_to_video/text_to_video.py \
-    --model Wan-AI/Wan2.2-TI2V-5B-Diffusers \
-    --prompt "A dog running across a field of golden wheat." \
-    --diffusion-attention-config.per_role.self.backend FLASH_ATTN \
-    --diffusion-attention-config.per_role.cross.backend TORCH_SDPA \
-    --tensor-parallel-size 2 \
-    --output outputs/wan22_mixed.mp4
-```
-
-### Compare against FlashAttention
-
-Unset the backend override, or explicitly use `FLASH_ATTN`:
-
-```bash
-python examples/offline_inference/text_to_video/text_to_video.py \
-    --model Wan-AI/Wan2.2-TI2V-5B-Diffusers \
-    --prompt "A dog running across a field of golden wheat." \
-    --height 704 --width 1280 --num-frames 49 \
-    --num-inference-steps 30 --seed 42 --guidance-scale 5.0 \
-    --tensor-parallel-size 2 \
-    --output outputs/wan22_fa3.mp4
-```
-
-## Validation Guidance
-
-Don't assume a faster attention backend is numerically interchangeable with `TORCH_SDPA`.
-
-Always compare:
-
-- End-to-end runtime
-- Diffusion-stage runtime (`add_req_and_wait` line in DiffusionEngine.step breakdown)
-- Output quality against a known-good baseline (CLIP similarity, frame-level diff, or visual review)
-
-At minimum, keep the same:
-
-- model
-- prompt
-- seed
-- resolution
-- frame count / step count
-- parallel config (TP / CFG-parallel / Ulysses degrees)
-
-## Reproducing the Benchmark Table
-
-The end-to-end numbers above were collected by running `text_to_video.py` /
-`text_to_image.py` with the same prompt and seed while varying
-`DIFFUSION_ATTENTION_BACKEND`. For a quick kernel-level comparison of the
-backends without loading a model:
-
-```bash
-python benchmarks/diffusion/bench_attention_backends.py --preset hv15
-```
-
-It runs all three BF16 backends on representative DiT attention shapes and
-prints a ranking table at the end.
