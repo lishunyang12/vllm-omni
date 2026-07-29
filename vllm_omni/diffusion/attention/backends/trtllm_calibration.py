@@ -63,11 +63,17 @@ def propagate_skip_softmax_calibration(specs: list, model: str | None, tf_config
     if calibration is None:
         for spec in specs:
             ss = spec.skip_softmax
-            if ss is not None and ss.target_sparsity is not None and ss.threshold is None:
+            if (
+                ss is not None
+                and ss.target_sparsity is not None
+                and ss.threshold is None
+                and spec.skip_calibration is None
+            ):
                 raise ValueError(
                     f"target_sparsity was requested but the checkpoint for model '{model}' carries no "
                     f"skip-softmax calibration. Either set skip_softmax.threshold for the "
-                    f"calibration-free path or load a calibrated checkpoint."
+                    f"calibration-free path, provide skip_calibration={{'a':..,'b':..}} explicitly, "
+                    f"or load a calibrated checkpoint."
                 )
         return
 
