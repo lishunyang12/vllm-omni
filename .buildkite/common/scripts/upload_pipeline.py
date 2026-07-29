@@ -11,8 +11,16 @@ Bootstrap mode (``bootstrap-upload-steps.yml``):
 
 Test pipeline mode (e.g. test-merge.yml):
   - Drop steps whose ``source_file_dependencies`` do not match changed files.
-  - Expand uploader-only ``mirror_hardwares: l4_1`` into ``agents`` (+ optional ``image``
+  - Expand uploader-only ``mirror_hardwares`` into ``agents`` (+ optional ``image``
     for NPU) + ``plugins`` (see ci_mirror_hardwares.yml).
+  - ``mirror_hardwares`` may be a preset string (``l4_1``) or a mapping selected by
+    env ``MIRROR_HW``, e.g.::
+
+      mirror_hardwares:
+        default: h100_2
+        b200: b200_2
+
+    Unset / empty ``MIRROR_HW`` → ``default``; ``MIRROR_HW=b200`` → ``b200`` entry.
 
 Usage:
   python3 upload_pipeline.py [--upload] [--all | --e2e] <pipeline.yml>
@@ -24,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import os
 import subprocess
 import sys
 from functools import lru_cache
@@ -58,10 +67,8 @@ BOOTSTRAP_UPLOAD_IF_KEYS = {
 E2E_GROUP_MARKER = "E2E Test"
 CI_MIRROR_HARDWARES_PATH = ROOT / ".buildkite/common/ci_mirror_hardwares.yml"
 
-CUDA_NIGHTLY_ONLY = (
-    '(build.pull_request.labels includes "nightly-test") || (build.branch == "main" && build.env("NIGHTLY") == "1")'
-)
-NPU_NIGHTLY_ONLY = (
+# Shared CUDA/NPU nightly upload gate (main schedule or PR labels).
+NIGHTLY_LABEL_IF = (
     '(build.branch == "main" && build.env("NIGHTLY") == "1") || '
     '(build.branch != "main" && ('
     'build.pull_request.labels includes "nightly-test" || '
@@ -104,32 +111,15 @@ def _format_bootstrap_if(expr: str) -> str:
 def _compute_bootstrap_if_exprs(*, decision, platform: str) -> dict[str, str]:
     disabled = "false"
     nightly_main = 'build.branch == "main" && build.env("NIGHTLY") == "1"'
-    nightly_only = NPU_NIGHTLY_ONLY if platform == "npu" else CUDA_NIGHTLY_ONLY
+    nightly_label_if = NIGHTLY_LABEL_IF
+    ready_pr = 'build.branch != "main" && build.pull_request.labels includes "ready"'
 
     if platform == "npu":
-        ready_pr = (
-            'build.branch != "main" && ('
-            'build.pull_request.labels includes "npu-test" || '
-            'build.pull_request.labels includes "ready"'
-            ")"
-        )
-        nightly_label_if = nightly_only
         weekly_label_if = disabled
         merge_base = disabled
     else:
-        ready_pr = 'build.branch != "main" && build.pull_request.labels includes "ready"'
         merge_main = 'build.branch == "main" && build.env("NIGHTLY") != "1" && build.env("WEEKLY") != "1"'
         merge_pr = 'build.branch != "main" && build.pull_request.labels includes "merge-test"'
-        nightly_label_if = (
-            '(build.branch == "main" && build.env("NIGHTLY") == "1") || '
-            '(build.branch != "main" && ('
-            'build.pull_request.labels includes "nightly-test" || '
-            'build.pull_request.labels includes "omni-test" || '
-            'build.pull_request.labels includes "tts-test" || '
-            'build.pull_request.labels includes "diffusion-x2iat-test" || '
-            'build.pull_request.labels includes "diffusion-x2v-test"'
-            "))"
-        )
         weekly_label_if = (
             '(build.branch == "main" && build.env("WEEKLY") == "1") || '
             '(build.branch != "main" && build.pull_request.labels includes "weekly-test")'
@@ -245,28 +235,82 @@ def _load_mirror_hardwares() -> dict[str, dict[str, Any]]:
     return presets
 
 
+def _resolve_mirror_hardware_name(hardware: Any, *, step_label: str) -> str:
+    """Resolve ``mirror_hardwares`` to a preset name from ``ci_mirror_hardwares.yml``.
+
+    Accepts a preset string, or a mapping::
+
+        mirror_hardwares:
+          default: h100_2
+          b200: b200_2
+
+    Selection uses env ``MIRROR_HW`` (case-insensitive). Unset/empty → ``default``.
+    """
+    if isinstance(hardware, str):
+        name = hardware.strip()
+        if not name:
+            raise ValueError(f"mirror_hardwares must be a non-empty string in step {step_label!r}")
+        return name
+
+    if not isinstance(hardware, dict):
+        raise ValueError(
+            f"mirror_hardwares must be a preset string or a mapping with 'default' in step {step_label!r}",
+        )
+
+    if "default" not in hardware:
+        raise ValueError(
+            f"mirror_hardwares mapping in step {step_label!r} must include a 'default' key",
+        )
+    key_map: dict[str, str] = {}
+    for key, value in hardware.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(
+                f"mirror_hardwares mapping keys must be non-empty strings in step {step_label!r}",
+            )
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"mirror_hardwares mapping values must be non-empty preset strings "
+                f"in step {step_label!r} (key {key!r})",
+            )
+        key_map[key.strip().lower()] = value.strip()
+
+    # Docs / CI ops: set Buildkite env MIRROR_HW (e.g. MIRROR_HW=b200).
+    selector = os.environ.get("MIRROR_HW", "").strip().lower()
+    if not selector:
+        chosen = key_map["default"]
+        _log(f"{step_label}: mirror_hardwares mapping → default={chosen!r}")
+        return chosen
+    if selector not in key_map:
+        known = ", ".join(sorted(hardware))
+        raise ValueError(
+            f"step {step_label!r}: MIRROR_HW={selector!r} is not a key in "
+            f"mirror_hardwares mapping {{{known}}}; add '{selector}: <preset>' or unset "
+            f"MIRROR_HW",
+        )
+    chosen = key_map[selector]
+    _log(f"{step_label}: MIRROR_HW={selector!r} → mirror_hardwares={chosen!r}")
+    return chosen
+
+
 def _expand_mirror_hardwares(step: dict[str, Any]) -> dict[str, Any]:
     """Replace uploader-only ``mirror_hardwares`` with preset fields from ci_mirror_hardwares.yml."""
     hardware = step.get("mirror_hardwares")
     if hardware is None:
         return step
 
-    if not isinstance(hardware, str) or not hardware.strip():
-        raise ValueError(
-            f"mirror_hardwares must be a non-empty string in step {_get_step_label(step)!r}",
-        )
+    step_label = _get_step_label(step)
+    preset_name = _resolve_mirror_hardware_name(hardware, step_label=step_label)
 
-    preset = _load_mirror_hardwares().get(hardware)
+    preset = _load_mirror_hardwares().get(preset_name)
     if preset is None:
         known = ", ".join(sorted(_load_mirror_hardwares()))
         raise ValueError(
-            f"unknown mirror_hardwares {hardware!r} in step {_get_step_label(step)!r}; known: {known}",
+            f"unknown mirror_hardwares {preset_name!r} in step {step_label!r}; known: {known}",
         )
 
     if step.get("agents") is not None or step.get("plugins") is not None or step.get("image") is not None:
         raise ValueError(
-            f"step {_get_step_label(step)!r} sets mirror_hardwares together with agents/plugins/image; "
-            "use mirror_hardwares only",
+            f"step {step_label!r} sets mirror_hardwares together with agents/plugins/image; use mirror_hardwares only",
         )
 
     expanded = copy.deepcopy(preset)
@@ -317,14 +361,8 @@ def _process_test_steps(
             processed.append(new_step)
             continue
 
-        if deps is not None:
-            processed.append(
-                _expand_mirror_hardwares(
-                    {key: value for key, value in step.items() if key != "source_file_dependencies"},
-                ),
-            )
-        else:
-            processed.append(_expand_mirror_hardwares(step))
+        leaf = {key: value for key, value in step.items() if key != "source_file_dependencies"}
+        processed.append(_expand_mirror_hardwares(leaf))
 
     return processed
 
@@ -379,10 +417,7 @@ def _render_pipeline(
 
     text = path.read_text(encoding="utf-8")
     ctx = resolve_ci_context_from_git()
-    if force_all or e2e_only:
-        changed_files = None
-    else:
-        changed_files = ctx.changed_files
+    changed_files = None if force_all or e2e_only else ctx.changed_files
 
     doc = yaml.safe_load(text)
     if not isinstance(doc, dict):

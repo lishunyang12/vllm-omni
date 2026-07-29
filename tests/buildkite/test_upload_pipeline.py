@@ -139,3 +139,45 @@ def test_mirror_hardwares_a2b3_npu_4_expands_agents_image_and_plugins() -> None:
     assert step["plugins"][0]["kubernetes"]["podSpecPatch"]["imagePullSecrets"] == [
         {"name": "swr-secret"},
     ]
+
+
+def test_mirror_hardwares_mapping_uses_default_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MIRROR_HW", raising=False)
+    step = _expand_mirror_hardwares(
+        {
+            "label": "Nightly Omni",
+            "mirror_hardwares": {"default": "h100_2", "b200": "b200_2"},
+        },
+    )
+    assert step["agents"]["queue"] == "mithril-h100-pool"
+    assert step["plugins"][0]["kubernetes"]["podSpec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+
+
+def test_mirror_hardwares_mapping_selects_b200_via_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MIRROR_HW", "B200")
+    step = _expand_mirror_hardwares(
+        {
+            "label": "Nightly Omni",
+            "mirror_hardwares": {"default": "h100_2", "b200": "b200_2"},
+        },
+    )
+    assert step["agents"]["queue"] == "b200-k8s"
+    assert step["plugins"][0]["kubernetes"]["podSpec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+
+
+def test_mirror_hardwares_mapping_unknown_env_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MIRROR_HW", "h200")
+    with pytest.raises(ValueError, match="MIRROR_HW='h200'"):
+        _expand_mirror_hardwares(
+            {
+                "label": "Nightly Omni",
+                "mirror_hardwares": {"default": "h100_2", "b200": "b200_2"},
+            },
+        )
+
+
+def test_mirror_hardwares_mapping_requires_default() -> None:
+    with pytest.raises(ValueError, match="must include a 'default' key"):
+        _expand_mirror_hardwares(
+            {"label": "bad", "mirror_hardwares": {"b200": "b200_2"}},
+        )
