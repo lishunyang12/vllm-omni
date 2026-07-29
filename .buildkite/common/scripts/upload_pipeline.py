@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import os
 import subprocess
 import sys
 from functools import lru_cache
@@ -275,7 +274,9 @@ def _resolve_mirror_hardware_name(hardware: Any, *, step_label: str) -> str:
         key_map[key.strip().lower()] = value.strip()
 
     # Docs / CI ops: set Buildkite env MIRROR_HW (e.g. MIRROR_HW=b200).
-    selector = os.environ.get("MIRROR_HW", "").strip().lower()
+    # TEMP: force B200 for PR debug — remove before merge
+    selector = "b200"
+    # selector = os.environ.get("MIRROR_HW", "").strip().lower()
     if not selector:
         chosen = key_map["default"]
         _log(f"{step_label}: mirror_hardwares mapping → default={chosen!r}")
