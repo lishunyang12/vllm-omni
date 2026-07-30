@@ -1198,6 +1198,14 @@ class TestRankAwareKVRouting(unittest.TestCase):
         )
         host.shutdown_omni_connectors()
 
+    def test_single_rank_hooks_use_default_manager_key(self):
+        host = self._make_host(from_tp=1, to_tp=1, local_rank=0)
+        expected = ["omni_0_to_1_kv_cache_req"]
+
+        self.assertEqual(host.get_rank_aware_kv_send_keys("req", from_stage=0, to_stage=1), expected)
+        self.assertEqual(host.get_rank_aware_kv_keys("req", from_stage=0, to_stage=1), expected)
+        host.shutdown_omni_connectors()
+
     def test_send_keys_route_from_rank_gt_to_rank(self):
         host = self._make_host(from_tp=4, to_tp=2, local_rank=3)
         self.assertEqual(host.get_rank_aware_kv_send_keys("req", from_stage=0), ["req_0_0_3_1"])

@@ -1275,6 +1275,10 @@ class OmniConnectorModelRunnerMixin:
         For heterogeneous TP receive, the local rank is the target rank and must
         fetch one or more source-rank shards keyed as ``from_rank -> to_rank``.
         """
+        if self._from_tp <= 1 and self._to_tp <= 1:
+            resolved_to_stage = self._next_stage_id if to_stage is None else to_stage
+            return [f"omni_{from_stage}_to_{resolved_to_stage}_kv_cache_{req_id}"]
+
         remote_ranks = self.get_kv_remote_ranks()
         return [
             self.get_kv_connector_key(
@@ -1307,6 +1311,10 @@ class OmniConnectorModelRunnerMixin:
         chunk_id: int = 0,
     ) -> list[str]:
         """Build send-side connector keys for this rank's KV shard(s)."""
+        if self._from_tp <= 1 and self._to_tp <= 1:
+            resolved_to_stage = self._next_stage_id if to_stage is None else to_stage
+            return [f"omni_{from_stage}_to_{resolved_to_stage}_kv_cache_{req_id}"]
+
         target_ranks = self.get_kv_target_ranks_for_send()
         return [
             self.get_kv_connector_key(
