@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import torch
 from vllm.sampling_params import SamplingParams
+from vllm.v1.spec_decode.ngram_proposer_gpu import NgramProposerGPU
 from vllm.v1.worker import gpu_input_batch
 from vllm.v1.worker.gpu_input_batch import CachedRequestState, InputBatch
 
@@ -754,6 +755,108 @@ def test_sample_tokens_tail_only_prefix_cache_uses_staged_cpu_hidden_states(monk
         output.multimodal_outputs[1]["hidden"],
         torch.tensor([[2.0, 20.0], [3.0, 30.0]]),
     )
+
+
+def test_sample_tokens_ngram_gpu_uses_sampled_tensor_before_bookkeeping(monkeypatch):
+    runner = object.__new__(GPUARModelRunner)
+    scheduler_output = SimpleNamespace(
+        total_num_scheduled_tokens=1,
+        num_scheduled_tokens={"r1": 1},
+    )
+    hidden_states = torch.zeros((1, 2), dtype=torch.float32)
+    runner.execute_model_state = ExecuteModelState(
+        scheduler_output,
+        None,
+        None,
+        object(),
+        hidden_states,
+        None,
+        None,
+        None,
+        None,
+        None,
+        {},
+        None,
+    )
+    runner.kv_connector_output = None
+    runner.input_batch = SimpleNamespace(
+        req_ids=["r1"],
+        req_id_to_index={"r1": 0},
+        sampling_metadata=SimpleNamespace(no_penalties=True),
+        vocab_size=10,
+        prev_sampled_token_ids=None,
+    )
+    runner.speculative_config = SimpleNamespace(
+        disable_padded_drafter_batch=False,
+        use_eagle=lambda: False,
+        uses_draft_model=lambda: False,
+        uses_extract_hidden_states=lambda: False,
+        use_ngram_gpu=lambda: True,
+    )
+    runner.drafter = object.__new__(NgramProposerGPU)
+    runner.valid_sampled_token_count_event = None
+    runner.use_async_scheduling = False
+    runner._omni_num_scheduled_tokens_np = None
+
+    sampled_token_ids = torch.tensor([[7]], dtype=torch.int32)
+    proposed_with = []
+    monkeypatch.setattr(
+        GPUARModelRunner,
+        "_sample",
+        lambda self, logits, spec_decode_metadata: SimpleNamespace(
+            sampled_token_ids=sampled_token_ids,
+            logprobs_tensors=None,
+        ),
+    )
+    monkeypatch.setattr(GPUARModelRunner, "_update_states_after_model_execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr(GPUARModelRunner, "_input_fits_in_drafter", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        GPUARModelRunner,
+        "propose_draft_token_ids",
+        lambda self, scheduler, sampled, *args: proposed_with.append(sampled) or torch.tensor([[8]]),
+    )
+    monkeypatch.setattr(GPUARModelRunner, "_copy_draft_token_ids_to_cpu", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        GPUARModelRunner,
+        "_bookkeeping_sync",
+        lambda *args, **kwargs: (
+            0,
+            None,
+            [[]],
+            None,
+            ["r1"],
+            {"r1": 0},
+            [],
+        ),
+    )
+    monkeypatch.setattr(GPUARModelRunner, "finalize_kv_connector", lambda self: None)
+    monkeypatch.setattr(GPUARModelRunner, "eplb_step", lambda self: None)
+    monkeypatch.setattr(GPUARModelRunner, "_snapshot_query_start_loc_cpu", lambda self: torch.tensor([0]))
+    monkeypatch.setattr(
+        GPUARModelRunner,
+        "_snapshot_scheduler_output_for_async_omni_output",
+        lambda self, output: output,
+    )
+    monkeypatch.setattr(GPUARModelRunner, "_should_use_async_omni_output", lambda self: False)
+    monkeypatch.setattr(
+        GPUARModelRunner,
+        "_snapshot_omni_output_tensors_for_async_output",
+        lambda self, **kwargs: SimpleNamespace(
+            async_payload=None,
+            hidden_states=kwargs["hidden_states"],
+            staged_hidden_states_cpu=kwargs["staged_hidden_states_cpu"],
+            multimodal_outputs=kwargs["multimodal_outputs"],
+        ),
+    )
+    monkeypatch.setattr(
+        GPUARModelRunner,
+        "_build_omni_model_runner_output_from_snapshot",
+        lambda self, **kwargs: "output",
+    )
+
+    assert GPUARModelRunner.sample_tokens(runner, grammar_output=None) == "output"
+    assert len(proposed_with) == 1
+    assert proposed_with[0] is sampled_token_ids
 
 
 def test_build_omni_output_falls_back_to_mm_cpu_without_prefix_merge(monkeypatch):
