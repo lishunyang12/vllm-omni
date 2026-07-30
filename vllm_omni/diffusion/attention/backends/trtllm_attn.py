@@ -291,10 +291,14 @@ class TrtllmAttentionImpl(AttentionImpl):
 
         _skip_factor = self._resolve_skip_factor(kv_len)
 
+        # SAGE kwargs are only understood by newer FlashInfer builds; pass them exclusively when
+        # SAGE quant is active (which already requires the kernel, checked at init) so the dense
+        # path stays compatible with older builds that lack these parameters.
+        sage_kwargs: dict = {}
         if self.quant.enabled:
             q, k, v, sage_attn_sfs, sage_block_sizes = self.quant.quantize(q, k, v)
-        else:
-            sage_attn_sfs, sage_block_sizes = (None, None, None, None), (0, 0, 0, 0)
+            sage_kwargs["sage_attn_sfs"] = sage_attn_sfs
+            sage_kwargs["num_elts_per_sage_attn_blk"] = sage_block_sizes
 
         out = trtllm_ragged_attention_deepseek(
             query=q,
@@ -315,7 +319,6 @@ class TrtllmAttentionImpl(AttentionImpl):
             is_causal=self.causal,
             return_lse=False,
             skip_softmax_threshold_scale_factor=_skip_factor,
-            sage_attn_sfs=sage_attn_sfs,
-            num_elts_per_sage_attn_blk=sage_block_sizes,
+            **sage_kwargs,
         )
         return out.reshape(batch, q_len, num_q_heads, head_dim)
