@@ -1301,7 +1301,11 @@ def test_generate_images_rejects_model_mismatch(test_client):
     assert "model mismatch" in response.json()["detail"].lower()
 
 
-def test_image_file_response_format_multiple(test_client):
+@pytest.mark.parametrize(
+    ("output_format", "expected_pil_format"),
+    [("png", "PNG"), ("jpeg", "JPEG"), ("webp", "WEBP")],
+)
+def test_image_file_response_format_multiple(test_client, output_format, expected_pil_format):
     """Test response_format=file with n>1 returns ZIP archive"""
     response = test_client.post(
         "/v1/images/generations",
@@ -1309,6 +1313,7 @@ def test_image_file_response_format_multiple(test_client):
             "prompt": "a dog",
             "n": 3,
             "response_format": "file",
+            "output_format": output_format,
         },
     )
 
@@ -1317,23 +1322,32 @@ def test_image_file_response_format_multiple(test_client):
     assert "attachment" in response.headers.get("content-disposition", "")
     assert ".zip" in response.headers.get("content-disposition", "")
 
-    # Verify it's a valid ZIP with 3 PNG files
+    # Verify it's a valid ZIP with 3 correctly labelled image files
     import zipfile
 
     zip_buffer = io.BytesIO(response.content)
     with zipfile.ZipFile(zip_buffer, "r") as zf:
         files = zf.namelist()
         assert len(files) == 3
-        assert all(f.endswith(".png") for f in files)
+        assert all(f.endswith(f".{output_format}") for f in files)
 
-        # Verify each file is a valid PNG
+        # Verify each file's bytes match its advertised format
         for filename in files:
             img_bytes = zf.read(filename)
             img = Image.open(io.BytesIO(img_bytes))
-            assert img.format == "PNG"
+            assert img.format == expected_pil_format
 
 
-def test_image_file_response_format_single(test_client):
+@pytest.mark.parametrize(
+    ("output_format", "expected_media_type", "expected_pil_format"),
+    [
+        ("png", "image/png", "PNG"),
+        ("jpg", "image/jpeg", "JPEG"),
+        ("jpeg", "image/jpeg", "JPEG"),
+        ("webp", "image/webp", "WEBP"),
+    ],
+)
+def test_image_file_response_format_single(test_client, output_format, expected_media_type, expected_pil_format):
     """Test response_format=file with n=1 returns a single image file."""
     response = test_client.post(
         "/v1/images/generations",
@@ -1341,16 +1355,17 @@ def test_image_file_response_format_single(test_client):
             "prompt": "a dog",
             "n": 1,
             "response_format": "file",
+            "output_format": output_format,
         },
     )
 
     assert response.status_code == 200
-    assert response.headers["content-type"] == "image/png"
+    assert response.headers["content-type"] == expected_media_type
     assert "attachment" in response.headers.get("content-disposition", "")
-    assert ".png" in response.headers.get("content-disposition", "")
+    assert f".{output_format}" in response.headers.get("content-disposition", "")
 
     img = Image.open(io.BytesIO(response.content))
-    assert img.format == "PNG"
+    assert img.format == expected_pil_format
 
 
 def make_test_image_bytes(size=(64, 64)) -> bytes:
