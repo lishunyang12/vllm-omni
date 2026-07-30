@@ -16,10 +16,6 @@ NUM_INFERENCE_STEPS = 50
 SEED = 42
 BOUNDARY_RATIO = 0.875
 
-# Legacy flat defaults (H100 baseline). Prefer ``resolve_similarity_thresholds()``.
-SSIM_THRESHOLD = 0.94
-PSNR_THRESHOLD = 28.0
-
 
 @dataclass(frozen=True, slots=True)
 class SimilarityThresholds:
@@ -27,21 +23,21 @@ class SimilarityThresholds:
     psnr: float
 
 
-# Per-GPU-family thresholds for online-vs-diffusers video similarity.
-# Keys are matched as substrings against ``current_omni_platform.get_device_name()``
-# (order matters: first match wins). Tune B200 / L4 after measuring on those
-# machines; until then they inherit the H100 baseline.
+# Per-GPU overrides for online-vs-diffusers video similarity.
+# Only listed profiles are matched against ``get_device_name()``; everything
+# else (including H100/L4) uses ``default``.
 SIMILARITY_THRESHOLDS_BY_GPU: dict[str, SimilarityThresholds] = {
     "B200": SimilarityThresholds(ssim=0.93, psnr=28.0),
-    "default": SimilarityThresholds(ssim=SSIM_THRESHOLD, psnr=PSNR_THRESHOLD),
+    "default": SimilarityThresholds(ssim=0.94, psnr=28.0),
 }
 
 
 def resolve_gpu_profile(device_name: str | None = None) -> str:
     """Map the current device name to a hardware profile key.
 
-    Uses ``current_omni_platform.get_device_name()`` by default, matching
-    known GPU marketing substrings (same style as CUDA platform FA probes).
+    Uses ``current_omni_platform.get_device_name()`` by default. Only keys in
+    ``SIMILARITY_THRESHOLDS_BY_GPU`` (except ``default``) are matched as
+    substrings; unmatched devices use ``default``.
     """
     if device_name is None:
         try:
