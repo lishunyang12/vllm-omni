@@ -65,19 +65,10 @@ class CuDNNAttentionImpl(AttentionImpl):
 
         enable_gqa = query.shape[2] != key.shape[2]
         query, key, value = (x.permute(0, 2, 1, 3) for x in (query, key, value))
-        # Pin cuDNN exclusively. A priority list like [CUDNN, FLASH, MATH] hits a
-        # PyTorch SDPA dispatch quirk: when FLASH rejects a non-None attn_mask,
-        # cuDNN gets runtime-disabled in the same call and the dispatcher falls
-        # through to MATH even though cuDNN alone handles the mask fine
-        # (~11 ms vs ~215 ms for MATH on sm_120 HV-1.5 shapes).
-        #
-        # Fall back to the default SDPA dispatcher if cuDNN rejects the shape,
-        # e.g. under torch.compile where Dynamo sees a symbolic head_dim and
-        # cuDNN's kernel selection fails (observed in LTX-2 audio attention).
-        # The unpinned dispatcher then picks EFFICIENT/MATH instead of raising.
-        try:
-            with sdpa_kernel([SDPBackend.CUDNN_ATTENTION]):
-                output = torch.nn.functional.scaled_dot_product_attention(
+
+        def _run_sdpa(backends: list[SDPBackend]) -> torch.Tensor:
+            with sdpa_kernel(backends):
+                return torch.nn.functional.scaled_dot_product_attention(
                     query,
                     key,
                     value,
@@ -87,21 +78,31 @@ class CuDNNAttentionImpl(AttentionImpl):
                     scale=self.softmax_scale,
                     enable_gqa=enable_gqa,
                 )
+
+        # cuDNN FMHA rejects K/V sequence length 1 (LTX-2 audio cross-attn /
+        # dummy warmup). Prefer MATH up-front: under torch.compile fake-tensor
+        # tracing, an unpinned SDPA fallback still aborts with
+        # "No available kernel" once Flash/Efficient are runtime-disabled.
+        if key.shape[2] == 1:
+            return _run_sdpa([SDPBackend.MATH]).permute(0, 2, 1, 3)
+
+        # Pin cuDNN exclusively. A priority list like [CUDNN, FLASH, MATH] hits a
+        # PyTorch SDPA dispatch quirk: when FLASH rejects a non-None attn_mask,
+        # cuDNN gets runtime-disabled in the same call and the dispatcher falls
+        # through to MATH even though cuDNN alone handles the mask fine
+        # (~11 ms vs ~215 ms for MATH on sm_120 HV-1.5 shapes).
+        #
+        # Fall back to MATH if cuDNN rejects the shape, e.g. under torch.compile
+        # where Dynamo sees a symbolic head_dim and cuDNN's kernel selection
+        # fails (observed in LTX-2 audio attention).
+        try:
+            output = _run_sdpa([SDPBackend.CUDNN_ATTENTION])
         except RuntimeError as e:
             if "No available kernel" not in str(e):
                 raise
             logger.warning_once(
-                "cuDNN SDPA rejected this shape; falling back to default SDPA dispatcher. "
+                "cuDNN SDPA rejected this shape; falling back to MATH SDPA. "
                 "Set DIFFUSION_ATTENTION_BACKEND=TORCH_SDPA for the full dispatcher path on every call."
             )
-            output = torch.nn.functional.scaled_dot_product_attention(
-                query,
-                key,
-                value,
-                attn_mask=attention_mask,
-                dropout_p=0.0,
-                is_causal=self.causal,
-                scale=self.softmax_scale,
-                enable_gqa=enable_gqa,
-            )
+            output = _run_sdpa([SDPBackend.MATH])
         return output.permute(0, 2, 1, 3)

@@ -94,7 +94,10 @@ class Attention(nn.Module):
             self.backend_pref = spec.backend
             logger.debug("Attention(role=%s) → backend=%s", role, spec.backend)
         else:
-            logger.debug("Attention(role=%s) → platform default", role)
+            # Propagate the resolved platform default so Ring Attention does not
+            # independently fall back to Hopper FA3 on Blackwell GPUs.
+            self.backend_pref = attn_backend_cls.get_name()
+            logger.debug("Attention(role=%s) → platform default (%s)", role, self.backend_pref)
 
         self.attn_backend = attn_backend_cls
         self.attn_impl_cls = self.attn_backend.get_impl_cls()

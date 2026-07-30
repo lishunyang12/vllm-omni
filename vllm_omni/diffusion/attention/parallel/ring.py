@@ -110,14 +110,6 @@ class RingParallelAttention:
         if backend_pref is not None:
             backend_pref = backend_pref.lower()
 
-        # FP32 is not supported by Flash Attention, force SDPA
-        if query.dtype == torch.float32:
-            backend_pref = "sdpa"
-        elif not HAS_FA3 and not HAS_FLASH_ATTN and not HAS_AITER:
-            if backend_pref != "sdpa":
-                logger.warning_once("Flash Attention (FA2/FA3/AITER) is not available! Force enabling SDPA.")
-            backend_pref = "sdpa"
-
         # Extract joint tensors
         joint_key, joint_value = None, None
         joint_strategy = "front"
@@ -127,7 +119,7 @@ class RingParallelAttention:
             if attn_metadata.joint_strategy is not None:
                 joint_strategy = attn_metadata.joint_strategy
 
-        if backend_pref in {"sdpa", "torch", "torch_sdpa"}:
+        def _run_sdpa() -> torch.Tensor:
             from vllm_omni.diffusion.attention.backends.ring_pytorch_attn import ring_pytorch_attn_func
 
             return ring_pytorch_attn_func(
@@ -143,11 +135,54 @@ class RingParallelAttention:
                 joint_strategy=joint_strategy,
             )
 
+        # FP32 is not supported by Flash Attention, force SDPA.
+        if query.dtype == torch.float32:
+            return _run_sdpa()
+
+        # Ring only implements FA/AITER and SDPA kernels. Non-FA diffusion
+        # backends (CUDNN / FlashInfer / TRT-LLM / Sage / SDPA) must use the
+        # SDPA ring path — otherwise we fall through to Hopper FA3 and crash
+        # on Blackwell with "no kernel image is available".
+        _sdpa_prefs = {
+            "sdpa",
+            "torch",
+            "torch_sdpa",
+            "cudnn_attn",
+            "flashinfer_attn",
+            "trtllm_attn",
+            "sage_attn",
+            "sage_attn_3",
+        }
+        if backend_pref in _sdpa_prefs:
+            return _run_sdpa()
+
+        major = None
+        if torch.cuda.is_available():
+            try:
+                major = torch.cuda.get_device_capability()[0]
+            except Exception:
+                major = None
+
+        # Installed FA wheels are typically Hopper-only. On Blackwell (sm_10x+)
+        # prefer SDPA instead of launching hopper kernels / unsupported FA2.
+        if major is not None and major >= 10:
+            logger.warning_once(
+                "Ring Attention: Flash Attention is unsafe on Blackwell "
+                f"(sm_{major}x); falling back to SDPA ring kernel."
+            )
+            return _run_sdpa()
+
+        use_fa3 = HAS_FA3 and major == 9
+        if not use_fa3 and not HAS_FLASH_ATTN and not HAS_AITER:
+            logger.warning_once(
+                "Flash Attention (FA2/FA3/AITER) is not available for Ring Attention; falling back to SDPA."
+            )
+            return _run_sdpa()
+
         from vllm_omni.diffusion.attention.backends.ring_flash_attn import ring_flash_attn_func
 
-        # Prefer FA3 over FA2 for better performance (FA3 supports Ampere/Ada/Hopper)
-        # On ROCm, use AITER
-        if HAS_FA3:
+        # Prefer FA3 only on Hopper. On Ampere/Ada use FA2 when available.
+        if use_fa3:
             attn_type = AttnType.FA3
         elif HAS_AITER:
             attn_type = AttnType.AITER

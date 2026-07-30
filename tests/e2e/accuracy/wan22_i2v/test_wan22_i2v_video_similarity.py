@@ -62,12 +62,12 @@ from tests.e2e.accuracy.wan22_i2v.wan22_i2v_video_similarity_common import (
     NUM_FRAMES,
     NUM_INFERENCE_STEPS,
     PROMPT,
-    PSNR_THRESHOLD,
     RABBIT_IMAGE_URL,
     SEED,
     SIZE,
-    SSIM_THRESHOLD,
     WIDTH,
+    resolve_gpu_profile,
+    resolve_similarity_thresholds,
 )
 from tests.helpers.mark import hardware_test
 from tests.helpers.runtime import OmniServerParams
@@ -233,6 +233,22 @@ def test_configure_scheduler_switches_to_unipc() -> None:
 
     assert isinstance(pipe.scheduler, UniPCMultistepScheduler)
     assert pipe.scheduler.config.flow_shift == 5.0
+
+
+def test_resolve_similarity_thresholds_uses_gpu_profile() -> None:
+    h100 = resolve_similarity_thresholds("H100")
+    b200 = resolve_similarity_thresholds("B200")
+    assert h100.ssim == 0.94
+    assert h100.psnr == 28.0
+    assert b200.ssim == 0.94
+    assert b200.psnr == 28.0
+
+
+def test_resolve_gpu_profile_matches_device_name() -> None:
+    assert resolve_gpu_profile("NVIDIA H100 80GB HBM3") == "H100"
+    assert resolve_gpu_profile("NVIDIA B200") == "B200"
+    assert resolve_gpu_profile("NVIDIA L4") == "L4"
+    assert resolve_gpu_profile("Some Unknown GPU") == "default"
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -469,11 +485,17 @@ def test_wan22_i2v_serving_matches_diffusers_video_similarity(
         f"offline_path={offline_path}"
     )
     assert_video_metadata(online_metadata, width=WIDTH, height=HEIGHT, fps=FPS, frame_count=NUM_FRAMES)
+    gpu_profile = resolve_gpu_profile()
+    thresholds = resolve_similarity_thresholds(gpu_profile)
+    print(
+        f"wan22_i2v similarity thresholds: gpu_profile={gpu_profile}, "
+        f"ssim>={thresholds.ssim:.6f}, psnr>={thresholds.psnr:.6f}"
+    )
     assert_video_similarity_metrics(
         label="wan22_i2v",
         online_path=online_path,
         offline_path=offline_path,
-        ssim_threshold=SSIM_THRESHOLD,
-        psnr_threshold=PSNR_THRESHOLD,
+        ssim_threshold=thresholds.ssim,
+        psnr_threshold=thresholds.psnr,
     )
     print(f"offline_metadata={offline_metadata_path}")

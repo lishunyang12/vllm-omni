@@ -408,15 +408,15 @@ steps:
       build.pull_request.labels includes "nightly-test" ||
       build.pull_request.labels includes "diffusion-x2v-test"
     steps:
-      # TODO: temporarily keep only X2V Perf while validating B200; restore the
-      # function/doc/accuracy steps below once B200 nightly is stable.
-      # - label: ":full_moon: Diffusion X2V · Wan2.2 T2V Function Test"
-      #   timeout_in_minutes: 90
-      #   commands:
-      #     - pytest -s -v tests/e2e/online_serving/test_wan22_expansion.py -k "t2v" -m "full_model and cuda" --run-level "full_model"
-      #   mirror_hardwares:
-      #     default: h100_2
-      #     b200: b200_2
+      # TODO: temporarily keep only Wan2.2 T2V Function + Accuracy while
+      # validating B200; restore the remaining X2V steps once stable.
+      - label: ":full_moon: Diffusion X2V · Wan2.2 T2V Function Test"
+        timeout_in_minutes: 90
+        commands:
+          - pytest -s -v tests/e2e/online_serving/test_wan22_expansion.py -k "t2v" -m "full_model and cuda" --run-level "full_model"
+        mirror_hardwares:
+          default: h100_2
+          b200: b200_2
       # - label: ":full_moon: Diffusion X2V · Wan2.2 I2V/TI2V Function Test"
       #   timeout_in_minutes: 90
       #   commands:
@@ -431,13 +431,13 @@ steps:
       #   mirror_hardwares:
       #     default: h100_1
       #     b200: b200_1
-      # - label: ":full_moon: Diffusion X2V · Doc Test"
-      #   timeout_in_minutes: 60
-      #   commands:
-      #     - pytest -s -v tests/examples/offline_inference/test_image_to_video.py -m "full_model and example and H100" --run-level "full_model"
-      #   mirror_hardwares:
-      #     default: h100_1
-      #     b200: b200_1
+      - label: ":full_moon: Diffusion X2V · Doc Test"
+        timeout_in_minutes: 60
+        commands:
+          - pytest -s -v tests/examples/offline_inference/test_image_to_video.py -m "full_model and example and H100" --run-level "full_model"
+        mirror_hardwares:
+          default: h100_1
+          b200: b200_1
       # - label: ":full_moon: Diffusion X2V · Other Function Test"
       #   timeout_in_minutes: 90
       #   commands:
@@ -446,14 +446,14 @@ steps:
       #   mirror_hardwares:
       #     default: h100_2
       #     b200: b200_2
-      # - label: ":full_moon: Diffusion X2V · Wan2.2 Accuracy Test"
-      #   timeout_in_minutes: 180
-      #   commands:
-      #     - pytest -s -v tests/e2e/accuracy/wan22_i2v/test_wan22_i2v_video_similarity.py -m full_model --run-level full_model
-      #     - pytest -s -v tests/e2e/accuracy/test_diffusers_backend_similarity.py -k '2v_matches_diffusers' -m full_model --run-level full_model
-      #   mirror_hardwares:
-      #     default: h100_2
-      #     b200: b200_2
+      - label: ":full_moon: Diffusion X2V · Wan2.2 Accuracy Test"
+        timeout_in_minutes: 180
+        commands:
+          - pytest -s -v tests/e2e/accuracy/wan22_i2v/test_wan22_i2v_video_similarity.py -m full_model --run-level full_model
+          - pytest -s -v tests/e2e/accuracy/test_diffusers_backend_similarity.py -k '2v_matches_diffusers' -m full_model --run-level full_model
+        mirror_hardwares:
+          default: h100_2
+          b200: b200_2
       # - label: ":full_moon: Diffusion X2V · Other Accuracy Test"
       #   timeout_in_minutes: 180
       #   commands:
@@ -464,24 +464,24 @@ steps:
       #   mirror_hardwares:
       #     default: h100_2
       #     b200: b200_2
-      - label: ":full_moon: Diffusion X2V · Perf Test"
-        key: nightly-diffusion-x2v-performance
-        timeout_in_minutes: 180
-        commands:
-          - export DIFFUSION_BENCHMARK_DIR=tests/dfx/perf/results
-          - |
-            set +e
-            pytest -s -v tests/dfx/perf/scripts/run_diffusion_benchmark.py --test-config-file tests/dfx/perf/tests/test_wan22_i2v_vllm_omni.json
-            EXIT1=$$?
-            pytest -s -v tests/dfx/perf/scripts/run_diffusion_benchmark.py --test-config-file tests/dfx/perf/tests/test_cosmos3_vllm_omni.json
-            EXIT2=$$?
-            buildkite-agent artifact upload "tests/dfx/perf/results/diffusion_result_*.json"
-            buildkite-agent artifact upload "tests/dfx/perf/results/logs/*.log"
-            if [ $$EXIT1 -ne 0 ]; then exit $$EXIT1; fi
-            exit $$EXIT2
-        mirror_hardwares:
-          default: h100_2
-          b200: b200_2
+      # - label: ":full_moon: Diffusion X2V · Perf Test"
+      #   key: nightly-diffusion-x2v-performance
+      #   timeout_in_minutes: 180
+      #   commands:
+      #     - export DIFFUSION_BENCHMARK_DIR=tests/dfx/perf/results
+      #     - |
+      #       set +e
+      #       pytest -s -v tests/dfx/perf/scripts/run_diffusion_benchmark.py --test-config-file tests/dfx/perf/tests/test_wan22_i2v_vllm_omni.json
+      #       EXIT1=$$?
+      #       pytest -s -v tests/dfx/perf/scripts/run_diffusion_benchmark.py --test-config-file tests/dfx/perf/tests/test_cosmos3_vllm_omni.json
+      #       EXIT2=$$?
+      #       buildkite-agent artifact upload "tests/dfx/perf/results/diffusion_result_*.json"
+      #       buildkite-agent artifact upload "tests/dfx/perf/results/logs/*.log"
+      #       if [ $$EXIT1 -ne 0 ]; then exit $$EXIT1; fi
+      #       exit $$EXIT2
+      #   mirror_hardwares:
+      #     default: h100_2
+      #     b200: b200_2
   - group: ":card_index_dividers: Diffusion Test"
     key: nightly-diffusion-test-group
     depends_on: upload-nightly-pipeline
@@ -547,7 +547,7 @@ steps:
       - nightly-diffusion-x2iat-performance-qwen-image-edit-2511
       - nightly-diffusion-x2iat-performance-qwen-image-layered
       - nightly-diffusion-x2iat-performance-bagel
-      - nightly-diffusion-x2v-performance
+      # - nightly-diffusion-x2v-performance  # temporarily disabled with X2V Perf
       - nightly-testcase-statistics
     if: build.env("NIGHTLY") == "1" && build.env("EMAIL_DISTRIBUTION") == "1"
     commands:
@@ -565,7 +565,7 @@ steps:
       - buildkite-agent artifact download "tests/dfx/perf/results/*.json" . --step nightly-diffusion-x2iat-performance-qwen-image-edit-2511
       - buildkite-agent artifact download "tests/dfx/perf/results/*.json" . --step nightly-diffusion-x2iat-performance-qwen-image-layered
       - buildkite-agent artifact download "tests/dfx/perf/results/*.json" . --step nightly-diffusion-x2iat-performance-bagel
-      - buildkite-agent artifact download "tests/dfx/perf/results/*.json" . --step nightly-diffusion-x2v-performance
+      # - buildkite-agent artifact download "tests/dfx/perf/results/*.json" . --step nightly-diffusion-x2v-performance
       - buildkite-agent artifact download "tests/dfx/perf/results/*.html" . --step nightly-testcase-statistics
       - python tools/nightly/generate_nightly_perf_excel.py
       - python tools/nightly/generate_nightly_perf_html.py
