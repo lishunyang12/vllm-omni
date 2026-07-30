@@ -718,15 +718,12 @@ def test_from_pipeline_config_accepts_pre_resolved_pipeline():
     assert omni_config.pipeline_config is resolved_pipeline
 
 
-def test_from_pipeline_config_prefers_loaded_user_deploy_config(monkeypatch):
+def test_from_pipeline_config_merges_user_over_default_deploy():
+    # merge-not-replace: a (thin) user deploy config overlays the pipeline's default
+    # deploy — the user's override wins, and it no longer *replaces* the default.
     pipeline = _resolve_pipeline_or_skip("qwen3_tts")
     user_deploy_config = DeployConfig(
         stages=[StageDeployConfig(stage_id=0, max_num_seqs=7)],
-    )
-    monkeypatch.setattr(
-        omni_config_module,
-        "load_deploy_config",
-        lambda _path: pytest.fail("default deploy config should not be loaded"),
     )
 
     omni_config = VllmOmniConfig.from_pipeline_config(

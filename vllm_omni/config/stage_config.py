@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import functools
 import re
@@ -591,6 +592,63 @@ def _get_recursively_merged_dict(original: dict, update: dict) -> dict:
                 )
 
             merged[k] = update_v
+    return merged
+
+
+def _merge_stage_deploy(base: "StageDeployConfig", overlay: "StageDeployConfig") -> "StageDeployConfig":
+    """Overlay a (thin) StageDeployConfig onto ``base``: an overlay field wins only
+    when it is explicitly set (differs from the field default); the dict engine
+    fields in ``_DEEP_MERGE_KEYS`` deep-merge so thin overlays don't drop base keys."""
+    ref = StageDeployConfig(stage_id=base.stage_id)
+    merged = copy.deepcopy(base)
+    for f in fields(StageDeployConfig):
+        if f.name == "stage_id":
+            continue
+        ov = getattr(overlay, f.name)
+        if ov == getattr(ref, f.name):
+            continue  # overlay left it at the default → not overriding
+        bv = getattr(merged, f.name)
+        if f.name in _DEEP_MERGE_KEYS and isinstance(bv, dict) and isinstance(ov, dict):
+            setattr(merged, f.name, _get_recursively_merged_dict(bv, ov))
+        else:
+            setattr(merged, f.name, ov)
+    return merged
+
+
+def merge_deploy_configs(base: "DeployConfig", overlay: "DeployConfig") -> "DeployConfig":
+    """Merge a (possibly thin) user deploy config onto a base (the pipeline's default).
+
+    This is the "merge-not-replace" rule: a user-supplied deploy YAML/config no longer
+    *replaces* the pipeline's bundled default — it *overlays* it, so users can override
+    a single knob without restating the whole config. Precedence: overlay > base, with
+    stages merged by ``stage_id`` and the dict engine fields deep-merged.
+
+    An overlay field is treated as "set" when it differs from the field's dataclass
+    default. Every engine knob (gpu_memory_utilization, max_num_seqs, enforce_eager,
+    trust_remote_code, …) is ``None``-defaulted, so this is exact for them. The only
+    fields with a meaningful non-``None`` default (``async_chunk`` etc.) cannot be
+    overlaid *back to* their default value; those are governed by the pipeline
+    (single-stage forces ``async_chunk=False``) and the CLI, not by a deploy overlay.
+    """
+    ref = DeployConfig()
+    merged = copy.deepcopy(base)
+    base_by_id = {s.stage_id: s for s in merged.stages}
+    for f in fields(DeployConfig):
+        if f.name == "stages":
+            continue
+        ov = getattr(overlay, f.name)
+        if ov == getattr(ref, f.name):
+            continue
+        bv = getattr(merged, f.name)
+        if isinstance(bv, dict) and isinstance(ov, dict):
+            setattr(merged, f.name, _get_recursively_merged_dict(bv, ov))
+        else:
+            setattr(merged, f.name, ov)
+    for os in overlay.stages:
+        base_by_id[os.stage_id] = (
+            _merge_stage_deploy(base_by_id[os.stage_id], os) if os.stage_id in base_by_id else os
+        )
+    merged.stages = [base_by_id[k] for k in sorted(base_by_id)]
     return merged
 
 

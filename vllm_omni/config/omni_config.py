@@ -36,6 +36,7 @@ from vllm_omni.config.stage_config import (
     _select_processor_funcs,
     build_stage_runtime_overrides,
     load_deploy_config,
+    merge_deploy_configs,
 )
 
 _EXECUTION_TYPE_TO_STAGE_WORKER: dict[StageExecutionType, tuple[StageType, str | None]] = {
@@ -234,22 +235,28 @@ def _get_deploy_config(
     user_deploy_config: DeployConfig | None,
     deploy_config_path: str | None,
 ) -> tuple[DeployConfig, str | None]:
-    """Select user-provided, pipeline-default, or empty deploy settings."""
-    if user_deploy_config is not None:
-        loaded_path = str(_resolve_deploy_path(deploy_config_path)) if deploy_config_path is not None else None
-        return copy.deepcopy(user_deploy_config), loaded_path
+    """Select the deploy settings: the pipeline's bundled default is the base, and any
+    user-provided deploy config overlays it (merge-not-replace) rather than replacing it."""
+    if pipeline_cfg.default_deploy_config_name is not None:
+        default_path = _DEPLOY_DIR / pipeline_cfg.default_deploy_config_name
+        base_deploy, base_path = load_deploy_config(default_path), str(default_path)
+    else:
+        base_deploy, base_path = DeployConfig(), None
 
-    if deploy_config_path is not None:
+    overlay = None
+    overlay_path = None
+    if user_deploy_config is not None:
+        overlay = copy.deepcopy(user_deploy_config)
+        overlay_path = str(_resolve_deploy_path(deploy_config_path)) if deploy_config_path is not None else None
+    elif deploy_config_path is not None:
         resolved_path = _resolve_deploy_path(deploy_config_path)
         if not resolved_path.exists():
             raise FileNotFoundError(f"Deploy config not found: {resolved_path}")
-        return load_deploy_config(resolved_path), str(resolved_path)
+        overlay, overlay_path = load_deploy_config(resolved_path), str(resolved_path)
 
-    if pipeline_cfg.default_deploy_config_name is not None:
-        default_path = _DEPLOY_DIR / pipeline_cfg.default_deploy_config_name
-        return load_deploy_config(default_path), str(default_path)
-
-    return DeployConfig(), None
+    if overlay is None:
+        return base_deploy, base_path
+    return merge_deploy_configs(base_deploy, overlay), overlay_path
 
 
 @config

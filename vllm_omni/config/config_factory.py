@@ -27,6 +27,7 @@ from vllm_omni.config.stage_config import (
     StageType,
     build_stage_runtime_overrides,
     load_deploy_config,
+    merge_deploy_configs,
     merge_pipeline_deploy,
 )
 from vllm_omni.config.yaml_util import create_config
@@ -395,15 +396,20 @@ class StageConfigFactory:
         load-balancer policy (``None`` when no strategy set one) travels with the
         stages instead of through a mutable out-param.
         """
-        if user_deploy_config is not None:
-            deploy_cfg = user_deploy_config
-        elif deploy_config_path is not None:
-            deploy_cfg = cls._load_user_deploy_config(deploy_config_path)
-            assert deploy_cfg is not None
-        elif pipeline_cfg.default_deploy_config_name is not None:
-            deploy_cfg = load_deploy_config(_DEPLOY_DIR / pipeline_cfg.default_deploy_config_name)
+        # Merge-not-replace: the pipeline's bundled default deploy is the base; a
+        # user-supplied deploy config overlays it (so a thin override doesn't drop
+        # the pipeline's other defaults) rather than replacing it wholesale.
+        if pipeline_cfg.default_deploy_config_name is not None:
+            base_deploy = load_deploy_config(_DEPLOY_DIR / pipeline_cfg.default_deploy_config_name)
         else:
-            deploy_cfg = DeployConfig()
+            base_deploy = DeployConfig()
+
+        overlay_deploy = user_deploy_config
+        if overlay_deploy is None and deploy_config_path is not None:
+            overlay_deploy = cls._load_user_deploy_config(deploy_config_path)
+            assert overlay_deploy is not None
+
+        deploy_cfg = merge_deploy_configs(base_deploy, overlay_deploy) if overlay_deploy is not None else base_deploy
 
         cli_async_chunk = cli_overrides.get("async_chunk")
         if cli_async_chunk is not None:
