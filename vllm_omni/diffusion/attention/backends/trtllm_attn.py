@@ -130,13 +130,7 @@ class QuantConfig:
     def enabled(self) -> bool:
         return self.dtype_qk is not None
 
-    def quantize(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor):
-        quantize_fn = _sage_quantize_fn()
-        if quantize_fn is None:  # pragma: no cover
-            raise RuntimeError(
-                "TRTLLM_ATTN quant (SAGE) requires FlashInfer's trtllm_sage_attention_quantize "
-                "(added in flashinfer >= 0.6.16rc1); this build does not provide it."
-            )
+    def quantize(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, quantize_fn):
         qk_quant_dtype = _QK_QUANT_DTYPES[self.dtype_qk]
         q_q, k_q, v_q, q_sfs, k_sfs, v_sfs = quantize_fn(
             q,
@@ -198,6 +192,9 @@ class TrtllmAttentionImpl(AttentionImpl):
         self._warned_missing_timestep = False
 
         self.quant = QuantConfig.from_backend_kwargs(backend_kwargs)
+        # Resolve the SAGE quantize fn once at init so the compiled forward path never calls the
+        # lru_cache-wrapped getter (which triggers a Dynamo graph break every step).
+        self._sage_quantize_fn = None
         if self.quant.enabled:
             if self.quant.dtype_qk not in _QK_QUANT_DTYPES:
                 raise RuntimeError(
@@ -210,7 +207,8 @@ class TrtllmAttentionImpl(AttentionImpl):
                     "expose the trtllm-gen sage_attn_sfs kernel path. Install a FlashInfer build "
                     "that provides it, or remove the quant config."
                 )
-            if _sage_quantize_fn() is None:
+            self._sage_quantize_fn = _sage_quantize_fn()
+            if self._sage_quantize_fn is None:
                 raise RuntimeError(
                     "TRTLLM_ATTN quant (SAGE) was requested but this FlashInfer build lacks "
                     "trtllm_sage_attention_quantize (added in flashinfer >= 0.6.16rc1). Upgrade "
@@ -296,7 +294,7 @@ class TrtllmAttentionImpl(AttentionImpl):
         # path stays compatible with older builds that lack these parameters.
         sage_kwargs: dict = {}
         if self.quant.enabled:
-            q, k, v, sage_attn_sfs, sage_block_sizes = self.quant.quantize(q, k, v)
+            q, k, v, sage_attn_sfs, sage_block_sizes = self.quant.quantize(q, k, v, self._sage_quantize_fn)
             sage_kwargs["sage_attn_sfs"] = sage_attn_sfs
             sage_kwargs["num_elts_per_sage_attn_blk"] = sage_block_sizes
 
