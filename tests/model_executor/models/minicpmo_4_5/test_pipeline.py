@@ -169,7 +169,7 @@ class TestDeployTopology:
                 0.15,
                 0.15,
             ]
-            assert sum(memory_utilizations) <= 0.9
+            assert sum(memory_utilizations) <= 0.9 + 1e-6
             assert stages[0].yaml_engine_args["limit_mm_per_prompt"] == {"video": {"count": 1, "num_frames": 32}}
         elif filename in {"minicpmo_4_5_2gpu.yaml"}:
             assert [stage.yaml_engine_args["gpu_memory_utilization"] for stage in stages] == [
