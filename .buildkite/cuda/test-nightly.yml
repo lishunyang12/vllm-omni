@@ -330,8 +330,6 @@ steps:
         timeout_in_minutes: 180
         commands:
           - export DIFFUSION_BENCHMARK_DIR=tests/dfx/perf/results
-          - export DIFFUSION_ATTENTION_BACKEND=FLASH_ATTN
-          - export CACHE_DIT_VERSION=1.3.0
           - |
             set +e
             pytest -s -v tests/dfx/perf/scripts/run_diffusion_benchmark.py --test-config-file tests/dfx/perf/tests/test_qwen_image_vllm_omni.json
@@ -347,8 +345,6 @@ steps:
         timeout_in_minutes: 180
         commands:
           - export DIFFUSION_BENCHMARK_DIR=tests/dfx/perf/results
-          - export DIFFUSION_ATTENTION_BACKEND=FLASH_ATTN
-          - export CACHE_DIT_VERSION=1.3.0
           - |
             set +e
             pytest -s -v tests/dfx/perf/scripts/run_diffusion_benchmark.py --test-config-file tests/dfx/perf/tests/test_qwen_image_edit_vllm_omni.json
@@ -364,8 +360,6 @@ steps:
         timeout_in_minutes: 180
         commands:
           - export DIFFUSION_BENCHMARK_DIR=tests/dfx/perf/results
-          - export DIFFUSION_ATTENTION_BACKEND=FLASH_ATTN
-          - export CACHE_DIT_VERSION=1.3.0
           - |
             set +e
             pytest -s -v tests/dfx/perf/scripts/run_diffusion_benchmark.py --test-config-file tests/dfx/perf/tests/test_qwen_image_edit_2511_vllm_omni.json
@@ -381,8 +375,6 @@ steps:
         timeout_in_minutes: 120
         commands:
           - export DIFFUSION_BENCHMARK_DIR=tests/dfx/perf/results
-          - export DIFFUSION_ATTENTION_BACKEND=FLASH_ATTN
-          - export CACHE_DIT_VERSION=1.3.0
           - |
             set +e
             pytest -s -v tests/dfx/perf/scripts/run_diffusion_benchmark.py --test-config-file tests/dfx/perf/tests/test_qwen_image_layered_vllm_omni.json
@@ -398,8 +390,6 @@ steps:
         timeout_in_minutes: 180
         commands:
           - export DIFFUSION_BENCHMARK_DIR=tests/dfx/perf/results
-          - export DIFFUSION_ATTENTION_BACKEND=FLASH_ATTN
-          - export CACHE_DIT_VERSION=1.3.0
           - |
             set +e
             pytest -s -v tests/dfx/perf/scripts/run_diffusion_benchmark.py --test-config-file tests/dfx/perf/tests/test_bagel_vllm_omni.json
@@ -478,7 +468,6 @@ steps:
         timeout_in_minutes: 180
         commands:
           - export DIFFUSION_BENCHMARK_DIR=tests/dfx/perf/results
-          - export DIFFUSION_ATTENTION_BACKEND=FLASH_ATTN
           - |
             set +e
             pytest -s -v tests/dfx/perf/scripts/run_diffusion_benchmark.py --test-config-file tests/dfx/perf/tests/test_wan22_i2v_vllm_omni.json
