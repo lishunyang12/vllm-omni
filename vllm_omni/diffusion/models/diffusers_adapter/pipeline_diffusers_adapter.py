@@ -253,6 +253,24 @@ class DiffusersAdapterPipeline(nn.Module, DiffusionPipelineProfilerMixin):
     # Wrap settings, inputs, and outputs
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _is_blackwell_gpu() -> bool:
+        """Return True on Blackwell-class CUDA GPUs (sm_10x / sm_11x / sm_12x)."""
+        capability = None
+        try:
+            capability = current_omni_platform.get_device_capability()
+        except Exception:
+            capability = None
+        if capability is not None:
+            return capability.major in (10, 11, 12)
+        if torch.cuda.is_available():
+            try:
+                major, _ = torch.cuda.get_device_capability()
+                return major in (10, 11, 12)
+            except Exception:
+                return False
+        return False
+
     def _set_attention_backend(self) -> None:
         """Set the attention backend.
 
@@ -267,8 +285,15 @@ class DiffusersAdapterPipeline(nn.Module, DiffusionPipelineProfilerMixin):
         default_spec = self.od_config.diffusion_attention_config.default
         attention_backend_config = default_spec.backend if default_spec is not None else None
         attention_backend_attempts: list[str] = []
+        # Diffusers has no binding for these platform backends; map to SDPA/native.
+        _sdpa_like = {
+            "TORCH_SDPA",
+            "CUDNN_ATTN",
+            "FLASHINFER_ATTN",
+            "TRTLLM_ATTN",
+        }
         match attention_backend_config:
-            case "FLASH_ATTN" | None:
+            case "FLASH_ATTN" | "FLASH_ATTN_HUB" | "FLASH_ATTN_3_HUB" | None:
                 if current_omni_platform.is_rocm():
                     attention_backend_attempts.append("aiter")
                 elif current_omni_platform.is_xpu():
@@ -276,6 +301,16 @@ class DiffusersAdapterPipeline(nn.Module, DiffusionPipelineProfilerMixin):
                 elif current_omni_platform.is_musa():
                     logger.warning(
                         "Unknown diffusers attention backend option for MUSA platform. Falling back to SDPA."
+                    )
+                    attention_backend_attempts.append("native")
+                elif self._is_blackwell_gpu():
+                    # Installed FA2/FA3 (and HF FA3 hub) wheels are typically Hopper-only.
+                    # set_attention_backend("_flash_3*") can succeed on import, then crash
+                    # at runtime with "no kernel image is available for execution on the device".
+                    # Diffusers also has no CUDNN_ATTN binding, so use native SDPA on Blackwell.
+                    logger.warning(
+                        "Diffusers adapter: Flash Attention is unsafe on Blackwell "
+                        "(no runnable sm_10x+ kernel image); using native SDPA backend."
                     )
                     attention_backend_attempts.append("native")
                 else:
@@ -296,7 +331,7 @@ class DiffusersAdapterPipeline(nn.Module, DiffusionPipelineProfilerMixin):
                 attention_backend_attempts.extend(["sage_hub", "sage", "sage", "sage_varlen"])
             case "ASCEND":
                 attention_backend_attempts.append("_native_npu")
-            case "TORCH_SDPA":
+            case _ if attention_backend_config in _sdpa_like:
                 attention_backend_attempts.append("native")
             case _:
                 logger.warning(f"Invalid attention backend: {attention_backend_config}. Falling back to SDPA.")
