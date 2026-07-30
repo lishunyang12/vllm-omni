@@ -64,15 +64,14 @@ def test_quant_rejects_non_sage_dtype():
 
 def test_quant_quantize_requires_flashinfer_routine(monkeypatch):
     import vllm_omni.diffusion.attention.backends.trtllm_attn as mod
-    from vllm_omni.diffusion.attention.backends.trtllm_attn import QuantConfig
 
+    monkeypatch.setattr(mod, "_sage_kernel_available", lambda: True)
     monkeypatch.setattr(mod, "_sage_quantize_fn", lambda: None)
     with pytest.raises(RuntimeError, match="trtllm_sage_attention_quantize"):
-        QuantConfig(dtype_qk="int8").quantize(torch.empty(0), torch.empty(0), torch.empty(0))
+        _impl(quant={"dtype_qk": "int8"})
 
 
-def test_quant_quantize_calls_routine_and_shapes_sfs(monkeypatch):
-    import vllm_omni.diffusion.attention.backends.trtllm_attn as mod
+def test_quant_quantize_calls_routine_and_shapes_sfs():
     from vllm_omni.diffusion.attention.backends.trtllm_attn import QuantConfig
 
     captured = {}
@@ -81,8 +80,7 @@ def test_quant_quantize_calls_routine_and_shapes_sfs(monkeypatch):
         captured.update(q_block_size=q_block_size, k_block_size=k_block_size, qk_quant_dtype=qk_quant_dtype)
         return "qq", "kq", "vq", "qsfs", "ksfs", "vsfs"
 
-    monkeypatch.setattr(mod, "_sage_quantize_fn", lambda: fake_quantize)
-    q_q, k_q, v_q, sfs, blk = QuantConfig(dtype_qk="int8").quantize(object(), object(), object())
+    q_q, k_q, v_q, sfs, blk = QuantConfig(dtype_qk="int8").quantize(object(), object(), object(), fake_quantize)
     assert (q_q, k_q, v_q, sfs, blk) == ("qq", "kq", "vq", ("qsfs", "ksfs", None, "vsfs"), (1, 16, 0, 1))
     assert captured == {"q_block_size": 1, "k_block_size": 16, "qk_quant_dtype": torch.int8}
 
