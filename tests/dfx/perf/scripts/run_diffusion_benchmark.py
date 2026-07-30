@@ -51,9 +51,6 @@ from tests.dfx.conftest import (
 )
 from tests.helpers.runtime import get_open_port
 
-os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
-os.environ.setdefault("DIFFUSION_ATTENTION_BACKEND", "FLASH_ATTN")
-
 
 # ---------------------------------------------------------------------------
 # Inline field processing
