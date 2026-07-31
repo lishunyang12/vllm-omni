@@ -2970,7 +2970,7 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
         _is_hunyuan_image_3 = any(
             getattr(getattr(s, "engine_args", None), "model_arch", "") == "HunyuanImage3ForCausalMM"
             for s in stage_configs
-        )
+        ) or any(value is not None for value in (bot_task, use_system_prompt, custom_system_prompt))
         if _is_hunyuan_image_3:
             from vllm_omni.diffusion.models.hunyuan_image3.prompt_utils import (
                 build_prompt,
@@ -2983,14 +2983,11 @@ class OmniOpenAIServingChat(OpenAIServingChat, AudioMixin):
                 "sys_type": use_system_prompt,
                 "custom_system_prompt": custom_system_prompt,
                 "num_images": len(reference_images) if reference_images else 1,
+                # API requests use None as plain mode. Pass it explicitly so
+                # the prompt helper does not apply its legacy "think" default.
+                "bot_task": bot_task,
             }
 
-            if bot_task is not None:
-                build_kwargs["bot_task"] = bot_task
-            elif "bot_task" in extra_body:
-                # Explicit None from the caller is plain-mode; omitted lets
-                # each task fall back to its default trigger.
-                build_kwargs["bot_task"] = extra_body["bot_task"]
             if tokenizer is not None:
                 # Feed segment-tokenized prompt_token_ids so AR matches HF
                 # apply_chat_template byte-for-byte (engine BPE would merge
