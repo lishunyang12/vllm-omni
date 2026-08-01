@@ -122,6 +122,19 @@ class OmniConnectorModelRunnerMixin:
 
         # -- heterogeneous TP rank support --
         rank_cfg = self._parse_rank_mapping(model_config)
+        if self._kv_transfer_manager is not None:
+            topology = getattr(self._kv_transfer_manager, "tp_topology", None)
+            effective_mapping = (
+                getattr(topology, "source_tp_size", None),
+                getattr(topology, "target_tp_size", None),
+                getattr(topology, "local_rank", None),
+            )
+            if all(isinstance(value, int) for value in effective_mapping):
+                rank_cfg = {
+                    "from_tp": effective_mapping[0],
+                    "to_tp": effective_mapping[1],
+                    "local_rank": effective_mapping[2],
+                }
         self._from_tp: int = rank_cfg["from_tp"]
         self._to_tp: int = rank_cfg["to_tp"]
         self._local_rank: int = rank_cfg["local_rank"]
