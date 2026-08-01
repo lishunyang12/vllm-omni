@@ -2011,12 +2011,6 @@ class GPUARModelRunner(OmniGPUModelRunner, OmniConnectorModelRunnerMixin):
                         self.discard_request_mask.gpu,
                     )
                     self._copy_valid_sampled_token_count(next_token_ids, valid_sampled_tokens_count)
-                    # Since we couldn't run the drafter,
-                    # just use zeros for the draft tokens.
-                    self._draft_token_ids = torch.zeros(1, device=self.device, dtype=torch.int32).expand(
-                        len(self.input_batch.req_ids), self.num_spec_tokens
-                    )
-                    self._copy_draft_token_ids_to_cpu(scheduler_output, zeros_only=True)
             elif spec_config.use_ngram_gpu() and not spec_config.disable_padded_drafter_batch:
                 assert isinstance(self.drafter, NgramProposerGPU)
                 sampled_token_ids = sampler_output.sampled_token_ids
@@ -2034,6 +2028,16 @@ class GPUARModelRunner(OmniGPUModelRunner, OmniConnectorModelRunnerMixin):
                     self._copy_valid_sampled_token_count(next_token_ids, valid_sampled_tokens_count)
             else:
                 propose_drafts_after_bookkeeping = input_fits_in_drafter
+
+            if not input_fits_in_drafter:
+                # Do not let optimistic drafts from the previous step survive
+                # when this step is too close to max_model_len for the drafter.
+                # Async scheduling can otherwise consume those stale tokens
+                # before the next bookkeeping synchronization.
+                self._draft_token_ids = torch.zeros(1, device=self.device, dtype=torch.int32).expand(
+                    len(self.input_batch.req_ids), self.num_spec_tokens
+                )
+                self._copy_draft_token_ids_to_cpu(scheduler_output, zeros_only=True)
 
         with record_function_or_nullcontext("gpu_model_runner: bookkeep"):
             (

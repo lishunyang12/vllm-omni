@@ -757,7 +757,12 @@ def test_sample_tokens_tail_only_prefix_cache_uses_staged_cpu_hidden_states(monk
     )
 
 
-def test_sample_tokens_ngram_gpu_uses_sampled_tensor_before_bookkeeping(monkeypatch):
+@pytest.mark.parametrize(("input_fits", "use_async_scheduling"), [(True, False), (False, True)])
+def test_sample_tokens_ngram_gpu_handles_pre_bookkeeping_paths(
+    monkeypatch,
+    input_fits,
+    use_async_scheduling,
+):
     runner = object.__new__(GPUARModelRunner)
     scheduler_output = SimpleNamespace(
         total_num_scheduled_tokens=1,
@@ -785,6 +790,7 @@ def test_sample_tokens_ngram_gpu_uses_sampled_tensor_before_bookkeeping(monkeypa
         sampling_metadata=SimpleNamespace(no_penalties=True),
         vocab_size=10,
         prev_sampled_token_ids=None,
+        set_async_sampled_token_ids=lambda *_args: None,
     )
     runner.speculative_config = SimpleNamespace(
         disable_padded_drafter_batch=False,
@@ -795,11 +801,15 @@ def test_sample_tokens_ngram_gpu_uses_sampled_tensor_before_bookkeeping(monkeypa
     )
     runner.drafter = object.__new__(NgramProposerGPU)
     runner.valid_sampled_token_count_event = None
-    runner.use_async_scheduling = False
+    runner.use_async_scheduling = use_async_scheduling
     runner._omni_num_scheduled_tokens_np = None
+    runner.device = torch.device("cpu")
+    runner.num_spec_tokens = 2
+    runner.async_output_copy_stream = None
 
     sampled_token_ids = torch.tensor([[7]], dtype=torch.int32)
     proposed_with = []
+    draft_copy_zeros_only = []
     monkeypatch.setattr(
         GPUARModelRunner,
         "_sample",
@@ -809,13 +819,17 @@ def test_sample_tokens_ngram_gpu_uses_sampled_tensor_before_bookkeeping(monkeypa
         ),
     )
     monkeypatch.setattr(GPUARModelRunner, "_update_states_after_model_execute", lambda *args, **kwargs: None)
-    monkeypatch.setattr(GPUARModelRunner, "_input_fits_in_drafter", lambda *args, **kwargs: True)
+    monkeypatch.setattr(GPUARModelRunner, "_input_fits_in_drafter", lambda *args, **kwargs: input_fits)
     monkeypatch.setattr(
         GPUARModelRunner,
         "propose_draft_token_ids",
         lambda self, scheduler, sampled, *args: proposed_with.append(sampled) or torch.tensor([[8]]),
     )
-    monkeypatch.setattr(GPUARModelRunner, "_copy_draft_token_ids_to_cpu", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        GPUARModelRunner,
+        "_copy_draft_token_ids_to_cpu",
+        lambda *args, **kwargs: draft_copy_zeros_only.append(kwargs.get("zeros_only", False)),
+    )
     monkeypatch.setattr(
         GPUARModelRunner,
         "_bookkeeping_sync",
@@ -854,9 +868,26 @@ def test_sample_tokens_ngram_gpu_uses_sampled_tensor_before_bookkeeping(monkeypa
         lambda self, **kwargs: "output",
     )
 
-    assert GPUARModelRunner.sample_tokens(runner, grammar_output=None) == "output"
-    assert len(proposed_with) == 1
-    assert proposed_with[0] is sampled_token_ids
+    class FakeAsyncGPUModelRunnerOutput:
+        def __init__(self, **_kwargs):
+            self.sampled_token_ids_cpu = torch.tensor([[7]], dtype=torch.int32)
+            self.async_copy_ready_event = None
+
+    monkeypatch.setattr(
+        "vllm_omni.worker.gpu_ar_model_runner.AsyncGPUModelRunnerOutput",
+        FakeAsyncGPUModelRunnerOutput,
+    )
+
+    output = GPUARModelRunner.sample_tokens(runner, grammar_output=None)
+    if input_fits:
+        assert output == "output"
+        assert proposed_with == [sampled_token_ids]
+        assert draft_copy_zeros_only == [False]
+    else:
+        assert isinstance(output, FakeAsyncGPUModelRunnerOutput)
+        assert proposed_with == []
+        assert draft_copy_zeros_only == [True]
+        assert torch.equal(runner._draft_token_ids, torch.zeros((1, 2), dtype=torch.int32))
 
 
 def test_build_omni_output_falls_back_to_mm_cpu_without_prefix_merge(monkeypatch):
