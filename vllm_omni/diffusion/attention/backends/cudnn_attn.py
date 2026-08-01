@@ -3,7 +3,6 @@
 
 import torch
 from torch.nn.attention import SDPBackend, sdpa_kernel
-from vllm.logger import init_logger
 
 from vllm_omni.diffusion.attention.backends.abstract import (
     AttentionBackend,
@@ -11,8 +10,6 @@ from vllm_omni.diffusion.attention.backends.abstract import (
     AttentionMetadata,
 )
 from vllm_omni.diffusion.attention.backends.sdpa import _maybe_reshape_attn_mask
-
-logger = init_logger(__name__)
 
 
 class CuDNNAttentionBackend(AttentionBackend):
@@ -25,8 +22,8 @@ class CuDNNAttentionBackend(AttentionBackend):
     @staticmethod
     def get_supported_head_sizes() -> list[int]:
         # cuDNN 9.5+ FMHA on Blackwell supports any head_dim divisible by 8
-        # up to 256 for BF16/FP16. Empty list = "accept any"; the sdpa_kernel
-        # fallback chain handles shapes cuDNN can't take.
+        # up to 256 for BF16/FP16. Empty list = "accept any"; the cuDNN kernel
+        # selector validates the concrete runtime shape.
         return []
 
     @staticmethod
@@ -66,44 +63,20 @@ class CuDNNAttentionImpl(AttentionImpl):
         enable_gqa = query.shape[2] != key.shape[2]
         query, key, value = (x.permute(0, 2, 1, 3) for x in (query, key, value))
 
-        def _run_sdpa(backends: list[SDPBackend]) -> torch.Tensor:
-            with sdpa_kernel(backends):
-                return torch.nn.functional.scaled_dot_product_attention(
-                    query,
-                    key,
-                    value,
-                    attn_mask=attention_mask,
-                    dropout_p=0.0,
-                    is_causal=self.causal,
-                    scale=self.softmax_scale,
-                    enable_gqa=enable_gqa,
-                )
-
-        # cuDNN FMHA rejects K/V sequence length 1. Prefer MATH up-front:
-        # under torch.compile fake-tensor tracing, an unpinned SDPA fallback
-        # can still abort with "No available kernel" once Flash/Efficient are
-        # runtime-disabled. LTX-2 no longer relies on this guard: its explicit
-        # head_dim and multi-frame dummy inputs were fixed at the model source.
-        if key.shape[2] == 1:
-            return _run_sdpa([SDPBackend.MATH]).permute(0, 2, 1, 3)
-
         # Pin cuDNN exclusively. A priority list like [CUDNN, FLASH, MATH] hits a
         # PyTorch SDPA dispatch quirk: when FLASH rejects a non-None attn_mask,
         # cuDNN gets runtime-disabled in the same call and the dispatcher falls
         # through to MATH even though cuDNN alone handles the mask fine
         # (~11 ms vs ~215 ms for MATH on sm_120 HV-1.5 shapes).
-        #
-        # Keep a generic eager-mode fallback for other runtime shapes rejected
-        # by cuDNN. The former LTX-2 symbolic-head-dim failure was fixed at the
-        # model source and is not the reason for this fallback anymore.
-        try:
-            output = _run_sdpa([SDPBackend.CUDNN_ATTENTION])
-        except RuntimeError as e:
-            if "No available kernel" not in str(e):
-                raise
-            logger.warning_once(
-                "cuDNN SDPA rejected this shape; falling back to MATH SDPA. "
-                "Set DIFFUSION_ATTENTION_BACKEND=TORCH_SDPA for the full dispatcher path on every call."
+        with sdpa_kernel([SDPBackend.CUDNN_ATTENTION]):
+            output = torch.nn.functional.scaled_dot_product_attention(
+                query,
+                key,
+                value,
+                attn_mask=attention_mask,
+                dropout_p=0.0,
+                is_causal=self.causal,
+                scale=self.softmax_scale,
+                enable_gqa=enable_gqa,
             )
-            output = _run_sdpa([SDPBackend.MATH])
         return output.permute(0, 2, 1, 3)
