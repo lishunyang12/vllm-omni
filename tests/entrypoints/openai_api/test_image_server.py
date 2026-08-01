@@ -1368,6 +1368,50 @@ def test_image_file_response_format_single(test_client, output_format, expected_
     assert img.format == expected_pil_format
 
 
+@pytest.mark.parametrize(
+    ("output_format", "image_count", "expected_media_type", "expected_pil_format"),
+    [
+        ("jpeg", 1, "image/jpeg", "JPEG"),
+        ("webp", 2, "application/zip", "WEBP"),
+    ],
+)
+def test_multistage_image_file_response_uses_requested_format(
+    async_omni_test_client,
+    output_format,
+    image_count,
+    expected_media_type,
+    expected_pil_format,
+):
+    engine = async_omni_test_client.app.state.engine_client
+    engine._images = [Image.new("RGB", (16, 16), color="green") for _ in range(image_count)]
+
+    response = async_omni_test_client.post(
+        "/v1/images/generations",
+        json={
+            "prompt": "a dog",
+            "n": image_count,
+            "response_format": "file",
+            "output_format": output_format,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == expected_media_type
+    if image_count == 1:
+        assert f".{output_format}" in response.headers["content-disposition"]
+        assert Image.open(io.BytesIO(response.content)).format == expected_pil_format
+        return
+
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(response.content), "r") as archive:
+        filenames = archive.namelist()
+        assert len(filenames) == image_count
+        assert all(filename.endswith(f".{output_format}") for filename in filenames)
+        for filename in filenames:
+            assert Image.open(io.BytesIO(archive.read(filename))).format == expected_pil_format
+
+
 def make_test_image_bytes(size=(64, 64)) -> bytes:
     img = Image.new(
         "RGB",
