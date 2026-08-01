@@ -97,6 +97,7 @@ def _make_pipeline() -> Wan22Pipeline:
     ("sampling_params_kwargs", "expected_low", "expected_high"),
     [
         ({}, 4.0, 4.0),
+        ({"guidance_scale": 0.0}, 0.0, 0.0),
         ({"guidance_scale": 1.0}, 1.0, 1.0),
         ({"guidance_scale": 3.0, "guidance_scale_2": 5.0}, 3.0, 5.0),
     ],
