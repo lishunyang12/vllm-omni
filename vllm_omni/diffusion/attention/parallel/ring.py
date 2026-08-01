@@ -193,8 +193,7 @@ class RingParallelAttention:
         can_use_fa2 = _can_use_fa2(query.device)
         if not can_use_fa3 and not can_use_fa2 and not HAS_AITER:
             logger.warning_once(
-                "Flash Attention (FA2/FA3/AITER) is not available for this device; "
-                "falling back to SDPA ring attention."
+                "Flash Attention (FA2/FA3/AITER) is not available for this device; falling back to SDPA ring attention."
             )
             return _run_sdpa()
 

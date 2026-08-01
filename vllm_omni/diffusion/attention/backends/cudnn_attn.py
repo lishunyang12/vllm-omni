@@ -79,10 +79,11 @@ class CuDNNAttentionImpl(AttentionImpl):
                     enable_gqa=enable_gqa,
                 )
 
-        # cuDNN FMHA rejects K/V sequence length 1 (LTX-2 audio cross-attn /
-        # dummy warmup). Prefer MATH up-front: under torch.compile fake-tensor
-        # tracing, an unpinned SDPA fallback still aborts with
-        # "No available kernel" once Flash/Efficient are runtime-disabled.
+        # cuDNN FMHA rejects K/V sequence length 1. Prefer MATH up-front:
+        # under torch.compile fake-tensor tracing, an unpinned SDPA fallback
+        # can still abort with "No available kernel" once Flash/Efficient are
+        # runtime-disabled. LTX-2 no longer relies on this guard: its explicit
+        # head_dim and multi-frame dummy inputs were fixed at the model source.
         if key.shape[2] == 1:
             return _run_sdpa([SDPBackend.MATH]).permute(0, 2, 1, 3)
 
@@ -92,9 +93,9 @@ class CuDNNAttentionImpl(AttentionImpl):
         # through to MATH even though cuDNN alone handles the mask fine
         # (~11 ms vs ~215 ms for MATH on sm_120 HV-1.5 shapes).
         #
-        # Fall back to MATH if cuDNN rejects the shape, e.g. under torch.compile
-        # where Dynamo sees a symbolic head_dim and cuDNN's kernel selection
-        # fails (observed in LTX-2 audio attention).
+        # Keep a generic eager-mode fallback for other runtime shapes rejected
+        # by cuDNN. The former LTX-2 symbolic-head-dim failure was fixed at the
+        # model source and is not the reason for this fallback anymore.
         try:
             output = _run_sdpa([SDPBackend.CUDNN_ATTENTION])
         except RuntimeError as e:
