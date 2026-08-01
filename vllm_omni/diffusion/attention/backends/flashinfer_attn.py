@@ -75,18 +75,14 @@ class FlashInferAttentionImpl(AttentionImpl):
         Returns either ``(qo_len, kv_len)`` (shared across the batch) or
         ``(batch_size, qo_len, kv_len)`` (per-sample), or ``None`` when the
         mask is all-keep (elide). Only boolean masks are handled here;
-        additive/float masks raise ``ValueError`` so the caller falls back to
-        SDPA, which applies them with the correct softmax semantics. Shape
-        mismatches also raise ``ValueError``.
+        additive/float masks and shape mismatches raise ``ValueError`` because
+        an explicitly selected backend must not silently switch to SDPA.
         """
         mask = attn_mask
         if mask.dtype != torch.bool:
             # Additive masks (0 / -inf / -1e4 / finfo.min) cannot be faithfully
             # reduced to a boolean keep-mask here; SDPA handles them correctly.
-            raise ValueError(
-                f"non-boolean attn_mask (dtype={mask.dtype}); FlashInfer custom_mask "
-                "is boolean-only — deferring to SDPA"
-            )
+            raise ValueError(f"non-boolean attn_mask (dtype={mask.dtype}); FlashInfer custom_mask is boolean-only")
         # Diffusion masks arrive as (qo,kv), (1,1,kv), (B,1,1,kv), (B,1,qo,kv)
         # or (B,H,qo,kv). The mask is identical across heads, so collapse the
         # head dim, but keep a real batch dim — indexing mask[0] would reuse
@@ -111,23 +107,6 @@ class FlashInferAttentionImpl(AttentionImpl):
         # kernel, which reads from GPU memory directly.
         return mask.contiguous()
 
-    def _sdpa_fallback(
-        self,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-        attn_metadata: AttentionMetadata | None,
-    ) -> torch.Tensor:
-        from vllm_omni.diffusion.attention.backends.sdpa import SDPAImpl
-
-        impl = SDPAImpl(
-            num_heads=query.shape[2],
-            head_size=query.shape[3],
-            softmax_scale=self.softmax_scale,
-            causal=self.causal,
-        )
-        return impl.forward_cuda(query, key, value, attn_metadata)
-
     def forward_cuda(
         self,
         query: torch.Tensor,
@@ -141,30 +120,24 @@ class FlashInferAttentionImpl(AttentionImpl):
                 "Install it or set DIFFUSION_ATTENTION_BACKEND to another backend."
             )
 
-        # Try the custom_mask path; if the mask can't be packed into the
-        # (qo_len, kv_len) layout FlashInfer expects, fall back to SDPA
-        # instead of risking an illegal-memory-access crash in the kernel.
+        # Validate the custom_mask path before launching the kernel. Unsupported
+        # masks raise instead of silently switching away from FLASHINFER_ATTN.
         # Input layout is (B, S, H, D); FlashInfer dense prefill takes (S, H, D).
         batch_size = query.shape[0]
 
         custom_mask = None
         if attn_metadata is not None and attn_metadata.attn_mask is not None:
-            try:
-                custom_mask = self._pack_mask_for_flashinfer(
-                    attn_metadata.attn_mask,
-                    batch_size=batch_size,
-                    qo_len=query.shape[1],
-                    kv_len=key.shape[1],
-                )
-            except ValueError as e:
-                logger.debug("Falling back to SDPA for mask path: %s", e)
-                return self._sdpa_fallback(query, key, value, attn_metadata)
+            custom_mask = self._pack_mask_for_flashinfer(
+                attn_metadata.attn_mask,
+                batch_size=batch_size,
+                qo_len=query.shape[1],
+                kv_len=key.shape[1],
+            )
             # FlashInfer cannot combine causal masking with a custom_mask; rather
-            # than silently dropping the explicit mask (diverging from SDPA), let
-            # SDPA handle the causal+mask case correctly.
+            # than silently dropping the explicit mask (diverging from SDPA),
+            # require the caller to select a compatible backend.
             if custom_mask is not None and self.causal:
-                logger.debug("causal=True with explicit attn_mask; deferring to SDPA")
-                return self._sdpa_fallback(query, key, value, attn_metadata)
+                raise ValueError("FLASHINFER_ATTN does not support causal=True together with an explicit custom mask.")
 
         outputs = []
         for b in range(batch_size):

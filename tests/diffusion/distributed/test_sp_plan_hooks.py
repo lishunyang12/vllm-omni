@@ -987,6 +987,33 @@ class TestDimensionValidation:
         # Since expected_dims=3 but tensor has 4 dims, should return original
         assert result.shape == tensor_4d.shape
 
+    def test_auto_pad_calls_attention_mask_capability(self, monkeypatch):
+        from vllm_omni.diffusion.attention import selector
+        from vllm_omni.diffusion.distributed import parallel_state
+        from vllm_omni.diffusion.distributed.sp_plan import SequenceParallelConfig
+        from vllm_omni.diffusion.hooks.sequence_parallel import SequenceParallelSplitHook
+
+        class NoMaskBackend:
+            @classmethod
+            def supports_attention_mask(cls):
+                return False
+
+            @staticmethod
+            def get_name():
+                return "NO_MASK_BACKEND"
+
+        monkeypatch.setattr(parallel_state, "get_sequence_parallel_world_size", lambda: 2)
+        monkeypatch.setattr(selector, "get_attn_backend_for_role", lambda **kwargs: (NoMaskBackend, None))
+
+        hook = SequenceParallelSplitHook(
+            metadata={},
+            config=SequenceParallelConfig(ulysses_degree=2, ring_degree=1),
+        )
+        tensor = torch.randn(1, 3, 8)
+
+        with pytest.raises(ValueError, match="does not support attention_mask"):
+            hook._shard_with_auto_pad(tensor, dim=1)
+
 
 @pytest.mark.cpu
 class TestStrictModeSplitValidation:

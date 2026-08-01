@@ -92,6 +92,8 @@ class SageAttentionImpl(AttentionImpl):
         value: torch.Tensor,
         attn_metadata: AttentionMetadata = None,
     ) -> torch.Tensor:
+        if attn_metadata is not None and attn_metadata.attn_mask is not None:
+            raise ValueError("SAGE_ATTN does not support attn_mask. Select a mask-capable backend.")
         output = sageattn(
             query,
             key,

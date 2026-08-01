@@ -84,7 +84,7 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
             is_blackwell = major in (10, 11, 12)
             if is_blackwell and (major, minor) not in _known_blackwell_sms:
                 logger.info(
-                    "Detected Blackwell-class GPU %s (untested variant); routing to CUDNN_ATTN with SDPA fallback.",
+                    "Detected Blackwell-class GPU %s (untested variant); routing to CUDNN_ATTN.",
                     sm_str,
                 )
 
@@ -92,19 +92,20 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
         packages_info = PACKAGES_CHECKER.get_packages_info()
         packages_available = packages_info.get("has_flash_attn", False)
 
-        # Both compute capability and packages must be available for FA
-        flash_attn_supported = compute_supported and packages_available
+        # The currently discovered FA2/FA3 implementations only ship kernels
+        # for Ampere/Ada/Hopper. Importing them on Blackwell succeeds, but the
+        # first forward aborts the process with "no kernel image".
+        flash_attn_supported = compute_supported and packages_available and not is_blackwell
 
         # cuDNN 9.5+ ships Blackwell FMHA kernels. If the runtime is older,
-        # the CUDNN_ATTN default would still work via internal fallback but
-        # without the tuned Blackwell path, so we skip routing there.
+        # skip the CUDNN_ATTN default rather than selecting a backend whose
+        # kernel selector may reject the runtime shape.
         cudnn_version = torch.backends.cudnn.version() or 0
         cudnn_blackwell_ready = cudnn_version >= 90500
 
         # FlashInfer edges cuDNN by ~4% at the kernel level on sm_120 but
-        # regresses ~2x at e2e on HV-1.5 because its dense-prefill path can't
-        # take 2D attn_masks and the SDPA fallback dispatches to
-        # EFFICIENT_ATTENTION (~25 ms) instead of the cuDNN mask path (~11 ms).
+        # regresses ~2x at e2e on HV-1.5 because its dense-prefill path cannot
+        # represent every diffusion attention mask without changing semantics.
         # CUDNN_ATTN pins sdpa_kernel([CUDNN_ATTENTION]) directly so masked
         # calls keep the cuDNN path. Blackwell default prefers CUDNN_ATTN;
         # users can opt into FLASHINFER_ATTN explicitly for no-mask workloads.
@@ -138,53 +139,70 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
                 try:
                     importlib.import_module("kernels")
                     logger.info("Using HuggingFace kernels-backed attention backend '%s'", backend_upper)
-                except ImportError:
-                    if backend_upper == "FLASH_ATTN_HUB":
-                        logger.warning(
-                            "HuggingFace `kernels` library is not available. Falling back to local FLASH_ATTN."
-                        )
-                        backend_upper = "FLASH_ATTN"
-                    elif backend_upper == "FLASH_ATTN_3_HUB":
-                        logger.warning(
-                            "HuggingFace `kernels` library is not available. Falling back to local FLASH_ATTN."
-                        )
-                        backend_upper = "FLASH_ATTN"
+                except ImportError as e:
+                    raise ImportError(
+                        f"{backend_upper} was explicitly selected, but the HuggingFace `kernels` "
+                        "library is not available. Install `kernels` or select a different backend."
+                    ) from e
+
+            if backend_upper == "FLASH_ATTN_HUB":
+                fa2_hub_supported = compute_capability is not None and compute_capability.major in (8, 9)
+                if not fa2_hub_supported:
+                    raise ValueError(
+                        "FLASH_ATTN_HUB was explicitly selected but its current FA2 kernels require "
+                        "an Ampere, Ada, or Hopper GPU (compute capability 8.x/9.x)."
+                    )
 
             if backend_upper == "FLASH_ATTN_3_HUB":
-                fa3_hub_supported = compute_capability is not None and compute_capability.major >= 9
+                fa3_hub_supported = compute_capability is not None and compute_capability.major == 9
                 if not fa3_hub_supported:
-                    logger.warning(
-                        "FLASH_ATTN_3_HUB requires a Hopper-class GPU with compute capability >= 9.0. "
-                        "Falling back to FLASH_ATTN_HUB."
+                    raise ValueError(
+                        "FLASH_ATTN_3_HUB was explicitly selected but its current kernels require a Hopper GPU "
+                        "with compute capability 9.x. Select a compatible backend."
                     )
-                    backend_upper = "FLASH_ATTN_HUB"
 
             if backend_upper == "FLASH_ATTN" and not flash_attn_supported:
-                if not compute_supported:
-                    logger.warning(
-                        "Flash Attention requires GPU with compute capability >= 8.0. "
-                        "Falling back to TORCH_SDPA backend."
-                    )
-                elif not packages_available:
-                    logger.warning("Flash Attention packages not available. Falling back to TORCH_SDPA backend.")
-                logger.debug("Defaulting to diffusion attention backend SDPA")
-                return DiffusionAttentionBackendEnum.TORCH_SDPA.get_path()
+                if is_blackwell:
+                    reason = "the discovered FA2/FA3 kernels do not support Blackwell"
+                elif not compute_supported:
+                    reason = "compute capability < 8.0"
+                else:
+                    reason = "Flash Attention package unavailable"
+                raise ValueError(
+                    f"FLASH_ATTN was explicitly selected but is unsupported ({reason}). Select a compatible backend."
+                )
             if backend_upper == "SAGE_ATTN_3":
                 sage_attn3_supported = compute_capability is not None and compute_capability.major >= 10
                 if not sage_attn3_supported:
-                    logger.warning(
-                        "SageAttention3 requires a Blackwell-class GPU with compute capability >= 10.0. "
-                        "Falling back to TORCH_SDPA backend."
+                    raise ValueError(
+                        "SAGE_ATTN_3 was explicitly selected but requires a Blackwell-class GPU "
+                        "with compute capability >= 10.0. Select a compatible backend."
                     )
-                    return DiffusionAttentionBackendEnum.TORCH_SDPA.get_path()
                 try:
                     importlib.import_module("sageattn3")
-                except ImportError:
-                    logger.warning(
-                        "SageAttention3 package not available. Install it from "
-                        "SageAttention/sageattention3_blackwell. Falling back to TORCH_SDPA backend."
+                except ImportError as e:
+                    raise ImportError(
+                        "SAGE_ATTN_3 was explicitly selected, but the sageattn3 package is not available. "
+                        "Install SageAttention/sageattention3_blackwell or select a different backend."
+                    ) from e
+            if backend_upper == "SAGE_ATTN":
+                sage_supported_sms = {(8, 0), (8, 6), (8, 9), (9, 0), (12, 0), (12, 1)}
+                if compute_capability is None or tuple(compute_capability) not in sage_supported_sms:
+                    raise ValueError(
+                        f"SAGE_ATTN was explicitly selected but does not provide a kernel for {sm_str or 'this GPU'}. "
+                        "Select a compatible backend."
                     )
-                    return DiffusionAttentionBackendEnum.TORCH_SDPA.get_path()
+                try:
+                    importlib.import_module("sageattention")
+                except ImportError as e:
+                    raise ImportError(
+                        "SAGE_ATTN was explicitly selected, but the sageattention package is not available."
+                    ) from e
+            if backend_upper == "FLASHINFER_ATTN" and not flashinfer_available:
+                raise ValueError(
+                    "FLASHINFER_ATTN was explicitly selected, but FlashInfer is unavailable. "
+                    "Install a compatible FlashInfer build or select a different backend."
+                )
             if backend_upper == "TRTLLM_ATTN":
                 trtllm_attn_supported = compute_capability is not None and compute_capability.major == 10
                 if not trtllm_attn_supported:
@@ -193,9 +211,10 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
                         "Blackwell GPU (SM100 / SM103, compute capability 10.x). Select a "
                         "different --diffusion-attention-backend."
                     )
-                if not flashinfer_available:
+                if not trtllm_gen_available:
                     raise ValueError(
-                        "TRTLLM_ATTN diffusion attention backend requires flashinfer, which is not installed."
+                        "TRTLLM_ATTN was explicitly selected, but the installed FlashInfer build does not "
+                        "provide trtllm_ragged_attention_deepseek. Install a compatible build."
                     )
             backend = DiffusionAttentionBackendEnum[backend_upper]
             logger.debug("Using diffusion attention backend '%s'", backend_upper)
@@ -234,7 +253,7 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
         if is_blackwell and not cudnn_blackwell_ready:
             logger.warning(
                 "Detected Blackwell %s but cuDNN %d < 9.5 — no tuned Blackwell FMHA. "
-                "Falling through to FLASH_ATTN / SDPA.",
+                "Automatic backend selection will use FlashInfer when available, otherwise SDPA.",
                 sm_str,
                 cudnn_version,
             )

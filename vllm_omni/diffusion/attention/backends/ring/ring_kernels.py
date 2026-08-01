@@ -57,10 +57,8 @@ def pytorch_attn_forward(
     k shape (bs, seqlen, nhead, hs)
     v shape (bs, seqlen, nhead, hs)
     """
-    # Fallback logic: Flash Attention does not support float32.
-    # If op_type is 'flash' but dtype is float32, force 'efficient'.
     if op_type == "flash" and q.dtype == torch.float32:
-        op_type = "efficient"
+        raise ValueError("The explicitly requested Flash ring kernel does not support float32.")
 
     # Volta (V100, sm70) does not have native bf16 support for the efficient
     # SDPA kernel. When running Ring attention in bf16 on such GPUs, the

@@ -12,6 +12,8 @@ from PIL import Image
 from tests.helpers.mark import hardware_test
 from tests.helpers.runtime import OmniServer, OmniServerParams, OpenAIClientHandler, dummy_messages_from_mix_data
 from vllm_omni.diffusion.data import (
+    AttentionConfig,
+    AttentionSpec,
     DiffusionOutput,
     DiffusionParallelConfig,
     OmniDiffusionConfig,
@@ -139,6 +141,50 @@ class TestPipelineArgumentsHandling:
         assert isinstance(output, DiffusionOutput)
         assert isinstance(output.output, MockPipelineOutput)
         assert output.output.image is stub_image
+
+    @staticmethod
+    def _make_adapter(backend: str, set_attention_backend):
+        adapter = DiffusersAdapterPipeline(
+            od_config=_make_od_config(
+                diffusion_attention_config=AttentionConfig(default=AttentionSpec(backend=backend)),
+            )
+        )
+        adapter._pipeline = SimpleNamespace(
+            transformer=SimpleNamespace(set_attention_backend=set_attention_backend),
+        )
+        return adapter
+
+    def test_explicit_unbound_backend_is_rejected(self):
+        calls = []
+        adapter = self._make_adapter("CUDNN_ATTN", calls.append)
+
+        with pytest.raises(ValueError, match="do not provide a binding"):
+            adapter._set_attention_backend()
+
+        assert calls == []
+
+    def test_failed_explicit_backend_does_not_fallback_to_native(self):
+        calls = []
+
+        def reject_backend(backend):
+            calls.append(backend)
+            raise RuntimeError(f"{backend} unavailable")
+
+        adapter = self._make_adapter("SAGE_ATTN", reject_backend)
+
+        with pytest.raises(RuntimeError, match="explicitly selected attention backend 'SAGE_ATTN'"):
+            adapter._set_attention_backend()
+
+        assert calls == ["sage_hub", "sage", "sage_varlen"]
+        assert "native" not in calls
+
+    def test_explicit_torch_sdpa_maps_to_diffusers_native(self):
+        calls = []
+        adapter = self._make_adapter("TORCH_SDPA", calls.append)
+
+        adapter._set_attention_backend()
+
+        assert calls == ["native"]
 
     @pytest.mark.parametrize(
         "feature_id",

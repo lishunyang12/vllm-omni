@@ -79,9 +79,11 @@ class RingParallelAttention:
         self,
         sp_group: SequenceParallelGroupCoordinator,
         attn_backend_pref: str | None = None,
+        attn_backend_explicit: bool = False,
     ) -> None:
         self._sp_group = sp_group
         self.attn_backend_pref = attn_backend_pref
+        self.attn_backend_explicit = attn_backend_explicit
 
     @property
     def enabled(self) -> bool:
@@ -168,18 +170,16 @@ class RingParallelAttention:
                 joint_strategy=joint_strategy,
             )
 
-        # FP32 is not supported by Flash Attention, force SDPA.
-        if query.dtype == torch.float32:
-            return _run_sdpa()
-
         # Ring only implements FA/AITER and SDPA kernels. Non-FA diffusion
-        # backends (CUDNN / FlashInfer / TRT-LLM / Sage / SDPA) must use the
-        # SDPA ring path — otherwise we fall through to Hopper FA3 and crash
-        # on Blackwell with "no kernel image is available".
+        # backends (CUDNN / FlashInfer / TRT-LLM / Sage) can use the SDPA ring
+        # path only when they came from automatic platform selection. An
+        # explicit backend request must never be silently substituted.
         _sdpa_prefs = {
             "sdpa",
             "torch",
             "torch_sdpa",
+        }
+        _non_ring_prefs = {
             "cudnn_attn",
             "flashinfer_attn",
             "trtllm_attn",
@@ -188,12 +188,33 @@ class RingParallelAttention:
         }
         if backend_pref in _sdpa_prefs:
             return _run_sdpa()
+        if backend_pref in _non_ring_prefs:
+            if self.attn_backend_explicit:
+                raise ValueError(
+                    f"{self.attn_backend_pref} was explicitly selected, but ring sequence parallelism "
+                    "has no implementation for that backend. Select TORCH_SDPA/FLASH_ATTN or use Ulysses SP."
+                )
+            return _run_sdpa()
+
+        if query.dtype == torch.float32:
+            if self.attn_backend_explicit:
+                raise ValueError(
+                    f"{self.attn_backend_pref} was explicitly selected for ring attention, "
+                    "but its ring kernel does not support float32. Select TORCH_SDPA or use a supported dtype."
+                )
+            return _run_sdpa()
 
         can_use_fa3 = _can_use_fa3(query.device)
         can_use_fa2 = _can_use_fa2(query.device)
         if not can_use_fa3 and not can_use_fa2 and not HAS_AITER:
+            if self.attn_backend_explicit:
+                raise RuntimeError(
+                    f"{self.attn_backend_pref} was explicitly selected, but no compatible ring kernel "
+                    f"is available for device {query.device}."
+                )
             logger.warning_once(
-                "Flash Attention (FA2/FA3/AITER) is not available for this device; falling back to SDPA ring attention."
+                "Automatic ring backend selection chose TORCH_SDPA because no compatible "
+                "FA2/FA3/AITER ring kernel is available for this device."
             )
             return _run_sdpa()
 

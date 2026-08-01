@@ -73,6 +73,7 @@ class Attention(nn.Module):
         # set_current_diffusion_config(); no env-var re-parsing needed here.
         backend_kwargs: dict | None = None
         self.backend_pref = None
+        self.backend_explicit = False
 
         config = get_current_diffusion_config_or_none()
         attention_config = config.diffusion_attention_config if config is not None else None
@@ -92,10 +93,11 @@ class Attention(nn.Module):
         if spec is not None:
             backend_kwargs = spec.backend_kwargs()
             self.backend_pref = spec.backend
+            self.backend_explicit = True
             logger.debug("Attention(role=%s) → backend=%s", role, spec.backend)
         else:
-            # Propagate the resolved platform default so Ring Attention does not
-            # independently fall back to Hopper FA3 on Blackwell GPUs.
+            # Propagate the resolved platform default so Ring Attention can
+            # make a compatible automatic selection on the current GPU.
             self.backend_pref = attn_backend_cls.get_name()
             logger.debug("Attention(role=%s) → platform default (%s)", role, self.backend_pref)
 
@@ -111,7 +113,8 @@ class Attention(nn.Module):
             prefix=prefix,
             backend_kwargs=backend_kwargs,
         )
-        # Instantiate fallback backend for float32 support
+        # Some model-specific paths call this helper directly. The main backend
+        # dispatch below never switches to it implicitly.
         self.sdpa_fallback = SDPABackend.get_impl_cls()(
             num_heads=num_heads,
             head_size=head_size,
@@ -135,16 +138,13 @@ class Attention(nn.Module):
         if config is not None:
             if config.parallel_config.ring_degree > 1:
                 self.use_ring = True
-                try:
-                    sp_group = get_sp_group()
-                    self.ring_pg = sp_group.ring_group
-                    self.ring_runner = RingParallelAttention(
-                        sp_group,
-                        attn_backend_pref=self.backend_pref,
-                    )
-                except Exception:
-                    self.use_ring = False
-                    self.ring_runner = None
+                sp_group = get_sp_group()
+                self.ring_pg = sp_group.ring_group
+                self.ring_runner = RingParallelAttention(
+                    sp_group,
+                    attn_backend_pref=self.backend_pref,
+                    attn_backend_explicit=self.backend_explicit,
+                )
 
         self.parallel_strategy = build_parallel_attention_strategy(
             scatter_idx=scatter_idx,
@@ -152,7 +152,7 @@ class Attention(nn.Module):
             use_sync=use_sync,
             causal=causal,
         )
-        # Fallback strategy when SP is not active (outside sharded regions)
+        # Local strategy when SP is intentionally inactive outside sharded regions.
         self._no_parallel_strategy = NoParallelAttention()
 
         self.layer_idx: int | None = _try_extract_layer_index(prefix)
@@ -196,14 +196,11 @@ class Attention(nn.Module):
                 )
             platform_key = current_omni_platform.device_name
             if not self.attention.supports_kv_cache_dtype(dtype, platform_key):
-                logger.warning_once(
-                    "Attention backend %s does not support kv_cache_dtype='%s' on %s. "
-                    "KV quantization will be disabled.",
-                    self.attn_backend.get_name(),
-                    dtype,
-                    platform_key,
+                raise ValueError(
+                    f"Attention backend {self.attn_backend.get_name()} does not support "
+                    f"kv_cache_dtype={dtype!r} on {platform_key}. Select a compatible "
+                    "backend or set diffusion_kv_cache_dtype='auto'."
                 )
-                dtype = None
         self._kv_cache_dtype = dtype
         self._kv_cache_skip_steps = getattr(config, "diffusion_kv_cache_skip_step_indices", None)
         self._kv_cache_skip_layers = getattr(config, "diffusion_kv_cache_skip_layer_indices", None)
@@ -293,24 +290,22 @@ class Attention(nn.Module):
         return out
 
     def _run_local_attention(self, query, key, value, attn_metadata):
-        self._assert_piecewise_compatible(attn_metadata)
+        self._assert_metadata_compatible(attn_metadata)
 
-        if query.dtype == torch.float32:
-            logger.warning_once(
-                f"Only SDPA supports float32. Overriding user config {type(self.attention)} "
-                f"attention_backend='{self.backend_pref}' to 'sdpa' for dtype={query.dtype}."
-            )
-            return self.sdpa_fallback.forward(query, key, value, attn_metadata)
-
-        # Fallback to standard attention
         return self.attention.forward(query, key, value, attn_metadata)
 
-    def _assert_piecewise_compatible(self, attn_metadata: AttentionMetadata | None) -> None:
-        if attn_metadata is None or attn_metadata.full_attn_spans is None:
+    def _assert_metadata_compatible(self, attn_metadata: AttentionMetadata | None) -> None:
+        if attn_metadata is None:
+            return
+        backend_name = self.attn_backend.get_name()
+        if attn_metadata.attn_mask is not None and not self.attn_backend.supports_attention_mask():
+            raise ValueError(
+                f"Attention backend '{backend_name}' does not support attn_mask. Select a mask-capable backend."
+            )
+        if attn_metadata.full_attn_spans is None:
             return
         if attn_metadata.attn_mask is not None and attn_metadata.attn_mask.ndim == 4:
             return
-        backend_name = self.attn_backend.get_name()
         if not self.attn_backend.supports_piecewise_spans:
             raise ValueError(
                 f"Attention backend '{backend_name}' does not support "
@@ -320,6 +315,8 @@ class Attention(nn.Module):
             )
 
     def _run_ring_attention(self, query, key, value, attn_metadata):
+        if attn_metadata is not None and attn_metadata.attn_mask is not None:
+            raise ValueError("Ring attention does not support attn_mask; use Ulysses SP or disable mask_sp_padding.")
         skip = getattr(self.attention, "skip", None)
         if skip is not None and getattr(skip, "configured", False):
             raise NotImplementedError(

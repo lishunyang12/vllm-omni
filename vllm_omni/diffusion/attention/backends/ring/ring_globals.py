@@ -40,7 +40,7 @@ try:
 except (ImportError, ModuleNotFoundError):
     pass
 
-# Fallback: try fa3_fwd_interface (PyPI package, supports Ampere/Ada/Hopper)
+# Secondary FA3 import path: fa3_fwd_interface PyPI package.
 if not HAS_FA3:
     try:
         from importlib.metadata import PackageNotFoundError, version
@@ -80,9 +80,8 @@ try:
     HAS_FLASHINFER = True
 except Exception as e:
     # flashinfer may raise RuntimeError at import-time for version/binary mismatches.
-    # Treat it as unavailable so the runtime can gracefully fall back to other backends.
     HAS_FLASHINFER = False
-    logger.warning("FlashInfer is unavailable; falling back to other attention backends. Reason: %s", e)
+    logger.warning("FlashInfer ring kernels are unavailable. Reason: %s", e)
 
 try:
     import aiter  # noqa: F401

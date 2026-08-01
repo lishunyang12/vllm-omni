@@ -285,13 +285,6 @@ class DiffusersAdapterPipeline(nn.Module, DiffusionPipelineProfilerMixin):
         default_spec = self.od_config.diffusion_attention_config.default
         attention_backend_config = default_spec.backend if default_spec is not None else None
         attention_backend_attempts: list[str] = []
-        # Diffusers has no binding for these platform backends; map to SDPA/native.
-        _sdpa_like = {
-            "TORCH_SDPA",
-            "CUDNN_ATTN",
-            "FLASHINFER_ATTN",
-            "TRTLLM_ATTN",
-        }
         match attention_backend_config:
             case "FLASH_ATTN" | "FLASH_ATTN_HUB" | "FLASH_ATTN_3_HUB" | None:
                 if current_omni_platform.is_rocm():
@@ -307,11 +300,11 @@ class DiffusersAdapterPipeline(nn.Module, DiffusionPipelineProfilerMixin):
                     # Installed FA2/FA3 (and HF FA3 hub) wheels are typically Hopper-only.
                     # set_attention_backend("_flash_3*") can succeed on import, then crash
                     # at runtime with "no kernel image is available for execution on the device".
-                    # Diffusers also has no CUDNN_ATTN binding, so use native SDPA on Blackwell.
-                    logger.warning(
-                        "Diffusers adapter: Flash Attention is unsafe on Blackwell "
-                        "(no runnable sm_10x+ kernel image); using native SDPA backend."
-                    )
+                    if attention_backend_config is not None:
+                        raise ValueError(
+                            f"{attention_backend_config} was explicitly selected for a Diffusers adapter on "
+                            "Blackwell, but no runnable sm_10x+ Flash Attention kernel is available."
+                        )
                     attention_backend_attempts.append("native")
                 else:
                     attention_backend_attempts.extend(
@@ -328,14 +321,18 @@ class DiffusersAdapterPipeline(nn.Module, DiffusionPipelineProfilerMixin):
                         ]
                     )
             case "SAGE_ATTN":
-                attention_backend_attempts.extend(["sage_hub", "sage", "sage", "sage_varlen"])
+                attention_backend_attempts.extend(["sage_hub", "sage", "sage_varlen"])
             case "ASCEND":
                 attention_backend_attempts.append("_native_npu")
-            case _ if attention_backend_config in _sdpa_like:
+            case "TORCH_SDPA":
                 attention_backend_attempts.append("native")
+            case "CUDNN_ATTN" | "FLASHINFER_ATTN" | "TRTLLM_ATTN":
+                raise ValueError(
+                    f"{attention_backend_config} was explicitly selected, but Diffusers adapters do not "
+                    "provide a binding for this vLLM-Omni backend. Select TORCH_SDPA or a Diffusers-native backend."
+                )
             case _:
-                logger.warning(f"Invalid attention backend: {attention_backend_config}. Falling back to SDPA.")
-                attention_backend_attempts.append("native")
+                raise ValueError(f"Invalid Diffusers attention backend: {attention_backend_config}.")
 
         attempt_errors: list[str] = []
         set_backend: str | None = None
@@ -347,8 +344,15 @@ class DiffusersAdapterPipeline(nn.Module, DiffusionPipelineProfilerMixin):
             except Exception as e:
                 attempt_errors.append(str(e))
 
-        # If all attempts fail, fallback to SDPA and warn the user about the failures
+        # Automatic selection may use native SDPA as its final safe choice. An
+        # explicitly configured backend must either be installed or raise.
         if len(attempt_errors) == len(attention_backend_attempts):
+            if attention_backend_config is not None:
+                raise RuntimeError(
+                    f"Failed to set explicitly selected attention backend '{attention_backend_config}' for "
+                    f"diffusers pipeline {self._pipeline.__class__.__name__}. Attempts: "
+                    f"{dict(zip(attention_backend_attempts, attempt_errors))}"
+                )
             self._pipeline.transformer.set_attention_backend("native")
             logger.warning(
                 f"Failed to set attention backend '{attention_backend_config}' for "

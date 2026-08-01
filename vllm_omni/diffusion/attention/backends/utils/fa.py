@@ -22,7 +22,8 @@ from vllm_omni.platforms import current_omni_platform
 
 logger = init_logger(__name__)
 
-# Flash Attention function detection with fallback chain
+# Flash Attention implementation discovery. All candidates implement the same
+# logical FLASH_ATTN backend; this never substitutes SDPA at runtime.
 flash_attn_func = None
 flash_attn_varlen_func = None
 
@@ -48,21 +49,21 @@ elif current_omni_platform.is_musa():
     except (ImportError, ModuleNotFoundError):
         pass
 else:
-    # CUDA: try FA3 -> FA2 fallback chain
-    # Try FA3 from fa3-fwd PyPI package
+    # CUDA implementation candidates, ordered by preference.
+    # Candidate 1: FA3 from fa3-fwd PyPI package.
     try:
         from fa3_fwd_interface import flash_attn_func, flash_attn_varlen_func  # noqa: F401
     except (ImportError, ModuleNotFoundError):
         pass
 
-    # Fallback: Try FA3 from flash-attention source build
+    # Candidate 2: FA3 from a flash-attention source build.
     if flash_attn_func is None:
         try:
             from flash_attn_interface import flash_attn_func, flash_attn_varlen_func  # noqa: F401
         except (ImportError, ModuleNotFoundError):
             pass
 
-    # Fallback: Try FA2 from flash-attn package (try multiple import paths)
+    # Candidate 3: FA2 from the flash-attn package (multiple import paths).
     if flash_attn_func is None:
         try:
             from flash_attn import flash_attn_func, flash_attn_varlen_func  # noqa: F401
@@ -78,8 +79,7 @@ else:
         except (ImportError, ModuleNotFoundError):
             pass
 
-    # Fallback: Try vLLM's encapsulated flash attention dispatcher
-    # TODO discuss priority and remove potentially redundant fallbacks
+    # Candidate 4: vLLM's encapsulated Flash Attention dispatcher.
     if flash_attn_varlen_func is None:
         try:
             from vllm.vllm_flash_attn import (  # noqa: F401
@@ -134,7 +134,7 @@ def is_flash_attn_installed() -> bool:
 
         return True
     except (ImportError, ModuleNotFoundError):
-        logger.warning("No Flash Attention backend found, using pytorch SDPA implementation")
+        logger.warning("No Flash Attention implementation found")
         return False
 
 

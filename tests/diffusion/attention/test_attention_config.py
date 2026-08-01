@@ -385,9 +385,10 @@ class TestAttentionInitUsesCurrentDiffusionConfig:
             return _FakeBackend, AttentionSpec(backend="TRTLLM_ATTN", skip_softmax={"target_sparsity": 0.5})
 
         class _FakeRingParallelAttention:
-            def __init__(self, sp_group, attn_backend_pref=None):
+            def __init__(self, sp_group, attn_backend_pref=None, attn_backend_explicit=False):
                 self.sp_group = sp_group
                 self.attn_backend_pref = attn_backend_pref
+                self.attn_backend_explicit = attn_backend_explicit
 
         monkeypatch.setattr(layer_mod, "get_attn_backend_for_role", _fake_get_attn_backend_for_role)
         monkeypatch.setattr(layer_mod.SDPABackend, "get_impl_cls", staticmethod(lambda: _FakeAttentionImpl))
@@ -433,17 +434,95 @@ class TestAttentionInitUsesCurrentDiffusionConfig:
         assert attn.use_ring is True
         assert attn.ring_runner is not None
         assert attn.ring_runner.attn_backend_pref == "TRTLLM_ATTN"
+        assert attn.ring_runner.attn_backend_explicit is True
+
+    def test_attention_init_propagates_ring_setup_failure(self, monkeypatch):
+        class _FakeAttentionImpl:
+            def __init__(self, **kwargs):
+                pass
+
+        class _FakeBackend:
+            @staticmethod
+            def get_name() -> str:
+                return "TORCH_SDPA"
+
+            @staticmethod
+            def get_impl_cls():
+                return _FakeAttentionImpl
+
+        monkeypatch.setattr(
+            layer_mod,
+            "get_attn_backend_for_role",
+            lambda **kwargs: (_FakeBackend, AttentionSpec(backend="TORCH_SDPA")),
+        )
+        monkeypatch.setattr(layer_mod.SDPABackend, "get_impl_cls", staticmethod(lambda: _FakeAttentionImpl))
+        monkeypatch.setattr(
+            layer_mod,
+            "get_sp_group",
+            lambda: (_ for _ in ()).throw(RuntimeError("SP group is not initialized")),
+        )
+
+        od_config = SimpleNamespace(
+            diffusion_attention_config=AttentionConfig(default="TORCH_SDPA"),
+            parallel_config=SimpleNamespace(ring_degree=2),
+        )
+        with set_current_diffusion_config(od_config):
+            with pytest.raises(RuntimeError, match="SP group is not initialized"):
+                Attention(num_heads=4, head_size=64, causal=False, softmax_scale=1.0)
+
+    def test_float32_main_dispatch_does_not_override_selected_backend(self):
+        sentinel = torch.randn(1, 2, 4, 8)
+        selected_calls = []
+
+        fake_attention = SimpleNamespace(
+            attention=SimpleNamespace(
+                forward=lambda *args: selected_calls.append(args) or sentinel,
+            ),
+            sdpa_fallback=SimpleNamespace(
+                forward=lambda *args: pytest.fail("unexpected SDPA fallback"),
+            ),
+            _assert_metadata_compatible=lambda metadata: None,
+        )
+        query = torch.randn(1, 2, 4, 8, dtype=torch.float32)
+
+        output = Attention._run_local_attention(fake_attention, query, query, query, None)
+
+        assert output is sentinel
+        assert len(selected_calls) == 1
+
+    def test_unsupported_attention_mask_is_rejected_before_backend_call(self):
+        fake_backend = SimpleNamespace(
+            get_name=lambda: "NO_MASK_BACKEND",
+            supports_attention_mask=lambda: False,
+        )
+        fake_attention = SimpleNamespace(attn_backend=fake_backend)
+        metadata = AttentionMetadata(attn_mask=torch.ones(1, 2, dtype=torch.bool))
+
+        with pytest.raises(ValueError, match="does not support attn_mask"):
+            Attention._assert_metadata_compatible(fake_attention, metadata)
+
+    def test_ring_attention_rejects_mask_instead_of_ignoring_it(self):
+        fake_attention = SimpleNamespace(attention=SimpleNamespace(skip=None), ring_runner=None)
+        query = torch.randn(1, 2, 4, 8)
+        metadata = AttentionMetadata(attn_mask=torch.ones(1, 2, dtype=torch.bool))
+
+        with pytest.raises(ValueError, match="Ring attention does not support attn_mask"):
+            Attention._run_ring_attention(fake_attention, query, query, query, metadata)
 
 
 class TestDiffusionKvCacheQuantization:
     @staticmethod
-    def _install_attention_init_stubs(monkeypatch):
+    def _install_attention_init_stubs(monkeypatch, *, supports_kv_cache_dtype=True):
         class _FakeAttentionImpl:
             def __init__(self, **kwargs):
                 self.kwargs = kwargs
 
             def forward(self, query, key, value, attn_metadata=None):
                 return query
+
+            @staticmethod
+            def supports_kv_cache_dtype(kv_cache_dtype, platform_key) -> bool:
+                return supports_kv_cache_dtype
 
         class _FakeBackend:
             @staticmethod
@@ -454,14 +533,11 @@ class TestDiffusionKvCacheQuantization:
             def get_impl_cls():
                 return _FakeAttentionImpl
 
-            @staticmethod
-            def supports_kv_cache_dtype(kv_cache_dtype, platform_key) -> bool:
-                return True
-
         class _FakeRingParallelAttention:
-            def __init__(self, sp_group, attn_backend_pref=None):
+            def __init__(self, sp_group, attn_backend_pref=None, attn_backend_explicit=False):
                 self.sp_group = sp_group
                 self.attn_backend_pref = attn_backend_pref
+                self.attn_backend_explicit = attn_backend_explicit
 
         monkeypatch.setattr(
             layer_mod,
@@ -529,6 +605,25 @@ class TestDiffusionKvCacheQuantization:
 
         with set_current_diffusion_config(od_config):
             with pytest.raises(ValueError, match="KV quantization is not compatible with ring attention"):
+                Attention(
+                    num_heads=4,
+                    head_size=64,
+                    causal=False,
+                    softmax_scale=1.0,
+                )
+
+    def test_explicit_unsupported_kv_cache_dtype_raises(self, monkeypatch):
+        self._install_attention_init_stubs(monkeypatch, supports_kv_cache_dtype=False)
+        od_config = SimpleNamespace(
+            diffusion_attention_config=AttentionConfig(),
+            parallel_config=SimpleNamespace(ring_degree=1),
+            diffusion_kv_cache_dtype="fp8",
+            diffusion_kv_cache_skip_step_indices=None,
+            diffusion_kv_cache_skip_layer_indices=None,
+        )
+
+        with set_current_diffusion_config(od_config):
+            with pytest.raises(ValueError, match="does not support kv_cache_dtype='fp8'"):
                 Attention(
                     num_heads=4,
                     head_size=64,
