@@ -96,7 +96,6 @@ def build_image_to_video_prompt(
     width: int | None = None,
     num_frames: int | None = None,
 ) -> dict[str, Any]:
-    del height, width, num_frames
     if set(media_inputs) != {"image"} or not isinstance(media_inputs.get("image"), Image.Image):
         raise ValueError("Lance image-to-video expects a single --image input (multi_modal_data == {'image': ...}).")
     video_prompt: dict[str, Any] = {
@@ -104,6 +103,17 @@ def build_image_to_video_prompt(
         "modalities": ["video"],
         "multi_modal_data": {"first_frame": media_inputs["image"]},
     }
+    extra_args = {
+        key: value
+        for key, value in (
+            ("video_height", height),
+            ("video_width", width),
+            ("num_frames", num_frames),
+        )
+        if value is not None
+    }
+    if extra_args:
+        video_prompt["extra_args"] = extra_args
     if negative_prompt:
         video_prompt["negative_prompt"] = negative_prompt
     return video_prompt

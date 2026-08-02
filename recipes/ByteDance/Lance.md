@@ -78,12 +78,17 @@ python examples/offline_inference/image_to_video/image_to_video.py \
     --deploy-config vllm_omni/deploy/lance.yaml \
     --image /path/to/first_frame.png \
     --prompt "the scene comes to life with smooth, natural motion" \
+    --height 480 --width 848 --num-frames 61 \
     --num-inference-steps 30 \
-    --extra-body '{"num_frames": 61, "video_height": 480, "video_width": 848, "cfg_text_scale": 4.0, "timestep_shift": 3.5}' \
+    --extra-body '{"cfg_text_scale": 4.0, "timestep_shift": 3.5}' \
     --output ./out/lance_i2v.mp4
 ```
 
-Use the `Lance_3B_Video` subfolder so the 3-D `latent_pos_embed` table is loaded.
+The trailing `Lance_3B_Video` component is resolved as a subfolder of the valid
+`bytedance-research/Lance` Hugging Face repo, so the 3-D `latent_pos_embed`
+table is loaded. The standard `--height`, `--width`, and `--num-frames` flags
+are forwarded to Lance; explicit `video_height`, `video_width`, or `num_frames`
+values in `--extra-body` take precedence.
 
 ### image understanding (img2text)
 
@@ -159,7 +164,8 @@ The deploy config carries the pipeline selector and all engine knobs
 (`max_num_batched_tokens`, `max_num_seqs`, `enforce_eager`, `trust_remote_code`,
 `enable_prefix_caching=false`, `async_chunk=false`), so no extra flags are needed.
 
-For `text2video` / `video2video`, use `bytedance-research/Lance/Lance_3B_Video`.
+For `text2video` / `video2video`, use the `bytedance-research/Lance/Lance_3B_Video`
+subfolder form shown above.
 
 ### Verification
 
