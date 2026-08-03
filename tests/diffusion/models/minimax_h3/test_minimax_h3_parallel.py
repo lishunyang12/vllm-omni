@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import os
+from types import SimpleNamespace
+from unittest.mock import Mock
+
 import pytest
 import torch
 import torch.nn as nn
@@ -92,3 +96,121 @@ def test_tp_accepts_checkpoint_supported_sizes():
     arch = MiniMaxH3DiTArchConfig()
     for tp_size in (1, 2, 4, 7):
         model._validate_tp_config(arch=arch, tp_size=tp_size)
+
+
+@pytest.fixture
+def model_parallel():
+    from vllm.distributed.parallel_state import (
+        cleanup_dist_env_and_memory,
+        init_distributed_environment,
+        initialize_model_parallel,
+    )
+
+    os.environ.setdefault("MASTER_ADDR", "localhost")
+    os.environ.setdefault("MASTER_PORT", "29519")
+    init_distributed_environment(
+        world_size=1,
+        rank=0,
+        local_rank=0,
+        distributed_init_method="env://",
+        backend="gloo",
+    )
+    initialize_model_parallel()
+    yield
+    cleanup_dist_env_and_memory()
+
+
+def test_online_quantization_routes_supported_linears_and_preserves_fp32(model_parallel, monkeypatch):
+    from vllm.model_executor.layers.linear import UnquantizedLinearMethod
+
+    import vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer as h3_transformer
+    from vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer import (
+        MINIMAX_H3_FP32_PARAM_NAMES,
+        MiniMaxH3DiTModel,
+    )
+
+    class FakeAttention(nn.Module):
+        def __init__(self, **kwargs):
+            super().__init__()
+            del kwargs
+
+    monkeypatch.setattr(h3_transformer, "Attention", FakeAttention)
+
+    arch = {
+        "num_layers": 1,
+        "token_refiner_num_layers": 1,
+        "hidden_size": 64,
+        "num_attention_heads": 4,
+        "attention_head_dim": 16,
+        "ffn_hidden_size": 128,
+        "latents_dim": 4,
+        "audio_latents_dim": 4,
+        "patch_size": [1, 2, 2],
+        "text_dim": 32,
+        "timestep_input_dim": 16,
+        "time_embed_hidden_size": 64,
+        "time_embed_dim": 32,
+        "adaln_out_features": 18 * 64,
+        "final_adaln_out_features": 2 * 64,
+        "rope_inv_freq_len": 4,
+    }
+    od_config = SimpleNamespace(
+        tf_model_config=arch,
+        parallel_config=SimpleNamespace(ulysses_degree=1),
+    )
+    quant_config = Mock()
+    quant_config.weight_block_size = None
+    quant_config.get_quant_method.return_value = UnquantizedLinearMethod()
+
+    model = MiniMaxH3DiTModel(od_config, quant_config=quant_config)
+
+    quantized_prefixes = [call.kwargs["prefix"] for call in quant_config.get_quant_method.call_args_list]
+    assert quantized_prefixes == [
+        "condition_proj",
+        "token_refiner.blocks.0.attn.qkv_proj",
+        "token_refiner.blocks.0.attn.out_proj",
+        "token_refiner.blocks.0.mlp.fc1",
+        "token_refiner.blocks.0.mlp.fc2",
+        "blocks.0.attn.qkv_proj",
+        "blocks.0.attn.out_proj",
+        "blocks.0.mlp.fc1",
+        "blocks.0.mlp.fc2",
+        "blocks.0.adaln_proj.linear",
+        "final_layer.adaln_proj.linear",
+    ]
+
+    params = dict(model.named_parameters())
+    assert MINIMAX_H3_FP32_PARAM_NAMES <= params.keys()
+    assert all(params[name].dtype == torch.float32 for name in MINIMAX_H3_FP32_PARAM_NAMES)
+
+
+def test_adaln_keeps_bf16_activations_with_fp8_weights():
+    from vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer import (
+        MiniMaxH3AdalnProj,
+    )
+
+    class CaptureLinear(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = nn.Parameter(
+                torch.empty(1, dtype=torch.float8_e4m3fn),
+                requires_grad=False,
+            )
+            self.input_dtype = None
+
+        def forward(self, x):
+            self.input_dtype = x.dtype
+            return torch.zeros((x.shape[0], 8), dtype=x.dtype), None
+
+    proj = object.__new__(MiniMaxH3AdalnProj)
+    nn.Module.__init__(proj)
+    proj.expand_ratio = 2
+    proj.modality_num = 1
+    proj.hidden_size = 4
+    proj.linear = CaptureLinear()
+
+    outputs = proj(torch.randn(1, 4, dtype=torch.float32))
+
+    assert proj.linear.input_dtype == torch.bfloat16
+    assert len(outputs) == 2
+    assert all(output.dtype == torch.bfloat16 for output in outputs)
