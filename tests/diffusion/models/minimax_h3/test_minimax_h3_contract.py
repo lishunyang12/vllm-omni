@@ -106,6 +106,87 @@ def test_shifted_sigma_schedule_matches_reference_values():
     )
 
 
+def test_cudnn_packed_attention_uses_python_length_without_padding_mask():
+    from vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer import (
+        MiniMaxH3Attention,
+    )
+
+    class FakeBackend:
+        supports_prefix_kv_slicing = True
+
+    class FakeAttention(torch.nn.Module):
+        attn_backend = FakeBackend
+
+        def __init__(self):
+            super().__init__()
+            self.metadata = None
+
+        def forward(self, query, key, value, metadata):
+            self.metadata = metadata
+            return query
+
+    attention = object.__new__(MiniMaxH3Attention)
+    torch.nn.Module.__init__(attention)
+    attention.attention = FakeAttention()
+    # Model-side Ulysses shards rows before Attention gathers them again.
+    # The Python packed_total must therefore remain global even though q is
+    # local here.
+    q = torch.randn(4, 2, 4)
+    cu_seqlens = torch.tensor([0, 5, 8], dtype=torch.int32)
+
+    output = attention._run_packed_attention(
+        q,
+        q,
+        q,
+        cu_seqlens=cu_seqlens,
+        max_seqlen=5,
+        packed_total=8,
+    )
+
+    assert output.shape == q.shape
+    assert attention.attention.metadata.attn_mask is None
+    assert attention.attention.metadata.extra["valid_kv_length"] == 5
+
+
+def test_packed_attention_keeps_padding_mask_for_other_backends():
+    from vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer import (
+        MiniMaxH3Attention,
+    )
+
+    class FakeBackend:
+        supports_prefix_kv_slicing = False
+
+    class FakeAttention(torch.nn.Module):
+        attn_backend = FakeBackend
+
+        def __init__(self):
+            super().__init__()
+            self.metadata = None
+
+        def forward(self, query, key, value, metadata):
+            self.metadata = metadata
+            return query
+
+    attention = object.__new__(MiniMaxH3Attention)
+    torch.nn.Module.__init__(attention)
+    attention.attention = FakeAttention()
+    q = torch.randn(8, 2, 4)
+
+    attention._run_packed_attention(
+        q,
+        q,
+        q,
+        cu_seqlens=torch.tensor([0, 5, 8], dtype=torch.int32),
+        max_seqlen=5,
+        packed_total=8,
+    )
+
+    assert torch.equal(
+        attention.attention.metadata.attn_mask,
+        torch.tensor([[True, True, True, True, True, False, False, False]]),
+    )
+
+
 def test_reference_image_resize_contract():
     from PIL import Image
 
@@ -449,6 +530,49 @@ def test_video_vae_can_load_on_cpu_for_staged_gpu_residency(monkeypatch):
 
     assert next(video_vae.parameters()).device.type == "cpu"
     assert video_vae._device_target.type == "meta"
+
+
+def test_video_vae_uses_snapshot_stager_for_accelerator_target(monkeypatch):
+    from vllm_omni.diffusion.models.minimax_h3 import vae as vae_module
+
+    class FakeRemote(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.model = torch.nn.Linear(1, 1)
+
+    stager = Mock()
+    stager_cls = Mock(return_value=stager)
+    monkeypatch.setattr(
+        vae_module,
+        "_load_component_config",
+        lambda _path: {
+            "latent_channels": 1,
+            "latents_mean": [0.0],
+            "latents_std": [1.0],
+        },
+    )
+    monkeypatch.setattr(
+        vae_module,
+        "_load_remote_component",
+        lambda _path, _config: FakeRemote(),
+    )
+    monkeypatch.setattr(vae_module, "PinnedModuleStager", stager_cls)
+
+    video_vae = vae_module.MiniMaxH3VideoVAE(
+        "unused",
+        device=torch.device("cuda"),
+        load_device=torch.device("cpu"),
+    )
+    video_vae.load_to_device()
+    video_vae.offload_to_cpu()
+
+    stager_cls.assert_called_once_with(
+        video_vae.remote,
+        torch.device("cuda"),
+        pin_memory=True,
+    )
+    stager.load.assert_called_once_with()
+    stager.offload.assert_called_once_with()
 
 
 def test_video_vae_encode_uses_configured_parallel_tiling():

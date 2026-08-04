@@ -29,6 +29,7 @@ from vllm_omni.diffusion.offloader.distributed_layerwise_backend import (
     DistributedLayerwiseOffloadHook,
     _PinnedResidentLayerGroup,
 )
+from vllm_omni.diffusion.offloader.module_residency import PinnedModuleStager
 from vllm_omni.diffusion.offloader.offload_plan import OffloadPlan, get_offload_plan
 from vllm_omni.platforms import current_omni_platform
 
@@ -442,6 +443,31 @@ class TestPinnedResidentLayerGroup:
         hook.prefetch_layer(slot=0, non_blocking=False)
 
         assert output_sizes == [4]
+
+
+class TestPinnedModuleStager:
+    def test_offload_rebinds_immutable_cpu_master(self, patched_offload_runtime):
+        module = nn.Linear(2, 2)
+        expected_weight = module.weight.detach().clone()
+        expected_bias = module.bias.detach().clone()
+        stager = PinnedModuleStager(
+            module,
+            torch.device("cpu"),
+            pin_memory=False,
+            copy_stream=DummyStream(),
+        )
+
+        stager.load()
+        module.weight.data.zero_()
+        module.bias.data.zero_()
+        stager.offload()
+
+        assert torch.equal(module.weight, expected_weight)
+        assert torch.equal(module.bias, expected_bias)
+        stager.load()
+        assert torch.equal(module.weight, expected_weight)
+        assert torch.equal(module.bias, expected_bias)
+        stager.offload()
 
 
 class _DummyBlock(nn.Module):
