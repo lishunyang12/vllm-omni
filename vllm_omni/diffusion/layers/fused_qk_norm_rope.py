@@ -21,6 +21,7 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 from torch.library import Library
+from vllm.platforms import current_platform
 from vllm.triton_utils import HAS_TRITON, tl, triton
 from vllm.utils.torch_utils import direct_register_custom_op
 
@@ -199,7 +200,7 @@ def _fused_qk_norm_rope_impl(
     head_dim: int,
     rotary_dim: int,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    if not HAS_TRITON or not q.is_cuda:
+    if not HAS_TRITON or not current_platform.is_cuda() or not q.is_cuda:
         q_norm = F.rms_norm(q, (head_dim,), q_weight, eps)
         k_norm = F.rms_norm(k, (head_dim,), k_weight, eps)
         return (
@@ -327,7 +328,7 @@ def fused_qk_norm_rope(
     if not rope_table.is_contiguous():
         rope_table = rope_table.contiguous()
 
-    if not HAS_TRITON or not q.is_cuda:
+    if not HAS_TRITON or not current_platform.is_cuda() or not q.is_cuda:
         return _fused_qk_norm_rope_impl(q, k, q_weight, k_weight, rope_table, eps, head_dim, rotary_dim)
     return torch.ops.vllm_omni.fused_qk_norm_rope(
         q,
