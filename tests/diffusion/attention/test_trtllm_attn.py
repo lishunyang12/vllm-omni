@@ -8,6 +8,7 @@ import torch
 import torch.nn.functional as F
 
 from vllm_omni.diffusion.attention.backends import trtllm_attn as tg
+from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
 from vllm_omni.diffusion.attention.backends.trtllm_attn import TrtllmAttentionImpl
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cuda]
@@ -204,6 +205,68 @@ def test_masked_layer_raises():
         _impl().forward_cuda(q, k, v, _Meta())
 
 
+def test_packed_metadata_bypasses_padding_mask(monkeypatch):
+    b, s, h, d = 1, 8, 8, 128
+    q, k, v = (torch.zeros(b, s, h, d) for _ in range(3))
+    mask = torch.tensor([[True, True, True, True, True, True, False, False]])
+    cu_seqlens = torch.tensor([0, 6, 8], dtype=torch.int32)
+    metadata = AttentionMetadata(
+        attn_mask=mask,
+        extra={
+            "cu_seqlens_q": cu_seqlens,
+            "cu_seqlens_k": cu_seqlens,
+            "max_seqlen_q": 6,
+            "max_seqlen_k": 6,
+        },
+    )
+    captured = {}
+
+    def fake_attention(**kwargs):
+        captured.update(kwargs)
+        return torch.zeros_like(kwargs["query"])
+
+    monkeypatch.setattr(tg, "HAS_FLASHINFER", True)
+    monkeypatch.setattr(tg, "trtllm_ragged_attention_deepseek", fake_attention)
+    monkeypatch.setattr(TrtllmAttentionImpl, "_get_workspace", classmethod(lambda cls, device: torch.empty(0)))
+
+    out = _impl().forward_cuda(q, k, v, metadata)
+
+    assert out.shape == q.shape
+    assert captured["batch_size"] == 2
+    assert captured["seq_lens"].tolist() == [6, 2]
+    assert captured["cum_seq_lens_q"] is cu_seqlens
+    assert captured["cum_seq_lens_kv"] is cu_seqlens
+    assert captured["max_q_len"] == 6
+    assert captured["max_kv_len"] == 6
+
+
+def test_packed_metadata_must_be_complete():
+    b, s, h, d = 1, 8, 8, 128
+    q, k, v = (torch.zeros(b, s, h, d) for _ in range(3))
+    metadata = AttentionMetadata(extra={"cu_seqlens_q": torch.tensor([0, s], dtype=torch.int32)})
+
+    with pytest.raises(ValueError, match="Incomplete packed TRTLLM attention metadata"):
+        _impl().forward_cuda(q, k, v, metadata)
+
+
+def test_packed_metadata_must_cover_inputs(monkeypatch):
+    b, s, h, d = 1, 8, 8, 128
+    q, k, v = (torch.zeros(b, s, h, d) for _ in range(3))
+    cu_seqlens = torch.tensor([0, 6], dtype=torch.int32)
+    metadata = AttentionMetadata(
+        extra={
+            "cu_seqlens_q": cu_seqlens,
+            "cu_seqlens_k": cu_seqlens,
+            "max_seqlen_q": 6,
+            "max_seqlen_k": 6,
+        }
+    )
+    monkeypatch.setattr(tg, "HAS_FLASHINFER", True)
+
+    with pytest.raises(ValueError, match="must cover all Q/K/V tokens"):
+        _impl().forward_cuda(q, k, v, metadata)
+
+
 def test_propagate_calibration_045_schema(monkeypatch):
     import types
 
@@ -293,6 +356,33 @@ def test_bf16_dense_matches_sdpa():
     ref = _sdpa_ref(q, k, v, scale)
     rel = (out - ref).abs().mean() / ref.abs().mean()
     assert rel < 0.01, f"BF16 dense rel err {rel:.4f} too high"
+
+
+@requires_trtllm_attn
+def test_bf16_packed_padding_matches_sdpa():
+    torch.manual_seed(0)
+    b, s, used, h, d = 1, 256, 192, 8, 128
+    scale = 1.0 / math.sqrt(d)
+    q, k, v = (torch.randn(b, s, h, d, device="cuda", dtype=torch.bfloat16) for _ in range(3))
+    cu_seqlens = torch.tensor([0, used, s], dtype=torch.int32, device="cuda")
+    metadata = AttentionMetadata(
+        attn_mask=torch.arange(s, device="cuda")[None] < used,
+        extra={
+            "cu_seqlens_q": cu_seqlens,
+            "cu_seqlens_k": cu_seqlens,
+            "max_seqlen_q": used,
+            "max_seqlen_k": used,
+        },
+    )
+
+    out = _impl().forward_cuda(q, k, v, metadata).float()
+    ref_used = _sdpa_ref(q[:, :used], k[:, :used], v[:, :used], scale)
+    ref_padding = _sdpa_ref(q[:, used:], k[:, used:], v[:, used:], scale)
+
+    used_rel = (out[:, :used] - ref_used).abs().mean() / ref_used.abs().mean()
+    padding_rel = (out[:, used:] - ref_padding).abs().mean() / ref_padding.abs().mean()
+    assert used_rel < 0.01, f"BF16 packed valid-token rel err {used_rel:.4f} too high"
+    assert padding_rel < 0.01, f"BF16 packed padding rel err {padding_rel:.4f} too high"
 
 
 requires_sage = pytest.mark.skipif(

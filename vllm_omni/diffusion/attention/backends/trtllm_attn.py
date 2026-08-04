@@ -255,8 +255,16 @@ class TrtllmAttentionImpl(AttentionImpl):
         value: torch.Tensor,
         attn_metadata: AttentionMetadata | None = None,
     ) -> torch.Tensor:
+        extra = getattr(attn_metadata, "extra", {}) if attn_metadata is not None else {}
+        packed_keys = ("cu_seqlens_q", "cu_seqlens_k", "max_seqlen_q", "max_seqlen_k")
+        present_packed_keys = [key for key in packed_keys if key in extra]
+        if present_packed_keys and len(present_packed_keys) != len(packed_keys):
+            missing = sorted(set(packed_keys) - set(present_packed_keys))
+            raise ValueError(f"Incomplete packed TRTLLM attention metadata; missing {missing}")
+        has_packed_metadata = len(present_packed_keys) == len(packed_keys)
+
         attn_mask = getattr(attn_metadata, "attn_mask", None) if attn_metadata is not None else None
-        if attn_mask is not None:
+        if attn_mask is not None and not has_packed_metadata:
             raise ValueError(
                 "TRTLLM_ATTN does not support attn_mask (Wan sets one only under SP with "
                 "mask_sp_padding=True and a non-divisible seq len). Either set "
@@ -270,24 +278,41 @@ class TrtllmAttentionImpl(AttentionImpl):
                 "another backend via --diffusion-attention-backend."
             )
 
-        batch, q_len, num_q_heads, head_dim = query.shape
+        physical_batch, q_len, num_q_heads, head_dim = query.shape
         kv_len, num_kv_heads = key.shape[1], key.shape[2]
 
         device = query.device
 
-        q = query.reshape(batch * q_len, num_q_heads, head_dim).contiguous()
-        k = key.reshape(batch * kv_len, num_kv_heads, head_dim).contiguous()
-        v = value.reshape(batch * kv_len, num_kv_heads, head_dim).contiguous()
+        q = query.reshape(physical_batch * q_len, num_q_heads, head_dim).contiguous()
+        k = key.reshape(physical_batch * kv_len, num_kv_heads, head_dim).contiguous()
+        v = value.reshape(physical_batch * kv_len, num_kv_heads, head_dim).contiguous()
 
-        seq_lens = torch.full((batch,), kv_len, dtype=torch.int32, device=device)
-        cu_seq_lens_q = torch.arange(0, (batch + 1) * q_len, step=q_len, dtype=torch.int32, device=device)
-        cu_seq_lens_kv = torch.arange(0, (batch + 1) * kv_len, step=kv_len, dtype=torch.int32, device=device)
+        if has_packed_metadata:
+            cu_seq_lens_q = extra["cu_seqlens_q"]
+            cu_seq_lens_kv = extra["cu_seqlens_k"]
+            if cu_seq_lens_q.ndim != 1 or cu_seq_lens_kv.ndim != 1:
+                raise ValueError("Packed TRTLLM attention cu_seqlens tensors must be one-dimensional")
+            if cu_seq_lens_q.numel() != cu_seq_lens_kv.numel() or cu_seq_lens_q.numel() < 2:
+                raise ValueError("Packed TRTLLM attention requires matching non-empty Q and KV sequence batches")
+            if int(cu_seq_lens_q[-1].item()) != q.shape[0] or int(cu_seq_lens_kv[-1].item()) != k.shape[0]:
+                raise ValueError("Packed TRTLLM attention cu_seqlens must cover all Q/K/V tokens")
+            batch = cu_seq_lens_q.numel() - 1
+            seq_lens = (cu_seq_lens_kv[1:] - cu_seq_lens_kv[:-1]).to(dtype=torch.int32).contiguous()
+            max_q_len = int(extra["max_seqlen_q"])
+            max_kv_len = int(extra["max_seqlen_k"])
+        else:
+            batch = physical_batch
+            seq_lens = torch.full((batch,), kv_len, dtype=torch.int32, device=device)
+            cu_seq_lens_q = torch.arange(0, (batch + 1) * q_len, step=q_len, dtype=torch.int32, device=device)
+            cu_seq_lens_kv = torch.arange(0, (batch + 1) * kv_len, step=kv_len, dtype=torch.int32, device=device)
+            max_q_len = q_len
+            max_kv_len = kv_len
         workspace = self._get_workspace(device)
 
         bmm1_scale = self.softmax_scale
         bmm2_scale = 1.0
 
-        _skip_factor = self._resolve_skip_factor(kv_len)
+        _skip_factor = self._resolve_skip_factor(max_kv_len)
 
         # SAGE kwargs are only understood by newer FlashInfer builds; pass them exclusively when
         # SAGE quant is active (which already requires the kernel, checked at init) so the dense
@@ -304,8 +329,8 @@ class TrtllmAttentionImpl(AttentionImpl):
             value=v,
             workspace_buffer=workspace,
             seq_lens=seq_lens,
-            max_q_len=q_len,
-            max_kv_len=kv_len,
+            max_q_len=max_q_len,
+            max_kv_len=max_kv_len,
             bmm1_scale=bmm1_scale,
             bmm2_scale=bmm2_scale,
             o_sf_scale=-1.0,
@@ -319,4 +344,4 @@ class TrtllmAttentionImpl(AttentionImpl):
             skip_softmax_threshold_scale_factor=_skip_factor,
             **sage_kwargs,
         )
-        return out.reshape(batch, q_len, num_q_heads, head_dim)
+        return out.reshape(physical_batch, q_len, num_q_heads, head_dim)
