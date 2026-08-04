@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run every MiniMax-H3 task supported by vLLM-Omni on two 24/32 GB GPUs.
+# Run every MiniMax-H3 task supported by vLLM-Omni on two workstation GPUs.
 set -Eeuo pipefail
 
 RUN_ROOT=${RUN_ROOT:-"$(pwd)"}
@@ -78,20 +78,36 @@ for gpu_id in "${gpu_id_array[@]}"; do
 done
 
 if [[ "${PROFILE}" == auto ]]; then
-  if (( min_vram_mib >= 30000 )); then
+  if (( min_vram_mib >= 70000 )); then
+    PROFILE=rtxpro72gb
+  elif (( min_vram_mib >= 30000 )); then
     PROFILE=rtx5090
-  else
+  elif (( min_vram_mib >= 22000 )); then
     PROFILE=rtx4090
+  else
+    echo "The two-GPU H3 profiles require at least 22,000 MiB per GPU; found ${min_vram_mib} MiB." >&2
+    exit 1
   fi
 fi
 
 case "${PROFILE}" in
+  rtxpro72gb)
+    WIDTH=${WIDTH:-1344}
+    HEIGHT=${HEIGHT:-768}
+    if [[ "${DLO_RESIDENT_LAYERS}" == auto ]]; then
+      # Keep all 50 repeated denoise blocks resident for the DiT stage.
+      # Encoder and VAE staging reuse their HBM before and after denoising.
+      DLO_RESIDENT_LAYERS=50
+    fi
+    profile_min_vram_mib=70000
+    ;;
   rtx5090)
     WIDTH=${WIDTH:-1344}
     HEIGHT=${HEIGHT:-768}
     if [[ "${DLO_RESIDENT_LAYERS}" == auto ]]; then
       DLO_RESIDENT_LAYERS=20
     fi
+    profile_min_vram_mib=30000
     ;;
   rtx4090)
     WIDTH=${WIDTH:-1024}
@@ -99,12 +115,19 @@ case "${PROFILE}" in
     if [[ "${DLO_RESIDENT_LAYERS}" == auto ]]; then
       DLO_RESIDENT_LAYERS=12
     fi
+    profile_min_vram_mib=22000
     ;;
   *)
-    echo "PROFILE must be auto, rtx5090, or rtx4090" >&2
+    echo "PROFILE must be auto, rtxpro72gb, rtx5090, or rtx4090" >&2
     exit 1
     ;;
 esac
+
+if (( min_vram_mib < profile_min_vram_mib )) && [[ ${ALLOW_UNDERSIZED_GPU:-0} != 1 ]]; then
+  echo "PROFILE=${PROFILE} requires at least ${profile_min_vram_mib} MiB per GPU; found ${min_vram_mib} MiB." >&2
+  echo "Select the matching profile, or set ALLOW_UNDERSIZED_GPU=1 for an experimental override." >&2
+  exit 1
+fi
 
 available_ram_gib=$(awk '/MemAvailable:/ {printf "%d", $2 / 1024 / 1024}' /proc/meminfo)
 if (( available_ram_gib < 200 )) && [[ ${ALLOW_LOW_HOST_RAM:-0} != 1 ]]; then
@@ -118,7 +141,7 @@ fi
   exit 1
 }
 
-log "profile=${PROFILE}, shape=${WIDTH}x${HEIGHT}, GPUs=${GPU_IDS}, steps=${NUM_INFERENCE_STEPS}, resident_layers=${DLO_RESIDENT_LAYERS}"
+log "profile=${PROFILE}, shape=${WIDTH}x${HEIGHT}, GPUs=${GPU_IDS}, steps=${NUM_INFERENCE_STEPS}, resident_layers=${DLO_RESIDENT_LAYERS}, attention=CUDNN_ATTN"
 log "output=${OUTPUT_DIR}"
 
 (

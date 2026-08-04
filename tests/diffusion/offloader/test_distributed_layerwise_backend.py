@@ -704,6 +704,50 @@ class TestOffloadPlan:
         with pytest.raises(Exception):
             plan.block_attrs = {"x": ("y",)}  # type: ignore
 
+    def test_all_resident_dit_still_prepares_planned_submodules(self, patched_offload_runtime):
+        class TokenRefiner(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.blocks = nn.ModuleList([nn.Linear(2, 2), nn.Linear(2, 2)])
+
+        class Transformer(nn.Module):
+            _layerwise_offload_blocks_attrs = ["blocks"]
+
+            def __init__(self):
+                super().__init__()
+                self.blocks = nn.ModuleList([nn.Linear(2, 2), nn.Linear(2, 2)])
+                self.token_refiner = TokenRefiner()
+
+        class Pipeline(nn.Module):
+            _offload_plan = OffloadPlan(
+                offload_submodules={"token_refiner": "blocks"},
+                resident_dit_paths=frozenset({"transformer"}),
+            )
+
+            def __init__(self):
+                super().__init__()
+                self.transformer = Transformer()
+
+        pipeline = Pipeline()
+        backend = DistributedLayerwiseOffloadBackend(
+            OffloadConfig(
+                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                pin_cpu_memory=False,
+                dlo_use_allgather=False,
+                dlo_resident_layers=2,
+            ),
+            torch.device("cpu"),
+        )
+
+        backend.enable(pipeline)
+
+        assert len(backend._resident_blocks) == 2
+        assert len(backend._all_hook_groups) == 1
+        assert len(backend._all_hook_groups[0]) == 2
+        assert backend.enabled
+
+        backend.disable()
+
 
 class TestMmapValidation:
     """Tests for mmap loader validation: TP rejection, strict check, validate_loaded_weights."""

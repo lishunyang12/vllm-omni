@@ -1244,6 +1244,78 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         self._blocks.append(blocks)
         return True
 
+    def _prepare_dit_non_block_modules(
+        self,
+        dit_module: nn.Module,
+        dit_name: str,
+        blocks_attr_names: list[str],
+        all_dit_modules: set[int],
+        plan: OffloadPlan | None,
+    ) -> None:
+        """Place or hook the DiT parts that are outside its repeated blocks.
+
+        This must run even when every repeated block is resident.  Otherwise
+        an all-resident stage skips placement for modules such as H3's token
+        refiner and enters the forward pass with CPU or meta tensors.
+        """
+        _ON_DEMAND_THRESHOLD = _ON_DEMAND_THRESHOLD_MB
+        for name, module in dit_module.named_children():
+            if name in blocks_attr_names:
+                logger.debug("Skipped blocks module %s", name)
+                continue
+
+            has_meta = any(getattr(param, "is_meta", False) for param in module.parameters())
+            if has_meta:
+                self._load_module_weights_from_mmap(module, dit_name, name)
+            module_mb = (
+                sum(
+                    param.nelement() * param.element_size() if not getattr(param, "is_meta", False) else 0
+                    for param in module.parameters()
+                )
+                / 1048576
+            )
+            explicitly_planned = plan is not None and name in plan.offload_submodules
+            if explicitly_planned or module_mb > _ON_DEMAND_THRESHOLD:
+                if id(module) in all_dit_modules:
+                    logger.info("Submodule '%s' is already a DiT module, skipping layerwise offload", name)
+                elif self._try_layerwise_offload_submodule(module, name, plan):
+                    pass
+                else:
+                    self._register_on_demand_hook(module, name)
+                continue
+
+            try:
+                module.to(self.device)
+            except (NotImplementedError, RuntimeError):
+                self._load_module_weights_from_mmap(module, dit_name, name)
+                # Non-persistent buffers such as RoPE frequencies do not
+                # exist in the checkpoint and must be reconstructed.
+                has_meta_buffer = any(getattr(buffer, "is_meta", False) for buffer in module.buffers(recurse=True))
+                if has_meta_buffer:
+                    saved_params = {
+                        param_name: param.data.clone()
+                        for param_name, param in module.named_parameters()
+                        if not getattr(param, "is_meta", False)
+                    }
+                    module.to_empty(device=self.device)
+                    for submodule in module.modules():
+                        if hasattr(submodule, "reset_parameters"):
+                            submodule.reset_parameters()
+                    for param_name, param in module.named_parameters():
+                        if param_name in saved_params:
+                            param.data.copy_(saved_params[param_name])
+                try:
+                    module.to(self.device)
+                except Exception:
+                    logger.warning("Module %s still has meta params after mmap load", name)
+
+        for param in dit_module._parameters.values():
+            if param is not None and not getattr(param, "is_meta", False):
+                param.data = param.data.to(self.device, non_blocking=True)
+        for buffer in dit_module._buffers.values():
+            if buffer is not None:
+                buffer.data = buffer.data.to(self.device, non_blocking=True)
+
     def enable(self, pipeline: nn.Module) -> None:
         if self.enabled:
             logger.warning("DistributedLayerwiseOffloadBackend already enabled")
@@ -1343,6 +1415,14 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                     len(blocks),
                 )
 
+            self._prepare_dit_non_block_modules(
+                dit_module,
+                dit_name,
+                blocks_attr_names,
+                all_dit_modules,
+                plan,
+            )
+
             num_blocks = len(blocks)
             if num_blocks == 0:
                 logger.info("All blocks for %s are resident; no streaming hooks required", dit_name)
@@ -1355,84 +1435,6 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 )
                 self._resident_blocks.extend(blocks)
                 continue
-
-            # Move non-block modules to GPU (they stay resident).
-            # Large modules (> 1 GB) use on-demand hooks instead — they are
-            # only needed briefly (e.g. language_model for text encoding)
-            # and keeping them resident wastes HBM during the DiT loop.
-            _ON_DEMAND_THRESHOLD = _ON_DEMAND_THRESHOLD_MB  # alias for readability
-            for name, m in dit_module.named_children():
-                if name not in blocks_attr_names:
-                    _has_meta = any((p.is_meta if hasattr(p, "is_meta") else False) for p in m.parameters())
-                    if _has_meta:
-                        # Meta params: load from safetensors before moving to GPU
-                        self._load_module_weights_from_mmap(m, dit_name, name)
-                    _mb = (
-                        sum(
-                            (p.nelement() * p.element_size() if not (hasattr(p, "is_meta") and p.is_meta) else 0)
-                            for p in m.parameters()
-                        )
-                        / 1048576
-                    )
-                    explicitly_planned = plan is not None and name in plan.offload_submodules
-                    if explicitly_planned or _mb > _ON_DEMAND_THRESHOLD:
-                        # Skip if this submodule is already a separate DiT
-                        # module (e.g. transformer.language_model when both
-                        # "transformer.language_model" and "transformer" are
-                        # in _dit_modules) — hooks already applied.
-                        if id(m) in all_dit_modules:
-                            logger.info("Submodule '%s' is already a DiT module, skipping layerwise offload", name)
-                        elif self._try_layerwise_offload_submodule(m, name, plan):
-                            pass  # layerwise hooks applied
-                        else:
-                            self._register_on_demand_hook(m, name)
-                    else:
-                        try:
-                            m.to(self.device)
-                        except (NotImplementedError, RuntimeError):
-                            # Meta params: load from safetensors via mmap, then move to GPU
-                            self._load_module_weights_from_mmap(m, dit_name, name)
-                            # Materialize any remaining meta buffers (e.g. RoPE
-                            # inv_freq, timestep freqs) on device and
-                            # recompute them from their original formulas.
-                            # These are non-persistent buffers not present in
-                            # the checkpoint — they must be reconstructed, not
-                            # left as torch.empty.
-                            # NOTE: Do NOT call reset_parameters() here — it
-                            # would re-initialize ALL parameters (including
-                            # mmap-loaded weights) with random values.
-                            _has_meta_buf = any(hasattr(b, "is_meta") and b.is_meta for b in m.buffers(recurse=True))
-                            if _has_meta_buf:
-                                # Save mmap-loaded param values before
-                                # reset_parameters (which re-initializes
-                                # ALL params with random values).
-                                saved_params = {
-                                    n: p.data.clone()
-                                    for n, p in m.named_parameters()
-                                    if not (hasattr(p, "is_meta") and p.is_meta)
-                                }
-                                m.to_empty(device=self.device)
-                                for submod in m.modules():
-                                    if hasattr(submod, "reset_parameters"):
-                                        submod.reset_parameters()
-                                # Restore mmap-loaded weights
-                                for n, p in m.named_parameters():
-                                    if n in saved_params:
-                                        p.data.copy_(saved_params[n])
-                            try:
-                                m.to(self.device)
-                            except Exception:
-                                logger.warning("Module %s still has meta params after mmap load", name)
-                else:
-                    logger.debug(f"Skipped blocks module {name}")
-
-            # Move top-level params/buffers to GPU
-            for param in dit_module._parameters.values():
-                if param is not None and not (hasattr(param, "is_meta") and param.is_meta):
-                    param.data = param.data.to(self.device, non_blocking=True)
-            for buffer in dit_module._buffers.values():
-                if buffer is not None:
-                    buffer.data = buffer.data.to(self.device, non_blocking=True)
 
             # Register hooks in a circular sliding window:
             # last block prefetches first block, block i prefetches block (i+1)
