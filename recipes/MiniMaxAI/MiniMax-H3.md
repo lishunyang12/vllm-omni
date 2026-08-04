@@ -77,6 +77,71 @@ Use a GPU with enough memory for the active H3 component and enough system RAM
 for the offloaded components. CPU offload reduces GPU memory pressure but adds
 PCIe/NVLink transfer latency.
 
+### Two 24/32 GB GPUs: TP2 distributed layerwise offload
+
+For two PCIe consumer GPUs, combine TP2 with distributed layerwise offload
+(DLO). The standard loader first creates the rank-local TP shard. DLO keeps
+that shard in pinned host memory and streams the 30 tail DiT blocks through a
+shared two-buffer window without a DP AllGather. The first 20 DiT blocks are
+copied to the GPUs once per denoise stage, reused by every sampling step, and
+released before VAE decode so the decoder can reuse their HBM.
+
+```bash
+export MODEL="${MODEL_ROOT}/FL2VA"
+export PORT=8091
+
+CUDA_VISIBLE_DEVICES=0,1 \
+VLLM_WORKER_MULTIPROC_METHOD=spawn \
+VLLM_OMNI_VIDEO_SYNC_TIMEOUT=14400 \
+vllm serve "${MODEL}" \
+  --omni \
+  --host 0.0.0.0 \
+  --port "${PORT}" \
+  --trust-remote-code \
+  --num-gpus 2 \
+  --tensor-parallel-size 2 \
+  --usp 1 \
+  --ring 1 \
+  --text-encoder-tp-size 2 \
+  --vae-patch-parallel-size 2 \
+  --vae-parallel-mode tile \
+  --vae-use-tiling \
+  --enable-distributed-layerwise-offload \
+  --dlo-no-use-allgather \
+  --dlo-resident-layers 20 \
+  --enforce-eager \
+  --diffusion-attention-backend CUDNN_ATTN
+```
+
+This is the 32 GB profile for RTX 5090-class cards. For two 24 GB RTX 4090s,
+start with `--dlo-resident-layers 12` and a 1024x576 request. The resident
+count changes placement and transfer frequency only; it does not quantize or
+change the BF16/FP32 denoise math. Re-measure peak memory before increasing it
+on a different request shape.
+
+The capacity profiles were exercised on two B300 ranks as an allocation and
+correctness proxy before consumer-GPU testing. At 1344x768, 124 frames, and 50
+steps, the 20-layer profile peaked at 27,726 MiB per rank. At 1024x576, the
+12-layer profile peaked at 18,888 MiB per rank in a 5-step capacity run. The
+resident and fully streamed placements produced identical decoded video-frame
+and audio hashes for the same shape, step count, prompt, and seed. These B300
+runs do not establish RTX 4090/5090 PCIe latency; measure latency and peak HBM
+on the target host before treating either profile as performance-qualified.
+
+To run T2VA, FL2VA, image+audio Ref2VA, and two-video Ref2VA in order, validate
+every MP4's H.264/AAC streams, and retain live server and GPU-memory logs:
+
+```bash
+RUN_ROOT=/path/to/run-root \
+MODEL_ROOT=/path/to/MiniMax-H3 \
+GPU_IDS=0,1 \
+PROFILE=rtx5090 \
+bash recipes/MiniMaxAI/scripts/run_h3_2gpu_all_tasks.sh
+```
+
+The script selects 20 resident layers for `PROFILE=rtx5090` and 12 for
+`PROFILE=rtx4090`; `DLO_RESIDENT_LAYERS=N` overrides either default.
+
 ### Four GPUs: measured best-practice throughput
 
 The best validated four-GPU configuration on four NVIDIA B300 GPUs is:

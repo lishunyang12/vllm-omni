@@ -102,8 +102,10 @@ class MiniMaxH3VideoVAE(nn.Module, DistributedVaeMixin):
         component_path: str,
         *,
         device: torch.device,
+        load_device: torch.device | None = None,
     ) -> None:
         super().__init__()
+        self._device_target = device
         self.config_dict = _load_component_config(component_path)
         self.remote = _load_remote_component(
             component_path,
@@ -112,11 +114,18 @@ class MiniMaxH3VideoVAE(nn.Module, DistributedVaeMixin):
         # Match the reference loader contract: video VAE weights stay FP32.
         # Keyframe encoding is numerically sensitive to first casting the
         # checkpoint through FP16; decode still runs under FP16 autocast.
-        self.remote.eval().to(device=device, dtype=torch.float32)
+        self.remote.eval().to(device=load_device or device, dtype=torch.float32)
         self.model = self.remote.model
         self.use_tiling = True
         self.use_slicing = False
         self.parallel_size = 1
+
+    def load_to_device(self) -> None:
+        self.remote.to(self._device_target)
+
+    def offload_to_cpu(self) -> None:
+        self.remote.to("cpu")
+        torch.accelerator.empty_cache()
 
     def set_parallel_size(
         self,
@@ -276,8 +285,10 @@ class MiniMaxH3AudioVAE(nn.Module):
         component_path: str,
         *,
         device: torch.device,
+        load_device: torch.device | None = None,
     ) -> None:
         super().__init__()
+        self._device_target = device
         self.config_dict = _load_component_config(component_path)
         self.remote = _load_remote_component(
             component_path,
@@ -285,9 +296,16 @@ class MiniMaxH3AudioVAE(nn.Module):
         )
         # The checkpoint's audio VAE contract is FP32 for both reference
         # encoding and waveform decoding.
-        self.remote.eval().to(device=device, dtype=torch.float32)
+        self.remote.eval().to(device=load_device or device, dtype=torch.float32)
         self.model = self.remote.model
         self.sample_rate = int(self.config_dict["sample_rate"])
+
+    def load_to_device(self) -> None:
+        self.remote.to(self._device_target)
+
+    def offload_to_cpu(self) -> None:
+        self.remote.to("cpu")
+        torch.accelerator.empty_cache()
 
     @torch.inference_mode()
     def encode_waveform(

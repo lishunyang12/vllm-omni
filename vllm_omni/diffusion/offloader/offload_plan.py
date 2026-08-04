@@ -35,10 +35,15 @@ class OffloadPlan:
             for large non-DiT submodules within a DiT that should be
             independently offloaded with their own hooks.
             e.g. ``{"context_encoder": "layers"}``
+        resident_dit_paths: DiT paths whose leading blocks may be kept on the
+            device when ``dlo_resident_layers`` is nonzero. Keeping this
+            model-declared avoids applying a consumer-GPU tuning knob to
+            auxiliary or dual DiTs unintentionally.
     """
 
     block_attrs: dict[str, tuple[str, ...]] = field(default_factory=dict)
     offload_submodules: dict[str, str] = field(default_factory=dict)
+    resident_dit_paths: frozenset[str] = field(default_factory=frozenset)
 
 
 def get_offload_plan(pipeline: nn.Module) -> OffloadPlan | None:
