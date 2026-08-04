@@ -34,12 +34,20 @@ hf download MiniMaxAI/MiniMax-H3 --local-dir "${MODEL_ROOT}"
 ```
 
 Install vLLM-Omni from the checkout containing MiniMax H3 support. On
-Blackwell, install the optional FlashAttention-4 dependency:
+Blackwell, install the optional FlashAttention-4 dependency for the portable
+fallback path:
 
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -e '.[fa4]'
+```
+
+The four-GPU B200/B300 path auto-selects dense BF16 `TRTLLM_ATTN` through H3's
+packed attention metadata. It requires the FlashInfer trtllm-gen kernel:
+
+```bash
+python -c 'from flashinfer.prefill import trtllm_ragged_attention_deepseek'
 ```
 
 `ffmpeg` and `ffprobe` must be available on `PATH`. They are used for
@@ -85,7 +93,7 @@ The best validated four-GPU configuration on four NVIDIA B300 GPUs is:
 - Ulysses sequence parallelism degree 4;
 - native tiled VAE patch parallelism degree 4;
 - regional `torch.compile` for the repeated DiT blocks;
-- FlashAttention, with Ring and TP left at 1.
+- dense BF16 packed TRTLLM attention, with Ring and TP left at 1.
 
 ```bash
 export MODEL="${MODEL_ROOT}/FL2VA"
@@ -105,9 +113,13 @@ vllm serve "${MODEL}" \
   --ring 1 \
   --vae-patch-parallel-size 4 \
   --vae-parallel-mode tile \
-  --vae-use-tiling \
-  --diffusion-attention-backend FLASH_ATTN
+  --vae-use-tiling
 ```
+
+The attention flag is intentionally omitted so the H3 metadata-driven default
+selects `TRTLLM_ATTN` on datacenter Blackwell. Use
+`--diffusion-attention-backend FLASH_ATTN` on workstation Blackwell or as a
+portable fallback.
 
 Do not add `--enforce-eager` to this performance configuration. The first
 request includes regional compilation; warm the server once before measuring
@@ -143,8 +155,7 @@ vllm serve "${MODEL}" \
   --text-encoder-tp-size 4 \
   --vae-patch-parallel-size 4 \
   --vae-parallel-mode tile \
-  --vae-use-tiling \
-  --diffusion-attention-backend FLASH_ATTN
+  --vae-use-tiling
 ```
 
 `N` must divide the Qwen3-VL head counts (64 attention heads / 8 KV heads), so

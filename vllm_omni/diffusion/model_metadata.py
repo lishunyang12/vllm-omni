@@ -39,6 +39,9 @@ _DIFFUSION_MODEL_METADATA: dict[str, DiffusionModelMetadata] = {
     "MiniMaxH3Pipeline": DiffusionModelMetadata(
         supports_multimodal_inputs=True,
         max_multimodal_image_inputs=1,
+        # H3 represents alignment padding as a second packed sequence.  The
+        # packed TRTLLM backend consumes cu_seqlens and isolates that padding.
+        attention_mask_free=True,
     ),
     "WanPipeline": DiffusionModelMetadata(attention_mask_free=True),
     "WanImageToVideoPipeline": DiffusionModelMetadata(attention_mask_free=True),
