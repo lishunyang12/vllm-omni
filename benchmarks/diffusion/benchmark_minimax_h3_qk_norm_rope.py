@@ -142,6 +142,8 @@ def main() -> None:
                 "max_abs_k": (out_k.float() - ref_k.float()).abs().max().item(),
                 "mean_abs_q": (out_q.float() - ref_q.float()).abs().mean().item(),
                 "mean_abs_k": (out_k.float() - ref_k.float()).abs().mean().item(),
+                "bitwise_equal_q": torch.equal(out_q, ref_q),
+                "bitwise_equal_k": torch.equal(out_k, ref_k),
             },
             indent=2,
         )

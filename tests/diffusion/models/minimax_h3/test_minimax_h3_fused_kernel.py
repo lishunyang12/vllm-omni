@@ -75,3 +75,5 @@ def test_minimax_h3_fused_qk_norm_rope_matches_reference(seq_len, dtype):
         atol = rtol = 1e-5
     torch.testing.assert_close(out_q, ref_q, atol=atol, rtol=rtol)
     torch.testing.assert_close(out_k, ref_k, atol=atol, rtol=rtol)
+    assert torch.equal(out_q, ref_q)
+    assert torch.equal(out_k, ref_k)
