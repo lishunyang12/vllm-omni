@@ -34,6 +34,8 @@ from vllm_omni.diffusion.distributed.sp_plan import (
     SequenceParallelOutput,
 )
 
+from .fused_qk_norm_rope import fused_qk_rmsnorm_rope
+
 if TYPE_CHECKING:
     from vllm.model_executor.layers.quantization.base_config import (
         QuantizationConfig,
@@ -175,11 +177,6 @@ def _norm(size: int, *, eps: float, dtype: torch.dtype = _BF16_DTYPE) -> nn.RMSN
     return nn.RMSNorm(size, eps=eps, dtype=dtype)
 
 
-def _rotate_half(x: torch.Tensor) -> torch.Tensor:
-    x1, x2 = torch.chunk(x, 2, dim=-1)
-    return torch.cat((-x2, x1), dim=-1)
-
-
 def _modulate_scale_shift(
     x: torch.Tensor,
     shift: torch.Tensor,
@@ -230,18 +227,10 @@ class MiniMaxH3Rope(nn.Module):
         return torch.cat((half, half), dim=-1)  # [S, 96]
 
 
-def _apply_rope(x: torch.Tensor, freqs: torch.Tensor) -> torch.Tensor:
-    """Rotate the first rot_dim head dims; pass the rest through.
-
-    x: [T, heads, head_dim]; freqs: [T, rot_dim]. In the unfused path, cos/sin
-    are cast to the activation dtype before the elementwise math.
-    """
-    rot_dim = freqs.shape[-1]
-    x_rot, x_pass = x[..., :rot_dim], x[..., rot_dim:]
-    cos = torch.cos(freqs).to(x.dtype).unsqueeze(1)  # [T, 1, rot_dim]
-    sin = torch.sin(freqs).to(x.dtype).unsqueeze(1)
-    x_rot = (x_rot * cos) + (_rotate_half(x_rot) * sin)
-    return torch.cat((x_rot, x_pass), dim=-1)
+def _build_rope_table(freqs: torch.Tensor) -> torch.Tensor:
+    """Materialize H3's packed ``[cos(freqs[:48]), sin(freqs[:48])]`` table."""
+    half = freqs.shape[-1] // 2
+    return torch.cat((torch.cos(freqs[..., :half]), torch.sin(freqs[..., :half])), dim=-1).to(_BF16_DTYPE)
 
 
 class MiniMaxH3TimeEmbedder(nn.Module):
@@ -422,7 +411,7 @@ class MiniMaxH3Attention(nn.Module):
         self,
         x: torch.Tensor,
         *,
-        rope_freqs: torch.Tensor | None,
+        rope_table: torch.Tensor | None,
         cu_seqlens: torch.Tensor,
         max_seqlen: int,
         sp_seq_lens: list[int] | None = None,
@@ -446,11 +435,18 @@ class MiniMaxH3Attention(nn.Module):
         q = q.view(total, self.num_heads, self.head_dim)
         k = k.view(total, self.num_kv_heads, self.head_dim)
         v = v.view(total, self.num_kv_heads, self.head_dim)
-        q = self.q_norm(q)
-        k = self.k_norm(k)
-        if rope_freqs is not None:
-            q = _apply_rope(q, rope_freqs)
-            k = _apply_rope(k, rope_freqs)
+        if rope_table is None:
+            q = self.q_norm(q)
+            k = self.k_norm(k)
+        else:
+            q, k = fused_qk_rmsnorm_rope(
+                q,
+                k,
+                self.q_norm.weight,
+                self.k_norm.weight,
+                rope_table,
+                self.q_norm.eps,
+            )
 
         # The packed layout uses a second document for alignment padding.
         # Local/Ulysses backends unpad it, while Ring keeps aligned rows for
@@ -591,7 +587,7 @@ class MiniMaxH3TokenRefinerBlock(nn.Module):
     ) -> torch.Tensor:
         x = x + self.attn(
             self.norm1(x),
-            rope_freqs=None,
+            rope_table=None,
             cu_seqlens=cu_seqlens,
             max_seqlen=max_seqlen,
         )
@@ -648,7 +644,7 @@ class MiniMaxH3DiTBlock(nn.Module):
         *,
         t_emb: torch.Tensor,
         combined_indices: torch.Tensor,
-        rope_freqs: torch.Tensor,
+        rope_table: torch.Tensor,
         cu_seqlens: torch.Tensor,
         max_seqlen: int,
         sp_seq_lens: list[int] | None = None,
@@ -674,7 +670,7 @@ class MiniMaxH3DiTBlock(nn.Module):
         h = _modulate_scale_shift(h, shift_msa, scale_msa, combined_indices, dtype=_BF16_DTYPE)
         h = self.attn(
             h,
-            rope_freqs=rope_freqs,
+            rope_table=rope_table,
             cu_seqlens=cu_seqlens,
             max_seqlen=max_seqlen,
             sp_seq_lens=sp_seq_lens,
@@ -749,10 +745,10 @@ class MiniMaxH3SPPrepare(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        rope_freqs: torch.Tensor,
+        rope_table: torch.Tensor,
         combined_indices: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        return hidden_states, rope_freqs, combined_indices
+        return hidden_states, rope_table, combined_indices
 
 
 class MiniMaxH3SPGather(nn.Module):
@@ -1037,8 +1033,8 @@ class MiniMaxH3DiTModel(nn.Module):
         if inverse_indices.shape[0] != seq_len:
             raise ValueError(f"inverse_indices must be [{seq_len}], got {list(inverse_indices.shape)}")
         device = x.device
-        # Compute RoPE frequencies over the full packed sequence.
-        rope_freqs = self.rope(img_position_ids).to(device)
+        # Compute the packed [cos, sin] RoPE table over the full sequence.
+        rope_table = _build_rope_table(self.rope(img_position_ids).to(device))
 
         decoder_input, t_emb = self._embed(
             x=x,
@@ -1059,7 +1055,7 @@ class MiniMaxH3DiTModel(nn.Module):
 
         hidden = decoder_input
         cu_seqlens = cu_seqlens.to(device)
-        block_rope = rope_freqs
+        block_rope = rope_table
         block_combined = combined_indices
 
         hidden, block_rope, block_combined = self.sp_prepare(
@@ -1072,7 +1068,7 @@ class MiniMaxH3DiTModel(nn.Module):
                 hidden,
                 t_emb=t_emb,
                 combined_indices=block_combined,
-                rope_freqs=block_rope,
+                rope_table=block_rope,
                 cu_seqlens=cu_seqlens,
                 max_seqlen=max_seqlen,
             )

@@ -61,6 +61,18 @@ def test_packed_attention_is_a_regional_compile_boundary():
     assert getattr(MiniMaxH3Attention._run_packed_attention, "_torchdynamo_disable", False)
 
 
+def test_rope_table_matches_repeated_frequency_layout():
+    from vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer import (
+        _build_rope_table,
+    )
+
+    torch.manual_seed(23)
+    half = torch.randn(7, 48)
+    freqs = torch.cat((half, half), dim=-1)
+    expected = torch.cat((torch.cos(half), torch.sin(half)), dim=-1).to(torch.bfloat16)
+    torch.testing.assert_close(_build_rope_table(freqs), expected)
+
+
 @pytest.mark.parametrize(
     ("tp_size", "message"),
     [
