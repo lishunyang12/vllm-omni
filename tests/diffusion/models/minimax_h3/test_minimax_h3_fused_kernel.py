@@ -39,11 +39,9 @@ def _reference(q, k, q_weight, k_weight, rope_table):
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 @pytest.mark.skipif(not HAS_TRITON, reason="Triton required")
 @pytest.mark.parametrize("seq_len", [1, 2, 7, 128, 257, 1024])
-@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16, torch.float32])
 def test_minimax_h3_fused_qk_norm_rope_matches_reference(seq_len, dtype):
-    from vllm_omni.diffusion.models.minimax_h3.fused_qk_norm_rope import (
-        fused_qk_rmsnorm_rope,
-    )
+    from vllm_omni.diffusion.layers.fused_qk_norm_rope import fused_qk_norm_rope
 
     torch.manual_seed(17)
     q_heads = 14
@@ -67,10 +65,12 @@ def test_minimax_h3_fused_qk_norm_rope_matches_reference(seq_len, dtype):
     ).to(dtype)
 
     ref_q, ref_k = _reference(q, k, q_weight, k_weight, rope_table)
-    out_q, out_k = fused_qk_rmsnorm_rope(q, k, q_weight, k_weight, rope_table, _EPS)
+    out_q, out_k = fused_qk_norm_rope(q, k, q_weight, k_weight, rope_table, _EPS)
 
     if dtype == torch.bfloat16:
         atol = rtol = 3e-2
+    elif dtype == torch.float16:
+        atol = rtol = 1e-2
     else:
         atol = rtol = 1e-5
     torch.testing.assert_close(out_q, ref_q, atol=atol, rtol=rtol)

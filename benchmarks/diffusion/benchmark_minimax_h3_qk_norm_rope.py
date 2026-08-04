@@ -19,9 +19,7 @@ import json
 import torch
 import torch.nn.functional as F
 
-from vllm_omni.diffusion.models.minimax_h3.fused_qk_norm_rope import (
-    fused_qk_rmsnorm_rope,
-)
+from vllm_omni.diffusion.layers.fused_qk_norm_rope import fused_qk_norm_rope
 
 
 def _parse_args() -> argparse.Namespace:
@@ -110,7 +108,7 @@ def main() -> None:
         return _eager(q, k, q_weight, k_weight, rope_table, eps)
 
     def fused():
-        return fused_qk_rmsnorm_rope(q, k, q_weight, k_weight, rope_table, eps)
+        return fused_qk_norm_rope(q, k, q_weight, k_weight, rope_table, eps)
 
     eager_samples = _measure(eager, args.warmup, args.iters)
     fused_samples = _measure(fused, args.warmup, args.iters)

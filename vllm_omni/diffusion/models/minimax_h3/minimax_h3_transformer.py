@@ -33,8 +33,7 @@ from vllm_omni.diffusion.distributed.sp_plan import (
     SequenceParallelInput,
     SequenceParallelOutput,
 )
-
-from .fused_qk_norm_rope import fused_qk_rmsnorm_rope
+from vllm_omni.diffusion.layers.fused_qk_norm_rope import fused_qk_norm_rope
 
 if TYPE_CHECKING:
     from vllm.model_executor.layers.quantization.base_config import (
@@ -439,7 +438,7 @@ class MiniMaxH3Attention(nn.Module):
             q = self.q_norm(q)
             k = self.k_norm(k)
         else:
-            q, k = fused_qk_rmsnorm_rope(
+            q, k = fused_qk_norm_rope(
                 q,
                 k,
                 self.q_norm.weight,
