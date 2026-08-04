@@ -33,8 +33,10 @@ export MODEL_ROOT=/path/to/MiniMax-H3
 hf download MiniMaxAI/MiniMax-H3 --local-dir "${MODEL_ROOT}"
 ```
 
-Install vLLM-Omni from the checkout containing MiniMax H3 support. On
-Blackwell, install the optional FlashAttention-4 dependency:
+Install vLLM-Omni from the checkout containing MiniMax H3 support. The
+two-GPU RTX 5090/4090 profiles use cuDNN attention and do not need
+FlashAttention-4. Install the optional dependency only for the four-GPU
+B300/GB200 `FLASH_ATTN` profile:
 
 ```bash
 uv venv
@@ -113,20 +115,47 @@ vllm serve "${MODEL}" \
   --diffusion-attention-backend CUDNN_ATTN
 ```
 
-This is the 32 GB profile for RTX 5090-class cards. For two 24 GB RTX 4090s,
-start with `--dlo-resident-layers 12` and a 1024x576 request. The resident
-count changes placement and transfer frequency only; it does not quantize or
-change the BF16/FP32 denoise math. Re-measure peak memory before increasing it
-on a different request shape.
+Use the profile that matches the per-GPU memory capacity:
 
-The capacity profiles were exercised on two B300 ranks as an allocation and
-correctness proxy before consumer-GPU testing. At 1344x768, 124 frames, and 50
-steps, the 20-layer profile peaked at 27,726 MiB per rank. At 1024x576, the
-12-layer profile peaked at 18,888 MiB per rank in a 5-step capacity run. The
-resident and fully streamed placements produced identical decoded video-frame
-and audio hashes for the same shape, step count, prompt, and seed. These B300
-runs do not establish RTX 4090/5090 PCIe latency; measure latency and peak HBM
-on the target host before treating either profile as performance-qualified.
+| Profile | GPUs | Starting shape | Resident DiT blocks | Attention | Execution | Status |
+|---|---:|---:|---:|---|---|---|
+| `rtx5090` | 2 x 32 GB | 1344x768 | 20 | cuDNN attention | eager | Target-hardware validated |
+| `rtx4090` | 2 x 24 GB | 1024x576 | 12 | cuDNN attention | eager | Capacity-proxy starting point |
+
+This topology uses all available parallel capacity: TP2 shards both the DiT
+and text encoder, `--dlo-no-use-allgather` streams each rank's local TP shard
+without reconstructing full blocks, and VAE patch parallelism splits tiled
+decode across both GPUs. cuDNN attention is selected explicitly for the RTX
+consumer path; the server stays eager to avoid an unqualified compile path.
+
+The resident count changes placement and transfer frequency only; it does not
+quantize or change the BF16/FP32 denoise math. Re-measure peak memory before
+increasing it on a different request shape.
+
+### RTX 5090 target-hardware validation
+
+At vLLM-Omni commit `ae6577ea`, one full 50-step T2VA request completed on
+2 x RTX 5090 without OOM:
+
+| Shape | Frames | Client E2E | Sampled peak/GPU | Output validation |
+|---:|---:|---:|---:|---|
+| 1344x768 | 124 at 24 FPS | 8 min 38 s | approximately 22.6 GiB | H.264 video + 32 kHz stereo AAC; full `ffmpeg` decode passed |
+
+This is a single end-to-end validation run, not a warmed multi-run latency
+benchmark. The sampled `nvidia-smi` peak is also not a CUDA allocator
+high-water mark. The environment used vLLM 0.26.0, vLLM-Omni
+`0.26.1.dev14+gae6577ea`, and PyTorch 2.11.0+cu130. The
+[run record](https://github.com/lishunyang12/vllm-omni-rankings/blob/dcd06d7e83cb069842535918c0169ee9f3f29ba0/scripts/%E5%BE%AE%E4%BF%A1%E5%9B%BE%E7%89%87_20260805000034_86_237.png)
+captures the environment, output contract, elapsed time, and sampled peak.
+
+Before the target run, both profiles were exercised on two B300 ranks as an
+allocation and correctness proxy. At 1344x768, 124 frames, and 50 steps, the
+20-layer profile peaked at 27,726 MiB per rank. At 1024x576, the 12-layer
+profile peaked at 18,888 MiB per rank in a 5-step capacity run. The resident
+and fully streamed placements produced identical decoded video-frame and audio
+hashes for the same shape, step count, prompt, and seed. The B300 result does
+not establish RTX 4090 PCIe latency; treat the 4090 profile as a conservative
+starting point until it is measured on that GPU.
 
 To run T2VA, FL2VA, image+audio Ref2VA, and two-video Ref2VA in order, validate
 every MP4's H.264/AAC streams, and retain live server and GPU-memory logs:
