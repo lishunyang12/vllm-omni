@@ -143,7 +143,6 @@ if HAS_TRITON:
             mask=mask,
         )
 
-
     @triton.jit
     def _rope_combine_kernel(
         q_norm_ptr,
