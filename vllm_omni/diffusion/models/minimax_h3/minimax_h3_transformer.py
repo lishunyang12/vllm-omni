@@ -175,11 +175,6 @@ def _norm(size: int, *, eps: float, dtype: torch.dtype = _BF16_DTYPE) -> nn.RMSN
     return nn.RMSNorm(size, eps=eps, dtype=dtype)
 
 
-def _rotate_half(x: torch.Tensor) -> torch.Tensor:
-    x1, x2 = torch.chunk(x, 2, dim=-1)
-    return torch.cat((-x2, x1), dim=-1)
-
-
 def _modulate_scale_shift(
     x: torch.Tensor,
     shift: torch.Tensor,
@@ -238,10 +233,22 @@ def _apply_rope(x: torch.Tensor, freqs: torch.Tensor) -> torch.Tensor:
     """
     rot_dim = freqs.shape[-1]
     x_rot, x_pass = x[..., :rot_dim], x[..., rot_dim:]
-    cos = torch.cos(freqs).to(x.dtype).unsqueeze(1)  # [T, 1, rot_dim]
-    sin = torch.sin(freqs).to(x.dtype).unsqueeze(1)
-    x_rot = (x_rot * cos) + (_rotate_half(x_rot) * sin)
-    return torch.cat((x_rot, x_pass), dim=-1)
+    x1, x2 = x_rot.chunk(2, dim=-1)
+    cos1, cos2 = torch.cos(freqs).to(x.dtype).unsqueeze(1).chunk(2, dim=-1)
+    sin1, sin2 = torch.sin(freqs).to(x.dtype).unsqueeze(1).chunk(2, dim=-1)
+
+    # Preserve the reference arithmetic while emitting one concatenation
+    # instead of materializing ``rotate_half(x_rot)`` and concatenating again.
+    # This runs twice in every DiT block (Q and K), so avoiding the extra copy
+    # is material for long packed H3 sequences.
+    return torch.cat(
+        (
+            (x1 * cos1) + ((-x2) * sin1),
+            (x2 * cos2) + (x1 * sin2),
+            x_pass,
+        ),
+        dim=-1,
+    )
 
 
 class MiniMaxH3TimeEmbedder(nn.Module):

@@ -106,6 +106,26 @@ def test_shifted_sigma_schedule_matches_reference_values():
     )
 
 
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_rope_single_concat_matches_reference_bit_exact(dtype):
+    from vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer import (
+        _apply_rope,
+    )
+
+    generator = torch.Generator().manual_seed(17)
+    x = torch.randn(11, 3, 128, generator=generator, dtype=dtype)
+    freqs = torch.randn(11, 96, generator=generator, dtype=torch.float32)
+
+    x_rot, x_pass = x[..., :96], x[..., 96:]
+    x1, x2 = x_rot.chunk(2, dim=-1)
+    rotated = torch.cat((-x2, x1), dim=-1)
+    cos = torch.cos(freqs).to(dtype).unsqueeze(1)
+    sin = torch.sin(freqs).to(dtype).unsqueeze(1)
+    expected = torch.cat(((x_rot * cos) + (rotated * sin), x_pass), dim=-1)
+
+    assert torch.equal(_apply_rope(x, freqs), expected)
+
+
 def test_cudnn_packed_attention_uses_python_length_without_padding_mask():
     from vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer import (
         MiniMaxH3Attention,
