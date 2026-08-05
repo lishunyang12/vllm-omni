@@ -270,6 +270,9 @@ class MiniMaxH3Pipeline(
     # and fused MLP). Keep it on that path until mmap can run the same loader
     # callbacks for every affected parameter.
     _supports_mmap_loading: ClassVar[bool] = False
+    # TODO(offload): Re-enable after the generic rank-local mmap path can run
+    # this model's grouped-QKV reorder and fused-MLP packing before TP sharding.
+    # Do not bypass the regular loader until that equivalence is tested.
     _PROFILER_TARGETS: ClassVar[list[str]] = [
         "_prepare_reference_videos",
         "encode_prompt",

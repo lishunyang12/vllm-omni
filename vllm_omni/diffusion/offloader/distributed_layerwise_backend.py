@@ -492,6 +492,10 @@ def remove_distributed_block_hook(module: nn.Module) -> None:
 class PinnedResidentLayerGroup:
     """Keep selected layers in pinned host memory between requests.
 
+
+    TODO(offload): Extract this alongside PinnedModuleStager after the
+    distributed shard-and-pin operation becomes a shared storage primitive.
+    It currently remains here because it depends on DLO's local-shard layout.
     Unlike ``module.to(device)``/``module.to("cpu")``, this group retains a
     pinned CPU master copy and never copies generated device weights back to
     host.  Entering the denoise stage performs one asynchronous H2D pass;
@@ -1394,6 +1398,11 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             )
 
         # Load weights via mmap for DLO+AllGather.
+        # TODO(offload): Add a rank-local mmap path for dlo_no_use_allgather.
+        # It must apply declarative checkpoint-to-runtime adapters before the
+        # standard TP loader shards each block, and must cover staged encoders
+        # and VAEs as well as DiT blocks. The current AllGather mmap path is
+        # deliberately not reused because it changes the weight layout.
         # Gate condition MUST match diffusers_loader.py:
         #   supports_mmap_loading(pipeline) and not _has_online_quant
         # When the gate is False, the loader has already loaded weights via
