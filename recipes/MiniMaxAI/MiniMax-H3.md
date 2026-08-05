@@ -52,6 +52,26 @@ reference-video preparation and MP4 output.
 One server loads one checkpoint partition. Set `MODEL` to `FL2VA` for T2VA
 and FL2VA requests, or to `Ref2VA` for either Ref2VA request.
 
+### Memory and storage requirements
+
+Treat GPU HBM, host RAM, and checkpoint storage as separate requirements. Each
+H3 checkpoint partition (`FL2VA` or `Ref2VA`) contains about **134 GiB** of
+BF16 safetensors (about **135 GiB** on disk). Keeping both partitions locally
+therefore needs roughly **270 GiB** of model storage, although the examples
+serve only one partition at a time.
+
+CPU offload and distributed layerwise offload reduce GPU residency; they do
+not make the model weights disappear. With `--dlo-no-use-allgather`, each
+worker retains its standard-loader rank-local weights in host memory, including
+pinned CPU buffers used for H2D streaming. Use at least **200 GiB available
+system RAM** before starting the two-GPU recipe; a **384 GiB host is
+recommended** to leave room for the OS, CUDA/PyTorch allocations, request
+inputs, and filesystem cache. Do not run the FL2VA and Ref2VA servers at the
+same time on a host sized for this minimum.
+
+The consumer-GPU profiles below are HBM budgets only. They still require the
+host-RAM budget above.
+
 ### Single GPU: accuracy and memory first
 
 The single-GPU configuration uses model-level CPU offload.
@@ -165,7 +185,7 @@ RUN_ROOT=/path/to/run-root \
 MODEL_ROOT=/path/to/MiniMax-H3 \
 GPU_IDS=0,1 \
 PROFILE=rtx5090 \
-bash recipes/MiniMaxAI/scripts/run_h3_2gpu_all_tasks.sh
+bash examples/offline_inference/minimax_h3/run_h3_2gpu_all_tasks.sh
 ```
 
 The script selects 20 resident layers for `PROFILE=rtx5090` and 12 for

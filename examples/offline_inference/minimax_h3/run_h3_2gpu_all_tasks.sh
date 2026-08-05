@@ -191,6 +191,8 @@ start_server() {
     --trust-remote-code \
     --num-gpus 2 \
     --tensor-parallel-size 2 \
+    --init-timeout "${SERVER_START_TIMEOUT_SECONDS}" \
+    --stage-init-timeout "${SERVER_START_TIMEOUT_SECONDS}" \
     --usp 1 \
     --ring 1 \
     --text-encoder-tp-size 2 \

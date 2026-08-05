@@ -416,11 +416,8 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
                 )
             extra_args_signatures: set = set()
             for nr in new_reqs:
-                ea = getattr(nr.req, "extra_args", None)
-                if ea and isinstance(ea, dict):
-                    extra_args_signatures.add(json.dumps(ea, sort_keys=True))
-                else:
-                    extra_args_signatures.add(None)
+                ea = getattr(nr.req.sampling_params, "extra_args", None)
+                extra_args_signatures.add(json.dumps(ea, sort_keys=True, default=repr) if ea is not None else None)
             if len(extra_args_signatures) > 1:
                 raise ValueError(
                     "DP multi-concurrency requires all concurrent requests to "
