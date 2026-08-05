@@ -403,7 +403,7 @@ class MiniMaxH3Attention(nn.Module):
         attn_mask = None
         # Ring attention can dispatch to a different implementation from the
         # configured backend, so this no-mask fast path is local-only.
-        prefix_slice = not self.attention.use_ring and self.attention.attn_backend.supports_prefix_kv_slicing
+        prefix_slice = not getattr(self.attention, "use_ring", False) and self.attention.attn_backend.supports_prefix_kv_slicing
         if used < packed_total and not prefix_slice:
             attn_mask = torch.arange(packed_total, device=q.device)[None] < used
         metadata = AttentionMetadata(
