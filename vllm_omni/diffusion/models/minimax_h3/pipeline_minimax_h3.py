@@ -484,30 +484,6 @@ class MiniMaxH3Pipeline(
         "decode",
     ]
     dummy_run_num_frames: ClassVar[int] = 0
-    _MMAP_TRANSFORMER_ROOTS: ClassVar[frozenset[str]] = frozenset(
-        {
-            "audio_patch_proj",
-            "blocks",
-            "condition_proj",
-            "final_layer",
-            "rope",
-            "time_embedder",
-            "token_refiner",
-            "video_patch_proj",
-        }
-    )
-
-    @staticmethod
-    def _remap_ckpt_key(key: str) -> str | None:
-        """Map released transformer keys to pipeline parameter names.
-
-        The DLO mmap loader scans all component indexes recursively.  Restrict
-        the mapping to H3 transformer roots so Qwen encoder keys cannot be
-        mistaken for DiT parameters.
-        """
-        if key.partition(".")[0] not in MiniMaxH3Pipeline._MMAP_TRANSFORMER_ROOTS:
-            return None
-        return f"transformer.{key}"
 
     def __init__(
         self,

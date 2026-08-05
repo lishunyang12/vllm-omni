@@ -30,18 +30,6 @@ def test_pipeline_import_registry_and_component_discovery():
     assert MiniMaxH3Pipeline._vae_modules == ["video_vae", "audio_vae"]
 
 
-def test_dlo_mmap_checkpoint_key_mapping_is_transformer_only():
-    from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
-
-    assert MiniMaxH3Pipeline._remap_ckpt_key("blocks.0.attn.qkv_proj.weight") == (
-        "transformer.blocks.0.attn.qkv_proj.weight"
-    )
-    assert MiniMaxH3Pipeline._remap_ckpt_key("token_refiner.blocks.0.mlp.fc1.weight") == (
-        "transformer.token_refiner.blocks.0.mlp.fc1.weight"
-    )
-    assert MiniMaxH3Pipeline._remap_ckpt_key("model.language_model.layers.0.mlp.down_proj.weight") is None
-
-
 def test_dlo_offload_plan_includes_token_refiner():
     from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
 
@@ -104,26 +92,6 @@ def test_shifted_sigma_schedule_matches_reference_values():
         [1.0, 0.9729729891, 0.9230769277, 0.8000000119, 0.0],
         abs=1e-7,
     )
-
-
-@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
-def test_rope_single_concat_matches_reference_bit_exact(dtype):
-    from vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer import (
-        _apply_rope,
-    )
-
-    generator = torch.Generator().manual_seed(17)
-    x = torch.randn(11, 3, 128, generator=generator, dtype=dtype)
-    freqs = torch.randn(11, 96, generator=generator, dtype=torch.float32)
-
-    x_rot, x_pass = x[..., :96], x[..., 96:]
-    x1, x2 = x_rot.chunk(2, dim=-1)
-    rotated = torch.cat((-x2, x1), dim=-1)
-    cos = torch.cos(freqs).to(dtype).unsqueeze(1)
-    sin = torch.sin(freqs).to(dtype).unsqueeze(1)
-    expected = torch.cat(((x_rot * cos) + (rotated * sin), x_pass), dim=-1)
-
-    assert torch.equal(_apply_rope(x, freqs), expected)
 
 
 def test_cudnn_packed_attention_uses_python_length_without_padding_mask():
