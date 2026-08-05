@@ -19,6 +19,13 @@ server at a time. DLO keeps rank-local weights in pinned host memory; increasing
 `--dlo-resident-layers` improves latency but does **not** reduce host RAM in the
 current implementation because resident layers retain pinned CPU master copies.
 
+> **Modular-pipeline compatibility:** PR #5720 adds a combined H3 service that
+> initializes both DiTs by default. That mode is not viable on RTX 5090 (the
+> upstream measurement reports 148.27 GiB loading memory per GPU). After #5720
+> lands, retain this recipe's single-task behavior by selecting `--task-type
+> fl2va` or `--task-type ref2va`; do not use `auto`/combined on this hardware.
+> Until this PR is rebased onto #5720, use the partition paths shown below.
+
 ## One RTX 5090: 1344x768, 5 seconds
 
 Use 12 resident DiT layers. A 50-step B300 allocation test with this exact

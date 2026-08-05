@@ -258,6 +258,10 @@ class MiniMaxH3Pipeline(
     """CFG-distilled joint video/audio generation for MiniMax H3."""
 
     _dit_modules: ClassVar[list[str]] = ["transformer"]
+    # TODO(offload): Reconcile this static plan with the modular H3 pipeline
+    # (#5720). Its combined mode has ``transformer`` and ``transformers_ref``;
+    # build the resident/staging plan from the selected task partition so a
+    # consumer-GPU single-task server never stages both DiTs.
     _encoder_modules: ClassVar[list[str]] = ["text_encoder"]
     _vae_modules: ClassVar[list[str]] = ["video_vae", "audio_vae"]
     _offload_plan: ClassVar[OffloadPlan] = OffloadPlan(
