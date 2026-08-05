@@ -19,12 +19,8 @@ server at a time. DLO keeps rank-local weights in pinned host memory; increasing
 `--dlo-resident-layers` improves latency but does **not** reduce host RAM in the
 current implementation because resident layers retain pinned CPU master copies.
 
-> **Modular-pipeline compatibility:** PR #5720 adds a combined H3 service that
-> initializes both DiTs by default. That mode is not viable on RTX 5090 (the
-> upstream measurement reports 148.27 GiB loading memory per GPU). After #5720
-> lands, retain this recipe's single-task behavior by selecting `--task-type
-> fl2va` or `--task-type ref2va`; do not use `auto`/combined on this hardware.
-> Until this PR is rebased onto #5720, use the partition paths shown below.
+> **Modular H3:** after #5720 lands, preserve this recipe's one-partition
+> behavior with `--task-type fl2va` or `--task-type ref2va`.
 
 ## One RTX 5090: 1344x768, 5 seconds
 
@@ -63,14 +59,3 @@ CUDA_VISIBLE_DEVICES=0,1 vllm serve /path/to/MiniMax-H3/FL2VA \
 For Ref2VA, stop the FL2VA server and restart the same command with
 `/path/to/MiniMax-H3/Ref2VA`. Ref2VA reference video count and prompt length
 can increase activation memory; begin with one request at a time.
-
-## Reproducible two-GPU E2E
-
-The repository runner exercises T2VA, FL2VA, and both Ref2VA modes, validates
-the generated MP4 streams, and records per-second GPU usage:
-
-```bash
-RUN_ROOT=/path/to/run-root MODEL_ROOT=/path/to/MiniMax-H3 \
-GPU_IDS=0,1 PROFILE=rtx5090 \
-bash examples/offline_inference/minimax_h3/run_h3_2gpu_all_tasks.sh
-```
