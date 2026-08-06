@@ -71,6 +71,33 @@ The four-GPU ordering `0,2,1,3` (or `4,6,5,7`) deliberately maps each
 Ulysses pair to a close PCIe pair. The 8-GPU script interleaves the two NUMA
 islands and uses `numactl --interleave=0,1`; do not pin it to one memory node.
 
+### Resolve the remaining topology choices
+
+Use the screen before committing a 50-step result when more than one topology
+is viable. It runs the common workload at five steps and writes one output
+directory per candidate. It is deliberately limited to candidates that fit
+the 72 GiB target.
+
+```bash
+# Set SCREEN_GPU_COUNT to one of 1, 2, 4, or 8.
+# The default is 4. Use a free NUMA island by overriding CUDA_VISIBLE_DEVICES.
+SCREEN_GPU_COUNT=4 \
+  SCREEN_ROOT="/results/sm120-4gpu-screen" \
+  bash examples/offline_inference/minimax_h3/run_sm120_topology_screen.sh
+```
+
+| GPU count | Screened cases | Decision from the screen |
+| ---: | --- | --- |
+| 1 | TP1 x Ulysses1, DLO resident layers 20 vs 35 | Lowest steady-state T2VA/I2VA latency that fits |
+| 2 | TP2 x Ulysses1 resident | Confirm capacity and establish the resident baseline |
+| 4 | TP2 x Ulysses2 vs TP4 x Ulysses1 | Lowest maximum T2VA/I2VA latency that passes memory |
+| 8 | TP2 x Ulysses4 vs TP4 x Ulysses2 vs TP8 x Ulysses1 | Lowest maximum T2VA/I2VA latency that passes memory |
+
+Promote only the winning candidate to the corresponding 50-step wrapper.
+Keep the loser directories: their `summary.json`, peak CSV, and logs document
+why that topology was rejected. The screen is a topology decision, not a
+reported latency benchmark.
+
 ### Record and accept a run
 
 Every output directory contains the evidence needed to populate a results
