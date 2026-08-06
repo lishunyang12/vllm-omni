@@ -324,9 +324,10 @@ def test_masked_layer_raises():
 
 def test_packed_metadata_trims_padding_mask(monkeypatch):
     b, s, h, d = 1, 8, 8, 128
-    q, k, v = (torch.zeros(b, s, h, d) for _ in range(3))
-    mask = torch.tensor([[True, True, True, True, True, True, False, False]])
-    cu_seqlens = torch.tensor([0, 6, 8], dtype=torch.int32)
+    with torch.inference_mode():
+        q, k, v = (torch.zeros(b, s, h, d) for _ in range(3))
+        mask = torch.tensor([[True, True, True, True, True, True, False, False]])
+        cu_seqlens = torch.tensor([0, 6, 8], dtype=torch.int32)
     metadata = AttentionMetadata(
         attn_mask=mask,
         extra={

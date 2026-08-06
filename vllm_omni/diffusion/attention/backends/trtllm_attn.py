@@ -367,7 +367,7 @@ class TrtllmAttentionImpl(AttentionImpl):
         v: torch.Tensor,
         cu_seq_lens_q: torch.Tensor,
         cu_seq_lens_kv: torch.Tensor,
-        plan_key: tuple,
+        plan_key: tuple | None,
     ) -> torch.Tensor:
         capability = torch.cuda.get_device_capability(q.device)
         if capability != (12, 0):
@@ -389,7 +389,7 @@ class TrtllmAttentionImpl(AttentionImpl):
                 "NHD",
                 backend=_SM120_PRIMS_BACKEND,
             )
-        if plan_key != self._sm120_plan_key:
+        if plan_key is None or plan_key != self._sm120_plan_key:
             self._sm120_wrapper.plan(
                 cu_seq_lens_q,
                 cu_seq_lens_kv,
@@ -507,16 +507,8 @@ class TrtllmAttentionImpl(AttentionImpl):
             seq_lens = (cu_seq_lens_kv[1:] - cu_seq_lens_kv[:-1]).to(dtype=torch.int32).contiguous()
             max_q_len = int(extra["max_seqlen_q"])
             max_kv_len = int(extra["max_seqlen_k"])
-            sm120_plan_key = (
-                cu_seq_lens_q.data_ptr(),
-                getattr(cu_seq_lens_q, "_version", 0),
-                cu_seq_lens_kv.data_ptr(),
-                getattr(cu_seq_lens_kv, "_version", 0),
-                tuple(q.shape),
-                tuple(k.shape),
-                q.dtype,
-                self.causal,
-            )
+            # Packed inference tensors have no version counter; re-plan dynamic indptrs.
+            sm120_plan_key = None
         else:
             batch = physical_batch
             seq_lens = torch.full((batch,), kv_len, dtype=torch.int32, device=device)
