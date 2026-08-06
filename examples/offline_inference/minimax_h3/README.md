@@ -26,7 +26,7 @@ and GPUs `4-7` on NUMA 1. Keep a run inside one island whenever possible.
 | GPUs | DiT parallelism | Weight placement | Script | Intended use | Status |
 | ---: | --- | --- | --- | --- | --- |
 | 1 | TP1 x Ulysses1 | DLO, 20 resident layers | `run_sm120_1gpu.sh` | Capacity baseline | Recipe; requires offload |
-| 2 | TP2 x Ulysses1 | Resident | `run_sm120_2gpu.sh` | Smallest resident deployment | Recipe |
+| 2 | TP2 x Ulysses1 | DLO, 20 resident layers | `run_sm120_2gpu.sh` | Smallest two-GPU deployment | Required: resident OOM on 72 GiB |
 | 4 | TP2 x Ulysses2 | Resident | `run_sm120_4gpu.sh` | PCIe-balanced default | Validated on this host |
 | 8 | TP2 x Ulysses4 | Resident | `run_sm120_8gpu.sh` | First 8-GPU latency candidate | Recipe; compare with TP4 x Ulysses2 |
 
@@ -105,7 +105,7 @@ SCREEN_GPU_COUNT=4 \
 | GPU count | Screened cases | Decision from the screen |
 | ---: | --- | --- |
 | 1 | TP1 x Ulysses1, DLO resident layers 20 vs 35 | Lowest steady-state T2VA/I2VA latency that fits |
-| 2 | TP2 x Ulysses1 resident | Confirm capacity and establish the resident baseline |
+| 2 | TP2 x Ulysses1, DLO resident layers 35 vs 20 | Lowest steady-state latency that fits; fully resident OOMs during VAE decode |
 | 4 | TP2 x Ulysses2 vs TP4 x Ulysses1 | Lowest maximum T2VA/I2VA latency that passes memory |
 | 8 | TP2 x Ulysses4 vs TP4 x Ulysses2 vs TP8 x Ulysses1 | Lowest maximum T2VA/I2VA latency that passes memory |
 
