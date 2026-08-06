@@ -114,6 +114,22 @@ Keep the loser directories: their `summary.json`, peak CSV, and logs document
 why that topology was rejected. The screen is a topology decision, not a
 reported latency benchmark.
 
+For a complete, directly reportable 50-step matrix, use the four dedicated
+wrappers instead. They run every viable candidate for that GPU count with two
+warmups and keep `RUN_REF2VA=0` so all topology comparisons use the same
+FL2VA T2VA/I2VA workload.
+
+```bash
+SCREEN_ROOT="$TEST_ROOT/results/sm120-1gpu-matrix" bash examples/offline_inference/minimax_h3/run_sm120_1gpu_matrix.sh
+SCREEN_ROOT="$TEST_ROOT/results/sm120-2gpu-matrix" bash examples/offline_inference/minimax_h3/run_sm120_2gpu_matrix.sh
+SCREEN_ROOT="$TEST_ROOT/results/sm120-4gpu-matrix" bash examples/offline_inference/minimax_h3/run_sm120_4gpu_matrix.sh
+SCREEN_ROOT="$TEST_ROOT/results/sm120-8gpu-matrix" bash examples/offline_inference/minimax_h3/run_sm120_8gpu_matrix.sh
+```
+
+Run these one at a time on idle GPUs. Select the candidate with the lowest
+maximum steady-state T2VA/I2VA latency that also passes the external peak
+memory gate; only then run that winner with `RUN_REF2VA=1`.
+
 ### Record and accept a run
 
 Every output directory contains the evidence needed to populate a results
