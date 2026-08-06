@@ -3,6 +3,9 @@
 # RTX PRO 5000 SM120: 1 GPU, DLO is required to fit in 73 GiB.
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "${DLO_RESIDENT_LAYERS:-20}" == "auto" ]]; then
+  exec bash "${SCRIPT_DIR}/run_sm120_dlo_auto.sh" "$@"
+fi
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export NUM_GPUS=1 TP_SIZE=1 ULYSSES_DEGREE=1 RING_DEGREE=1
 export TEXT_ENCODER_TP_SIZE=1 VAE_PATCH_PARALLEL_SIZE=1

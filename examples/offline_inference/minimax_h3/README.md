@@ -43,6 +43,22 @@ first-frame I2VA, 1344x768, 124 frames (about five seconds), BF16, 50 denoise
 steps, and two warmups. `RUN_REF2VA=1` additionally runs the `Ref2VA`
 partition; it requires the corresponding model checkpoint under `MODEL_ROOT`.
 
+For a one-GPU deployment, use `DLO_RESIDENT_LAYERS=auto` to select the largest
+candidate from `35 30 25 20` that completes a five-step probe while retaining
+6 GiB of measured external-GPU headroom. The autotuner writes its decision to
+`summary.json` under `dlo_autotune`, then runs the requested 50-step workload.
+
+```bash
+DLO_RESIDENT_LAYERS=auto \
+  DLO_AUTO_HEADROOM_MIB=6144 \
+  OUTPUT_DIR="$TEST_ROOT/results/sm120-1gpu-auto" \
+  bash examples/offline_inference/minimax_h3/run_sm120_1gpu.sh
+```
+
+Override `DLO_AUTO_CANDIDATES` or `DLO_AUTO_PROBE_STEPS` only when evaluating a
+new card or model revision. This is launch-time selection; resident layers are
+not changed during a generation.
+
 Set the shared paths once, then run exactly one recipe:
 
 ```bash
