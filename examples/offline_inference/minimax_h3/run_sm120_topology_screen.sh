@@ -12,12 +12,13 @@ export ATTENTION_BACKEND="${ATTENTION_BACKEND:-CUDNN_ATTN}"
 export NUM_INFERENCE_STEPS="${NUM_INFERENCE_STEPS:-5}"
 export WARMUP_STEPS="${WARMUP_STEPS:-2}"
 export RUN_REF2VA="${RUN_REF2VA:-0}"
+FAILED_CASES=()
 
 run_case() {
   local label="$1" cuda_visible_devices="$2" numa_mode="$3" tp="$4" ulysses="$5" enable_dlo="$6" resident_layers="$7"
   local output_dir="${SCREEN_ROOT}/${label}"
   echo "=== ${label}: TP${tp} x Ulysses${ulysses} ==="
-  env \
+  if ! env \
     CUDA_VISIBLE_DEVICES="${cuda_visible_devices}" \
     NUM_GPUS="$((tp * ulysses))" \
     TP_SIZE="${tp}" ULYSSES_DEGREE="${ulysses}" RING_DEGREE=1 \
@@ -25,7 +26,10 @@ run_case() {
     VAE_PATCH_PARALLEL_SIZE="$((tp * ulysses))" \
     ENABLE_DLO="${enable_dlo}" DLO_RESIDENT_LAYERS="${resident_layers}" \
     OUTPUT_DIR="${output_dir}" \
-    bash -c "${numa_mode} bash \"${SCRIPT_DIR}/run_all_tasks.sh\""
+    bash -c "${numa_mode} bash \"${SCRIPT_DIR}/run_all_tasks.sh\""; then
+    FAILED_CASES+=("${label}")
+    echo "=== ${label} failed; continuing with remaining candidates ===" >&2
+  fi
 }
 
 mkdir -p "${SCREEN_ROOT}"
@@ -53,4 +57,9 @@ case "${SCREEN_GPU_COUNT}" in
     ;;
 esac
 
-echo "Completed screen: ${SCREEN_ROOT}"
+if (( ${#FAILED_CASES[@]} )); then
+  printf '%s\n' "${FAILED_CASES[@]}" > "${SCREEN_ROOT}/failed_cases.txt"
+  echo "Completed screen with failed cases: ${FAILED_CASES[*]}"
+else
+  echo "Completed screen: ${SCREEN_ROOT}"
+fi
