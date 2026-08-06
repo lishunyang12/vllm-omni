@@ -30,6 +30,19 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 _DEQUEUE_TIMEOUT_S = 5.0
+_WORKER_SHUTDOWN_GRACE_S = 15.0
+_RESULT_PUMP_JOIN_TIMEOUT_S = 2.0
+
+
+def _is_empty_dp_prompt(prompt: object) -> bool:
+    """Return whether a DP request has no usable text prompt."""
+    if prompt is None:
+        return True
+    if isinstance(prompt, str):
+        return not prompt
+    if isinstance(prompt, dict) and "prompt" in prompt:
+        return not prompt["prompt"]
+    return False
 
 
 @dataclass
@@ -55,7 +68,7 @@ class _ExecutorShutdownCleaner:
             for proc in self.processes:
                 if not proc.is_alive():
                     continue
-                proc.join(5)
+                proc.join(_WORKER_SHUTDOWN_GRACE_S)
                 if proc.is_alive():
                     logger.warning("Terminating diffusion worker %s after timeout", proc.name)
                     proc.terminate()
@@ -75,6 +88,7 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
         self._is_failed = False
         self._failure_callbacks: list[Callable[[], None]] = []
         self._result_mq: MessageQueue | None = None
+        self._result_mqs: list[MessageQueue] = []
         self._rpc_wave_id: int = 0
 
         num_workers = cast(int, self.od_config.num_gpus)
@@ -84,7 +98,7 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
         broadcast_handle = self._broadcast_mq.export_handle()
 
         # Launch workers
-        processes, result_handle = self._launch_workers(broadcast_handle, self.wake_events)
+        processes, result_handles = self._launch_workers(broadcast_handle, self.wake_events)
         self._processes = processes
 
         shutdown_cleaner = _ExecutorShutdownCleaner(
@@ -96,7 +110,8 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
         self._finalizer = weakref.finalize(self, shutdown_cleaner)
 
         try:
-            self._result_mq = self._init_result_queue(result_handle)
+            self._result_mqs = [self._init_result_queue(handle) for handle in result_handles]
+            self._result_mq = self._result_mqs[0]
         except Exception:
             self.shutdown()
             raise
@@ -112,8 +127,8 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
         self._futures_lock = threading.RLock()
         self._pump_running = False
         self._pump_stop = threading.Event()
-        # When pump is active it is the sole reader of result_mq; non-async
-        # messages are placed here for collective_rpc() to consume.
+        # When pumps are active they are the sole readers of the worker result
+        # queues; non-async messages are placed here for collective_rpc().
         self._sync_result_buffer: queue.Queue = queue.Queue()
         if not self.od_config.step_execution:
             self._start_result_pump()
@@ -140,12 +155,17 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
         if self._broadcast_mq is None:
             raise RuntimeError("Broadcast queue is closed")
 
-    def _dequeue_one_with_failure_polling(self, deadline: float | None, method: str) -> Any:
+    def _dequeue_one_with_failure_polling(
+        self,
+        deadline: float | None,
+        method: str,
+        result_mq: MessageQueue | None = None,
+    ) -> Any:
         """Block until one result message, polling ``_is_failed`` between chunk timeouts.
 
-        When async output is enabled, pump is the sole reader of result_mq;
-        non-async messages are placed in _sync_result_buffer, so this method
-        reads from there instead of result_mq directly.
+        When async output is enabled, the pumps are the sole readers of the
+        worker result queues; non-async messages are placed in
+        _sync_result_buffer, so this method reads from there instead.
         """
         while True:
             if deadline is None:
@@ -163,8 +183,11 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
                         raise EngineDeadError()
                     continue
             else:
+                queue_to_read = result_mq if result_mq is not None else self._result_mq
+                if queue_to_read is None:
+                    raise RuntimeError("Result queue is closed")
                 try:
-                    return self._result_mq.dequeue(timeout=chunk_timeout)  # pyright: ignore[reportOptionalMemberAccess] MQ is not None before shutdown
+                    return queue_to_read.dequeue(timeout=chunk_timeout)
                 except (TimeoutError, zmq.error.Again):
                     if self._is_failed:
                         raise EngineDeadError()
@@ -223,7 +246,14 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
 
     _MAX_STALE_DISCARDS = 16
 
-    def _validate_wave_id(self, response: Any, expected_wave_id: int, deadline: float | None, method: str) -> Any:
+    def _validate_wave_id(
+        self,
+        response: Any,
+        expected_wave_id: int,
+        deadline: float | None,
+        method: str,
+        result_mq: MessageQueue | None = None,
+    ) -> Any:
         """Discard stale RPC responses from a previous wave."""
         discards = 0
         while discards < self._MAX_STALE_DISCARDS:
@@ -239,7 +269,7 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
                 method,
             )
             discards += 1
-            response = self._dequeue_one_with_failure_polling(deadline, method)
+            response = self._dequeue_one_with_failure_polling(deadline, method, result_mq)
         raise TimeoutError(
             f"Discarded {self._MAX_STALE_DISCARDS} stale RPC responses "
             f"without finding wave_id={expected_wave_id} for method={method}."
@@ -249,7 +279,7 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
         self,
         broadcast_handle: Handle,
         wake_events: list[Event],
-    ) -> tuple[list[mp.Process], Handle | None]:
+    ) -> tuple[list[mp.Process], list[Handle]]:
         od_config = self.od_config
         logger.info("Starting server...")
 
@@ -287,7 +317,7 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
             processes.append(process)
 
         # Wait for all workers to be ready
-        result_handle = None
+        result_handles: list[Handle] = []
         for writer in scheduler_pipe_writers:
             writer.close()
 
@@ -303,14 +333,16 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
             if data["status"] != "ready":
                 raise RuntimeError("Initialization failed. Please see the error messages above.")
 
-            if i == 0:
-                result_handle = data.get("result_handle")
+            result_handle = data.get("result_handle")
+            if result_handle is None:
+                raise RuntimeError(f"Rank {i} did not provide a result queue handle")
+            result_handles.append(result_handle)
 
             reader.close()
 
         logger.debug("All workers are ready")
 
-        return processes, result_handle
+        return processes, result_handles
 
     @property
     def is_dead(self) -> bool:
@@ -423,6 +455,12 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
                     "DP multi-concurrency requires all concurrent requests to "
                     "share identical extra_args. Different extra_args can change "
                     "the forward schedule and cause AllGather deadlock."
+                )
+            empty_prompt_ids = [nr.request_id for nr in new_reqs if _is_empty_dp_prompt(nr.req.prompt)]
+            if empty_prompt_ids:
+                raise ValueError(
+                    "DP multi-concurrency requires a non-empty prompt for every request; "
+                    f"empty prompt request IDs: {empty_prompt_ids}."
                 )
 
             reqs_list = [nr.req for nr in new_reqs]
@@ -591,14 +629,18 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
         deadline = None if timeout is None else time.monotonic() + timeout
         kwargs = kwargs or {}
 
+        multi_rank_reply = unique_reply_rank is None and exec_all_ranks
         execute_all_ranks = unique_reply_rank is None or exec_all_ranks
-        collect_rank_status = unique_reply_rank is None
+        # Status aggregation is for control-plane RPCs, where rank 0 sends
+        # one envelope representing every rank. DP request concurrency needs
+        # one independent reply per DP primary instead.
+        collect_rank_status = unique_reply_rank is None and not multi_rank_reply
         rpc_request = {
             "type": "rpc",
             "method": method,
             "args": args,
             "kwargs": kwargs,
-            "output_rank": unique_reply_rank if unique_reply_rank is not None else 0,
+            "output_rank": None if multi_rank_reply else (unique_reply_rank if unique_reply_rank is not None else 0),
             "exec_all_ranks": execute_all_ranks,
             "collect_rank_status": collect_rank_status,
         }
@@ -608,7 +650,6 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
         # so the D2H copy runs on a side stream in the worker background
         # thread while the default stream is free for the next forward.
         # pump routes the result back to a Future via rpc_id.
-        multi_rank_reply = unique_reply_rank is None and exec_all_ranks
         if (
             not self.od_config.step_execution
             and method in ("execute_model", "execute_model_batch")
@@ -651,11 +692,28 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
             responses: list = []
             if unique_reply_rank is None and exec_all_ranks and num_responses > 1:
                 # DP multi-concurrency: collect num_responses replies, sort by dp_rank.
+                result_mqs: list[MessageQueue | None] = [None] * num_responses
+                if self.od_config.step_execution:
+                    parallel_config = self.od_config.parallel_config
+                    replica_size = (
+                        getattr(parallel_config, "tensor_parallel_size", 1)
+                        * getattr(parallel_config, "sequence_parallel_size", 1)
+                        * getattr(parallel_config, "pipeline_parallel_size", 1)
+                        * getattr(parallel_config, "cfg_parallel_size", 1)
+                    )
+                    primary_ranks = [dp_rank * replica_size for dp_rank in range(num_responses)]
+                    all_result_mqs = getattr(self, "_result_mqs", [])
+                    if not all_result_mqs or primary_ranks[-1] >= len(all_result_mqs):
+                        raise RuntimeError(
+                            "Missing result queues for DP primary ranks "
+                            f"{primary_ranks}; available queues: {len(all_result_mqs)}"
+                        )
+                    result_mqs = [all_result_mqs[rank] for rank in primary_ranks]
                 tagged: list[tuple[int, Any]] = []
                 collected_errors: list[str] = []
-                for _ in range(num_responses):
-                    response = self._dequeue_one_with_failure_polling(deadline, method)
-                    response = self._validate_wave_id(response, wave_id, deadline, method)
+                for result_mq in result_mqs:
+                    response = self._dequeue_one_with_failure_polling(deadline, method, result_mq)
+                    response = self._validate_wave_id(response, wave_id, deadline, method, result_mq)
                     try:
                         unpack_diffusion_output_shm(response)
                     except Exception as e:
@@ -698,20 +756,35 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
     def _start_result_pump(self) -> None:
         self._pump_running = True
         self._pump_stop.clear()
-        self._result_pump_thread = threading.Thread(target=self._result_pump, daemon=True, name="DiffusionResultPump")
-        self._result_pump_thread.start()
-        logger.info("Async result pump started")
+        result_mqs = self._result_mqs or ([self._result_mq] if self._result_mq is not None else [])
+        self._result_pump_threads = [
+            threading.Thread(
+                target=self._result_pump,
+                args=(result_mq,),
+                daemon=True,
+                name=f"DiffusionResultPump-{rank}",
+            )
+            for rank, result_mq in enumerate(result_mqs)
+        ]
+        for thread in self._result_pump_threads:
+            thread.start()
+        self._result_pump_thread = self._result_pump_threads[0] if self._result_pump_threads else None
+        logger.info("Async result pump started for %d worker queue(s)", len(self._result_pump_threads))
 
-    def _result_pump(self) -> None:
-        """Sole reader of result_mq when async output is enabled.
+    def _result_pump(self, result_mq: MessageQueue | None = None) -> None:
+        """Sole reader of one worker result queue when async output is enabled.
 
         Dispatches AsyncDiffusionOutput messages to the appropriate future:
         * RPC_RESULT / COMPUTE_DONE → _rpc_futures[rpc_id]
         * OUTPUT_READY → _output_futures[async_output_id]
         """
+        result_mq = result_mq or self._result_mq
+        if result_mq is None:
+            return
+
         while not self._pump_stop.is_set():
             try:
-                msg = self._result_mq.dequeue(timeout=1.0)
+                msg = result_mq.dequeue(timeout=1.0)
             except TimeoutError:
                 if self._is_failed:
                     break
@@ -823,8 +896,18 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
         try:
             self._finalizer()
         finally:
+            pump_threads = getattr(self, "_result_pump_threads", [])
+            for thread in pump_threads:
+                if thread is threading.current_thread():
+                    continue
+                thread.join(timeout=_RESULT_PUMP_JOIN_TIMEOUT_S)
+                if thread.is_alive():
+                    logger.warning("Result pump thread %s did not stop before shutdown", thread.name)
+            self._pump_running = False
             self._broadcast_mq = None
             self._result_mq = None
+            self._result_mqs = []
+            self._result_pump_threads = []
             with self._futures_lock:
                 for fut in self._rpc_futures.values():
                     if not fut.done():

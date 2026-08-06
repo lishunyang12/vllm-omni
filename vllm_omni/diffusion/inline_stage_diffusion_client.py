@@ -101,6 +101,10 @@ class InlineStageDiffusionClient(StageClientBase):
         sampling_params: OmniDiffusionSamplingParams,
         kv_sender_info: dict[int, dict[str, Any]] | None = None,
     ) -> None:
+        # Each request mutates its sampling state while it is normalized and
+        # executed. Callers commonly reuse one params object for concurrent
+        # requests, so take the copy synchronously before either task starts.
+        sampling_params = sampling_params.clone()
         logger.debug(
             "[InlineStageDiffusionClient] stage-%s [rep-%s] add request: %s",
             self.stage_id,

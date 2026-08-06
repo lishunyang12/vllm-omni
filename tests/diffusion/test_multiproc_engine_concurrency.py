@@ -276,6 +276,8 @@ class TestRequestModeDispatch:
         def worker():
             request = req_q.get(timeout=2)
             assert "rpc_id" not in request
+            assert request["output_rank"] is None
+            assert request["collect_rank_status"] is False
             wave_id = request["wave_id"]
             for dp_rank in range(2):
                 res_q.put(
@@ -296,6 +298,83 @@ class TestRequestModeDispatch:
         thread.join(timeout=2)
 
         assert [result.error for result in results] == ["0", "1"]
+
+    def test_step_execution_reads_each_dp_primary_result_queue(self):
+        executor, _, _ = _make_executor(num_gpus=4)
+        executor.od_config = SimpleNamespace(
+            step_execution=True,
+            parallel_config=SimpleNamespace(
+                data_parallel_size=2,
+                tensor_parallel_size=2,
+                sequence_parallel_size=1,
+                pipeline_parallel_size=1,
+                cfg_parallel_size=1,
+            ),
+        )
+        request: dict = {}
+        executor._broadcast_mq = SimpleNamespace(enqueue=lambda value: request.update(value))
+
+        def result_queue(dp_rank):
+            return SimpleNamespace(
+                dequeue=lambda timeout=None: {
+                    "dp_rank": dp_rank,
+                    "output": _tagged_output(str(dp_rank)),
+                    "wave_id": request["wave_id"],
+                }
+            )
+
+        non_primary_1 = MagicMock()
+        non_primary_3 = MagicMock()
+        executor._result_mqs = [result_queue(0), non_primary_1, result_queue(1), non_primary_3]
+        executor._result_mq = executor._result_mqs[0]
+
+        results = executor.collective_rpc(
+            "execute_model",
+            unique_reply_rank=None,
+            exec_all_ranks=True,
+        )
+
+        assert [result.error for result in results] == ["0", "1"]
+        non_primary_1.dequeue.assert_not_called()
+        non_primary_3.dequeue.assert_not_called()
+
+    @pytest.mark.parametrize("empty_prompt", ["", {"prompt": ""}])
+    def test_dlo_dp_rejects_empty_prompt_before_worker_dispatch(self, empty_prompt):
+        executor, _, _ = _make_executor(num_gpus=2)
+        executor.od_config = SimpleNamespace(
+            step_execution=False,
+            parallel_config=SimpleNamespace(data_parallel_size=2),
+            enable_distributed_layerwise_offload=True,
+            dlo_use_allgather=True,
+        )
+        executor.collective_rpc = Mock()
+        scheduler_output = _make_sched_output("invalid", "valid")
+        scheduler_output.scheduled_new_reqs[0].req.prompt = empty_prompt
+
+        with pytest.raises(ValueError, match="non-empty prompt"):
+            executor.execute_request(scheduler_output)
+
+        executor.collective_rpc.assert_not_called()
+
+    def test_dlo_dp_valid_wave_still_runs_after_rejected_wave(self):
+        executor, _, _ = _make_executor(num_gpus=2)
+        executor.od_config = SimpleNamespace(
+            step_execution=False,
+            parallel_config=SimpleNamespace(data_parallel_size=2),
+            enable_distributed_layerwise_offload=True,
+            dlo_use_allgather=True,
+        )
+        executor.collective_rpc = Mock(return_value=[_tagged_output("A"), _tagged_output("B")])
+        invalid_wave = _make_sched_output("invalid", "valid")
+        invalid_wave.scheduled_new_reqs[0].req.prompt = ""
+
+        with pytest.raises(ValueError, match="non-empty prompt"):
+            executor.execute_request(invalid_wave)
+
+        result = executor.execute_request(_make_sched_output("A", "B"))
+
+        assert [output.result.error for output in result.runner_outputs] == ["A", "B"]
+        executor.collective_rpc.assert_called_once()
 
 
 # ───────────────── concurrent collective RPC ─────────────────

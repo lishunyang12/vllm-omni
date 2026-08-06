@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 import torch
 
 from vllm_omni.diffusion.data import DiffusionOutput
@@ -36,8 +37,6 @@ def _tensor_to_shm(
     packed.
     """
     from multiprocessing import shared_memory
-
-    import numpy as np
 
     original_dtype = tensor.dtype
     if d2h_stream is not None:
@@ -79,8 +78,6 @@ def _tensor_from_shm(handle: dict[str, Any]) -> torch.Tensor:
     """Reconstruct a tensor from a shared-memory handle and free the segment."""
     from multiprocessing import shared_memory
 
-    import numpy as np
-
     shm = shared_memory.SharedMemory(name=handle["name"])
     try:
         np_dtype = np.dtype(handle["numpy_dtype"])
@@ -109,6 +106,45 @@ def _pack_tensor_if_large(
     return val
 
 
+def _ndarray_to_shm(array: np.ndarray) -> dict[str, Any]:
+    """Copy a contiguous NumPy array into POSIX shared memory."""
+    from multiprocessing import shared_memory
+
+    if array.dtype.hasobject:
+        raise TypeError("NumPy object arrays cannot be transferred through raw shared memory")
+
+    array = np.ascontiguousarray(array)
+    shm = shared_memory.SharedMemory(create=True, size=array.nbytes)
+    shm_array = np.ndarray(array.shape, dtype=array.dtype, buffer=shm.buf[: array.nbytes])
+    np.copyto(shm_array, array)
+    handle = {
+        "__ndarray_shm__": True,
+        "name": shm.name,
+        "shape": list(array.shape),
+        "numpy_dtype": str(array.dtype),
+        "nbytes": array.nbytes,
+    }
+    shm.close()
+    return handle
+
+
+def _ndarray_from_shm(handle: dict[str, Any]) -> np.ndarray:
+    """Reconstruct a NumPy array from shared memory and free the segment."""
+    from multiprocessing import shared_memory
+
+    shm = shared_memory.SharedMemory(name=handle["name"])
+    try:
+        array = np.ndarray(
+            handle["shape"],
+            dtype=np.dtype(handle["numpy_dtype"]),
+            buffer=shm.buf[: handle["nbytes"]],
+        ).copy()
+    finally:
+        shm.close()
+        shm.unlink()
+    return array
+
+
 def _pack_value_if_large(
     val: object,
     d2h_stream: torch.Stream | None = None,
@@ -123,6 +159,8 @@ def _pack_value_if_large(
     """
     if isinstance(val, torch.Tensor):
         return _pack_tensor_if_large(val, d2h_stream=d2h_stream)
+    if isinstance(val, np.ndarray):
+        return _ndarray_to_shm(val) if not val.dtype.hasobject and val.nbytes > _SHM_TENSOR_THRESHOLD else val
     if isinstance(val, dict):
         return {key: _pack_value_if_large(value, d2h_stream=d2h_stream) for key, value in val.items()}
     if isinstance(val, list):
@@ -136,6 +174,8 @@ def _unpack_if_shm_handle(val: object) -> object:
     """Reconstruct tensors from SHM handles, mirroring ``_pack_value_if_large``."""
     if isinstance(val, dict) and val.get("__tensor_shm__"):
         return _tensor_from_shm(val)
+    if isinstance(val, dict) and val.get("__ndarray_shm__"):
+        return _ndarray_from_shm(val)
     if isinstance(val, dict):
         return {key: _unpack_if_shm_handle(value) for key, value in val.items()}
     if isinstance(val, list):
@@ -186,13 +226,12 @@ def pack_diffusion_output_shm(
     if isinstance(output, dict) and "dp_rank" in output and "output" in output:
         inner = output["output"]
         if isinstance(inner, DiffusionOutput):
-            output["output"] = _pack_diffusion_fields(inner)
+            output["output"] = _pack_diffusion_fields(inner, d2h_stream=d2h_stream)
         return output
 
     if _is_rpc_result_envelope(output):
         result = output.get("result")
-        if isinstance(result, DiffusionOutput):
-            output["result"] = _pack_diffusion_fields(result, d2h_stream=d2h_stream)
+        output["result"] = pack_diffusion_output_shm(result, d2h_stream=d2h_stream)
         return output
 
     result = getattr(output, "result", None)
@@ -228,8 +267,7 @@ def unpack_diffusion_output_shm(output: object) -> object:
 
     if _is_rpc_result_envelope(output):
         result = output.get("result")
-        if isinstance(result, DiffusionOutput):
-            output["result"] = _unpack_diffusion_fields(result)
+        output["result"] = unpack_diffusion_output_shm(result)
         return output
 
     result = getattr(output, "result", None)

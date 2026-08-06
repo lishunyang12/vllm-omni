@@ -3,6 +3,7 @@
 
 import contextlib
 
+import numpy as np
 import pytest
 import torch
 
@@ -83,6 +84,29 @@ def test_diffusion_output_list_tensors_round_trip_through_shm() -> None:
     torch.testing.assert_close(output.output[1], frames[1])
 
 
+def test_diffusion_output_numpy_array_round_trips_through_shm() -> None:
+    frames = np.arange(300_000, dtype=np.float32)
+    output = DiffusionOutput(output=frames)
+
+    pack_diffusion_output_shm(output)
+
+    assert output.output["__ndarray_shm__"] is True
+
+    unpack_diffusion_output_shm(output)
+
+    assert isinstance(output.output, np.ndarray)
+    np.testing.assert_array_equal(output.output, frames)
+
+
+def test_numpy_object_array_stays_inline() -> None:
+    values = np.empty(200_000, dtype=object)
+    values[:] = "safe-to-pickle"
+
+    packed = _pack_value_if_large(values)
+
+    assert packed is values
+
+
 def test_rpc_result_envelope_diffusion_output_round_trips_through_shm() -> None:
     tensor = torch.arange(300_000, dtype=torch.float32)
     envelope = {
@@ -106,6 +130,25 @@ def test_rpc_result_envelope_diffusion_output_round_trips_through_shm() -> None:
     assert isinstance(result, DiffusionOutput)
     torch.testing.assert_close(result.output, tensor)
     assert unpacked["rank_statuses"] == [{"rank": 0, "ok": True}]
+
+
+def test_rpc_result_envelope_dp_tagged_output_round_trips_through_shm() -> None:
+    frames = np.arange(300_000, dtype=np.float32)
+    envelope = {
+        "type": DIFFUSION_RPC_RESULT_ENVELOPE,
+        "result": {"dp_rank": 1, "output": DiffusionOutput(output=frames)},
+        "rank_statuses": [{"rank": 1, "ok": True}],
+    }
+
+    packed = pack_diffusion_output_shm(envelope)
+    tagged = packed["result"]
+    assert tagged["dp_rank"] == 1
+    assert tagged["output"].output["__ndarray_shm__"] is True
+
+    unpacked = unpack_diffusion_output_shm(packed)
+    tagged = unpacked["result"]
+    assert tagged["dp_rank"] == 1
+    np.testing.assert_array_equal(tagged["output"].output, frames)
 
 
 def test_batch_runner_output_round_trips_nested_results_through_shm() -> None:
