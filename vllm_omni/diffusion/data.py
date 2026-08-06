@@ -1454,6 +1454,9 @@ class AttnQuantSpec:
     q_block_size: int = 1
     k_block_size: int = 16
     flashinfer_backend: str | None = None
+    q_scale: float | None = None
+    k_scale: float | None = None
+    v_scale: float | None = None
 
     _VALID_DTYPES = frozenset({"float16", "bfloat16", "int8", "fp8_e4m3"})
     _VALID_BLOCK_SIZES = frozenset({1, 4, 16})
@@ -1467,6 +1470,9 @@ class AttnQuantSpec:
                 raise ValueError(
                     f"quant.{name}={v!r} unsupported; kernels exist only for {sorted(self._VALID_BLOCK_SIZES)}."
                 )
+        for name, v in (("q_scale", self.q_scale), ("k_scale", self.k_scale), ("v_scale", self.v_scale)):
+            if v is not None and (not math.isfinite(float(v)) or float(v) <= 0):
+                raise ValueError(f"quant.{name} must be finite and > 0; got {v!r}.")
 
     @property
     def enabled(self) -> bool:
@@ -1566,6 +1572,10 @@ class AttentionSpec:
                 quant_kw["dtype_vo"] = q.dtype_vo
             if q.flashinfer_backend is not None:
                 quant_kw["flashinfer_backend"] = q.flashinfer_backend
+            for name in ("q_scale", "k_scale", "v_scale"):
+                value = getattr(q, name)
+                if value is not None:
+                    quant_kw[name] = value
             kw["quant"] = quant_kw
         if self.block_sparse is not None:
             bs = self.block_sparse
