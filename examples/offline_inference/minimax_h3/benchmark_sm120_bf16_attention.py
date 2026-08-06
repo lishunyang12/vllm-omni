@@ -41,7 +41,13 @@ non_diegetic_music: Cinematic space-opera orchestral score, slow tempo, featurin
 DIFFUSE_KEY = "MiniMaxH3Pipeline.diffuse"
 MODE_CONFIGS = {
     "cudnn_bf16": {"default": {"backend": "CUDNN_ATTN"}},
-    "fa4_bf16": {"default": {"backend": "FLASH_ATTN"}},
+    # FA4 SM120 currently fails on MiniMax-H3's packed/ragged token refiner.
+    # Keep that small dense component on cuDNN and benchmark FA4 where it
+    # matters: the main DiT self-attention path.
+    "fa4_main_dit_bf16": {
+        "default": {"backend": "FLASH_ATTN"},
+        "per_role": {"minimax_h3.token_refiner": {"backend": "CUDNN_ATTN"}},
+    },
 }
 TELEMETRY_FIELDS = (
     "timestamp,index,temperature.gpu,utilization.gpu,clocks.sm,power.draw,"
@@ -67,6 +73,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--text-encoder-tp-size", type=int, default=4)
     parser.add_argument("--video-run", type=int, default=2, help="Request number saved as MP4")
+    parser.add_argument(
+        "--modes",
+        nargs="+",
+        choices=tuple(MODE_CONFIGS),
+        default=list(MODE_CONFIGS),
+        help="Run a subset while debugging; the default runs the matched cuDNN and FA4-main-DiT pair.",
+    )
     args = parser.parse_args()
     if args.num_runs < 6:
         parser.error("--num-runs must be at least 6 (one warmup plus five measured requests)")
@@ -310,14 +323,21 @@ def main() -> None:
     diffusion_engine._ASYNC_OUTPUT_TIMEOUT = 1800
     telemetry = Telemetry(args.output_dir, physical_gpus)
     try:
-        results = [run_mode(args, mode) for mode in MODE_CONFIGS]
+        results = []
+        for mode in args.modes:
+            result = run_mode(args, mode)
+            (args.output_dir / mode / "summary.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+            results.append(result)
     finally:
         telemetry.close()
 
     thermal = telemetry.audit()
-    cudnn = next(result for result in results if result["mode"] == "cudnn_bf16")
-    fa4_result = next(result for result in results if result["mode"] == "fa4_bf16")
-    speedup = float(cudnn["timing"]["median_s"]) / float(fa4_result["timing"]["median_s"])
+    by_mode = {result["mode"]: result for result in results}
+    speedup = None
+    if set(MODE_CONFIGS).issubset(by_mode):
+        speedup = float(by_mode["cudnn_bf16"]["timing"]["median_s"]) / float(
+            by_mode["fa4_main_dit_bf16"]["timing"]["median_s"]
+        )
     passed = (
         all(result["passed_timing_gate"] and result["steady_output_deterministic"] for result in results)
         and thermal["accepted"]
