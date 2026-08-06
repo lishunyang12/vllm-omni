@@ -1,4 +1,4 @@
-# MiniMax-H3 on 2, 4, or 8 GPUs
+# MiniMax-H3 on SM120: 1, 2, 4, or 8 GPUs
 
 This example benchmarks the MiniMax-H3 `FL2VA` partition with reproducible
 parallel topologies. The default is the recommended starting point for four
@@ -11,8 +11,88 @@ parallel topologies. The default is the recommended starting point for four
 - cuDNN BF16 attention as the accuracy/performance baseline;
 - T2V followed by first-frame I2V, with one checkpoint load.
 
-The runner also accepts 2- and 8-GPU products, but this document intentionally
-focuses on selecting the four-card result first.
+The runner provides one launch script per GPU count. The recipes below make
+the hardware, placement, workload, and acceptance criteria explicit, in the
+same spirit as a deployment cookbook rather than a single benchmark command.
+
+## SM120 deployment cookbook
+
+Scope: these are single-node RTX PRO 5000 Blackwell (SM120, 73,415 MiB per
+GPU) recipes. The target host has two PCIe/NUMA islands: GPUs `0-3` on NUMA 0
+and GPUs `4-7` on NUMA 1. Keep a run inside one island whenever possible.
+
+### Select a profile
+
+| GPUs | DiT parallelism | Weight placement | Script | Intended use | Status |
+| ---: | --- | --- | --- | --- | --- |
+| 1 | TP1 x Ulysses1 | DLO, 20 resident layers | `run_sm120_1gpu.sh` | Capacity baseline | Recipe; requires offload |
+| 2 | TP2 x Ulysses1 | Resident | `run_sm120_2gpu.sh` | Smallest resident deployment | Recipe |
+| 4 | TP2 x Ulysses2 | Resident | `run_sm120_4gpu.sh` | PCIe-balanced default | Validated on this host |
+| 8 | TP2 x Ulysses4 | Resident | `run_sm120_8gpu.sh` | First 8-GPU latency candidate | Recipe; compare with TP4 x Ulysses2 |
+
+Do not use TP1 x Ulysses4 on this 72 GiB target: it does not shard DiT
+weights and the B300 preflight peak was about 98 GiB. For every profile, the
+reference comparison backend is BF16 `CUDNN_ATTN`. FlashAttention-4 is not a
+supported MiniMax-H3 SM120 baseline yet: its packed/varlen DiT path fails in
+the current upstream CuTe implementation.
+
+### Common workload
+
+All scripts default to the reproducible `FL2VA` workload: T2VA plus
+first-frame I2VA, 1344x768, 124 frames (about five seconds), BF16, 50 denoise
+steps, and two warmups. `RUN_REF2VA=1` additionally runs the `Ref2VA`
+partition; it requires the corresponding model checkpoint under `MODEL_ROOT`.
+
+Set the shared paths once, then run exactly one recipe:
+
+```bash
+export TEST_ROOT=/path/to/minimax-h3-native
+cd "$TEST_ROOT/vllm-omni"
+export PATH="$TEST_ROOT/ffmpeg-tools/bin:$PATH"
+
+# Choose one: 1, 2, 4, or 8 GPUs.
+bash examples/offline_inference/minimax_h3/run_sm120_1gpu.sh
+bash examples/offline_inference/minimax_h3/run_sm120_2gpu.sh
+bash examples/offline_inference/minimax_h3/run_sm120_4gpu.sh
+bash examples/offline_inference/minimax_h3/run_sm120_8gpu.sh
+```
+
+Each wrapper passes its topology to `run_all_tasks.sh`; callers can override
+only the inputs that vary per deployment. For example:
+
+```bash
+# Run the full three-workload matrix on NUMA 1 using physical GPUs 4--7.
+CUDA_VISIBLE_DEVICES=4,6,5,7 NUMA_NODE=1 RUN_REF2VA=1 \
+  OUTPUT_DIR="$TEST_ROOT/results/sm120-4gpu-full" \
+  bash examples/offline_inference/minimax_h3/run_sm120_4gpu.sh
+```
+
+The four-GPU ordering `0,2,1,3` (or `4,6,5,7`) deliberately maps each
+Ulysses pair to a close PCIe pair. The 8-GPU script interleaves the two NUMA
+islands and uses `numactl --interleave=0,1`; do not pin it to one memory node.
+
+### Record and accept a run
+
+Every output directory contains the evidence needed to populate a results
+matrix:
+
+| File | Use |
+| --- | --- |
+| `summary.json` | Per-workload E2E and stage timings, hashes, dimensions, and worker peak |
+| `gpu_peak_memory.csv` | External per-physical-GPU peak memory |
+| `run.log` | Backend resolution, topology, warnings, and failures |
+| generated `.mp4` | Output artifact for visual/audio validation |
+
+Mark a row as passed only when all selected GPUs are below capacity, the
+expected `TASK_RESULT` records are present, output hashes/dimensions are
+recorded, and the chosen attention backend is logged. Use the maximum entry
+in `gpu_peak_memory.csv` as **Peak Memory (GiB)** and label its scope as
+`per-GPU (external nvidia-smi)`.
+
+For a kernel breakdown, profile the final chosen topology with the existing
+Nsight recipe below. Treat a five-step trace as a kernel-mix and load-balance
+measurement; use the 50-step steady-state runs from `summary.json` for the
+reported E2E and per-step timing.
 
 ## Why start with TP2 x Ulysses2
 
