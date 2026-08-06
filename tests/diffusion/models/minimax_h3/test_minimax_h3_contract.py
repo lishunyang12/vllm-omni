@@ -294,6 +294,7 @@ def test_pipeline_loads_task_selected_dits_and_shared_components_once(
     expected_dit_modules = ["transformer", "transformers_ref"] if expected_dits == 2 else ["transformer"]
     assert pipeline._dit_modules == expected_dit_modules
     assert hasattr(pipeline, "transformers_ref") is (expected_dits == 2)
+    assert pipeline._supports_allgather_mmap_loading is (expected_partition != "combined")
     if expected_partition == "ref2va":
         assert pipeline._transformer_for_task("ref2va") is pipeline.transformer
     assert [source.model_or_path for source in pipeline.weights_sources] == [
@@ -360,6 +361,38 @@ def test_dlo_offload_plan_includes_token_refiner():
 
     assert MiniMaxH3Pipeline._offload_plan.offload_submodules == {"token_refiner": "blocks"}
     assert MiniMaxH3Pipeline._offload_plan.resident_dit_paths == frozenset({"transformer"})
+    assert MiniMaxH3Pipeline._supports_allgather_mmap_loading is True
+
+
+@pytest.mark.parametrize(
+    ("checkpoint_key", "model_key"),
+    [
+        ("blocks.0.attn.qkv_proj.weight", "transformer.blocks.0.attn.qkv_proj.weight"),
+        ("transformer.rope.inv_freq", "transformer.rope.inv_freq"),
+        ("model.layers.0.self_attn.q_proj.weight", None),
+        ("video_vae.decoder.weight", None),
+    ],
+)
+def test_dlo_mmap_checkpoint_remap_is_transformer_only(checkpoint_key, model_key):
+    from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
+
+    assert MiniMaxH3Pipeline._remap_ckpt_key(checkpoint_key) == model_key
+
+
+def test_dlo_offload_plan_derives_resident_dits_from_loaded_partition():
+    from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
+
+    pipeline = object.__new__(MiniMaxH3Pipeline)
+    torch.nn.Module.__init__(pipeline)
+    pipeline._dit_modules = ["transformer", "transformers_ref"]
+    pipeline.transformer = torch.nn.Linear(2, 2)
+    pipeline.transformers_ref = torch.nn.Linear(2, 2)
+
+    plan = pipeline.get_offload_plan()
+
+    assert plan.resident_dit_paths == frozenset({"transformer", "transformers_ref"})
+    assert pipeline._dit_path_for_task("t2va") == "transformer"
+    assert pipeline._dit_path_for_task("ref2va") == "transformers_ref"
 
 
 def test_joint_postprocess_is_multiprocessing_picklable():
@@ -760,6 +793,20 @@ def test_distributed_layerwise_resident_blocks_are_stage_scoped():
     controller.offload_resident_layers.assert_called_once_with()
 
 
+def test_distributed_layerwise_resident_blocks_select_task_dit():
+    from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
+
+    pipeline = object.__new__(MiniMaxH3Pipeline)
+    torch.nn.Module.__init__(pipeline)
+    controller = Mock()
+    pipeline._dlo_residency_controller = controller
+
+    with pipeline._resident_dit_layers_on_device("transformers_ref"):
+        controller.load_resident_layers.assert_called_once_with("transformers_ref")
+
+    controller.offload_resident_layers.assert_called_once_with("transformers_ref")
+
+
 def test_distributed_layerwise_resident_blocks_release_on_failure():
     from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
 
@@ -791,55 +838,53 @@ def test_distributed_layerwise_resident_blocks_can_be_skipped():
     controller.offload_resident_layers.assert_not_called()
 
 
-def test_encoder_layerwise_offload_keeps_tp_blocks_rank_local(monkeypatch):
-    from vllm_omni.diffusion.models.minimax_h3.encoder import (
-        MiniMaxH3Qwen3VLEncoder,
-    )
+def test_encoder_load_weights_streams_safetensors_via_mmap(tmp_path):
+    import json
 
-    class Stack(torch.nn.Module):
-        def __init__(self, count):
-            super().__init__()
-            self.blocks = torch.nn.ModuleList([torch.nn.Linear(2, 2) for _ in range(count)])
+    from safetensors.torch import save_file
 
-    class TextStack(torch.nn.Module):
-        def __init__(self, count):
-            super().__init__()
-            self.layers = torch.nn.ModuleList([torch.nn.Linear(2, 2) for _ in range(count)])
+    from vllm_omni.diffusion.models.minimax_h3.encoder import MiniMaxH3Qwen3VLEncoder
 
-    hooks = []
-
-    def fake_apply(block, next_block, device, stream, pin_memory):
-        hook = SimpleNamespace(
-            block=block,
-            next_block=next_block,
-            device=device,
-            stream=stream,
-            pin_memory=pin_memory,
-            _prev_hook=None,
-            offload_layer=Mock(),
-        )
-        hooks.append(hook)
-        return hook
-
-    monkeypatch.setattr(
-        "vllm_omni.diffusion.offloader.layerwise_backend.apply_block_hook",
-        fake_apply,
-    )
-    monkeypatch.setattr(
-        "vllm_omni.platforms.current_omni_platform.Stream",
-        Mock(return_value="copy-stream"),
-    )
     encoder = object.__new__(MiniMaxH3Qwen3VLEncoder)
     torch.nn.Module.__init__(encoder)
-    encoder.device_target = torch.device("cpu")
-    encoder.vision = Stack(2)
-    encoder.text_model = TextStack(3)
+    encoder.weight = torch.nn.Parameter(torch.zeros(2, 2))
+    encoder._map_weight_name = lambda name: (name, None)
 
-    encoder.enable_omni_layerwise_offload(pin_memory=False)
+    save_file({"weight": torch.arange(4, dtype=torch.float32).reshape(2, 2)}, tmp_path / "weights.safetensors")
+    (tmp_path / "model.safetensors.index.json").write_text(
+        json.dumps({"weight_map": {"weight": "weights.safetensors"}}),
+        encoding="utf-8",
+    )
 
-    assert len(hooks) == 5
-    assert all(hook._prev_hook is not None for hook in hooks)
-    assert all(hook.device == torch.device("cpu") for hook in hooks)
+    encoder._load_weights(str(tmp_path))
+
+    assert torch.equal(encoder.weight, torch.arange(4, dtype=torch.float32).reshape(2, 2))
+
+
+def test_remote_vae_component_uses_low_memory_loading(monkeypatch):
+    from vllm_omni.diffusion.models.minimax_h3 import vae as vae_module
+
+    calls = []
+
+    class FakeRemote:
+        @classmethod
+        def from_pretrained(cls, path, **kwargs):
+            calls.append((path, kwargs))
+            return cls()
+
+    monkeypatch.setattr(
+        vae_module,
+        "get_class_from_dynamic_module",
+        lambda *args, **kwargs: FakeRemote,
+    )
+
+    component = vae_module._load_remote_component(
+        "component-path",
+        {"auto_map": {"AutoModel": "module.Model"}},
+    )
+
+    assert isinstance(component, FakeRemote)
+    assert calls == [("component-path", {"low_cpu_mem_usage": True})]
 
 
 def test_video_vae_keeps_reference_fp32_weights(monkeypatch):

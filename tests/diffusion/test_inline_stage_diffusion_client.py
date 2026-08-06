@@ -76,6 +76,32 @@ async def test_inline_dispatch_request_success(client, mock_engine):
 
 
 @pytest.mark.asyncio
+async def test_inline_requests_clone_shared_sampling_params(client, mock_engine):
+    requests = []
+
+    async def _step_streaming(request):
+        requests.append(request)
+        yield [OmniRequestOutput.from_diffusion(request_id=request.request_id, images=[MagicMock()])]
+
+    mock_engine.step_streaming = _step_streaming
+
+    shared = OmniDiffusionSamplingParams()
+    await client.add_request_async("req-1", "First prompt", shared)
+    await client.add_request_async("req-2", "Second prompt", shared)
+
+    for _ in range(10):
+        if len(requests) == 2:
+            break
+        await asyncio.sleep(0.01)
+
+    assert len(requests) == 2
+    assert requests[0].sampling_params is not requests[1].sampling_params
+    assert requests[0].sampling_params.guidance_scale_provided is False
+    assert requests[1].sampling_params.guidance_scale_provided is False
+    assert shared.guidance_scale is None
+
+
+@pytest.mark.asyncio
 async def test_inline_dispatch_request_streaming_success(client, mock_engine):
     """Inline StageDiffusionClient correctly receives streaming chunk output from Diffusion Engine"""
     chunks = [

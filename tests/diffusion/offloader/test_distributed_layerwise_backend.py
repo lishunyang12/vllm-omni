@@ -27,9 +27,8 @@ from vllm_omni.diffusion.offloader.block_discovery import (
 from vllm_omni.diffusion.offloader.distributed_layerwise_backend import (
     DistributedLayerwiseOffloadBackend,
     DistributedLayerwiseOffloadHook,
-    PinnedResidentLayerGroup,
 )
-from vllm_omni.diffusion.offloader.module_residency import PinnedModuleStager
+from vllm_omni.diffusion.offloader.module_residency import PinnedModuleStager, PinnedResidentLayerGroup
 from vllm_omni.diffusion.offloader.offload_plan import OffloadPlan, get_offload_plan
 from vllm_omni.platforms import current_omni_platform
 
@@ -386,6 +385,37 @@ class TestPinnedResidentLayerGroup:
 
         group.offload()
 
+    def test_backend_selects_resident_group_by_dit_path(self):
+        class RecordingGroup:
+            def __init__(self):
+                self.loads = 0
+                self.offloads = 0
+
+            def load(self):
+                self.loads += 1
+
+            def offload(self):
+                self.offloads += 1
+
+        transformer = RecordingGroup()
+        transformers_ref = RecordingGroup()
+        backend = object.__new__(DistributedLayerwiseOffloadBackend)
+        backend._resident_layer_groups = {
+            "transformer": transformer,
+            "transformers_ref": transformers_ref,
+        }
+
+        backend.load_resident_layers("transformers_ref")
+        backend.offload_resident_layers("transformers_ref")
+
+        assert transformer.loads == transformer.offloads == 0
+        assert transformers_ref.loads == transformers_ref.offloads == 1
+
+        backend.load_resident_layers()
+
+        assert transformer.loads == 1
+        assert transformers_ref.loads == 2
+
     def test_mmap_loader_attrs_survive_to_empty_parameter_replacement(self):
         module = nn.Linear(2, 2, bias=False)
 
@@ -513,6 +543,7 @@ class _MmapPostLoadModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.time_embedder = nn.Linear(2, 2, bias=False)
+        self.register_buffer("rope_inv_freq", torch.empty(2), persistent=True)
         self.blocks = nn.ModuleList([nn.Linear(2, 2, bias=False) for _ in range(2)])
         self.post_load_calls = 0
 
@@ -536,6 +567,7 @@ class TestMmapWeightLoading:
     def test_runs_model_post_load_hook(self, tmp_path, patched_offload_runtime):
         pipeline = _MmapPostLoadPipeline()
         weights = {name: torch.ones(param.shape, dtype=torch.bfloat16) for name, param in pipeline.named_parameters()}
+        weights.update({name: torch.tensor([3.0, 4.0]) for name, _ in pipeline.named_buffers()})
         weight_file = tmp_path / "model.safetensors"
         save_file(weights, str(weight_file))
         weight_map = {name: weight_file.name for name in weights}
@@ -558,6 +590,8 @@ class TestMmapWeightLoading:
 
         assert pipeline.transformer.post_load_calls == 1
         assert pipeline.transformer.time_embedder.weight.dtype == torch.float32
+        assert not pipeline.transformer.rope_inv_freq.is_meta
+        torch.testing.assert_close(pipeline.transformer.rope_inv_freq, torch.tensor([3.0, 4.0]))
         assert pipeline.transformer.blocks[0].weight.dtype == torch.bfloat16
 
 
@@ -766,6 +800,18 @@ class TestOffloadPlan:
         assert result.offload_submodules == {"context_encoder": "layers"}
         assert result.resident_dit_paths == frozenset({"transformer"})
 
+    def test_get_offload_plan_prefers_instance_factory(self):
+        static_plan = OffloadPlan(resident_dit_paths=frozenset({"transformer"}))
+        derived_plan = OffloadPlan(resident_dit_paths=frozenset({"transformers_ref"}))
+
+        class PipelineWithDerivedPlan(nn.Module):
+            _offload_plan = static_plan
+
+            def get_offload_plan(self):
+                return derived_plan
+
+        assert get_offload_plan(PipelineWithDerivedPlan()) is derived_plan
+
     def test_offload_plan_defaults_to_empty(self):
         """OffloadPlan with no arguments should have empty dicts."""
         plan = OffloadPlan()
@@ -778,6 +824,52 @@ class TestOffloadPlan:
         plan = OffloadPlan()
         with pytest.raises(Exception):
             plan.block_attrs = {"x": ("y",)}  # type: ignore
+
+    def test_encoder_block_paths_use_generic_rank_local_hooks(self, patched_offload_runtime, monkeypatch):
+        class Encoder(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.vision = nn.Module()
+                self.vision.blocks = nn.ModuleList([nn.Linear(2, 2), nn.Linear(2, 2)])
+                self.text_model = nn.Module()
+                self.text_model.layers = nn.ModuleList([nn.Linear(2, 2), nn.Linear(2, 2), nn.Linear(2, 2)])
+
+        hooks = []
+
+        def fake_apply(block, next_block, device, stream, pin_memory):
+            hook = SimpleNamespace(
+                block=block,
+                next_block=next_block,
+                device=device,
+                stream=stream,
+                pin_memory=pin_memory,
+                _prev_hook=None,
+            )
+            hooks.append(hook)
+            return hook
+
+        monkeypatch.setattr(
+            "vllm_omni.diffusion.offloader.layerwise_backend.apply_block_hook",
+            fake_apply,
+        )
+        backend = DistributedLayerwiseOffloadBackend(
+            OffloadConfig(
+                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                pin_cpu_memory=False,
+                dlo_use_allgather=False,
+            ),
+            torch.device("cpu"),
+        )
+        encoder = Encoder()
+        plan = OffloadPlan(encoder_block_attrs={"text_encoder": ("vision.blocks", "text_model.layers")})
+
+        enabled = backend._try_layerwise_offload_encoder(encoder, "text_encoder", plan)
+
+        assert enabled
+        assert encoder._omni_layerwise_enabled
+        assert len(hooks) == 5
+        assert all(hook._prev_hook is not None for hook in hooks)
+        assert all(hook.device == torch.device("cpu") for hook in hooks)
 
     def test_all_resident_dit_still_prepares_planned_submodules(self, patched_offload_runtime):
         class TokenRefiner(nn.Module):
@@ -821,6 +913,42 @@ class TestOffloadPlan:
         assert len(backend._all_hook_groups[0]) == 2
         assert backend.enabled
 
+        backend.disable()
+
+    def test_single_rank_allgather_uses_direct_mmap_loader(self, patched_offload_runtime, mocker):
+        class Transformer(nn.Module):
+            _layerwise_offload_blocks_attrs = ["blocks"]
+
+            def __init__(self):
+                super().__init__()
+                self.blocks = nn.ModuleList([nn.Linear(2, 2), nn.Linear(2, 2)])
+
+        class Pipeline(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.transformer = Transformer()
+
+            @staticmethod
+            def _remap_ckpt_key(key):
+                return key
+
+        pipeline = Pipeline()
+        backend = DistributedLayerwiseOffloadBackend(
+            OffloadConfig(
+                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                pin_cpu_memory=False,
+                dlo_use_allgather=True,
+                dp_size=1,
+                model_path="unused",
+            ),
+            torch.device("cpu"),
+        )
+        load_via_mmap = mocker.patch.object(backend, "_load_weights_via_mmap")
+
+        backend.enable(pipeline)
+
+        load_via_mmap.assert_called_once()
+        assert backend.enabled
         backend.disable()
 
 

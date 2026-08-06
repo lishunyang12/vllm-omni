@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -960,7 +961,20 @@ class MiniMaxH3DiTModel(nn.Module):
             quant_config,
             prefix="final_layer",
         )
+        self._mark_mmap_weight_transforms()
         self._mark_missing_params_required()
+
+    def _mark_mmap_weight_transforms(self) -> None:
+        """Preserve H3 checkpoint adapters for direct mmap loading."""
+        qkv_transform = partial(
+            _reorder_grouped_qkv_to_qkv,
+            num_query_groups=self.arch.num_attention_heads,
+            heads_per_group=1,
+            head_dim=self.arch.attention_head_dim,
+        )
+        for name, param in self.named_parameters():
+            if name.endswith(".attn.qkv_proj.weight"):
+                param.mmap_weight_transform = qkv_transform
 
     def _mark_missing_params_required(self) -> None:
         for _, param in self.named_parameters():

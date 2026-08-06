@@ -25,6 +25,34 @@ def test_grouped_qkv_checkpoint_reorder():
     assert reordered[:, 0].tolist() == [0, 3, 1, 4, 2, 5]
 
 
+def test_grouped_qkv_mmap_transform_matches_regular_loader_adapter():
+    from types import SimpleNamespace
+
+    from vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer import (
+        MiniMaxH3DiTModel,
+        _reorder_grouped_qkv_to_qkv,
+    )
+
+    model = object.__new__(MiniMaxH3DiTModel)
+    nn.Module.__init__(model)
+    model.arch = SimpleNamespace(num_attention_heads=2, attention_head_dim=1)
+    model.block = nn.Module()
+    model.block.attn = nn.Module()
+    model.block.attn.qkv_proj = nn.Linear(1, 6, bias=False)
+    model._mark_mmap_weight_transforms()
+
+    grouped = torch.arange(6, dtype=torch.float32).reshape(6, 1)
+    expected = _reorder_grouped_qkv_to_qkv(
+        grouped,
+        num_query_groups=2,
+        heads_per_group=1,
+        head_dim=1,
+    )
+    transform = model.block.attn.qkv_proj.weight.mmap_weight_transform
+
+    torch.testing.assert_close(transform(grouped), expected, atol=0, rtol=0)
+
+
 def test_transformer_declares_cache_sp_layerwise_offload_and_hsdp():
     from cache_dit import ForwardPattern
 

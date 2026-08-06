@@ -995,7 +995,7 @@ class MiniMaxH3Qwen3VLEncoder(nn.Module):
     def _load_weights(self, model_path: str) -> None:
         import os
 
-        import safetensors.torch
+        from safetensors import safe_open
 
         index_path = os.path.join(model_path, "model.safetensors.index.json")
         with open(index_path, encoding="utf-8") as handle:
@@ -1005,19 +1005,20 @@ class MiniMaxH3Qwen3VLEncoder(nn.Module):
         params = dict(self.named_parameters())
         loaded: set[str] = set()
         for shard in files:
-            tensors = safetensors.torch.load_file(os.path.join(model_path, shard), device="cpu")
-            for name, tensor in tensors.items():
-                mapped = self._map_weight_name(name)
-                if mapped is None:
-                    continue
-                param_name, shard_id = mapped
-                param = params.get(param_name)
-                if param is None:
-                    logger.warning("MiniMax H3 text encoder weight %s has no target parameter", name)
-                    continue
-                weight_loader = getattr(param, "weight_loader", _default_weight_loader)
-                weight_loader(param, tensor, shard_id)
-                loaded.add(param_name)
+            with safe_open(os.path.join(model_path, shard), framework="pt", device="cpu") as tensors:
+                for name in tensors.keys():
+                    mapped = self._map_weight_name(name)
+                    if mapped is None:
+                        continue
+                    param_name, shard_id = mapped
+                    param = params.get(param_name)
+                    if param is None:
+                        logger.warning("MiniMax H3 text encoder weight %s has no target parameter", name)
+                        continue
+                    tensor = tensors.get_tensor(name)
+                    weight_loader = getattr(param, "weight_loader", _default_weight_loader)
+                    weight_loader(param, tensor, shard_id)
+                    loaded.add(param_name)
         missing = sorted(set(params) - loaded)
         if missing:
             logger.warning(
@@ -1057,55 +1058,6 @@ class MiniMaxH3Qwen3VLEncoder(nn.Module):
         self.vision.to("cpu")
         self.text_model.to("cpu")
         torch.accelerator.empty_cache()
-
-    def enable_omni_layerwise_offload(self, *, pin_memory: bool = True) -> None:
-        """Stream the TP-local Qwen vision/text blocks for low-HBM serving.
-
-        The encoder has its own TP process group, so these blocks must remain
-        rank-local.  Reusing the DiT AllGather group would concatenate
-        different TP shards and corrupt the encoder weights.
-        """
-        if not self.is_loaded or getattr(self, "_omni_layerwise_enabled", False):
-            return
-
-        from vllm_omni.diffusion.offloader.layerwise_backend import apply_block_hook
-        from vllm_omni.platforms import current_omni_platform
-
-        self._omni_layerwise_hooks = []
-        self._omni_layerwise_block_groups = []
-        copy_stream = current_omni_platform.Stream()
-        for blocks in (self.vision.blocks, self.text_model.layers):
-            if len(blocks) <= 1:
-                continue
-            last_hook = apply_block_hook(
-                blocks[-1],
-                blocks[0],
-                self.device_target,
-                copy_stream,
-                pin_memory,
-            )
-            hooks = [last_hook]
-            for index, block in enumerate(blocks[:-1]):
-                hooks.append(
-                    apply_block_hook(
-                        block,
-                        blocks[index + 1],
-                        self.device_target,
-                        copy_stream,
-                        pin_memory,
-                    )
-                )
-            for index, hook in enumerate(hooks):
-                hook._prev_hook = hooks[index - 1]
-            self._omni_layerwise_hooks.extend(hooks)
-            self._omni_layerwise_block_groups.append(blocks)
-
-        self._omni_layerwise_enabled = bool(self._omni_layerwise_hooks)
-        logger.info(
-            "MiniMax H3 encoder layerwise offload enabled on %d blocks across %d stacks",
-            sum(len(blocks) for blocks in self._omni_layerwise_block_groups),
-            len(self._omni_layerwise_block_groups),
-        )
 
     def _encode(
         self,

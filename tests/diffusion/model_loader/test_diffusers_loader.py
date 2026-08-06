@@ -110,6 +110,67 @@ def test_empty_source_prefix_keeps_full_model_strict_check():
         loader.load_weights(model)
 
 
+def test_rank_local_dlo_forces_mmap_and_preserves_checkpoint_adapters(monkeypatch):
+    import vllm_omni.diffusion.model_loader.diffusers_loader as loader_module
+
+    od_config = SimpleNamespace(
+        dtype=torch.float32,
+        parallel_config=SimpleNamespace(use_hsdp=False),
+        quantization_config=None,
+        enable_distributed_layerwise_offload=True,
+        dlo_use_allgather=False,
+        enable_multithread_weight_load=True,
+    )
+    loader = DiffusersPipelineLoader(
+        LoadConfig(safetensors_load_strategy="eager"),
+        od_config,
+    )
+    monkeypatch.setattr(
+        loader,
+        "_prepare_weights",
+        lambda *args: ("unused", ["weights.safetensors"], True),
+    )
+
+    iterator_calls = []
+
+    def mmap_iterator(files, use_tqdm, strategy):
+        iterator_calls.append((files, use_tqdm, strategy))
+        yield "weight", torch.ones(1)
+
+    def unexpected_multithread(*args, **kwargs):
+        raise AssertionError("rank-local DLO must not use whole-shard multithread loading")
+
+    monkeypatch.setattr(loader_module, "safetensors_weights_iterator", mmap_iterator)
+    monkeypatch.setattr(
+        loader_module,
+        "multi_thread_safetensors_weights_iterator",
+        unexpected_multithread,
+    )
+
+    class RecordingAdapter:
+        def __init__(self):
+            self.seen = []
+
+        def adapt(self, weights):
+            self.seen = list(weights)
+            return iter(self.seen)
+
+    adapter = RecordingAdapter()
+    monkeypatch.setattr(loader, "_get_checkpoint_adapter", lambda *args: adapter)
+    source = DiffusersPipelineLoader.ComponentSource(
+        model_or_path="unused",
+        subfolder=None,
+        revision=None,
+        prefix="transformer.",
+    )
+
+    weights = list(loader._get_weights_iterator(source, model=nn.Linear(1, 1)))
+
+    assert iterator_calls == [(["weights.safetensors"], True, "lazy")]
+    assert [name for name, _ in adapter.seen] == ["transformer.weight"]
+    assert [name for name, _ in weights] == ["transformer.weight"]
+
+
 class _ConfigAwareModel(nn.Module):
     def __init__(self, *, od_config):
         super().__init__()

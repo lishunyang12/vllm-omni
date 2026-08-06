@@ -240,11 +240,30 @@ class DiffusersPipelineLoader:
             source.allow_patterns_overrides,
         )
 
+        rank_local_dlo_mmap = (
+            use_safetensors
+            and getattr(self.od_config, "enable_distributed_layerwise_offload", False)
+            and not getattr(self.od_config, "dlo_use_allgather", True)
+        )
+        safetensors_load_strategy = self.load_config.safetensors_load_strategy
+        if rank_local_dlo_mmap and safetensors_load_strategy == "eager":
+            safetensors_load_strategy = "lazy"
+            logger.warning_once(
+                "Rank-local DLO requires mmap-backed checkpoint tensors; "
+                "overriding the eager safetensors strategy with lazy loading."
+            )
+
         use_multithread = (
             use_safetensors
+            and not rank_local_dlo_mmap
             and getattr(self.od_config, "enable_multithread_weight_load", False)
-            and self.load_config.safetensors_load_strategy != "torchao"
+            and safetensors_load_strategy != "torchao"
         )
+        if rank_local_dlo_mmap:
+            logger.info_once(
+                "Rank-local DLO is loading safetensors through mmap views and "
+                "standard checkpoint adapters and TP weight loaders."
+            )
         if use_multithread:
             num_threads = getattr(self.od_config, "num_weight_load_threads", 4)
             # Keep deterministic shard order before passing to vLLM helper.
@@ -258,7 +277,7 @@ class DiffusersPipelineLoader:
             weights_iterator = safetensors_weights_iterator(
                 hf_weights_files,
                 self.load_config.use_tqdm_on_load,
-                self.load_config.safetensors_load_strategy,
+                safetensors_load_strategy,
             )
 
         if self.counter_before_loading_weights == 0.0:

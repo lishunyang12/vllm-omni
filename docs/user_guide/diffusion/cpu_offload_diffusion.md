@@ -2,12 +2,20 @@
 
 ## Overview
 
-vLLM-Omni provides two offloading strategies to reduce GPU memory usage for diffusion models:
+vLLM-Omni provides three offloading strategies to reduce accelerator memory
+usage for diffusion models:
 
-1. **Model-level (Sequential) Offloading**: Mutual exclusion between DiT model and encoder - only one is on GPU at a time.
-2. **Layerwise (Blockwise) Offloading**: Keeps only one transformer block on GPU at a time with compute-memory overlap.
+1. **Model-level (sequential) offloading** swaps whole DiT and encoder
+   components between the host and accelerator.
+2. **Layerwise (blockwise) offloading** streams one transformer block at a
+   time on a single rank.
+3. **Distributed layerwise offloading (DLO)** adds shared double buffers and
+   either reconstructs DP-sharded blocks with AllGather or streams the
+   standard loader's rank-local weights without AllGather.
 
-Both strategies use pinned memory for faster CPU-GPU transfers. The strategies are **mutually exclusive** for now - if both are enabled, layerwise takes priority.
+All three strategies use pinned host memory for faster transfers. They are
+mutually exclusive; distributed layerwise takes priority over layerwise, and
+layerwise takes priority over model-level offloading.
 
 
 ## Model-level (Sequential) Offloading
@@ -181,100 +189,133 @@ class Flux2Transformer2DModel(nn.Module):
 
 ## Distributed Layerwise Offloading
 
-### How It Works
+Distributed layerwise offloading extends block streaming to multi-device
+deployments. It has two distinct execution modes:
 
-Distributed layerwise offloading extends single-GPU layerwise offloading to
-multi-device deployments.  Each DP rank stores only **1/dp_size** of the model
-weights in host memory; full layer weights are reconstructed at runtime via
-**AllGather** on a dedicated communication stream, overlapped with computation
-via a fixed double-buffer scheme.
+| Mode | Host weights per rank | Device communication | Typical parallelism |
+|---|---|---|---|
+| **AllGather** (default) | One DP shard (`1 / dp_size`) | H2D plus per-block AllGather | DP multi-concurrency |
+| **Rank-local** (`--dlo-no-use-allgather`) | The standard loader's local tensors, including TP/HSDP shards | H2D only | TP, SP, or HSDP |
 
-**Key features:**
-- **Weight sharding + AllGather**: each rank stores 1/dp_size of weights,
-  reconstructed per-layer via `all_gather_into_tensor`
-- **Fixed double-buffer**: exactly 2 transformer blocks on each device at any
-  time, regardless of model size
-- **DP multi-concurrency**: N concurrent requests processed in parallel
-  (AllGather only gathers weight shards, which are request-independent)
-- **mmap weight loading**: weights loaded as mmap views pointing to shared OS
-  page cache, eliminating O(dp_size × model_size) RSS during model creation
-- **Platform-agnostic**: works on NVIDIA GPU (CUDA/NCCL) and Ascend NPU
-  (CANN/HCCL) via vLLM-Omni's platform abstraction
+In both modes, a fixed pair of device buffers alternates between the current
+and next block. H2D transfer—and AllGather when enabled—runs on dedicated
+streams and overlaps block computation.
 
-**Execution Flow (per device):**
+### Execution flow
 
+```text
+Compute stream:  [block N]          [block N+1]          [block N+2]
+H2D stream:      [H2D N+1]         [H2D N+2]
+AllGather:       [AG N+1]          [AG N+2]              # AllGather mode only
+Buffer slots:    slot 0: block N   slot 1: block N+1
 ```
-Compute Stream:  [Layer N]          [Layer N+1]          [Layer N+2]
-H2D Stream:      [H2D Shard N+1]   [H2D Shard N+2]
-AllGather:       [AG N+1]          [AG N+2]
-Slot Usage:      Slot0: Layer N    Slot1: Layer N+1
-```
+
+Additional behavior:
+
+- AllGather mode stores only one equal-sized DP shard of each block in pinned
+  host memory and reconstructs the full block before each forward.
+  This is a per-rank reduction: shards on ranks within the same host still sum
+  to one full DiT checkpoint. DP concurrency reduces memory per worker/device,
+  not the node's aggregate host-weight floor.
+- Rank-local mode sets DLO's internal DP size to one. It does not add another
+  shard; each worker streams exactly what the standard model loader produced.
+- Plan-declared encoders can use ordinary rank-local layerwise hooks, while
+  VAEs and other stage components can be loaded only around encode/decode.
+- `--dlo-resident-layers N` keeps the first `N` plan-selected DiT blocks on
+  the accelerator during denoising, then releases them before VAE decode.
+  It is available only in rank-local mode.
 
 ### Usage
 
-**CLI:**
+AllGather mode with four concurrent DP ranks:
+
 ```bash
-# 4× GPU/NPU with AllGather (recommended)
 vllm serve /path/to/model --omni \
   --enable-distributed-layerwise-offload \
   --data-parallel-size 4
-
-# Without AllGather (each rank loads full weights, no sharding)
-vllm serve /path/to/model --omni \
-  --enable-distributed-layerwise-offload \
-  --data-parallel-size 4 \
-  --dlo-no-use-allgather
-
-# With SP instead of DP (long sequences)
-vllm serve /path/to/model --omni \
-  --enable-distributed-layerwise-offload \
-  --usp 4
 ```
 
-**Python API:**
+Rank-local mode with TP2, using MiniMax H3 as an example:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 vllm serve /path/to/MiniMax-H3/FL2VA \
+  --omni --trust-remote-code --num-gpus 2 \
+  --tensor-parallel-size 2 --text-encoder-tp-size 2 \
+  --vae-patch-parallel-size 2 --vae-parallel-mode tile --vae-use-tiling \
+  --enable-distributed-layerwise-offload --dlo-no-use-allgather \
+  --dlo-resident-layers 20 --enforce-eager
+```
+
+See the [MiniMax H3 RTX 5090 recipe](../../../recipes/MiniMaxAI/MiniMax-H3-5090.md)
+for validated one- and two-GPU consumer configurations.
+
+Python API:
+
 ```python
 from vllm_omni import Omni
 
-m = Omni(
+model = Omni(
     model="/path/to/model",
     enable_distributed_layerwise_offload=True,
-    dlo_use_allgather=True,  # default
+    dlo_use_allgather=False,
 )
 ```
 
-### CLI Flags
+### CLI flags
 
 | Flag | Description | Default |
-|------|-------------|---------|
+|---|---|---|
 | `--enable-distributed-layerwise-offload` | Enable DLO | `false` |
-| `--data-parallel-size N` | Number of DP ranks for weight sharding | `1` |
-| `--dlo-use-allgather` | Shard + AllGather (saves CPU, requires concurrent requests) | `true` |
-| `--dlo-no-use-allgather` | Full weights per rank (no sharding, no AllGather) | `false` |
+| `--data-parallel-size N` | DP ranks used for host-weight sharding in AllGather mode | `1` |
+| `--dlo-use-allgather` | Reconstruct DP-sharded blocks with AllGather | `true` |
+| `--dlo-no-use-allgather` | Stream standard-loader rank-local tensors independently | `false` |
+| `--dlo-resident-layers N` | Stage the first `N` plan-selected DiT blocks for the denoise phase; rank-local only | `0` |
 
-### How model weights are loaded (mmap path)
+### Weight-loading paths
 
-When DLO + AllGather is active, the offloader:
+AllGather mode uses a direct loader for models that expose checkpoint-key
+remapping:
 
-1. **Saves non-persistent buffers** (e.g. RoPE `inv_freq`, timestep `freqs`)
-   from the normally-created transformer
-2. **Converts to meta device** via `to_empty(device="meta")`, releasing random
-   initialization weights
-3. **Loads checkpoint weights as mmap views** via `safe_open().get_tensor()`,
-   which return views into the OS page cache (shared across all ranks, 0 RSS)
-4. **Calls `post_load_weights()`** to apply model-specific dtype conversions
-   (e.g. Cosmos3's `time_embedder` → FP32)
-5. **Restores non-persistent buffers** from saved copies
+1. Construct an opted-in DiT on the meta device, or convert it to meta before
+   checkpoint binding, so random initialization weights do not remain resident.
+2. Attach checkpoint tensors as `safe_open().get_tensor()` mmap views.
+3. Load checkpoint-backed persistent buffers and restore computed,
+   non-persistent buffers.
+4. Apply model-declared mmap layout transforms before sharding.
+5. Copy only the current DP shard into pinned host storage and call post-load
+   validation.
 
-This approach requires **zero model-specific code changes** — no pipeline or
-transformer modifications are needed.
+This direct path bypasses the model's ordinary weight-loader callbacks. A model
+with a checkpoint layout adapter can attach an `mmap_weight_transform` to the
+affected parameter; otherwise it must opt out and use the regular loader.
+MiniMax H3 uses this hook for its grouped-QKV reorder. TP-specific sharding
+callbacks remain unsupported, so direct mmap still requires TP1.
+
+Rank-local mode deliberately keeps the regular loading pipeline:
+
+1. Safetensors are iterated with mmap-backed `safe_open` views. If `eager`
+   safetensors loading was requested, DLO changes it to `lazy`; multithreaded
+   whole-shard loading is disabled.
+2. Registered checkpoint adapters run on each source tensor.
+3. The model's `load_weights()` method performs layout conversion and invokes
+   standard TP-aware callbacks. MiniMax H3 uses this step for grouped-QKV
+   reorder and fused-MLP gate/up packing before TP sharding.
+4. DLO flattens and pins only the resulting rank-local tensors.
+5. H3's text encoder also reads one mmap tensor at a time, and its VAEs use
+   Transformers low-memory loading.
+
+Mmap avoids an eager private copy of the whole checkpoint. The pinned tensors
+retained for block streaming still consume process RSS.
 
 ### OffloadPlan (declarative topology metadata)
 
-Models can optionally declare an `OffloadPlan` class variable to provide
-topology metadata (block attribute names, submodules to offload) without
-any offload-specific logic:
+Models can declare block topology and stage lifecycles with `OffloadPlan`:
 
 ```python
+from dataclasses import replace
+
+from torch import nn
+
 from vllm_omni.diffusion.offloader import OffloadPlan
 
 class MyPipeline(nn.Module):
@@ -282,31 +323,52 @@ class MyPipeline(nn.Module):
     _offload_plan = OffloadPlan(
         block_attrs={"transformer": ("blocks",)},
         offload_submodules={"context_encoder": "layers"},
+        resident_dit_paths=frozenset({"transformer"}),
+        encoder_block_attrs={"text_encoder": ("layers",)},
+        on_demand_component_paths=frozenset({"text_encoder", "vae"}),
     )
+
+    def get_offload_plan(self):
+        # A modular pipeline can derive residency from the partition it loaded.
+        active = frozenset(
+            path for path in self._dit_modules if hasattr(self, path)
+        )
+        return replace(self._offload_plan, resident_dit_paths=active)
 ```
 
-When not declared, the offloader falls back to `_layerwise_offload_blocks_attrs`
-and heuristic attribute search.  This is backward-compatible — existing models
-work without any changes.
+`block_attrs` and `offload_submodules` replace heuristic block discovery.
+`encoder_block_attrs` declares rank-local encoder stacks.
+`on_demand_component_paths` declares components whose pipeline lifecycle
+stages them only when needed. `resident_dit_paths` limits the resident-layer
+knob to selected DiTs; a combined pipeline can keep separate resident groups
+and load only the group selected for the request.
 
-### DP Multi-concurrency
+When no plan is declared, DLO falls back to
+`_layerwise_offload_blocks_attrs` and heuristic attribute discovery.
 
-When `--data-parallel-size > 1` and AllGather is enabled, the scheduler batches
-up to `dp_size` requests per denoise step.  Each DP rank processes a different
-request while AllGather synchronizes only weight shards (request-independent).
+### DP multi-concurrency
 
-**Requirements for concurrent requests:**
-- `num_inference_steps` must be specified explicitly (None is not allowed)
-- All concurrent requests must have the same `num_inference_steps` value
-- These constraints exist because AllGather is a collective that requires
-  every rank to participate at each denoise step
+When `--data-parallel-size > 1` and AllGather is enabled, the scheduler can
+process a different request on each DP rank while synchronizing only
+request-independent weight shards.
+
+All participating requests must set the same explicit `num_inference_steps`.
+Rank-local mode has no collective and therefore no concurrent-request
+lockstep requirement.
 
 ### Limitations
-- Online quantization (FP8) is incompatible with mmap loading — falls back to
-  regular `load_weights()` automatically
-- Tensor Parallel is not supported (DLO uses DP-based sharding)
-- HSDP + AllGather is rejected (would double-shard weights)
-- `num_inference_steps=None` is not allowed in DP multi-concurrency mode
+
+- AllGather mode rejects online quantization because flattened dtype groups
+  cannot preserve quantized weight/scale layouts.
+- The direct AllGather mmap path rejects tensor parallelism greater than one
+  because it bypasses TP-aware weight-loader callbacks. Rank-local mode
+  supports existing TP shards.
+- HSDP plus AllGather is rejected to prevent double sharding. Rank-local mode
+  can stream HSDP-local tensors.
+- `dlo_resident_layers` requires rank-local mode and a model-declared
+  `resident_dit_paths` selection.
+- DP multi-concurrency requires an explicit, identical inference-step count
+  on every participating request.
 
 **Module Discovery**
 
@@ -326,7 +388,7 @@ The offloader discovers pipeline components in two ways:
 
 **Hook System**
 
-Both strategies use vLLM-Omni's hook registry system (`HookRegistry` and `ModelHook`) to register pre/post forward callbacks on modules, enabling automatic swapping without modifying model code.
+All offloading backends use vLLM-Omni's hook registry system (`HookRegistry` and `ModelHook`) to register pre/post forward callbacks on modules, enabling automatic swapping without modifying model code.
 
 **Backend Architecture**
 
@@ -338,7 +400,7 @@ OffloadBackend (base class)
 ├── LayerWiseOffloadBackend → uses LayerwiseOffloadHook
 │                          (single-GPU, full weights on host)
 └── DistributedLayerwiseOffloadBackend → uses DistributedLayerwiseOffloadHook
-                                         (multi-GPU, 1/dp_size sharded weights + AllGather)
+                                         (DP-sharded AllGather or rank-local weights)
 ```
 
 Factory function `get_offload_backend()` selects the appropriate backend based on
@@ -364,9 +426,18 @@ reasoner/generator components inside the model forward pass.
 | Wan22Pipeline | `Wan-AI/Wan2.2-T2V-A14B-Diffusers` | `WanTransformer3DModel` | ✓ | ✓ | - | `"blocks"` |
 | SoulXSingerPipeline / SoulXSingerSVCPipeline | `Soul-AILab/SoulX-Singer` | `DiffLlama` (`cfm_decoder.model.diff_estimator`) | ✓ | ✓ | - | `"layers"` |
 | BagelPipeline | `ByteDance-Seed/BAGEL-7B-MoT` | `Qwen2MoTModel` | - | ✓ | - | `"layers"`, `"customized modules"` |
+| MiniMaxH3Pipeline | `MiniMaxAI/MiniMax-H3` | `MiniMaxH3DiTModel` | ✓ | ✓ | ✓ (rank-local) | `"blocks"` plus plan-declared encoder stacks |
 | Cosmos3OmniDiffusersPipeline | `nvidia/Cosmos3-Nano`, `nvidia/Cosmos3-Super` | `Cosmos3VFMTransformer`, `Cosmos3LanguageModel` | ✓ | ✓ | ✓ | `"layers"`, `"gen_layers"` |
 
 **Notes:**
-- Model-Level Offloading is expected to be supported by all common diffusion models (DiT and encoders) naturally
-- Layerwise Offloading requires DiT class to define `_layerwise_offload_blocks_attrs` pointing to transformer blocks
-- Distributed Layerwise Offloading works with any model that supports Layerwise Offloading — no additional model changes required.  See [Cosmos3 DistOffload recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/cosmos3/Cosmos3-DistOffload.md) for usage examples.
+
+- Model-level offloading applies to pipelines that declare their DiT and
+  encoder components.
+- Layerwise offloading requires discoverable transformer block lists.
+- DLO can use the generic topology fallback, but direct AllGather mmap loading
+  additionally requires checkpoint-key remapping. Advanced encoder, VAE,
+  resident-layer, and multi-DiT staging should be declared with `OffloadPlan`.
+- See the [Cosmos3 DLO recipe](../../../recipes/cosmos3/Cosmos3-DistOffload.md)
+  for AllGather examples and the
+  [MiniMax H3 RTX 5090 recipe](../../../recipes/MiniMaxAI/MiniMax-H3-5090.md)
+  for rank-local TP examples.

@@ -51,14 +51,10 @@ def _load_remote_component(
         class_reference,
         component_path,
     )
-    # Build on the host regardless of the ambient default device. Online
-    # quantization wraps pipeline construction in a `with torch.device(<accel>)`
-    # block for the DiT's quantized linears, and the checkpoint's own VAE code
-    # builds constants with ops that have no accelerator kernel (BigVGAN's
-    # anti-aliasing filters call torch.kaiser_window). Callers place the module
-    # explicitly right after this returns, so nothing depends on the context.
+    # Build on the host regardless of the ambient default device.
+    # Callers place the module explicitly after construction.
     with torch.device("cpu"):
-        return component_cls.from_pretrained(component_path)
+        return component_cls.from_pretrained(component_path, low_cpu_mem_usage=True)
 
 
 class _AudioVAEDeterminismContext(AbstractContextManager):

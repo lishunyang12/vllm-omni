@@ -276,6 +276,8 @@ class TestRequestModeDispatch:
         def worker():
             request = req_q.get(timeout=2)
             assert "rpc_id" not in request
+            assert request["output_rank"] is None
+            assert request["collect_rank_status"] is False
             wave_id = request["wave_id"]
             for dp_rank in range(2):
                 res_q.put(

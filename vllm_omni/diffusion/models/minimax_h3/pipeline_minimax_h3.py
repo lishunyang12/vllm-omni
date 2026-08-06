@@ -9,6 +9,7 @@ import os
 import tempfile
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import contextmanager
+from dataclasses import replace
 from itertools import groupby
 from pathlib import Path
 from typing import Any, ClassVar
@@ -521,13 +522,19 @@ class MiniMaxH3Pipeline(
         encoder_block_attrs={"text_encoder": ("vision.blocks", "text_model.layers")},
         on_demand_component_paths=frozenset({"text_encoder", "video_vae", "audio_vae"}),
     )
-    # H3's regular loader performs checkpoint-layout conversions (grouped QKV
-    # and fused MLP). Keep it on that path until mmap can run the same loader
-    # callbacks for every affected parameter.
-    _supports_mmap_loading: ClassVar[bool] = False
-    # TODO(offload): Re-enable after the generic rank-local mmap path can run
-    # this model's grouped-QKV reorder and fused-MLP packing before TP sharding.
-    # Do not bypass the regular loader until that equivalence is tested.
+    _supports_allgather_mmap_loading: ClassVar[bool] = True
+    _TRANSFORMER_CHECKPOINT_ROOTS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "audio_patch_proj",
+            "blocks",
+            "condition_proj",
+            "final_layer",
+            "rope",
+            "time_embedder",
+            "token_refiner",
+            "video_patch_proj",
+        }
+    )
     _PROFILER_TARGETS: ClassVar[list[str]] = [
         "_prepare_reference_videos",
         "encode_prompt",
@@ -613,15 +620,36 @@ class MiniMaxH3Pipeline(
             od_config.quantization_config,
             "transformer",
         )
-        self.transformer = MiniMaxH3DiTModel(
-            od_config,
-            quant_config=transformer_quant_config,
+        # The direct mmap loader uses checkpoint keys as a unique reverse map.
+        # Combined mode has two partitions with identical DiT key names, so it
+        # must retain source prefixes through the standard pipeline loader.
+        self._supports_allgather_mmap_loading = ref2va_model_path is None
+        direct_mmap_init = bool(
+            getattr(od_config, "enable_distributed_layerwise_offload", False)
+            and getattr(od_config, "dlo_use_allgather", True)
+            and self._supports_allgather_mmap_loading
         )
-        if ref2va_model_path is not None:
-            self.transformers_ref = MiniMaxH3DiTModel(
+        if direct_mmap_init:
+            with torch.device("meta"):
+                self.transformer = MiniMaxH3DiTModel(
+                    od_config,
+                    quant_config=transformer_quant_config,
+                )
+                if ref2va_model_path is not None:
+                    self.transformers_ref = MiniMaxH3DiTModel(
+                        od_config,
+                        quant_config=transformer_quant_config,
+                    )
+        else:
+            self.transformer = MiniMaxH3DiTModel(
                 od_config,
                 quant_config=transformer_quant_config,
             )
+            if ref2va_model_path is not None:
+                self.transformers_ref = MiniMaxH3DiTModel(
+                    od_config,
+                    quant_config=transformer_quant_config,
+                )
 
         self.tokenizer = Qwen2TokenizerFast.from_pretrained(
             str(model_path),
@@ -679,6 +707,28 @@ class MiniMaxH3Pipeline(
         self.setup_diffusion_pipeline_profiler(
             enable_diffusion_pipeline_profiler=(od_config.enable_diffusion_pipeline_profiler)
         )
+
+    @staticmethod
+    def _remap_ckpt_key(key: str) -> str | None:
+        """Map only H3 DiT checkpoint keys into the pipeline namespace."""
+        transformer_key = key.removeprefix("transformer.")
+        root = transformer_key.split(".", 1)[0]
+        if root not in MiniMaxH3Pipeline._TRANSFORMER_CHECKPOINT_ROOTS:
+            return None
+        return f"transformer.{transformer_key}"
+
+    def get_offload_plan(self) -> OffloadPlan:
+        """Derive resident DiTs from the partition loaded by this instance."""
+        resident_dit_paths = frozenset(
+            path for path in self._dit_modules if isinstance(getattr(self, path, None), nn.Module)
+        )
+        return replace(self._offload_plan, resident_dit_paths=resident_dit_paths)
+
+    def _dit_path_for_task(self, task: str) -> str:
+        """Select the combined-pipeline DiT without staging its sibling."""
+        if task == "ref2va" and isinstance(getattr(self, "transformers_ref", None), nn.Module):
+            return "transformers_ref"
+        return "transformer"
 
     def load_weights(
         self,
@@ -1340,15 +1390,26 @@ class MiniMaxH3Pipeline(
         return video_rows, audio_rows
 
     @contextmanager
-    def _resident_dit_layers_on_device(self, *, enabled: bool = True):
+    def _resident_dit_layers_on_device(
+        self,
+        dit_path: str | None = None,
+        *,
+        enabled: bool = True,
+    ):
         controller = getattr(self, "_dlo_residency_controller", None)
         if controller is not None and enabled:
-            controller.load_resident_layers()
+            if dit_path is None:
+                controller.load_resident_layers()
+            else:
+                controller.load_resident_layers(dit_path)
         try:
             yield
         finally:
             if controller is not None and enabled:
-                controller.offload_resident_layers()
+                if dit_path is None:
+                    controller.offload_resident_layers()
+                else:
+                    controller.offload_resident_layers(dit_path)
 
     def diffuse(
         self,
@@ -1471,12 +1532,9 @@ class MiniMaxH3Pipeline(
             num_steps=num_steps,
             shift_scale=audio_shift,
         )
-        transformer = self._transformer_for_task(task)
-        # The static DLO plan keeps leading blocks resident only for the
-        # primary ``transformer``. In combined mode ``transformers_ref`` is
-        # fully streamed, so a Ref2VA request must not stage the inactive
-        # FL2VA transformer resident blocks.
-        with self._resident_dit_layers_on_device(enabled=transformer is self.transformer):
+        dit_path = self._dit_path_for_task(task)
+        transformer = getattr(self, dit_path)
+        with self._resident_dit_layers_on_device(dit_path):
             with self.progress_bar(total=len(video_sigmas) - 1) as progress:
                 video_rows, audio_rows = minimax_h3_denoise_loop(
                     model=transformer,

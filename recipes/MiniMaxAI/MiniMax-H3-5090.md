@@ -19,6 +19,14 @@ server at a time. DLO keeps rank-local weights in pinned host memory; increasing
 `--dlo-resident-layers` improves latency but does **not** reduce host RAM in the
 current implementation because resident layers retain pinned CPU master copies.
 
+The system-RAM values are node-wide, not per worker. AllGather divides the DiT
+master weights by the DP/SP group size on each rank, but the shards across one
+host still add up to one complete DiT; rank-local encoders, VAEs, runtime state,
+and pinned staging buffers add to that floor. Direct mmap loading removes
+duplicate initialization copies but does not make the retained pinned master
+weights disappear, so DP concurrency must not be used to divide the node RAM
+requirement by the number of GPUs.
+
 > **Modular H3:** after #5720 lands, preserve this recipe's one-partition
 > behavior with `--task-type fl2va` or `--task-type ref2va`.
 
