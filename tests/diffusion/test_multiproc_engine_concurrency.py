@@ -299,33 +299,51 @@ class TestRequestModeDispatch:
 
         assert [result.error for result in results] == ["0", "1"]
 
-    def test_step_execution_reads_each_dp_primary_result_queue(self):
-        executor, _, _ = _make_executor(num_gpus=4)
+    @pytest.mark.parametrize(
+        ("tp_size", "sp_size", "pp_size", "cfg_size", "expected_primary_ranks"),
+        [
+            (2, 1, 1, 1, [0, 2]),
+            (2, 2, 1, 1, [0, 4]),
+            (1, 2, 2, 1, [0, 4]),
+            (1, 1, 2, 2, [0, 4]),
+        ],
+    )
+    def test_step_execution_reads_each_dp_primary_result_queue(
+        self,
+        tp_size,
+        sp_size,
+        pp_size,
+        cfg_size,
+        expected_primary_ranks,
+    ):
+        dp_size = 2
+        num_gpus = dp_size * tp_size * sp_size * pp_size * cfg_size
+        executor, _, _ = _make_executor(num_gpus=num_gpus)
         executor.od_config = SimpleNamespace(
             step_execution=True,
             parallel_config=SimpleNamespace(
-                data_parallel_size=2,
-                tensor_parallel_size=2,
-                sequence_parallel_size=1,
-                pipeline_parallel_size=1,
-                cfg_parallel_size=1,
+                data_parallel_size=dp_size,
+                tensor_parallel_size=tp_size,
+                sequence_parallel_size=sp_size,
+                pipeline_parallel_size=pp_size,
+                cfg_parallel_size=cfg_size,
             ),
         )
         request: dict = {}
         executor._broadcast_mq = SimpleNamespace(enqueue=lambda value: request.update(value))
 
-        def result_queue(dp_rank):
-            return SimpleNamespace(
-                dequeue=lambda timeout=None: {
-                    "dp_rank": dp_rank,
-                    "output": _tagged_output(str(dp_rank)),
-                    "wave_id": request["wave_id"],
-                }
-            )
+        def result_queue(global_rank):
+            result_mq = MagicMock()
+            result_mq.dequeue.side_effect = lambda timeout=None: {
+                "dp_rank": global_rank,
+                "output": _tagged_output(str(global_rank)),
+                "wave_id": request["wave_id"],
+            }
+            return result_mq
 
-        non_primary_1 = MagicMock()
-        non_primary_3 = MagicMock()
-        executor._result_mqs = [result_queue(0), non_primary_1, result_queue(1), non_primary_3]
+        # Every queue returns a valid, rank-tagged result. If the executor
+        # selects a non-primary queue, the returned rank exposes the mistake.
+        executor._result_mqs = [result_queue(rank) for rank in range(num_gpus)]
         executor._result_mq = executor._result_mqs[0]
 
         results = executor.collective_rpc(
@@ -334,9 +352,9 @@ class TestRequestModeDispatch:
             exec_all_ranks=True,
         )
 
-        assert [result.error for result in results] == ["0", "1"]
-        non_primary_1.dequeue.assert_not_called()
-        non_primary_3.dequeue.assert_not_called()
+        assert [result.error for result in results] == [str(rank) for rank in expected_primary_ranks]
+        for rank, result_mq in enumerate(executor._result_mqs):
+            assert result_mq.dequeue.call_count == (1 if rank in expected_primary_ranks else 0)
 
     @pytest.mark.parametrize("empty_prompt", ["", {"prompt": ""}])
     def test_dlo_dp_rejects_empty_prompt_before_worker_dispatch(self, empty_prompt):

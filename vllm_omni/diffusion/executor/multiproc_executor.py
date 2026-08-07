@@ -412,21 +412,19 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
         t.start()
 
     def _fail_closed_on_dp_wave_timeout(self, exc: TimeoutError) -> None:
-        """Terminate every rank after a partial DP wave times out.
+        """Shut down every rank after a partial DP wave times out.
 
         Once one rank is stuck in a DLO AllGather, that process group cannot be
-        reused safely. Killing all workers converts an otherwise permanent
-        request hang into a bounded engine failure and lets the caller restart.
+        reused safely. Shutting down the executor converts an otherwise
+        permanent request hang into a bounded engine failure and lets the
+        caller restart.
         """
         logger.error(
-            "DLO DP collective wave timed out after %.1fs; terminating all workers: %s",
+            "DLO DP collective wave timed out after %.1fs; shutting down the worker group: %s",
             _DLO_DP_WAVE_TIMEOUT_S,
             exc,
         )
         self._is_failed = True
-        for process in self._processes:
-            if process.is_alive():
-                process.terminate()
         self.shutdown()
         for callback in self._failure_callbacks:
             try:

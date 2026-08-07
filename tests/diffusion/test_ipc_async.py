@@ -137,27 +137,16 @@ class TestPackDiffusionOutputShmWithD2hStream:
             d2h_stream=d2h,
         )
 
-    def test_dp_tagged_output_path_with_stream(self, mocker):
+    @pytest.mark.parametrize("wrapped_in_rpc_envelope", [False, True])
+    def test_dp_tagged_output_path_with_stream(self, mocker, wrapped_in_rpc_envelope):
         mock_pack_fields = mocker.patch(
             "vllm_omni.diffusion.ipc._pack_diffusion_fields",
         )
         d2h = mocker.MagicMock()
         result = DiffusionOutput()
         tagged = {"dp_rank": 1, "output": result}
-        pack_diffusion_output_shm(tagged, d2h_stream=d2h)
-        mock_pack_fields.assert_called_once_with(result, d2h_stream=d2h)
-
-    def test_rpc_envelope_dp_tagged_output_path_with_stream(self, mocker):
-        mock_pack_fields = mocker.patch(
-            "vllm_omni.diffusion.ipc._pack_diffusion_fields",
-        )
-        d2h = mocker.MagicMock()
-        result = DiffusionOutput()
-        envelope = {
-            "type": "diffusion_rpc_result",
-            "result": {"dp_rank": 1, "output": result},
-        }
-        pack_diffusion_output_shm(envelope, d2h_stream=d2h)
+        value = {"type": "diffusion_rpc_result", "result": tagged} if wrapped_in_rpc_envelope else tagged
+        pack_diffusion_output_shm(value, d2h_stream=d2h)
         mock_pack_fields.assert_called_once_with(result, d2h_stream=d2h)
 
     def test_runner_output_path_with_stream(self, mocker):
