@@ -1103,8 +1103,6 @@ class MiniMaxH3Qwen3VLEncoder(nn.Module):
     def load_to_device(self) -> None:
         if not self.is_loaded:
             return
-        self.vision.to(self.device_target)
-        self.text_model.to(self.device_target)
         if not self._online_fp8_processed:
             quantized = []
             linear_types = (
@@ -1115,15 +1113,23 @@ class MiniMaxH3Qwen3VLEncoder(nn.Module):
             for name, module in self.named_modules():
                 prefix = f"text_encoder.{name}"
                 if isinstance(module, linear_types) and _online_fp8_selected(self.quant_config, prefix):
+                    # Quantize each TP shard as it reaches the accelerator.
+                    # Moving the full BF16 encoder first makes BF16 and FP8
+                    # weights overlap and hides the persistent FP8 saving in
+                    # the first-request peak.
+                    module.to(self.device_target)
                     _enable_online_fp8(module, output_dtype=module.output_dtype)
                     quantized.append(prefix)
             self._online_fp8_processed = True
             if quantized:
+                torch.accelerator.empty_cache()
                 logger.info(
-                    "MiniMax H3 Qwen3-VL encoder online FP8: quantized %d linear modules; first=%s",
+                    "MiniMax H3 Qwen3-VL encoder online FP8: quantized-on-transfer %d linear modules; first=%s",
                     len(quantized),
                     quantized[:4],
                 )
+        self.vision.to(self.device_target)
+        self.text_model.to(self.device_target)
 
     def offload_to_cpu(self) -> None:
         if not self.is_loaded:

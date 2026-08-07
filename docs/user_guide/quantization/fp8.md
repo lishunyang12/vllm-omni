@@ -93,7 +93,7 @@ warmup_quack_fp8([(14040, 2048, 6144), (14040, 2048, 2048)])
 | HunyuanImage-3.0 | `tencent/HunyuanImage-3.0`, `tencent/HunyuanImage-3.0-Instruct` | Yes | Yes | All layers; use the Hunyuan stage config for multi-stage runs | None | |
 | HunyuanVideo-1.5 | `hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v`, `720p_t2v`, `480p_i2v` | Yes | Yes | All layers | None | |
 | Cosmos3 | `nvidia/Cosmos3-Nano`, `nvidia/Cosmos3-Super` | Yes | Not validated | All layers | None | |
-| MiniMax-H3 | `MiniMaxAI/MiniMax-H3` (`FL2VA` / `Ref2VA`) | Yes | Not validated | Quantize the DiT; patch/time/final projections stay FP32 | Optional stable DiT prefixes such as `blocks.0.mlp` | No |
+| MiniMax-H3 | `MiniMaxAI/MiniMax-H3` (`FL2VA` / `Ref2VA`) | Yes | Not validated | Quantize the DiT; patch/time/final projections stay FP32 | Optional stable DiT prefixes such as `blocks.0.mlp` | Yes |
 
 ### Multi-Stage Omni/TTS Model (Qwen3-Omni, Qwen3-TTS)
 
@@ -150,6 +150,11 @@ omni = Omni(
 )
 ```
 
+The TP-sharded encoder linears are quantized one at a time as they move to the
+accelerator. This avoids materializing the complete BF16 encoder alongside its
+FP8 replacement and makes the FP8 weight reduction visible in both resident
+and request-peak memory.
+
 For component or layer ablations, use longest-prefix component routing. This
 example quantizes the DiT and only the first ten text-encoder MLP blocks:
 
@@ -189,6 +194,10 @@ vllm serve /path/to/MiniMax-H3/FL2VA --omni \
 The sharded DLO AllGather path is not used here because it does not preserve
 the runtime-created FP8 weight/scale layout. `--dlo-no-use-allgather` still
 streams DiT layers between CPU and GPU, while avoiding that layout conflict.
+After H3 finishes its one-shot encode phase, the encoder is returned to CPU so
+it does not remain resident during layerwise DiT denoising. A later request
+reloads the already-quantized FP8 encoder; it does not quantize the weights
+again.
 
 ## Parameters
 

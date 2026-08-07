@@ -680,9 +680,11 @@ class MiniMaxH3Pipeline(
             # swaps the resident DiT and encoder.
             return self.text_encoder(input_ids, **vision_kwargs)
 
-        if self.od_config.enable_layerwise_offload:
-            # Layerwise DiT offload already provides the low-residency encoder
-            # phase used by the checkpoint reference.
+        if self.od_config.enable_layerwise_offload or getattr(
+            self.od_config, "enable_distributed_layerwise_offload", False
+        ):
+            # Layerwise DiT offload provides a low-residency encoder phase; do
+            # not keep the one-shot encoder resident during denoising.
             self.text_encoder.load_to_device()
             try:
                 return self.text_encoder.encode_ids(input_ids, **vision_kwargs)
