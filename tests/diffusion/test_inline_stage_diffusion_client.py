@@ -163,6 +163,20 @@ def test_inline_shutdown(client, mock_engine):
     mock_engine.close.assert_called_once()
 
 
+def test_inline_shutdown_runs_after_orchestrator_premark(client, mock_engine):
+    # The orchestrator pre-marks clients to suppress false worker-death errors
+    # before StagePool invokes the actual teardown.
+    client._shutting_down = True
+
+    client.shutdown()
+
+    mock_engine.close.assert_called_once()
+    assert client._shutdown_complete
+
+    client.shutdown()
+    mock_engine.close.assert_called_once()
+
+
 def test_inline_registers_executor_failure_callback(client, mock_engine):
     mock_engine.executor.register_failure_callback.assert_called_once()
 
