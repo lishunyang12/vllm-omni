@@ -185,6 +185,42 @@ def test_text_encoder_stub_constructs_without_group_or_weights():
     assert list(encoder.named_parameters()) == []
 
 
+def test_text_encoder_online_fp8_uses_global_and_longest_prefix_routing():
+    from vllm_omni.diffusion.models.minimax_h3.encoder import (
+        _online_fp8_selected,
+    )
+    from vllm_omni.quantization import build_quant_config
+
+    layer_0_mlp = "text_encoder.text_model.layers.0.mlp.gate_up_proj"
+    layer_10_mlp = "text_encoder.text_model.layers.10.mlp.gate_up_proj"
+
+    assert _online_fp8_selected(build_quant_config("fp8"), layer_0_mlp)
+
+    component_config = build_quant_config(
+        {
+            "transformer": {"method": "fp8"},
+            "text_encoder": None,
+            "text_encoder.text_model.layers.0.mlp": {"method": "fp8"},
+        }
+    )
+    assert _online_fp8_selected(component_config, layer_0_mlp)
+    assert not _online_fp8_selected(component_config, layer_10_mlp)
+
+
+def test_text_encoder_rejects_serialized_fp8():
+    from vllm_omni.diffusion.models.minimax_h3.encoder import (
+        _online_fp8_selected,
+    )
+
+    config = SimpleNamespace(
+        get_name=lambda: "fp8",
+        is_checkpoint_fp8_serialized=True,
+        ignored_layers=None,
+    )
+    with pytest.raises(ValueError, match="online FP8 only"):
+        _online_fp8_selected(config, "text_encoder.text_model.layers.0.mlp.down_proj")
+
+
 def test_no_offload_keeps_text_encoder_resident():
     from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
 

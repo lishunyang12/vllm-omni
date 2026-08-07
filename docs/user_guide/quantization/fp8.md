@@ -138,14 +138,33 @@ outputs = omni.generate(
 
 MiniMax-H3 keeps its released mixed-precision policy during online FP8:
 the video/audio patch projections, timestep MLP, and final video/audio heads
-remain FP32. The other DiT linear layers use online FP8, while the Qwen3-VL
-text encoder and both VAEs remain at checkpoint precision. Point `model` at
-one partition directory, for example `MiniMax-H3/FL2VA`:
+remain FP32. The other DiT linear layers and eligible Qwen3-VL text-decoder
+linears use online FP8. The vision tower, embeddings, norms, RoPE, and both
+VAEs remain at checkpoint precision. Point `model` at one partition directory,
+for example `MiniMax-H3/FL2VA`:
 
 ```python
 omni = Omni(
     model="/path/to/MiniMax-H3/FL2VA",
     quantization="fp8",
+)
+```
+
+For component or layer ablations, use longest-prefix component routing. This
+example quantizes the DiT and only the first ten text-encoder MLP blocks:
+
+```python
+quantization_config = {
+    "transformer": {"method": "fp8"},
+    "text_encoder": None,
+    **{
+        f"text_encoder.text_model.layers.{layer}.mlp": {"method": "fp8"}
+        for layer in range(10)
+    },
+}
+omni = Omni(
+    model="/path/to/MiniMax-H3/FL2VA",
+    quantization_config=quantization_config,
 )
 ```
 
@@ -156,6 +175,20 @@ python text_to_image.py --model <your-model> --quantization fp8
 python text_to_image.py --model <your-model> --quantization fp8 --ignored-layers "img_mlp"
 vllm serve <your-model> --omni --quantization fp8
 ```
+
+Online FP8 can run with distributed layerwise offload by using its full-weight
+per-rank transfer path:
+
+```bash
+vllm serve /path/to/MiniMax-H3/FL2VA --omni \
+  --quantization fp8 \
+  --enable-distributed-layerwise-offload \
+  --dlo-no-use-allgather
+```
+
+The sharded DLO AllGather path is not used here because it does not preserve
+the runtime-created FP8 weight/scale layout. `--dlo-no-use-allgather` still
+streams DiT layers between CPU and GPU, while avoiding that layout conflict.
 
 ## Parameters
 

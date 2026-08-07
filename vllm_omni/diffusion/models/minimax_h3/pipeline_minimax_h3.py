@@ -296,6 +296,7 @@ class MiniMaxH3Pipeline(
         self.transformer = MiniMaxH3DiTModel(
             od_config,
             quant_config=od_config.quantization_config,
+            prefix="transformer",
         )
 
         self.tokenizer = Qwen2TokenizerFast.from_pretrained(
@@ -333,6 +334,7 @@ class MiniMaxH3Pipeline(
             device=self.device,
             load_model=rank < text_encoder_tp_size,
             encoder_group=self.text_encoder_group,
+            quant_config=od_config.quantization_config,
         )
         self.video_vae = MiniMaxH3VideoVAE(
             os.path.join(model_path, "video_vae"),

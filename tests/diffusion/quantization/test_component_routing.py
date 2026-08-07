@@ -395,6 +395,21 @@ class TestComponentResolve:
         result = cqc.get_quant_method(layer, "visual.blocks.0.mlp")
         assert result is None
 
+    def test_unmatched_linear_uses_unquantized_method(self):
+        """A None component is valid BF16 routing for vLLM LinearBase."""
+        from vllm.model_executor.layers.linear import (
+            ReplicatedLinear,
+            UnquantizedLinearMethod,
+        )
+
+        cqc = ComponentQuantizationConfig(
+            component_configs={"transformer": None},
+        )
+        layer = object.__new__(ReplicatedLinear)
+        torch.nn.Module.__init__(layer)
+        method = cqc.get_quant_method(layer, "transformer.condition_proj")
+        assert isinstance(method, UnquantizedLinearMethod)
+
     def test_min_capability(self):
         a = _MockQuantConfig("a")
         a.get_min_capability = lambda: 80

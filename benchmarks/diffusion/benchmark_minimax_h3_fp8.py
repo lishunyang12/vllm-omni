@@ -176,7 +176,9 @@ def _run_worker(args: argparse.Namespace, mode: str) -> None:
             if frames.ndim != 4 or tuple(frames.shape[1:]) != (768, 1344, 3):
                 raise RuntimeError(f"Unexpected video shape: {frames.shape}")
             if frames.dtype != np.uint8:
-                raise RuntimeError(f"Expected uint8 video frames, got {frames.dtype}")
+                if not np.issubdtype(frames.dtype, np.floating):
+                    raise RuntimeError(f"Expected floating-point or uint8 video frames, got {frames.dtype}")
+                frames = np.clip(frames * 255.0, 0, 255).astype(np.uint8)
             if audio.ndim not in (2, 3) or 2 not in audio.shape:
                 raise RuntimeError(f"Unexpected audio shape: {audio.shape}")
             if fps != 24 or sample_rate != 32000:

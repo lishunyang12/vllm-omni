@@ -128,6 +128,9 @@ def test_online_quantization_routes_supported_linears_and_preserves_fp32(model_p
         MINIMAX_H3_FP32_PARAM_NAMES,
         MiniMaxH3DiTModel,
     )
+    from vllm_omni.quantization.component_config import (
+        ComponentQuantizationConfig,
+    )
 
     class FakeAttention(nn.Module):
         def __init__(self, **kwargs):
@@ -158,25 +161,35 @@ def test_online_quantization_routes_supported_linears_and_preserves_fp32(model_p
         tf_model_config=arch,
         parallel_config=SimpleNamespace(ulysses_degree=1),
     )
-    quant_config = Mock()
-    quant_config.weight_block_size = None
-    quant_config.get_quant_method.return_value = UnquantizedLinearMethod()
+    transformer_quant_config = Mock()
+    transformer_quant_config.weight_block_size = None
+    transformer_quant_config.get_quant_method.return_value = UnquantizedLinearMethod()
+    quant_config = ComponentQuantizationConfig(
+        {"transformer": transformer_quant_config},
+    )
 
-    model = MiniMaxH3DiTModel(od_config, quant_config=quant_config)
+    model = MiniMaxH3DiTModel(
+        od_config,
+        quant_config=quant_config,
+        prefix="transformer",
+    )
 
-    quantized_prefixes = [call.kwargs["prefix"] for call in quant_config.get_quant_method.call_args_list]
+    quantized_prefixes = [
+        call.args[1]
+        for call in transformer_quant_config.get_quant_method.call_args_list
+    ]
     assert quantized_prefixes == [
-        "condition_proj",
-        "token_refiner.blocks.0.attn.qkv_proj",
-        "token_refiner.blocks.0.attn.out_proj",
-        "token_refiner.blocks.0.mlp.fc1",
-        "token_refiner.blocks.0.mlp.fc2",
-        "blocks.0.attn.qkv_proj",
-        "blocks.0.attn.out_proj",
-        "blocks.0.mlp.fc1",
-        "blocks.0.mlp.fc2",
-        "blocks.0.adaln_proj.linear",
-        "final_layer.adaln_proj.linear",
+        "transformer.condition_proj",
+        "transformer.token_refiner.blocks.0.attn.qkv_proj",
+        "transformer.token_refiner.blocks.0.attn.out_proj",
+        "transformer.token_refiner.blocks.0.mlp.fc1",
+        "transformer.token_refiner.blocks.0.mlp.fc2",
+        "transformer.blocks.0.attn.qkv_proj",
+        "transformer.blocks.0.attn.out_proj",
+        "transformer.blocks.0.mlp.fc1",
+        "transformer.blocks.0.mlp.fc2",
+        "transformer.blocks.0.adaln_proj.linear",
+        "transformer.final_layer.adaln_proj.linear",
     ]
 
     params = dict(model.named_parameters())

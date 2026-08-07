@@ -103,6 +103,17 @@ class ComponentQuantizationConfig(QuantizationConfig):
     def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> QuantizeMethodBase | None:
         config = self.resolve(prefix)
         if config is None:
+            # LinearBase requires every non-None quantization config to return
+            # a linear method. A component explicitly routed to None means
+            # ordinary checkpoint-precision execution, not an unsupported
+            # quantization method.
+            from vllm.model_executor.layers.linear import (
+                LinearBase,
+                UnquantizedLinearMethod,
+            )
+
+            if isinstance(layer, LinearBase):
+                return UnquantizedLinearMethod()
             return None
         return config.get_quant_method(layer, prefix)
 
