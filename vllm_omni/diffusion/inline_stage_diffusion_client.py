@@ -302,6 +302,8 @@ class InlineStageDiffusionClient(StageClientBase):
             raise
 
     def shutdown(self) -> None:
+        if self._shutting_down:
+            return
         self._shutting_down = True
 
         # Cancel all pending tasks
@@ -309,12 +311,14 @@ class InlineStageDiffusionClient(StageClientBase):
             task.cancel()
 
         try:
-            # Cancel queued futures and wait for the running one to complete deterministically
-            self._executor.shutdown(wait=True, cancel_futures=True)
+            # Stop the engine first so any control RPC running in the thread
+            # pool can observe shutdown instead of keeping stage teardown
+            # blocked while the executor waits for that RPC.
+            self._engine.close()
         except Exception:
             pass
 
         try:
-            self._engine.close()
+            self._executor.shutdown(wait=True, cancel_futures=True)
         except Exception:
             pass

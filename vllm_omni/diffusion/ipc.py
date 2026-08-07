@@ -22,6 +22,45 @@ _SHM_TENSOR_THRESHOLD = 1_000_000  # 1 MB
 DIFFUSION_RPC_RESULT_ENVELOPE = "diffusion_rpc_result"
 
 
+def _array_to_shm(array: np.ndarray) -> dict[str, Any]:
+    """Copy a contiguous NumPy-compatible array into shared memory."""
+    from multiprocessing import shared_memory
+
+    if array.dtype.hasobject:
+        raise TypeError("NumPy object arrays cannot be transferred through raw shared memory")
+
+    array = np.ascontiguousarray(array)
+    nbytes = array.nbytes
+    shm = shared_memory.SharedMemory(create=True, size=nbytes)
+    shm_array = np.ndarray(array.shape, dtype=array.dtype, buffer=shm.buf[:nbytes])
+    np.copyto(shm_array, array)
+    handle = {
+        "name": shm.name,
+        "shape": list(array.shape),
+        "numpy_dtype": str(array.dtype),
+        "nbytes": nbytes,
+    }
+    shm.close()
+    return handle
+
+
+def _array_from_shm(handle: dict[str, Any]) -> np.ndarray:
+    """Copy an array from shared memory, then close and unlink its segment."""
+    from multiprocessing import shared_memory
+
+    shm = shared_memory.SharedMemory(name=handle["name"])
+    try:
+        array = np.ndarray(
+            handle["shape"],
+            dtype=np.dtype(handle["numpy_dtype"]),
+            buffer=shm.buf[: handle["nbytes"]],
+        ).copy()
+    finally:
+        shm.close()
+        shm.unlink()
+    return array
+
+
 def _tensor_to_shm(
     tensor: torch.Tensor,
     d2h_stream: torch.Stream | None = None,
@@ -36,8 +75,6 @@ def _tensor_to_shm(
     path.  The caller must synchronize *d2h_stream* after all tensors are
     packed.
     """
-    from multiprocessing import shared_memory
-
     original_dtype = tensor.dtype
     if d2h_stream is not None:
         # Non-blocking D2H: copy on side stream to pinned CPU memory.
@@ -57,42 +94,26 @@ def _tensor_to_shm(
         tensor = tensor.detach().cpu().contiguous()
         if original_dtype == torch.bfloat16:
             tensor = tensor.to(torch.float32)
-    arr = tensor.numpy()
-    nbytes = arr.nbytes
-    shm = shared_memory.SharedMemory(create=True, size=nbytes)
-    shm_arr = np.ndarray(arr.shape, dtype=arr.dtype, buffer=shm.buf[:nbytes])
-    np.copyto(shm_arr, arr)
-    handle = {
-        "__tensor_shm__": True,
-        "name": shm.name,
-        "shape": list(tensor.shape),
-        "torch_dtype": str(original_dtype),
-        "numpy_dtype": str(arr.dtype),
-        "nbytes": nbytes,
-    }
-    shm.close()
+    handle = _array_to_shm(tensor.numpy())
+    handle.update(
+        {
+            "__tensor_shm__": True,
+            "torch_dtype": str(original_dtype),
+        }
+    )
     return handle
 
 
 def _tensor_from_shm(handle: dict[str, Any]) -> torch.Tensor:
     """Reconstruct a tensor from a shared-memory handle and free the segment."""
-    from multiprocessing import shared_memory
-
-    shm = shared_memory.SharedMemory(name=handle["name"])
-    try:
-        np_dtype = np.dtype(handle["numpy_dtype"])
-        arr = np.ndarray(handle["shape"], dtype=np_dtype, buffer=shm.buf[: handle["nbytes"]])
-        tensor = torch.from_numpy(arr.copy())
-        # Restore the original dtype if it differs from the numpy-compatible
-        # dtype used for the SHM transfer (e.g. bfloat16 → float32 → bfloat16).
-        torch_dtype_str = handle.get("torch_dtype", "")
-        if torch_dtype_str:
-            original_dtype = getattr(torch, torch_dtype_str.replace("torch.", ""), None)
-            if original_dtype is not None and tensor.dtype != original_dtype:
-                tensor = tensor.to(original_dtype)
-    finally:
-        shm.close()
-        shm.unlink()
+    tensor = torch.from_numpy(_array_from_shm(handle))
+    # Restore the original dtype if it differs from the numpy-compatible
+    # dtype used for the SHM transfer (e.g. bfloat16 → float32 → bfloat16).
+    torch_dtype_str = handle.get("torch_dtype", "")
+    if torch_dtype_str:
+        original_dtype = getattr(torch, torch_dtype_str.replace("torch.", ""), None)
+        if original_dtype is not None and tensor.dtype != original_dtype:
+            tensor = tensor.to(original_dtype)
     return tensor
 
 
@@ -108,41 +129,14 @@ def _pack_tensor_if_large(
 
 def _ndarray_to_shm(array: np.ndarray) -> dict[str, Any]:
     """Copy a contiguous NumPy array into POSIX shared memory."""
-    from multiprocessing import shared_memory
-
-    if array.dtype.hasobject:
-        raise TypeError("NumPy object arrays cannot be transferred through raw shared memory")
-
-    array = np.ascontiguousarray(array)
-    shm = shared_memory.SharedMemory(create=True, size=array.nbytes)
-    shm_array = np.ndarray(array.shape, dtype=array.dtype, buffer=shm.buf[: array.nbytes])
-    np.copyto(shm_array, array)
-    handle = {
-        "__ndarray_shm__": True,
-        "name": shm.name,
-        "shape": list(array.shape),
-        "numpy_dtype": str(array.dtype),
-        "nbytes": array.nbytes,
-    }
-    shm.close()
+    handle = _array_to_shm(array)
+    handle["__ndarray_shm__"] = True
     return handle
 
 
 def _ndarray_from_shm(handle: dict[str, Any]) -> np.ndarray:
     """Reconstruct a NumPy array from shared memory and free the segment."""
-    from multiprocessing import shared_memory
-
-    shm = shared_memory.SharedMemory(name=handle["name"])
-    try:
-        array = np.ndarray(
-            handle["shape"],
-            dtype=np.dtype(handle["numpy_dtype"]),
-            buffer=shm.buf[: handle["nbytes"]],
-        ).copy()
-    finally:
-        shm.close()
-        shm.unlink()
-    return array
+    return _array_from_shm(handle)
 
 
 def _pack_value_if_large(

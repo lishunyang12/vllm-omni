@@ -376,6 +376,86 @@ class TestRequestModeDispatch:
         assert [output.result.error for output in result.runner_outputs] == ["A", "B"]
         executor.collective_rpc.assert_called_once()
 
+    def test_dlo_dp_allows_shared_default_denoise_steps(self):
+        executor, _, _ = _make_executor(num_gpus=2)
+        executor.od_config = SimpleNamespace(
+            step_execution=False,
+            parallel_config=SimpleNamespace(data_parallel_size=2),
+            enable_distributed_layerwise_offload=True,
+            dlo_use_allgather=True,
+        )
+        executor.collective_rpc = Mock(return_value=[_tagged_output("A"), _tagged_output("B")])
+        scheduler_output = _make_sched_output("A", "B")
+        for new_req in scheduler_output.scheduled_new_reqs:
+            new_req.req.sampling_params.num_inference_steps = None
+
+        result = executor.execute_request(scheduler_output)
+
+        assert [output.result.error for output in result.runner_outputs] == ["A", "B"]
+        executor.collective_rpc.assert_called_once()
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("num_inference_steps", 2),
+            ("guidance_scale", 7.5),
+            ("width", 1024),
+        ],
+    )
+    def test_dlo_dp_rejects_incompatible_collective_wave(self, field, value):
+        executor, _, _ = _make_executor(num_gpus=2)
+        executor.od_config = SimpleNamespace(
+            step_execution=False,
+            parallel_config=SimpleNamespace(data_parallel_size=2),
+            enable_distributed_layerwise_offload=True,
+            dlo_use_allgather=True,
+        )
+        executor.collective_rpc = Mock()
+        scheduler_output = _make_sched_output("A", "B")
+        setattr(scheduler_output.scheduled_new_reqs[1].req.sampling_params, field, value)
+
+        with pytest.raises(ValueError, match="compatible shape, CFG"):
+            executor.execute_request(scheduler_output)
+
+        executor.collective_rpc.assert_not_called()
+
+    def test_dlo_dp_partial_reply_times_out_and_fails_closed(self, monkeypatch):
+        from vllm_omni.diffusion.executor import multiproc_executor as executor_module
+
+        executor, req_q, res_q = _make_executor(num_gpus=2)
+        executor.od_config = SimpleNamespace(
+            step_execution=False,
+            parallel_config=SimpleNamespace(data_parallel_size=2),
+            enable_distributed_layerwise_offload=True,
+            dlo_use_allgather=True,
+        )
+        executor._sync_result_buffer = res_q
+        executor._fail_closed_on_dp_wave_timeout = Mock()
+        monkeypatch.setattr(executor_module, "_DLO_DP_WAVE_TIMEOUT_S", 0.05)
+
+        def reply_from_only_one_dp_rank():
+            request = req_q.get(timeout=2.0)
+            res_q.put(
+                {
+                    "dp_rank": 0,
+                    "output": _tagged_output("rank-0"),
+                    "wave_id": request["wave_id"],
+                }
+            )
+
+        worker = threading.Thread(target=reply_from_only_one_dp_rank, daemon=True)
+        worker.start()
+        started = time.monotonic()
+
+        result = executor.execute_request(_make_sched_output("A", "B"))
+
+        elapsed = time.monotonic() - started
+        worker.join(timeout=2.0)
+        assert elapsed < 1.0
+        assert all("timed out" in output.result.error for output in result.runner_outputs)
+        executor._fail_closed_on_dp_wave_timeout.assert_called_once()
+        assert isinstance(executor._fail_closed_on_dp_wave_timeout.call_args.args[0], TimeoutError)
+
 
 # ───────────────── concurrent collective RPC ─────────────────
 
@@ -1025,6 +1105,42 @@ class TestStageDiffusionClientErrorPropagation:
         assert result is None
         client._request_socket.send.assert_called_once_with(b"encoded-rpc")
         assert rpc_id not in client._pending_rpcs
+
+
+class TestExecutorShutdownCleaner:
+    def test_worker_joins_share_one_global_deadline(self, monkeypatch):
+        from vllm_omni.diffusion.executor import multiproc_executor as executor_module
+
+        class FakeProcess:
+            def __init__(self, name):
+                self.name = name
+                self.alive = True
+                self.terminated = False
+                self.join_timeouts = []
+
+            def is_alive(self):
+                return self.alive
+
+            def join(self, timeout):
+                self.join_timeouts.append(timeout)
+                if self.terminated:
+                    self.alive = False
+
+            def terminate(self):
+                self.terminated = True
+
+        monotonic = Mock(side_effect=[100.0, 100.0, 110.0, 120.0, 120.0, 124.0])
+        monkeypatch.setattr(executor_module, "time", SimpleNamespace(monotonic=monotonic))
+        first = FakeProcess("worker-0")
+        second = FakeProcess("worker-1")
+        cleaner = executor_module._ExecutorShutdownCleaner(processes=[first, second])
+
+        cleaner()
+
+        assert first.join_timeouts == [15.0, 5.0]
+        assert second.join_timeouts == [5.0, 1.0]
+        assert first.terminated and second.terminated
+        assert not first.is_alive() and not second.is_alive()
 
 
 # ───────── monitor thread & death sentinel integration tests ─────────

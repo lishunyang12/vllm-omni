@@ -63,6 +63,8 @@ from vllm_omni.worker.gpu_memory_utils import get_process_gpu_memory
 
 logger = init_logger(__name__)
 
+_ASYNC_OUTPUT_THREAD_JOIN_TIMEOUT_S = 10.0
+
 
 @dataclass
 class _DiffusionVllmModelConfig:
@@ -935,7 +937,7 @@ class WorkerProc:
         if self._async_output_queue is not None:
             self._async_output_queue.put(None)
         if self._async_output_thread is not None:
-            self._async_output_thread.join(timeout=10)
+            self._async_output_thread.join(timeout=_ASYNC_OUTPUT_THREAD_JOIN_TIMEOUT_S)
             if self._async_output_thread.is_alive():
                 logger.warning(
                     "Worker %d: Async output thread did not stop before shutdown",

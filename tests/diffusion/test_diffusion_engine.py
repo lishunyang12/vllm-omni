@@ -377,7 +377,7 @@ class TestRequestBatchCapability:
         assert engine.supports_request_batch is False
         assert engine.dp_concurrent is True
         assert engine.scheduler.max_num_running_reqs == 2
-        assert od_config.request_batch_max_wait_ms == 500.0
+        assert od_config.request_batch_max_wait_ms == 0
         fake_executor_cls.assert_called_once_with(od_config)
 
     @pytest.mark.parametrize("request_ids", [("req-a",), ("req-a", "req-b")])

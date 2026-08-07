@@ -4,6 +4,7 @@ import concurrent.futures
 import json
 import multiprocessing as mp
 import multiprocessing.connection
+import os
 import queue
 import threading
 import time
@@ -21,6 +22,7 @@ from vllm.v1.engine.exceptions import EngineDeadError
 from vllm_omni.diffusion.data import SHUTDOWN_MESSAGE, AsyncDiffusionOutput, AsyncOutputKind, DiffusionOutput
 from vllm_omni.diffusion.executor.abstract import DiffusionExecutor
 from vllm_omni.diffusion.ipc import DIFFUSION_RPC_RESULT_ENVELOPE, unpack_diffusion_output_shm
+from vllm_omni.diffusion.sched.request_scheduler import build_request_batch_sampling_params_key
 from vllm_omni.diffusion.worker import WorkerProc
 
 if TYPE_CHECKING:
@@ -30,7 +32,9 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 _DEQUEUE_TIMEOUT_S = 5.0
+_DLO_DP_WAVE_TIMEOUT_S = float(os.environ.get("VLLM_OMNI_DLO_DP_WAVE_TIMEOUT", 600.0))
 _WORKER_SHUTDOWN_GRACE_S = 15.0
+_WORKER_TERMINATE_GRACE_S = 5.0
 _RESULT_PUMP_JOIN_TIMEOUT_S = 2.0
 
 
@@ -65,14 +69,20 @@ class _ExecutorShutdownCleaner:
                 logger.warning("Failed to send shutdown signal: %s", exc)
 
         if self.processes:
+            join_deadline = time.monotonic() + _WORKER_SHUTDOWN_GRACE_S
             for proc in self.processes:
                 if not proc.is_alive():
                     continue
-                proc.join(_WORKER_SHUTDOWN_GRACE_S)
-                if proc.is_alive():
-                    logger.warning("Terminating diffusion worker %s after timeout", proc.name)
-                    proc.terminate()
-                    proc.join(5)
+                proc.join(max(0.0, join_deadline - time.monotonic()))
+
+            alive = [proc for proc in self.processes if proc.is_alive()]
+            for proc in alive:
+                logger.warning("Terminating diffusion worker %s after timeout", proc.name)
+                proc.terminate()
+
+            terminate_deadline = time.monotonic() + _WORKER_TERMINATE_GRACE_S
+            for proc in alive:
+                proc.join(max(0.0, terminate_deadline - time.monotonic()))
 
 
 class MultiprocDiffusionExecutor(DiffusionExecutor):
@@ -401,6 +411,29 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
         t = threading.Thread(target=_monitor, daemon=True, name="diffusion-worker-monitor")
         t.start()
 
+    def _fail_closed_on_dp_wave_timeout(self, exc: TimeoutError) -> None:
+        """Terminate every rank after a partial DP wave times out.
+
+        Once one rank is stuck in a DLO AllGather, that process group cannot be
+        reused safely. Killing all workers converts an otherwise permanent
+        request hang into a bounded engine failure and lets the caller restart.
+        """
+        logger.error(
+            "DLO DP collective wave timed out after %.1fs; terminating all workers: %s",
+            _DLO_DP_WAVE_TIMEOUT_S,
+            exc,
+        )
+        self._is_failed = True
+        for process in self._processes:
+            if process.is_alive():
+                process.terminate()
+        self.shutdown()
+        for callback in self._failure_callbacks:
+            try:
+                callback()
+            except Exception:
+                logger.exception("failure_callback raised")
+
     def register_failure_callback(
         self,
         callback: Callable[[], None],
@@ -430,21 +463,17 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
             and getattr(self.od_config, "enable_distributed_layerwise_offload", False)
             and getattr(self.od_config, "dlo_use_allgather", True)
         ):
-            # Validate: all concurrent requests must share the same
-            # num_inference_steps and identical extra_args, because
-            # AllGather is a collective that requires every rank to
-            # participate at each step.
-            step_counts = {
-                nr.req.sampling_params.num_inference_steps
-                for nr in new_reqs
-                if nr.req.sampling_params.num_inference_steps is not None
-            }
-            has_none = any(nr.req.sampling_params.num_inference_steps is None for nr in new_reqs)
-            if (len(step_counts) > 1) or has_none:
+            # Reuse the request scheduler's complete compatibility key. DLO
+            # AllGather requires every DP rank to execute the same collective
+            # schedule, including shape, CFG, denoise steps, output count,
+            # and LoRA settings. Two default (None) step counts are valid and
+            # resolve identically inside the same pipeline.
+            compatibility_keys = [build_request_batch_sampling_params_key(nr.req) for nr in new_reqs]
+            if any(key != compatibility_keys[0] for key in compatibility_keys[1:]):
                 raise ValueError(
-                    "DP multi-concurrency requires all concurrent requests to have "
-                    "the same explicit num_inference_steps (None is not allowed), got "
-                    f"{[nr.req.sampling_params.num_inference_steps for nr in new_reqs]}."
+                    "DLO DP multi-concurrency requires compatible shape, CFG, "
+                    "denoise schedule, output count, and LoRA settings for all "
+                    "requests in one collective wave."
                 )
             extra_args_signatures: set = set()
             for nr in new_reqs:
@@ -467,6 +496,7 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
             try:
                 results = self.collective_rpc(
                     "execute_model",
+                    timeout=_DLO_DP_WAVE_TIMEOUT_S,
                     args=(reqs_list, self.od_config, scheduler_output.kv_prefetch_job),
                     unique_reply_rank=None,
                     exec_all_ranks=True,
@@ -486,6 +516,8 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
                     else:
                         raise RuntimeError(f"Unexpected response type [{i}]: {type(res)!r}")
             except Exception as exc:
+                if isinstance(exc, TimeoutError):
+                    self._fail_closed_on_dp_wave_timeout(exc)
                 for new_req in new_reqs:
                     runner_outputs.append(
                         RunnerOutput(
