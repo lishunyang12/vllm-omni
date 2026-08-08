@@ -381,108 +381,35 @@ budget. The command below intentionally contains none of
 `--enable-distributed-layerwise-offload`. VAE tiling changes decode placement
 but does not offload model weights to the CPU.
 
-Before starting, reserve GPU 0 for this process and run the following script
-from the vLLM-Omni checkout. It records the exact device capacity, samples
-whole-device memory from before server initialization through the first
-request, and retains all artifacts needed for review:
+Before starting, reserve GPU 0 for this process. From the vLLM-Omni checkout,
+start the server in the first terminal:
 
 ```bash
-set -euo pipefail
-
-export MODEL_ROOT=/path/to/MiniMax-H3
-export RUN_DIR=$PWD/h3_single_gpu_fp8_no_offload
-mkdir -p "${RUN_DIR}"
-
-nvidia-smi -i 0 \
-  --query-gpu=name,driver_version,memory.total \
-  --format=csv,noheader | tee "${RUN_DIR}/gpu.txt"
-git rev-parse HEAD | tee "${RUN_DIR}/commit.txt"
-
-nvidia-smi -i 0 \
-  --query-gpu=timestamp,index,name,memory.total,memory.used,utilization.gpu \
-  --format=csv,noheader,nounits \
-  --loop-ms=200 >"${RUN_DIR}/gpu.csv" &
-GPU_MONITOR_PID=$!
-
-CUDA_VISIBLE_DEVICES=0 \
-FLASHINFER_DISABLE_VERSION_CHECK=1 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-vllm serve "${MODEL_ROOT}/FL2VA" \
-  --omni \
-  --host 127.0.0.1 \
-  --port 8091 \
-  --trust-remote-code \
-  --task-type fl2va \
-  --num-gpus 1 \
-  --tensor-parallel-size 1 \
-  --usp 1 \
-  --ring 1 \
-  --text-encoder-tp-size 1 \
-  --vae-patch-parallel-size 1 \
-  --vae-parallel-mode tile \
-  --vae-use-tiling \
-  --quantization fp8 \
-  --enforce-eager \
-  --enable-diffusion-pipeline-profiler \
-  --diffusion-attention-backend CUDNN_ATTN \
-  >"${RUN_DIR}/server.log" 2>&1 &
-SERVER_PID=$!
-
-cleanup() {
-  kill "${SERVER_PID}" "${GPU_MONITOR_PID}" 2>/dev/null || true
-  wait "${SERVER_PID}" 2>/dev/null || true
-  wait "${GPU_MONITOR_PID}" 2>/dev/null || true
-}
-trap cleanup EXIT
-
-for _ in $(seq 1 900); do
-  if curl --fail --silent http://127.0.0.1:8091/health >/dev/null; then
-    break
-  fi
-  if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
-    tail -n 200 "${RUN_DIR}/server.log"
-    exit 1
-  fi
-  sleep 2
-done
-curl --fail --silent http://127.0.0.1:8091/health >/dev/null
-
-/usr/bin/time -f 'client_wall_time_s=%e' -o "${RUN_DIR}/client_time.txt" \
-curl --fail-with-body --silent --show-error --max-time 1800 \
-  -X POST http://127.0.0.1:8091/v1/videos/sync \
-  --form-string 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
-  -F width=1344 \
-  -F height=768 \
-  -F fps=24 \
-  -F num_inference_steps=50 \
-  -F flow_shift=12 \
-  -F seed=1101 \
-  -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
-  -o "${RUN_DIR}/t2va.mp4"
-
-ffprobe -v error \
-  -show_entries format=duration,size \
-  -show_entries stream=index,codec_type,codec_name,width,height,r_frame_rate,sample_rate,channels \
-  -of json "${RUN_DIR}/t2va.mp4" | tee "${RUN_DIR}/media.json"
-
-cleanup
-trap - EXIT
-
-awk -F, '
-  {
-    total=$4; used=$5
-    gsub(/^[[:space:]]+|[[:space:]]+$/, "", total)
-    gsub(/^[[:space:]]+|[[:space:]]+$/, "", used)
-    if (total > max_total) max_total=total
-    if (used > max_used) max_used=used
-  }
-  END {
-    printf "memory_total_mib=%.0f\\npeak_used_mib=%.0f\\nheadroom_mib=%.0f\\n", \
-      max_total, max_used, max_total-max_used
-  }
-' "${RUN_DIR}/gpu.csv" | tee "${RUN_DIR}/memory_summary.txt"
+MODEL_ROOT=/path/to/MiniMax-H3 \
+GPU_ID=0 \
+PORT=8091 \
+RUN_DIR=$PWD/h3_single_gpu_fp8_no_offload \
+bash examples/online_serving/minimax_h3/run_server_single_gpu_fp8_no_offload.sh
 ```
+
+The server script records the exact GPU capacity and current commit, starts a
+200 ms whole-device memory sampler before model initialization, and writes the
+server log into `RUN_DIR`. It intentionally passes no CPU, layerwise, or
+distributed-layerwise offload option.
+
+After the server health check succeeds, run the fixed five-second T2VA request
+from a second terminal in the same checkout:
+
+```bash
+BASE_URL=http://127.0.0.1:8091 \
+RUN_DIR=$PWD/h3_single_gpu_fp8_no_offload \
+bash examples/online_serving/minimax_h3/run_curl_t2va_5s.sh
+```
+
+The request script records client wall time and requires H.264 video plus
+32 kHz stereo AAC audio. After it succeeds, stop the server with Ctrl-C. The
+server's exit handler stops the sampler and writes `memory_summary.txt` with
+the card's reported total, whole-lifecycle peak, and remaining headroom.
 
 The run passes the capacity check when the server initializes, the request
 finishes without CUDA OOM or Xid errors, `peak_used_mib` remains below the
