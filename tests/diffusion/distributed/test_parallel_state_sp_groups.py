@@ -9,7 +9,8 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from vllm_omni.diffusion.distributed.parallel_state import RankGenerator, set_seq_parallel_pg
+import vllm_omni.diffusion.distributed.parallel_state as parallel_state
+from vllm_omni.diffusion.distributed.parallel_state import RankGenerator, init_dit_group, set_seq_parallel_pg
 
 pytestmark = [pytest.mark.diffusion, pytest.mark.parallel, pytest.mark.core_model, pytest.mark.cpu]
 
@@ -103,3 +104,39 @@ def test_set_seq_parallel_pg_validates_sp_group_ranks(monkeypatch):
             world_size=4,
             sp_group_ranks=[[0, 2]],
         )
+
+
+@pytest.mark.parametrize(
+    "rank, expected_group",
+    [
+        (0, [0, 1, 2, 3]),
+        (3, [0, 1, 2, 3]),
+        (4, [4, 5, 6, 7]),
+        (7, [4, 5, 6, 7]),
+    ],
+)
+def test_init_dit_group_is_local_to_each_dp_replica(rank, expected_group, monkeypatch):
+    created_coordinators: list[SimpleNamespace] = []
+
+    def fake_group_coordinator(group_ranks, local_rank, torch_distributed_backend):
+        local_group = next(group for group in group_ranks if rank in group)
+        coordinator = SimpleNamespace(
+            all_group_ranks=group_ranks,
+            ranks=local_group,
+            local_rank=local_rank,
+            backend=torch_distributed_backend,
+            device_group=SimpleNamespace(ranks=local_group),
+        )
+        created_coordinators.append(coordinator)
+        return coordinator
+
+    monkeypatch.setattr(parallel_state, "GroupCoordinator", fake_group_coordinator)
+    monkeypatch.setattr(parallel_state, "_DIT", None)
+
+    rank_generator = RankGenerator(1, 4, 1, 1, 2, "tp-sp-pp-cfg-dp")
+    group_ranks = rank_generator.get_ranks("tp-sp-pp-cfg")
+    init_dit_group(group_ranks, rank, "gloo")
+
+    assert created_coordinators[0].all_group_ranks == [[0, 1, 2, 3], [4, 5, 6, 7]]
+    assert parallel_state.get_dit_group_coordinator().ranks == expected_group
+    assert parallel_state.get_dit_group().ranks == expected_group

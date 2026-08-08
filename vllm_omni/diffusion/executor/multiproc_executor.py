@@ -461,24 +461,30 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
 
         has_diffusion_kv_metadata = any(new_req.diffusion_kv_metadata is not None for new_req in new_reqs)
 
-        # DP multi-concurrency: when DLO+AllGather is active and multiple
-        # requests are scheduled, send ALL requests in one broadcast RPC.
-        # Each rank picks req[rank % len(reqs)] and computes independently.
-        # All ranks reply (unique_reply_rank=None) so we collect dp_size
-        # responses and match by dp_rank.
-        if (
-            len(new_reqs) > 1
+        parallel_config = getattr(self.od_config, "parallel_config", None)
+        dp_size = getattr(parallel_config, "data_parallel_size", 1)
+        dlo_enabled = getattr(self.od_config, "enable_distributed_layerwise_offload", False)
+        dlo_use_allgather = getattr(self.od_config, "dlo_use_allgather", True)
+        use_dp_replica_dispatch = (
+            bool(new_reqs)
             and not has_diffusion_kv_metadata
-            and getattr(self.od_config, "enable_distributed_layerwise_offload", False)
-            and getattr(self.od_config, "dlo_use_allgather", True)
-        ):
+            and dp_size > 1
+            and dlo_enabled
+            and (not dlo_use_allgather or len(new_reqs) > 1)
+        )
+
+        # DLO DP dispatches one request assignment per replica. AllGather
+        # waves keep their compatibility constraints and may repeat partial
+        # waves so every rank enters the collectives. Rank-local DLO pads
+        # unused replicas with None so a partial wave never duplicates work.
+        if use_dp_replica_dispatch:
             # Reuse the request scheduler's complete compatibility key. DLO
             # AllGather requires every DP rank to execute the same collective
             # schedule, including shape, CFG, denoise steps, output count,
             # and LoRA settings. Two default (None) step counts are valid and
             # resolve identically inside the same pipeline.
             compatibility_keys = [build_request_batch_sampling_params_key(nr.req) for nr in new_reqs]
-            if any(key != compatibility_keys[0] for key in compatibility_keys[1:]):
+            if dlo_use_allgather and any(key != compatibility_keys[0] for key in compatibility_keys[1:]):
                 raise ValueError(
                     "DLO DP multi-concurrency requires compatible shape, CFG, "
                     "denoise schedule, output count, and LoRA settings for all "
@@ -488,20 +494,24 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
             for nr in new_reqs:
                 ea = getattr(nr.req.sampling_params, "extra_args", None)
                 extra_args_signatures.add(json.dumps(ea, sort_keys=True, default=repr) if ea is not None else None)
-            if len(extra_args_signatures) > 1:
+            if dlo_use_allgather and len(extra_args_signatures) > 1:
                 raise ValueError(
                     "DP multi-concurrency requires all concurrent requests to "
                     "share identical extra_args. Different extra_args can change "
                     "the forward schedule and cause AllGather deadlock."
                 )
             empty_prompt_ids = [nr.request_id for nr in new_reqs if _is_empty_dp_prompt(nr.req.prompt)]
-            if empty_prompt_ids:
+            if dlo_use_allgather and empty_prompt_ids:
                 raise ValueError(
                     "DP multi-concurrency requires a non-empty prompt for every request; "
                     f"empty prompt request IDs: {empty_prompt_ids}."
                 )
 
             reqs_list = [nr.req for nr in new_reqs]
+            if not dlo_use_allgather:
+                if len(reqs_list) > dp_size:
+                    raise RuntimeError(f"Scheduled {len(reqs_list)} requests for {dp_size} DP replicas.")
+                reqs_list.extend([None] * (dp_size - len(reqs_list)))
             try:
                 results = self.collective_rpc(
                     "execute_model",
@@ -602,11 +612,7 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
 
         parallel_config = getattr(self.od_config, "parallel_config", None)
         dp_size = getattr(parallel_config, "data_parallel_size", 1)
-        if (
-            dp_size > 1
-            and getattr(self.od_config, "enable_distributed_layerwise_offload", False)
-            and getattr(self.od_config, "dlo_use_allgather", True)
-        ):
+        if dp_size > 1 and getattr(self.od_config, "enable_distributed_layerwise_offload", False):
             # DLO DP uses one independent request per DP replica.  It is not a
             # fused pipeline request batch, so models such as MiniMax-H3 do not
             # need to advertise supports_request_batch=True.

@@ -15,6 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import vllm_omni.diffusion.distributed.parallel_state as parallel_state
 from vllm_omni.diffusion.request import DUMMY_DIFFUSION_REQUEST_ID
 from vllm_omni.distributed.omni_connectors.kv_transfer_manager import (
     OmniKVCacheConfig,
@@ -134,6 +135,20 @@ def test_world_group_is_never_used_for_the_exchange():
     assert mgr._tp_local_receive_consensus(req, True) is True
     assert tp_group.touched
     assert not world.touched
+
+
+def test_transfer_topology_uses_replica_local_dit_group(monkeypatch):
+    replica = SimpleNamespace(world_size=1, rank_in_group=0)
+    monkeypatch.setattr(parallel_state, "get_dit_group_coordinator", lambda: replica)
+    monkeypatch.setattr(
+        parallel_state,
+        "get_world_group",
+        lambda: pytest.fail("global world must not be used for request-local KV transfer"),
+    )
+
+    manager = OmniKVTransferManager(OmniKVCacheConfig())
+    assert manager.topo_config.is_local
+    assert manager.topo_config.world is replica
 
 
 # --------------------------------------------------------------------------- #

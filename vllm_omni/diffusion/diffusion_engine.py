@@ -119,11 +119,7 @@ def _max_num_seqs(od_config: OmniDiffusionConfig) -> int:
 def _uses_dlo_dp_concurrency(od_config: OmniDiffusionConfig) -> bool:
     parallel_config = getattr(od_config, "parallel_config", None)
     dp_size = getattr(parallel_config, "data_parallel_size", 1)
-    return (
-        dp_size > 1
-        and getattr(od_config, "enable_distributed_layerwise_offload", False)
-        and getattr(od_config, "dlo_use_allgather", True)
-    )
+    return dp_size > 1 and getattr(od_config, "enable_distributed_layerwise_offload", False)
 
 
 def _move_tensor_tree_to_cpu(value: object) -> object:
@@ -253,10 +249,10 @@ class DiffusionEngine:
 
     def _init_runtime_state(self) -> None:
         # DP multi-concurrency: allow batching dp_size requests so each
-        # worker processes a different request in parallel.  Only enabled
-        # for distributed layerwise offload (which shards weights and
-        # needs all ranks active simultaneously).  Ordinary DP with a
-        # non-batch pipeline should not schedule multiple requests.
+        # DP replica processes one request in parallel. AllGather-backed DLO
+        # keeps replicas in a compatible collective wave; rank-local DLO can
+        # dispatch heterogeneous requests independently. Ordinary DP with a
+        # non-batch pipeline still does not schedule multiple requests.
         dp_size = getattr(getattr(self.od_config, "parallel_config", None), "data_parallel_size", 1)
         if _uses_dlo_dp_concurrency(self.od_config):
             self.scheduler.max_num_running_reqs = dp_size

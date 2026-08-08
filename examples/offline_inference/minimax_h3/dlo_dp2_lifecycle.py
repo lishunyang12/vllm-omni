@@ -45,9 +45,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", required=True, help="Path to MiniMax-H3/FL2VA")
     parser.add_argument(
         "--mode",
-        choices=("dlo-dp2", "request"),
+        choices=("dlo-dp2", "dlo-dp2-rank-local", "request"),
         required=True,
-        help="DLO AllGather DP2 or ordinary non-DLO TP2 request mode",
+        help="DLO DP2 (AllGather or rank-local) or ordinary non-DLO TP2 request mode",
     )
     parser.add_argument("--steps", type=int, default=2)
     parser.add_argument("--duration", type=float, default=5.0)
@@ -74,14 +74,14 @@ def engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         "stage_init_timeout": args.init_timeout,
         "init_timeout": args.init_timeout,
     }
-    if args.mode == "dlo-dp2":
+    if args.mode in ("dlo-dp2", "dlo-dp2-rank-local"):
         common.update(
             tensor_parallel_size=1,
             data_parallel_size=2,
             text_encoder_tp_size=1,
             vae_patch_parallel_size=1,
             enable_distributed_layerwise_offload=True,
-            dlo_use_allgather=True,
+            dlo_use_allgather=args.mode == "dlo-dp2",
             dlo_resident_layers=0,
         )
     else:
@@ -99,13 +99,14 @@ def sampling_params(
     engine: AsyncOmni,
     args: argparse.Namespace,
     seed: int,
+    steps: int | None = None,
 ) -> list[Any]:
     params = copy.deepcopy(engine.default_sampling_params_list)
     diffusion = params[0]
     diffusion.width = args.width
     diffusion.height = args.height
     diffusion.fps = 24
-    diffusion.num_inference_steps = args.steps
+    diffusion.num_inference_steps = args.steps if steps is None else steps
     diffusion.seed = seed
     diffusion.extra_args = {
         "task": "t2va",
@@ -124,12 +125,13 @@ async def generate_one(
     request_id: str,
     prompt: str,
     seed: int,
+    steps: int | None = None,
 ) -> Any:
     final_output = None
     async for output in engine.generate(
         prompt=prompt,
         request_id=request_id,
-        sampling_params_list=sampling_params(engine, args, seed),
+        sampling_params_list=sampling_params(engine, args, seed, steps),
     ):
         if output.finished:
             final_output = output
@@ -198,22 +200,64 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             if len(summary["asymmetric_errors"]) != 2:
                 raise RuntimeError("Both requests in the asymmetric DP wave must fail before dispatch")
 
-        started = time.perf_counter()
-        request_count = 2 if args.mode == "dlo-dp2" else 1
-        outputs = await asyncio.gather(
-            *(
-                generate_one(
+        is_rank_local = args.mode == "dlo-dp2-rank-local"
+        request_count = 2 if args.mode in ("dlo-dp2", "dlo-dp2-rank-local") else 1
+        request_steps = [args.steps + index if is_rank_local else args.steps for index in range(request_count)]
+
+        if is_rank_local:
+            started = time.perf_counter()
+            partial_output = await generate_one(
+                engine,
+                args,
+                request_id="partial-wave",
+                prompt=DEFAULT_PROMPTS[0],
+                seed=1500,
+                steps=args.steps,
+            )
+            summary["partial_wave_s"] = time.perf_counter() - started
+            summary["partial_output"] = output_summary(partial_output, args)
+            del partial_output
+
+        async def run_pair(prefix: str, seed_base: int) -> list[Any]:
+            return await asyncio.gather(
+                *(
+                    generate_one(
+                        engine,
+                        args,
+                        request_id=f"{prefix}-{index}",
+                        prompt=DEFAULT_PROMPTS[index],
+                        seed=seed_base + index,
+                        steps=request_steps[index],
+                    )
+                    for index in range(request_count)
+                )
+            )
+
+        if is_rank_local:
+            warmup_outputs = await run_pair("warmup", 1800)
+            del warmup_outputs
+
+            started = time.perf_counter()
+            serial_summaries = []
+            for index in range(request_count):
+                output = await generate_one(
                     engine,
                     args,
-                    request_id=f"recovery-{index}",
+                    request_id=f"serial-{index}",
                     prompt=DEFAULT_PROMPTS[index],
-                    seed=2000 + index,
+                    seed=1900 + index,
+                    steps=request_steps[index],
                 )
-                for index in range(request_count)
-            )
-        )
+                serial_summaries.append(output_summary(output, args))
+            summary["serial_pair_s"] = time.perf_counter() - started
+            summary["serial_outputs"] = serial_summaries
+
+        started = time.perf_counter()
+        outputs = await run_pair("recovery", 2000)
         summary["valid_wave_s"] = time.perf_counter() - started
         summary["outputs"] = [output_summary(output, args) for output in outputs]
+        if is_rank_local:
+            summary["concurrent_speedup"] = summary["serial_pair_s"] / summary["valid_wave_s"]
     finally:
         started = time.perf_counter()
         engine.close()

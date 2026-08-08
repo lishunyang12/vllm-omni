@@ -26,7 +26,7 @@ from vllm_omni.diffusion.sched.interface import (
     NewRequestData,
 )
 from vllm_omni.diffusion.stage_diffusion_proc import StageDiffusionProc
-from vllm_omni.diffusion.worker.diffusion_worker import WorkerProc
+from vllm_omni.diffusion.worker.diffusion_worker import DiffusionWorker, WorkerProc
 from vllm_omni.diffusion.worker.utils import BatchRunnerOutput, RunnerOutput
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 from vllm_omni.outputs import OmniRequestOutput
@@ -265,6 +265,82 @@ class TestRequestModeDispatch:
         assert result == "dlo-dp"
         executor.execute_request.assert_called_once_with(scheduler_output)
         executor.collective_rpc.assert_not_called()
+
+    def test_rank_local_dlo_dp_routes_multiple_requests_without_pipeline_batching(self):
+        executor, _, _ = _make_executor(num_gpus=2)
+        executor.od_config = SimpleNamespace(
+            step_execution=False,
+            parallel_config=SimpleNamespace(data_parallel_size=2),
+            enable_distributed_layerwise_offload=True,
+            dlo_use_allgather=False,
+        )
+        executor.execute_request = Mock(return_value="rank-local-dlo-dp")
+        executor.collective_rpc = Mock()
+        scheduler_output = _make_sched_output("A", "B")
+
+        result = executor.execute_batch(scheduler_output)
+
+        assert result == "rank-local-dlo-dp"
+        executor.execute_request.assert_called_once_with(scheduler_output)
+        executor.collective_rpc.assert_not_called()
+
+    def test_rank_local_dlo_dp_allows_heterogeneous_requests(self):
+        executor, _, _ = _make_executor(num_gpus=2)
+        executor.od_config = SimpleNamespace(
+            step_execution=False,
+            parallel_config=SimpleNamespace(data_parallel_size=2),
+            enable_distributed_layerwise_offload=True,
+            dlo_use_allgather=False,
+        )
+        executor.collective_rpc = Mock(return_value=[_tagged_output("A"), _tagged_output("B")])
+        scheduler_output = _make_sched_output("A", "B")
+        scheduler_output.scheduled_new_reqs[1].req.sampling_params.num_inference_steps = 2
+        scheduler_output.scheduled_new_reqs[1].req.sampling_params.guidance_scale = 7.5
+        scheduler_output.scheduled_new_reqs[1].req.sampling_params.width = 1024
+        scheduler_output.scheduled_new_reqs[1].req.sampling_params.extra_args = {"task": "image-to-video"}
+
+        result = executor.execute_request(scheduler_output)
+
+        assert [output.result.error for output in result.runner_outputs] == ["A", "B"]
+        assignments = executor.collective_rpc.call_args.kwargs["args"][0]
+        assert [request.request_id for request in assignments] == ["A", "B"]
+        assert executor.collective_rpc.call_args.kwargs["unique_reply_rank"] is None
+
+    def test_rank_local_dlo_dp_partial_wave_pads_idle_replica(self):
+        executor, _, _ = _make_executor(num_gpus=2)
+        executor.od_config = SimpleNamespace(
+            step_execution=False,
+            parallel_config=SimpleNamespace(data_parallel_size=2),
+            enable_distributed_layerwise_offload=True,
+            dlo_use_allgather=False,
+        )
+        executor.collective_rpc = Mock(return_value=[_tagged_output("A"), None])
+
+        result = executor.execute_request(_make_sched_output("A"))
+
+        assert [output.result.error for output in result.runner_outputs] == ["A"]
+        assignments = executor.collective_rpc.call_args.kwargs["args"][0]
+        assert assignments[0].request_id == "A"
+        assert assignments[1] is None
+        assert executor.collective_rpc.call_args.kwargs["unique_reply_rank"] is None
+
+    def test_rank_local_dlo_worker_skips_idle_replica(self, monkeypatch):
+        worker = object.__new__(DiffusionWorker)
+        worker.model_runner = Mock()
+        worker.lora_manager = None
+        worker._get_profiler = Mock(return_value=None)
+        monkeypatch.setattr(
+            "vllm_omni.diffusion.distributed.parallel_state.get_data_parallel_rank",
+            lambda: 1,
+        )
+
+        result = worker.execute_model(
+            [_mock_request("A"), None],
+            SimpleNamespace(dlo_use_allgather=False),
+        )
+
+        assert result == {"dp_rank": 1, "output": None}
+        worker.model_runner.execute_model.assert_not_called()
 
     def test_dlo_dp_multi_rank_reply_uses_synchronous_rpc_collection(self):
         executor, req_q, res_q = _make_executor(num_gpus=2)

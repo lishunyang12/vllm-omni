@@ -576,7 +576,7 @@ class TestDistributedReceive:
 
         mgr.receive_multi_kv_cache = MagicMock(side_effect=_receive)
         with (
-            patch("vllm_omni.diffusion.distributed.parallel_state.get_world_group", return_value=world_group),
+            patch("vllm_omni.diffusion.distributed.parallel_state.get_dit_group_coordinator", return_value=world_group),
             patch(
                 "vllm_omni.diffusion.distributed.parallel_state.get_classifier_free_guidance_world_size",
                 return_value=3,
@@ -641,7 +641,7 @@ class TestDistributedReceive:
 
         mgr.receive_multi_kv_cache = MagicMock(return_value=True)
         with (
-            patch("vllm_omni.diffusion.distributed.parallel_state.get_world_group", return_value=world_group),
+            patch("vllm_omni.diffusion.distributed.parallel_state.get_dit_group_coordinator", return_value=world_group),
             patch(
                 "vllm_omni.diffusion.distributed.parallel_state.get_classifier_free_guidance_world_size",
                 return_value=2,
@@ -689,7 +689,7 @@ class TestDistributedReceive:
         mgr.receive_multi_kv_cache = MagicMock(return_value=True)
 
         with (
-            patch("vllm_omni.diffusion.distributed.parallel_state.get_world_group", return_value=world_group),
+            patch("vllm_omni.diffusion.distributed.parallel_state.get_dit_group_coordinator", return_value=world_group),
             patch(
                 "vllm_omni.diffusion.distributed.parallel_state.get_classifier_free_guidance_world_size",
                 return_value=1,
@@ -753,7 +753,7 @@ class TestDistributedReceive:
 
         mgr.receive_multi_kv_cache = MagicMock(side_effect=_receive)
         with (
-            patch("vllm_omni.diffusion.distributed.parallel_state.get_world_group", return_value=world_group),
+            patch("vllm_omni.diffusion.distributed.parallel_state.get_dit_group_coordinator", return_value=world_group),
             patch(
                 "vllm_omni.diffusion.distributed.parallel_state.get_classifier_free_guidance_world_size",
                 return_value=1,
@@ -848,7 +848,7 @@ class TestDistributedReceive:
             mgr.receive_multi_kv_cache = MagicMock(return_value=True)
 
         with (
-            patch("vllm_omni.diffusion.distributed.parallel_state.get_world_group", return_value=world_group),
+            patch("vllm_omni.diffusion.distributed.parallel_state.get_dit_group_coordinator", return_value=world_group),
             patch(
                 "vllm_omni.diffusion.distributed.parallel_state.get_classifier_free_guidance_world_size",
                 return_value=2,
@@ -913,7 +913,7 @@ class TestDistributedReceive:
 
         mgr.receive_multi_kv_cache = MagicMock(return_value=False)
         with (
-            patch("vllm_omni.diffusion.distributed.parallel_state.get_world_group", return_value=world_group),
+            patch("vllm_omni.diffusion.distributed.parallel_state.get_dit_group_coordinator", return_value=world_group),
             patch(
                 "vllm_omni.diffusion.distributed.parallel_state.get_classifier_free_guidance_world_size",
                 return_value=cfg_size,

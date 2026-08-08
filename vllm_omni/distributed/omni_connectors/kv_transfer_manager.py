@@ -68,11 +68,13 @@ class _TransferTopoConfig:
     sp_size: int
     sp_rank: int
     sp_group: Any
+    # Model-parallel ranks within one DP replica. Request-local KV payloads
+    # must never be broadcast across replicas that may execute other requests.
     world: Any
     # The stage's tensor-model-parallel group (vLLM parallel state). Only the
-    # ranks in this group execute the same request in lockstep — DP replicas
-    # and PP stages in ``world`` do not — so per-request consensus exchanges
-    # must use this group, never ``world``.
+    # ranks in this group execute the same TP kernel sequence in lockstep, so
+    # per-request receive consensus must use this narrower group rather than
+    # all model-parallel ranks in ``world``.
     tp_group: Any = None
     tp_size: int = 1
 
@@ -584,18 +586,18 @@ class OmniKVTransferManager:
             get_cfg_group,
             get_classifier_free_guidance_rank,
             get_classifier_free_guidance_world_size,
+            get_dit_group_coordinator,
             get_sequence_parallel_rank,
             get_sequence_parallel_world_size,
             get_sp_group,
-            get_world_group,
         )
 
         try:
-            world = get_world_group()
+            world = get_dit_group_coordinator()
             world_size = world.world_size
             world_rank = world.rank_in_group
         except Exception:
-            logger.exception("World group unavailable; defaulting to LOCAL")
+            logger.exception("DiT replica group unavailable; defaulting to LOCAL")
             return _TransferTopoConfig(
                 role=ReceiveRole.LOCAL,
                 tp_active=False,

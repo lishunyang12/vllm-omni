@@ -547,14 +547,24 @@ def init_vllm_model_parallel_group(
 
 
 def init_dit_group(
-    dit_parallel_size: int,
+    group_ranks: list[list[int]],
+    local_rank: int,
     backend: str,
 ):
     global _DIT
-    _DIT = torch.distributed.new_group(ranks=list(range(dit_parallel_size)), backend=backend)
+    assert _DIT is None, "DIT group is already initialized"
+    _DIT = GroupCoordinator(
+        group_ranks=group_ranks,
+        local_rank=local_rank,
+        torch_distributed_backend=backend,
+    )
 
 
 def get_dit_group():
+    return get_dit_group_coordinator().device_group
+
+
+def get_dit_group_coordinator() -> GroupCoordinator:
     assert _DIT is not None, "DIT group is not initialized"
     return _DIT
 
@@ -969,12 +979,20 @@ def initialize_model_parallel(
             use_all2all=True,
         )
 
-    init_dit_group(dit_parallel_size, backend)
+    # A DiT group contains the model-parallel ranks for one DP replica. DP
+    # replicas must not share request-local collectives (for example condition
+    # broadcasts or VAE patch parallelism), because they may execute different
+    # requests. DLO weight sharing uses the orthogonal DP groups above.
+    init_dit_group(
+        rank_generator.get_ranks("tp-sp-pp-cfg"),
+        get_world_group().local_rank,
+        backend,
+    )
 
 
 def destroy_model_parallel():
     """Set the groups to none and destroy them."""
-    global _DP, _CFG, _SP, _PP, _FS, _EXPERT_PARALLEL_GROUP_RANKS
+    global _DP, _CFG, _SP, _PP, _FS, _DIT, _EXPERT_PARALLEL_GROUP_RANKS
 
     if vllm_parallel_state._DP and vllm_parallel_state._DP is not _DP:
         vllm_parallel_state._DP.destroy()
@@ -1012,6 +1030,10 @@ def destroy_model_parallel():
     if _FS:
         _FS.destroy()
     _FS = None
+
+    if _DIT:
+        _DIT.destroy()
+    _DIT = None
 
 
 def destroy_distributed_environment():

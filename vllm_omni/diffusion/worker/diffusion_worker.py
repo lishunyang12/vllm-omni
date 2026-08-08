@@ -437,18 +437,18 @@ class DiffusionWorker:
 
     def execute_model(
         self,
-        req: OmniDiffusionRequest | list[OmniDiffusionRequest],
+        req: OmniDiffusionRequest | list[OmniDiffusionRequest | None],
         od_config: OmniDiffusionConfig,
         kv_prefetch_job: KVPrefetchJob | None = None,
         diffusion_kv_metadata: DiffusionKVMetadata | None = None,
-    ) -> DiffusionOutput:
+    ) -> DiffusionOutput | dict[str, object]:
         """Execute a forward pass by delegating to the model runner.
 
-        If *req* is a list (DP multi-concurrency), each rank picks one
-        request based on its distributed rank.  AllGather in the layerwise
-        offload only gathers weight shards (request-independent), so all
-        ranks stay synchronised at each AllGather call while computing
-        different activations.
+        If *req* is a list (DP multi-concurrency), each replica picks the
+        assignment at its DP rank. AllGather waves repeat partial assignments
+        to keep every replica in the collective schedule. Rank-local DLO uses
+        explicit None entries so idle replicas do not duplicate another
+        request.
 
         Each rank returns its OWN DiffusionOutput (no gather). The executor
         collects N responses via the per-worker result queues.
@@ -463,8 +463,17 @@ class DiffusionWorker:
             from vllm_omni.diffusion.distributed.parallel_state import get_data_parallel_rank
 
             dp_rank = get_data_parallel_rank()
-            idx = dp_rank % len(req)
+            if not req:
+                raise ValueError("DP request assignments must not be empty.")
+            if getattr(od_config, "dlo_use_allgather", True):
+                idx = dp_rank % len(req)
+            else:
+                if dp_rank >= len(req):
+                    raise RuntimeError(f"Missing request assignment for DP rank {dp_rank}; got {len(req)} assignments.")
+                idx = dp_rank
             req = req[idx]
+            if req is None:
+                return {"dp_rank": dp_rank, "output": None}
 
         if self.lora_manager is not None:
             try:

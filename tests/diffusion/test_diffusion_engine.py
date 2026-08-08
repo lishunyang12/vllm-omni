@@ -371,8 +371,10 @@ class TestRequestBatchCapability:
             DiffusionEngine(od_config)
         fake_executor_cls.assert_not_called()
 
+    @pytest.mark.parametrize("dlo_use_allgather", [True, False])
     def test_engine_allows_independent_dlo_dp_requests_for_single_request_pipeline(
         self,
+        dlo_use_allgather: bool,
         monkeypatch: pytest.MonkeyPatch,
         mocker: MockerFixture,
     ) -> None:
@@ -384,7 +386,7 @@ class TestRequestBatchCapability:
             request_batch_max_wait_ms=0,
             parallel_config=SimpleNamespace(data_parallel_size=2),
             enable_distributed_layerwise_offload=True,
-            dlo_use_allgather=True,
+            dlo_use_allgather=dlo_use_allgather,
         )
         fake_executor = SimpleNamespace(
             execute_request=mocker.Mock(return_value="per-request"),
