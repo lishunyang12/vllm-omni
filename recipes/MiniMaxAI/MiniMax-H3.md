@@ -806,6 +806,11 @@ audio spectral cosine 0.9589 (minimum 0.80), and audio RMS ratio 0.9342. The
 resident per-GPU peak was 68.52 GiB for BF16 and 53.51 GiB for FP8, a 22%
 reduction.
 
+For direct human inspection, see the matched five-second BF16 and default
+global-FP8 [T2VA, I2VA, and Ref2VA video
+pairs](../../examples/online_serving/minimax_h3/precision_results/README.md).
+The comparison index also records per-task fidelity metrics and SHA256 values.
+
 ## TeaCache acceleration
 
 TeaCache reuses DiT block residuals across denoising steps when consecutive
