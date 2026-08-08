@@ -476,9 +476,11 @@ direct H2D is an optional transport layer over that merged lease contract.
 
 Current source-level validation includes:
 
-- component-list parsing and invalid DLO-without-`dit` rejection;
-- default/all and DiT-only encoder/VAE placement;
-- rank-local encoder block hook setup and cleanup for ordinary layerwise and DLO;
+- all legal component lists plus invalid DLO-without-`dit` rejection;
+- actual encoder/VAE placement for every ordinary and distributed combination;
+- rank-local encoder hook setup, execution, exception cleanup, and idempotent
+  teardown;
+- packed non-row-major weight stride preservation for online-quantized kernels;
 - HSDP + DLO + AllGather rejection;
 - HSDP + DLO without AllGather acceptance at configuration level;
 - loader preflight fallback for TP, HSDP, online quantization, unknown custom
@@ -493,19 +495,26 @@ Current source-level validation includes:
 - read-only registration preflight, direct source-to-device copies, safe
   fallback, partial rollback, retryable unregistration, and lease ordering;
 - resident-layer requests requiring no-AllGather;
-- DP request-wave validation for denoising-step compatibility;
+- DP request-wave validation, failure propagation, and recovery;
 - bounded component allocator-cache retention, conservative/forced release,
   OOM retry, and immutable encoder non-block staging;
 - sharding, double-buffer, AllGather-size, and heterogeneous-block regression
   tests.
 
-### B300 parallel-topology smoke matrix
+### B300 hardware validation
 
-A four-GPU B300 smoke test covered MiniMax-H3 FL2VA with the same prompt, seed,
-CUDNN attention backend, 256x256 output, two denoising steps, and
-`dlo_resident_layers=0`. The TP2 rows used DiT DP2xTP2 with the text encoder and
-VAEs at TP1. They validate the ordinary-loader fallback only, not direct mmap
-or shared-mmap host-memory savings.
+MiniMax-H3 validation on NVIDIA B300 covers one-GPU encoder-only layerwise
+offload, TP2 rank-local DLO in BF16 and online FP8, and DP2 DLO+AllGather. The
+5-second, 1344x768 cases produced 124-frame video and 32-kHz stereo audio,
+repeated requests, and exited without live worker children. These two-step
+cases validate placement and lifecycle, not 50-step quality or production
+latency.
+
+A separate four-GPU B300 smoke test covered MiniMax-H3 FL2VA with the same
+prompt, seed, CUDNN attention backend, 256x256 output, two denoising steps, and
+`dlo_resident_layers=0`. The TP2 rows used DiT DP2xTP2 with the text encoder
+and VAEs at TP1. They validate the ordinary-loader fallback only, not direct
+mmap or shared-mmap host-memory savings.
 
 | Configuration | Result | Warm E2E | Peak device memory | Host PSS |
 | --- | ---: | ---: | ---: | ---: |
@@ -556,8 +565,9 @@ PSS is the appropriate node-memory comparison.
 The highest-value missing coverage is broader end-to-end numerical and
 lifecycle comparison against ordinary layerwise offload for DP+SP,
 HSDP+SP+no-AllGather, and TP greater than one across additional models and
-target CUDA/NCCL or CANN/HCCL hardware. That broader TP coverage does not
-change the Phase A direct-mmap TP1 support boundary.
+target CUDA/NCCL or CANN/HCCL hardware, plus production-step quality sweeps.
+That broader TP coverage does not change the Phase A direct-mmap TP1 support
+boundary.
 
 ## Recommendations
 
