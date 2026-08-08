@@ -158,7 +158,7 @@ vllm serve /path/to/MiniMax-H3/FL2VA --omni --quantization fp8 \
 The sharded DLO AllGather path is not supported for runtime-created FP8 weights.
 For an exact five-second, single-96-GB-GPU capacity test with every offload
 mode disabled, see the
-[MiniMax H3 no-offload validation recipe](../../../recipes/MiniMaxAI/MiniMax-H3.md#single-96-gb-gpu-no-offload-validation).
+[MiniMax H3 no-offload validation recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#single-96-gb-gpu-no-offload-validation).
 
 CLI:
 
