@@ -104,8 +104,8 @@ SCREEN_GPU_COUNT=4 \
 
 | GPU count | Screened cases | Decision from the screen |
 | ---: | --- | --- |
-| 1 | TP1 x Ulysses1, DLO resident layers 20 vs 35 | Lowest steady-state T2VA/I2VA latency that fits |
-| 2 | TP2 x Ulysses1, DLO resident layers 35 vs 20 | Lowest steady-state latency that fits; fully resident OOMs during VAE decode |
+| 1 | TP1 x Ulysses1, DLO resident layers 20, 35, and 50 | Lowest steady-state T2VA/I2VA latency that fits |
+| 2 | TP1 x Ulysses2 vs TP2 x Ulysses1, each at DLO resident layers 20, 35, and 50 | Lowest maximum T2VA/I2VA latency that fits; fully resident OOMs during VAE decode |
 | 4 | TP2 x Ulysses2 vs TP4 x Ulysses1 | Lowest maximum T2VA/I2VA latency that passes memory |
 | 8 | TP2 x Ulysses4 vs TP4 x Ulysses2 vs TP8 x Ulysses1 | Lowest maximum T2VA/I2VA latency that passes memory |
 
@@ -129,6 +129,11 @@ SCREEN_ROOT="$TEST_ROOT/results/sm120-8gpu-matrix" bash examples/offline_inferen
 Run these one at a time on idle GPUs. Select the candidate with the lowest
 maximum steady-state T2VA/I2VA latency that also passes the external peak
 memory gate; only then run that winner with `RUN_REF2VA=1`.
+
+The one- and two-GPU DLO wrappers default to eager execution because regional
+compilation is unstable with this offload path. Keep the execution mode fixed
+across candidates in the same matrix. The four- and eight-GPU fully resident
+wrappers retain regional compilation.
 
 ### Record and accept a run
 
@@ -305,10 +310,10 @@ TP_SIZE=2 ULYSSES_DEGREE=2 \
 bash examples/offline_inference/minimax_h3/run_all_tasks.sh
 ```
 
-Useful controls include `PYTHON`, `INSTALL_EDITABLE=0`, `ENFORCE_EAGER=1`,
+Useful controls include `PYTHON`, `INSTALL_EDITABLE=0`, `ENFORCE_EAGER`,
 `NUM_INFERENCE_STEPS`, `WARMUP_STEPS`, `DURATION_SECONDS`, and the preflight
-memory/utilization thresholds. Do not use eager mode for the final throughput
-number.
+memory/utilization thresholds. Keep the selected execution mode fixed for all
+rows being compared.
 
 ## SM120 FlashInfer FP8 attention experiment
 

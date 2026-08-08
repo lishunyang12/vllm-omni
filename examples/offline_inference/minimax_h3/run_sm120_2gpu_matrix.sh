@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# Full 50-step validation: smallest resident SM120 deployment.
+# Full 50-step comparison: two-GPU topology and DLO resident-layer candidates.
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export SCREEN_GPU_COUNT=2

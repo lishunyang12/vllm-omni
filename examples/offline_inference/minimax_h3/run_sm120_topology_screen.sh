@@ -37,10 +37,15 @@ case "${SCREEN_GPU_COUNT}" in
   1)
     run_case "tp1-u1-dlo-r20" "${CUDA_VISIBLE_DEVICES:-0}" "numactl --cpunodebind=${NUMA_NODE:-0} --membind=${NUMA_NODE:-0}" 1 1 1 20
     run_case "tp1-u1-dlo-r35" "${CUDA_VISIBLE_DEVICES:-0}" "numactl --cpunodebind=${NUMA_NODE:-0} --membind=${NUMA_NODE:-0}" 1 1 1 35
+    run_case "tp1-u1-dlo-r50" "${CUDA_VISIBLE_DEVICES:-0}" "numactl --cpunodebind=${NUMA_NODE:-0} --membind=${NUMA_NODE:-0}" 1 1 1 50
     ;;
   2)
-    run_case "tp2-u1-dlo-r50" "${CUDA_VISIBLE_DEVICES:-0,1}" "numactl --cpunodebind=${NUMA_NODE:-0} --membind=${NUMA_NODE:-0}" 2 1 1 50
+    run_case "tp1-u2-dlo-r20" "${CUDA_VISIBLE_DEVICES:-0,1}" "numactl --cpunodebind=${NUMA_NODE:-0} --membind=${NUMA_NODE:-0}" 1 2 1 20
+    run_case "tp1-u2-dlo-r35" "${CUDA_VISIBLE_DEVICES:-0,1}" "numactl --cpunodebind=${NUMA_NODE:-0} --membind=${NUMA_NODE:-0}" 1 2 1 35
+    run_case "tp1-u2-dlo-r50" "${CUDA_VISIBLE_DEVICES:-0,1}" "numactl --cpunodebind=${NUMA_NODE:-0} --membind=${NUMA_NODE:-0}" 1 2 1 50
     run_case "tp2-u1-dlo-r20" "${CUDA_VISIBLE_DEVICES:-0,1}" "numactl --cpunodebind=${NUMA_NODE:-0} --membind=${NUMA_NODE:-0}" 2 1 1 20
+    run_case "tp2-u1-dlo-r35" "${CUDA_VISIBLE_DEVICES:-0,1}" "numactl --cpunodebind=${NUMA_NODE:-0} --membind=${NUMA_NODE:-0}" 2 1 1 35
+    run_case "tp2-u1-dlo-r50" "${CUDA_VISIBLE_DEVICES:-0,1}" "numactl --cpunodebind=${NUMA_NODE:-0} --membind=${NUMA_NODE:-0}" 2 1 1 50
     ;;
   4)
     run_case "tp2-u2-resident" "${CUDA_VISIBLE_DEVICES:-0,2,1,3}" "numactl --cpunodebind=${NUMA_NODE:-0} --membind=${NUMA_NODE:-0}" 2 2 0 0
