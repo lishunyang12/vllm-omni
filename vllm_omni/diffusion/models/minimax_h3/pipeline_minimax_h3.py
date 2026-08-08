@@ -693,10 +693,13 @@ class MiniMaxH3Pipeline(
             device=self.device,
             load_model=rank < text_encoder_tp_size,
             encoder_group=self.text_encoder_group,
+            quant_config=od_config.quantization_config,
         )
         stage_components = bool(
             od_config.enable_layerwise_offload or getattr(od_config, "enable_distributed_layerwise_offload", False)
         )
+        if stage_components:
+            self.text_encoder._process_online_fp8_weights(keep_on_device=False)
         component_load_device = torch.device("cpu") if stage_components else self.device
         self.video_vae = MiniMaxH3VideoVAE(
             os.path.join(model_path, "video_vae"),

@@ -935,6 +935,75 @@ def test_text_encoder_stub_constructs_without_group_or_weights():
     assert list(encoder.named_parameters()) == []
 
 
+def test_text_encoder_online_fp8_uses_global_config():
+    from vllm_omni.diffusion.models.minimax_h3.encoder import (
+        _online_fp8_enabled,
+    )
+    from vllm_omni.quantization import build_quant_config
+
+    assert _online_fp8_enabled(build_quant_config("fp8"))
+
+
+def test_text_encoder_rejects_serialized_fp8():
+    from vllm_omni.diffusion.models.minimax_h3.encoder import (
+        _online_fp8_enabled,
+    )
+
+    config = SimpleNamespace(
+        get_name=lambda: "fp8",
+        is_checkpoint_fp8_serialized=True,
+    )
+    with pytest.raises(ValueError, match="online FP8 only"):
+        _online_fp8_enabled(config)
+
+
+def test_text_encoder_quantizes_selected_linears_before_bulk_device_transfer(monkeypatch):
+    import vllm_omni.diffusion.models.minimax_h3.encoder as encoder_module
+
+    group = SimpleNamespace(rank_in_group=0, world_size=1)
+    linear = encoder_module.MiniMaxH3Qwen3VLMergedColumnParallelLinear(
+        group,
+        input_size=4,
+        intermediate_size=8,
+        dtype=torch.bfloat16,
+    )
+    text_model = torch.nn.Module()
+    text_model.add_module("linear", linear)
+    events = []
+    linear.to = Mock(side_effect=lambda device, *_args, **_kwargs: events.append(f"linear_to:{device}"))
+    text_model.to = Mock(side_effect=lambda *_args, **_kwargs: events.append("model_to"))
+
+    encoder = object.__new__(encoder_module.MiniMaxH3Qwen3VLEncoder)
+    torch.nn.Module.__init__(encoder)
+    encoder.device_target = torch.device("cuda")
+    encoder.vision = SimpleNamespace(to=Mock(side_effect=lambda *_args, **_kwargs: events.append("vision_to")))
+    encoder.text_model = text_model
+    encoder.quant_config = object()
+    encoder._online_fp8_processed = False
+
+    monkeypatch.setattr(encoder_module, "_online_fp8_enabled", lambda *_args: True)
+    monkeypatch.setattr(
+        encoder_module,
+        "_enable_online_fp8",
+        lambda *_args, **_kwargs: events.append("quantize"),
+    )
+    monkeypatch.setattr(
+        torch.accelerator,
+        "empty_cache",
+        lambda: events.append("empty_cache"),
+    )
+
+    encoder.load_to_device()
+
+    assert events == ["linear_to:cuda", "quantize", "empty_cache", "vision_to", "model_to"]
+
+    encoder._online_fp8_processed = False
+    events.clear()
+    encoder._process_online_fp8_weights(keep_on_device=False)
+
+    assert events == ["linear_to:cuda", "quantize", "linear_to:cpu", "empty_cache"]
+
+
 def test_no_offload_keeps_text_encoder_resident():
     from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
 
@@ -977,15 +1046,21 @@ def test_model_offload_uses_hooked_text_encoder_call():
     pipeline.text_encoder.load_to_device.assert_not_called()
 
 
-def test_layerwise_offload_releases_text_encoder():
+@pytest.mark.parametrize(
+    "offload_flag",
+    ["enable_layerwise_offload", "enable_distributed_layerwise_offload"],
+)
+def test_layerwise_offload_releases_text_encoder(offload_flag):
     from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
 
     pipeline = object.__new__(MiniMaxH3Pipeline)
     torch.nn.Module.__init__(pipeline)
     pipeline.od_config = SimpleNamespace(
         enable_cpu_offload=False,
-        enable_layerwise_offload=True,
+        enable_layerwise_offload=False,
+        enable_distributed_layerwise_offload=False,
     )
+    setattr(pipeline.od_config, offload_flag, True)
     pipeline.text_encoder = Mock()
     expected = torch.ones(2, 3)
     pipeline.text_encoder.encode_ids.return_value = expected

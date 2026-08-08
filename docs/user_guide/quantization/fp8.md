@@ -93,7 +93,7 @@ warmup_quack_fp8([(14040, 2048, 6144), (14040, 2048, 2048)])
 | HunyuanImage-3.0 | `tencent/HunyuanImage-3.0`, `tencent/HunyuanImage-3.0-Instruct` | Yes | Yes | All layers; use the Hunyuan stage config for multi-stage runs | None | |
 | HunyuanVideo-1.5 | `hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v`, `720p_t2v`, `480p_i2v` | Yes | Yes | All layers | None | |
 | Cosmos3 | `nvidia/Cosmos3-Nano`, `nvidia/Cosmos3-Super` | Yes | Not validated | All layers | None | |
-| MiniMax H3 | `MiniMaxAI/MiniMax-H3` | Yes | Not validated | DiT linears except patch, timestep, and final projections; not compatible with layerwise offload | None | |
+| MiniMax-H3 | `MiniMaxAI/MiniMax-H3` (`FL2VA` / `Ref2VA`) | Yes | Not validated | `quantization="fp8"` quantizes eligible DiT and text-encoder linears; mixed-precision input/output heads stay FP32 | None | ✅︎ |
 
 ### Multi-Stage Omni/TTS Model (Qwen3-Omni, Qwen3-TTS)
 
@@ -135,6 +135,27 @@ outputs = omni.generate(
     OmniDiffusionSamplingParams(num_inference_steps=50),
 )
 ```
+
+For MiniMax-H3, the default FP8 mode covers both the DiT and the Qwen3-VL
+text decoder. The vision tower, embeddings, norms, RoPE, both VAEs, and the
+model's FP32 patch, timestep, and output projections keep checkpoint precision:
+
+```python
+omni = Omni(
+    model="/path/to/MiniMax-H3/FL2VA",
+    quantization="fp8",
+)
+```
+
+MiniMax-H3 online FP8 also supports distributed layerwise offload through the
+full-weight per-rank path:
+
+```bash
+vllm serve /path/to/MiniMax-H3/FL2VA --omni --quantization fp8 \
+  --enable-distributed-layerwise-offload --dlo-no-use-allgather
+```
+
+The sharded DLO AllGather path is not supported for runtime-created FP8 weights.
 
 CLI:
 

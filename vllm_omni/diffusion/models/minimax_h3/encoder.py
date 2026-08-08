@@ -47,6 +47,47 @@ MINIMAX_H3_QWEN3VL_HIDDEN_DIM = 5120
 logger = init_logger(__name__)
 
 
+def _linear_forward(module: nn.Module, input_: torch.Tensor) -> torch.Tensor:
+    quant_method = getattr(module, "quant_method", None)
+    if quant_method is not None:
+        return quant_method.apply(module, input_)
+    return F.linear(input_, module.weight)
+
+
+def _online_fp8_enabled(quant_config: Any | None) -> bool:
+    if quant_config is None or quant_config.get_name() != "fp8":
+        return False
+    if bool(getattr(quant_config, "is_checkpoint_fp8_serialized", False)):
+        raise ValueError("MiniMax-H3 text encoder supports online FP8 only, not serialized FP8 checkpoints")
+    return True
+
+
+def _enable_online_fp8(module: nn.Module, *, output_dtype: torch.dtype) -> None:
+    from vllm.model_executor.kernels.linear import init_fp8_linear_kernel
+    from vllm.model_executor.kernels.linear.scaled_mm import (
+        MarlinFP8ScaledMMLinearKernel,
+    )
+    from vllm.model_executor.layers.quantization.online.fp8 import (
+        Fp8PerTensorOnlineLinearMethod,
+    )
+
+    method = Fp8PerTensorOnlineLinearMethod()
+    method.input_dtype = output_dtype
+    method.out_dtype = output_dtype
+    method.fp8_linear = init_fp8_linear_kernel(
+        activation_quant_key=method.activation_quant_key,
+        weight_quant_key=method.weight_quant_key,
+        input_dtype=method.input_dtype,
+        out_dtype=method.out_dtype,
+        weight_shape=tuple(module.weight.shape),
+        module_name="MiniMaxH3Qwen3VLEncoder",
+    )
+    method.use_marlin = isinstance(method.fp8_linear, MarlinFP8ScaledMMLinearKernel)
+    module.input_scale = None
+    method.process_weights_after_loading(module)
+    module.quant_method = method
+
+
 def _default_weight_loader(
     param: nn.Parameter,
     loaded_weight: torch.Tensor,
@@ -133,13 +174,14 @@ class MiniMaxH3Qwen3VLMergedColumnParallelLinear(nn.Module):
             f"intermediate_size {intermediate_size} must be divisible by text_encoder_tp_size {tp_size}"
         )
         self.intermediate_size_per_partition = intermediate_size // tp_size
+        self.output_dtype = dtype
         self.weight = nn.Parameter(torch.empty(2 * self.intermediate_size_per_partition, input_size, dtype=dtype))
         self.weight.weight_loader = self.weight_loader  # type: ignore[attr-defined]
         self._tp_rank = tp_rank
         self._tp_size = tp_size
 
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
-        return F.linear(input_, self.weight)
+        return _linear_forward(self, input_)
 
     def weight_loader(
         self, param: nn.Parameter, loaded_weight: torch.Tensor, loaded_shard_id: str | None = None
@@ -179,6 +221,7 @@ class MiniMaxH3Qwen3VLQKVParallelLinear(nn.Module):
         )
         self.local_num_heads = num_heads // tp_size
         self.local_num_kv_heads = num_kv_heads // tp_size
+        self.output_dtype = dtype
         q_local = self.local_num_heads * head_dim
         kv_local = self.local_num_kv_heads * head_dim
         self.weight = nn.Parameter(torch.empty(q_local + 2 * kv_local, hidden_size, dtype=dtype))
@@ -187,7 +230,7 @@ class MiniMaxH3Qwen3VLQKVParallelLinear(nn.Module):
         self._tp_size = tp_size
 
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
-        return F.linear(input_, self.weight)
+        return _linear_forward(self, input_)
 
     def weight_loader(
         self, param: nn.Parameter, loaded_weight: torch.Tensor, loaded_shard_id: str | None = None
@@ -254,6 +297,7 @@ class MiniMaxH3Qwen3VLRowParallelLinear(nn.Module):
         self.input_size = input_size
         self.output_size = output_size
         self.input_is_parallel = input_is_parallel
+        self.output_dtype = dtype
         tp_rank, tp_size = _tp_range(group)
         assert input_size % tp_size == 0, f"input_size {input_size} must be divisible by text_encoder_tp_size {tp_size}"
         self.input_size_per_partition = input_size // tp_size
@@ -268,7 +312,7 @@ class MiniMaxH3Qwen3VLRowParallelLinear(nn.Module):
         else:
             split_input = input_.split(self.input_size_per_partition, dim=-1)
             input_parallel = split_input[self._tp_rank].contiguous()
-        output_parallel = F.linear(input_parallel, self.weight)
+        output_parallel = _linear_forward(self, input_parallel)
         if self._tp_size > 1:
             # Reduce in fp32: the reference path accumulates the full (K=8192)
             # dot product inside a single cuBLAS GEMM before rounding to bf16.
@@ -276,7 +320,7 @@ class MiniMaxH3Qwen3VLRowParallelLinear(nn.Module):
             # and amplify error on this model's large-magnitude activations.
             output_parallel = output_parallel.float()
             self.group.all_reduce(output_parallel)
-            output_parallel = output_parallel.to(self.weight.dtype)
+            output_parallel = output_parallel.to(self.output_dtype)
         return output_parallel
 
     def weight_loader(
@@ -703,14 +747,23 @@ class MiniMaxH3Qwen3VLTextAttention(nn.Module):
         hidden_shape = (*input_shape, -1, self.head_dim)
         q_local = self.qkv_proj.local_num_heads * self.head_dim
         kv_local = self.qkv_proj.local_num_kv_heads * self.head_dim
-        q_weight = self.qkv_proj.weight[0:q_local]
-        k_weight = self.qkv_proj.weight[q_local : q_local + kv_local]
-        v_weight = self.qkv_proj.weight[q_local + kv_local : q_local + 2 * kv_local]
-        # Three separate GEMMs keep the numerics identical to the reference
-        # path (packed QKV changes cuBLAS tiling and shifts bf16 rounding).
-        query_states = self.q_norm(F.linear(hidden_states, q_weight).view(hidden_shape)).transpose(1, 2)
-        key_states = self.k_norm(F.linear(hidden_states, k_weight).view(hidden_shape)).transpose(1, 2)
-        value_states = F.linear(hidden_states, v_weight).view(hidden_shape).transpose(1, 2)
+        if getattr(self.qkv_proj, "quant_method", None) is not None:
+            query, key, value = self.qkv_proj(hidden_states).split(
+                (q_local, kv_local, kv_local),
+                dim=-1,
+            )
+        else:
+            q_weight = self.qkv_proj.weight[0:q_local]
+            k_weight = self.qkv_proj.weight[q_local : q_local + kv_local]
+            v_weight = self.qkv_proj.weight[q_local + kv_local : q_local + 2 * kv_local]
+            # Three separate GEMMs keep the numerics identical to the reference
+            # path (packed QKV changes cuBLAS tiling and shifts bf16 rounding).
+            query = F.linear(hidden_states, q_weight)
+            key = F.linear(hidden_states, k_weight)
+            value = F.linear(hidden_states, v_weight)
+        query_states = self.q_norm(query.view(hidden_shape)).transpose(1, 2)
+        key_states = self.k_norm(key.view(hidden_shape)).transpose(1, 2)
+        value_states = value.view(hidden_shape).transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = _apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -754,8 +807,11 @@ class MiniMaxH3Qwen3VLTextMLP(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         ip_local = self.gate_up_proj.intermediate_size_per_partition
-        gate = F.linear(x, self.gate_up_proj.weight[0:ip_local])
-        up = F.linear(x, self.gate_up_proj.weight[ip_local : 2 * ip_local])
+        if getattr(self.gate_up_proj, "quant_method", None) is not None:
+            gate, up = self.gate_up_proj(x).split(ip_local, dim=-1)
+        else:
+            gate = F.linear(x, self.gate_up_proj.weight[0:ip_local])
+            up = F.linear(x, self.gate_up_proj.weight[ip_local : 2 * ip_local])
         x = F.silu(gate) * up
         return self.down_proj(x)
 
@@ -951,10 +1007,13 @@ class MiniMaxH3Qwen3VLEncoder(nn.Module):
         device: torch.device,
         load_model: bool,
         encoder_group: Any | None = None,
+        quant_config: Any | None = None,
     ) -> None:
         super().__init__()
         self.device_target = device
         self.encoder_group = encoder_group
+        self.quant_config = quant_config
+        self._online_fp8_processed = False
         self.image_token_id = 151655
         self.video_token_id = 151656
         self._tp_size = 1
@@ -1075,6 +1134,40 @@ class MiniMaxH3Qwen3VLEncoder(nn.Module):
             # Listed in full: this aborts startup, so the message is the only diagnostic.
             raise RuntimeError(f"MiniMax H3 text encoder weights not loaded: {len(missing)} params: {missing}")
 
+    def _process_online_fp8_weights(self, *, keep_on_device: bool) -> None:
+        if not self.is_loaded:
+            return
+        if not self._online_fp8_processed:
+            quantized = []
+            linear_types = (
+                MiniMaxH3Qwen3VLMergedColumnParallelLinear,
+                MiniMaxH3Qwen3VLQKVParallelLinear,
+                MiniMaxH3Qwen3VLRowParallelLinear,
+            )
+            for name, module in self.named_modules():
+                prefix = f"text_encoder.{name}"
+                if isinstance(module, linear_types) and _online_fp8_enabled(self.quant_config):
+                    # Quantize each TP shard as it reaches the accelerator.
+                    # Moving the full BF16 encoder first makes BF16 and FP8
+                    # weights overlap and hides the persistent FP8 saving in
+                    # the first-request peak.
+                    module.to(self.device_target)
+                    _enable_online_fp8(module, output_dtype=module.output_dtype)
+                    if not keep_on_device:
+                        module.to("cpu")
+                    quantized.append(prefix)
+            self._online_fp8_processed = True
+            if quantized:
+                torch.accelerator.empty_cache()
+                logger.info(
+                    "MiniMax H3 Qwen3-VL encoder online FP8: quantized-on-transfer %d linear modules; first=%s",
+                    len(quantized),
+                    quantized[:4],
+                )
+        if keep_on_device:
+            self.vision.to(self.device_target)
+            self.text_model.to(self.device_target)
+
     def load_to_device(self) -> None:
         if not self.is_loaded:
             return
@@ -1086,8 +1179,7 @@ class MiniMaxH3Qwen3VLEncoder(nn.Module):
                 if name != "layers":
                     child.to(self.device_target)
             return
-        self.vision.to(self.device_target)
-        self.text_model.to(self.device_target)
+        self._process_online_fp8_weights(keep_on_device=True)
 
     def offload_to_cpu(self) -> None:
         if not self.is_loaded:
