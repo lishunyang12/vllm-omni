@@ -403,6 +403,21 @@ failure.
   output parity, startup latency, aggregate PSS, page-cache state, HBM, and H2D
   payload.
 
+## Component placement
+
+`--layerwise-offload-components` accepts `dit`, `text_encoder`, and `vae`.
+Omitting it selects all supported components. DLO requires `dit`, because its
+request synchronization, double buffers, and optional AllGather schedule are
+owned by the DiT block sequence. Encoder-only or VAE-only placement uses the
+ordinary layerwise backend instead.
+
+DiT blocks use `DistributedLayerwiseOffloadHook`. Encoders declared through
+`OffloadPlan.encoder_block_attrs` deliberately use the ordinary rank-local
+`LayerwiseOffloadHook`; this preserves an encoder's existing TP shard and does
+not add it to the DiT AllGather group. Planned encoder and VAE components in
+`on_demand_component_paths` are moved only around the model's encode/decode
+phase. Unselected components remain accelerator-resident.
+
 ## Parallelism compatibility
 
 | Parallelism | DLO + AllGather | DLO without AllGather |
@@ -461,6 +476,9 @@ direct H2D is an optional transport layer over that merged lease contract.
 
 Current source-level validation includes:
 
+- component-list parsing and invalid DLO-without-`dit` rejection;
+- default/all and DiT-only encoder/VAE placement;
+- rank-local encoder block hook setup and cleanup for ordinary layerwise and DLO;
 - HSDP + DLO + AllGather rejection;
 - HSDP + DLO without AllGather acceptance at configuration level;
 - loader preflight fallback for TP, HSDP, online quantization, unknown custom
