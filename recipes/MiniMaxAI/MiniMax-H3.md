@@ -357,18 +357,147 @@ No restart is needed: `task=fl2va` routes to `FL2VA/transformer`, while
 
 ### Online FP8 quantization
 
-MiniMax H3 supports load-time FP8 quantization of the DiT. The checkpoint
-remains BF16 on disk; vLLM-Omni quantizes eligible weights while loading and
-uses dynamic activation scaling during inference. By default, attention and
-MLP linears in the token refiner and main DiT blocks, the condition
-projection, and all AdaLN projections use FP8. Patch, timestep, and final
-projections remain FP32; the text encoder and VAEs are unchanged.
+MiniMax H3 supports online FP8 quantization of both the DiT and the Qwen3-VL
+text decoder. The checkpoint remains BF16 on disk; vLLM-Omni creates FP8
+weights at runtime and uses dynamic activation scaling during inference. By
+default, `--quantization fp8` quantizes eligible attention and MLP linears in
+the text decoder, token refiner, and main DiT blocks, as well as the DiT
+condition and AdaLN projections. The Qwen vision tower, embeddings, norms,
+RoPE, both VAEs, and the model's FP32 patch, timestep, and output projections
+keep checkpoint precision.
 
 Add this option to an existing H3 server command:
 
 ```bash
 --quantization fp8
 ```
+
+#### Single 96 GB GPU, no-offload validation
+
+Use the FL2VA-only partition for this capacity test. Loading the combined
+service would also load the Ref2VA DiT and would test a different memory
+budget. The command below intentionally contains none of
+`--enable-cpu-offload`, `--enable-layerwise-offload`, or
+`--enable-distributed-layerwise-offload`. VAE tiling changes decode placement
+but does not offload model weights to the CPU.
+
+Before starting, reserve GPU 0 for this process and run the following script
+from the vLLM-Omni checkout. It records the exact device capacity, samples
+whole-device memory from before server initialization through the first
+request, and retains all artifacts needed for review:
+
+```bash
+set -euo pipefail
+
+export MODEL_ROOT=/path/to/MiniMax-H3
+export RUN_DIR=$PWD/h3_single_gpu_fp8_no_offload
+mkdir -p "${RUN_DIR}"
+
+nvidia-smi -i 0 \
+  --query-gpu=name,driver_version,memory.total \
+  --format=csv,noheader | tee "${RUN_DIR}/gpu.txt"
+git rev-parse HEAD | tee "${RUN_DIR}/commit.txt"
+
+nvidia-smi -i 0 \
+  --query-gpu=timestamp,index,name,memory.total,memory.used,utilization.gpu \
+  --format=csv,noheader,nounits \
+  --loop-ms=200 >"${RUN_DIR}/gpu.csv" &
+GPU_MONITOR_PID=$!
+
+CUDA_VISIBLE_DEVICES=0 \
+FLASHINFER_DISABLE_VERSION_CHECK=1 \
+VLLM_WORKER_MULTIPROC_METHOD=spawn \
+VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
+vllm serve "${MODEL_ROOT}/FL2VA" \
+  --omni \
+  --host 127.0.0.1 \
+  --port 8091 \
+  --trust-remote-code \
+  --task-type fl2va \
+  --num-gpus 1 \
+  --tensor-parallel-size 1 \
+  --usp 1 \
+  --ring 1 \
+  --text-encoder-tp-size 1 \
+  --vae-patch-parallel-size 1 \
+  --vae-parallel-mode tile \
+  --vae-use-tiling \
+  --quantization fp8 \
+  --enforce-eager \
+  --enable-diffusion-pipeline-profiler \
+  --diffusion-attention-backend CUDNN_ATTN \
+  >"${RUN_DIR}/server.log" 2>&1 &
+SERVER_PID=$!
+
+cleanup() {
+  kill "${SERVER_PID}" "${GPU_MONITOR_PID}" 2>/dev/null || true
+  wait "${SERVER_PID}" 2>/dev/null || true
+  wait "${GPU_MONITOR_PID}" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+for _ in $(seq 1 900); do
+  if curl --fail --silent http://127.0.0.1:8091/health >/dev/null; then
+    break
+  fi
+  if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
+    tail -n 200 "${RUN_DIR}/server.log"
+    exit 1
+  fi
+  sleep 2
+done
+curl --fail --silent http://127.0.0.1:8091/health >/dev/null
+
+/usr/bin/time -f 'client_wall_time_s=%e' -o "${RUN_DIR}/client_time.txt" \
+curl --fail-with-body --silent --show-error --max-time 1800 \
+  -X POST http://127.0.0.1:8091/v1/videos/sync \
+  --form-string 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
+  -F width=1344 \
+  -F height=768 \
+  -F fps=24 \
+  -F num_inference_steps=50 \
+  -F flow_shift=12 \
+  -F seed=1101 \
+  -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
+  -o "${RUN_DIR}/t2va.mp4"
+
+ffprobe -v error \
+  -show_entries format=duration,size \
+  -show_entries stream=index,codec_type,codec_name,width,height,r_frame_rate,sample_rate,channels \
+  -of json "${RUN_DIR}/t2va.mp4" | tee "${RUN_DIR}/media.json"
+
+cleanup
+trap - EXIT
+
+awk -F, '
+  {
+    total=$4; used=$5
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", total)
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", used)
+    if (total > max_total) max_total=total
+    if (used > max_used) max_used=used
+  }
+  END {
+    printf "memory_total_mib=%.0f\\npeak_used_mib=%.0f\\nheadroom_mib=%.0f\\n", \
+      max_total, max_used, max_total-max_used
+  }
+' "${RUN_DIR}/gpu.csv" | tee "${RUN_DIR}/memory_summary.txt"
+```
+
+The run passes the capacity check when the server initializes, the request
+finishes without CUDA OOM or Xid errors, `peak_used_mib` remains below the
+card's reported `memory_total_mib`, and `ffprobe` reports H.264 video plus
+32 kHz stereo AAC audio. Report the measured headroom rather than assuming
+that every nominal 96 GB SKU exposes the same MiB total. Retain the complete
+run directory: `server.log` contains the worker-reported peak and the encode,
+diffuse, and decode timings.
+
+As a capacity proxy only, the same five-second case on one B300 measured a
+92,946 MiB whole-device first-request peak and a 92,146 MiB worker peak. Its
+encode, diffuse, decode, and client wall times were 8.664 s, 134.504 s,
+6.016 s, and 151.583 s. These numbers suggest that a 96 GB card may fit, but
+they are not an RTX PRO 6000 validation: kernels, allocator behavior, and
+reported device capacity differ across GPUs.
 
 Use `ignored_layers` to keep any otherwise eligible linear in BF16. H3
 resolves the `transformer` component before constructing the DiT, so names do
@@ -386,10 +515,10 @@ For example, keep the first main block's attention projections in BF16 with:
   '{"transformer":{"method":"fp8","ignored_layers":["blocks.0.attn.qkv_proj","blocks.0.attn.out_proj"]}}'
 ```
 
-The structured option replaces `--quantization fp8`. Online FP8 is currently
-incompatible with H3 layerwise offload because the offload path produces a
-weight stride rejected by the Cutlass FP8 kernel. Use resident FP8 with tensor
-parallelism and VAE tiling instead.
+The structured option replaces `--quantization fp8`. Online FP8 can be used
+with H3 layerwise offload and with distributed layerwise offload's full-weight
+per-rank path (`--dlo-no-use-allgather`). The sharded DLO AllGather path is not
+supported for runtime-created FP8 weights.
 
 ## AMD ROCm (gfx942 / gfx950)
 
@@ -834,7 +963,8 @@ vllm serve "${MODEL_ROOT}/FL2VA" \
   H3 native `tile` mode only.
 - A U2 x Ring2 hybrid currently fails with an attention-mask length mismatch; use
   pure Ulysses.
-- Online FP8 is not compatible with layerwise offload.
+- Runtime-created FP8 weights do not support the sharded DLO AllGather path;
+  use `--dlo-no-use-allgather` when combining online FP8 with DLO.
 - TeaCache and Cache-DiT cannot be enabled on the same server.
 - Image+audio Ref2VA accepts exactly one image and one audio reference.
 - Video Ref2VA accepts one or more video files, but not an additional standalone
