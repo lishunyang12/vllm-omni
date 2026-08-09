@@ -268,7 +268,8 @@ python text_to_video.py \
 - `--cfg-parallel-size`: set it to 2 to enable CFG Parallel. See more examples in [`user_guide`](../../../docs/user_guide/diffusion/parallelism_acceleration.md#cfg-parallel).
 - `--tensor-parallel-size`: tensor parallel size (effective for models that support TP, e.g. LTX2).
 - `--enable-cpu-offload`: enable CPU offloading for diffusion models.
-- `--enable-layerwise-offload`: enable layerwise offloading on DiT modules.
+- `--enable-layerwise-offload`: enable layerwise (blockwise) offloading.
+- `--layerwise-offload-components`: comma-separated component groups to offload (for example, `dit,text_encoder`).
 - `--enable-distributed-layerwise-offload`: enable distributed layerwise offload.
 - `--dlo-use-allgather` / `--dlo-no-use-allgather`: use sharded AllGather reconstruction (the default) or stream rank-local weights without AllGather.
 - `--dlo-resident-layers`: keep this many leading main-DiT blocks device-resident during distributed layerwise offload (default: `0`).
