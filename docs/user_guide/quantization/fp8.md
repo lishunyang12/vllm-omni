@@ -136,60 +136,38 @@ outputs = omni.generate(
 )
 ```
 
+### Global and per-component scope
+
 A plain, global quantization configuration is passed unchanged to every
 quantization-aware component constructed by a pipeline. This includes an
 eligible encoder when that encoder is implemented with vLLM quantizable
-layers; it does not rewrite arbitrary ``torch.nn`` modules. A structured
+layers; it does not rewrite arbitrary `torch.nn` modules. A structured
 component map is the only way to narrow that scope. Pipeline integrations that
 do not yet expose an encoder through the quantization factory remain DiT-only.
 
-For MiniMax-H3, the default FP8 mode therefore covers both the DiT and the
-quantization-aware Qwen3-VL text decoder. The vision tower uses ordinary
-``torch.nn`` layers, so it stays in checkpoint precision together with the
-embeddings, norms, RoPE, both VAEs, and the model's FP32 patch, timestep, and
-output projections:
+For a pipeline that exposes both a transformer and a quantization-aware text
+encoder, the scope is:
 
-```python
-omni = Omni(
-    model="/path/to/MiniMax-H3/FL2VA",
-    quantization="fp8",
-)
-```
-
-The resulting H3 component scope is:
-
-| Configuration | DiT | Qwen text decoder | Vision tower / VAEs |
-|---------------|-----|-------------------|---------------------|
+| Configuration | Transformer | Text encoder | Components without supported quantizable layers |
+|---------------|-------------|--------------|-------------------------------------------------|
 | `quantization="fp8"` | FP8 | FP8 | checkpoint precision |
-| `{"transformer": {"method": "fp8"}}` | FP8 | BF16 | checkpoint precision |
-| `{"text_encoder": {"method": "fp8"}}` | BF16 | FP8 | checkpoint precision |
+| `{"transformer": {"method": "fp8"}}` | FP8 | checkpoint precision | checkpoint precision |
+| `{"text_encoder": {"method": "fp8"}}` | checkpoint precision | FP8 | checkpoint precision |
 
 Use `quantization_config` for component-selective Python configuration. For
 example, quantize only the text decoder:
 
 ```python
 omni = Omni(
-    model="/path/to/MiniMax-H3/FL2VA",
+    model="<your-model>",
     quantization_config={"text_encoder": {"method": "fp8"}},
 )
 ```
 
-The two structured component entries may also be combined. `ignored_layers`
-can further keep named eligible DiT linears in BF16; see the H3 recipe for the
-runtime prefixes.
-
-MiniMax-H3 online FP8 also supports distributed layerwise offload through the
-full-weight per-rank path:
-
-```bash
-vllm serve /path/to/MiniMax-H3/FL2VA --omni --quantization fp8 \
-  --enable-distributed-layerwise-offload --dlo-no-use-allgather
-```
-
-The sharded DLO AllGather path is not supported for runtime-created FP8 weights.
-For an exact five-second, single-96-GB-GPU capacity test with every offload
-mode disabled, see the
-[MiniMax H3 no-offload validation recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#single-96-gb-gpu-no-offload-validation).
+Component keys are runtime prefixes exposed by the pipeline integration; common
+keys include `transformer` and `text_encoder`. Entries may be combined, and
+`ignored_layers` can keep named eligible layers in checkpoint precision. Check
+the model recipe for supported components and their runtime prefixes.
 
 CLI:
 
