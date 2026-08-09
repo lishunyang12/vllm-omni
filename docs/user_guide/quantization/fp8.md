@@ -147,6 +147,28 @@ omni = Omni(
 )
 ```
 
+The H3 component scope is explicit:
+
+| Configuration | DiT | Qwen text decoder | Vision tower / VAEs |
+|---------------|-----|-------------------|---------------------|
+| `quantization="fp8"` | FP8 | FP8 | checkpoint precision |
+| `{"transformer": {"method": "fp8"}}` | FP8 | BF16 | checkpoint precision |
+| `{"text_encoder": {"method": "fp8"}}` | BF16 | FP8 | checkpoint precision |
+
+Use `quantization_config` for component-selective Python configuration. For
+example, quantize only the text decoder:
+
+```python
+omni = Omni(
+    model="/path/to/MiniMax-H3/FL2VA",
+    quantization_config={"text_encoder": {"method": "fp8"}},
+)
+```
+
+The two structured component entries may also be combined. `ignored_layers`
+can further keep named eligible DiT linears in BF16; see the H3 recipe for the
+runtime prefixes.
+
 MiniMax-H3 online FP8 also supports distributed layerwise offload through the
 full-weight per-rank path:
 

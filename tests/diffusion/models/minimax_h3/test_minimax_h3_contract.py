@@ -944,6 +944,20 @@ def test_text_encoder_online_fp8_uses_global_config():
     assert _online_fp8_enabled(build_quant_config("fp8"))
 
 
+def test_minimax_h3_fp8_component_selection():
+    from vllm_omni.diffusion.models.minimax_h3.encoder import _online_fp8_enabled
+    from vllm_omni.diffusion.models.minimax_h3.pipeline_minimax_h3 import _resolve_component_quant_config
+    from vllm_omni.quantization import build_quant_config
+
+    dit_only = build_quant_config({"transformer": {"method": "fp8"}})
+    encoder_only = build_quant_config({"text_encoder": {"method": "fp8"}})
+
+    assert _online_fp8_enabled(_resolve_component_quant_config(dit_only, "transformer"))
+    assert not _online_fp8_enabled(_resolve_component_quant_config(dit_only, "text_encoder"))
+    assert not _online_fp8_enabled(_resolve_component_quant_config(encoder_only, "transformer"))
+    assert _online_fp8_enabled(_resolve_component_quant_config(encoder_only, "text_encoder"))
+
+
 def test_text_encoder_rejects_serialized_fp8():
     from vllm_omni.diffusion.models.minimax_h3.encoder import (
         _online_fp8_enabled,

@@ -366,6 +366,11 @@ condition and AdaLN projections. The Qwen vision tower, embeddings, norms,
 RoPE, both VAEs, and the model's FP32 patch, timestep, and output projections
 keep checkpoint precision.
 
+To select a component, use `--diffusion-quantization-config` with
+`{"transformer":{"method":"fp8"}}` for DiT-only FP8 or
+`{"text_encoder":{"method":"fp8"}}` for text-decoder-only FP8. The two
+entries can be combined. The shorthand below enables both components.
+
 Add this option to an existing H3 server command:
 
 ```bash
