@@ -88,6 +88,36 @@ This path is intentionally not implemented by reusing the AllGather mmap
 loader. It relies on the standard loader so model-specific TP/HSDP transforms
 remain intact.
 
+### Replica-local dispatch and collectives
+
+When DP is greater than one, both DLO modes expose up to `dp_size` scheduler
+slots, but they apply different admission rules. AllGather mode retains the
+normal sampling-parameter compatibility key so a collective wave follows one
+execution schedule. Rank-local mode bypasses that compatibility gate and may
+admit requests with different shapes, denoising steps, guidance, output counts,
+LoRA settings, and model-specific `extra_args`.
+
+The executor broadcasts one assignment vector with one entry per DP replica.
+For a partial rank-local wave, unused entries are `None`; that replica returns
+an empty tagged response without entering model execution. Active workers select
+the assignment at their DP rank, execute it independently, and tag the result
+with that rank so the executor can restore scheduler order. This prevents a
+single request from being duplicated merely to fill a DP wave.
+
+Request-local model collectives must also exclude other DP replicas. The DiT
+group therefore contains the TP/SP/PP/CFG ranks inside one DP replica, and KV
+transfer consensus uses that replica-local group (or its narrower TP group).
+The DLO weight-sharding group is orthogonal: only AllGather mode uses the DP
+group to reconstruct layer weights.
+
+These rules establish three invariants:
+
+1. ordinary batching and AllGather DLO keep compatible-wave admission;
+2. rank-local DLO permits heterogeneous admission only when DP is greater than
+   one; and
+3. idle replicas skip the complete request path but still return a response so
+   RPC collection and teardown remain deterministic.
+
 ## Parallelism compatibility
 
 | Parallelism | DLO + AllGather | DLO without AllGather |
@@ -115,12 +145,16 @@ remain intact.
 
 AllGather DP multi-concurrency requires:
 
-- explicit `num_inference_steps`;
-- the same `num_inference_steps` for all requests in a wave; and
-- identical request arguments that affect the collective execution path.
+- the same explicit `num_inference_steps` for all requests, or the default
+  (`None`) for every request in the wave;
+- identical shape, CFG, output-count, LoRA, and model-specific arguments that
+  affect the collective execution path; and
+- a non-empty prompt for every participating request.
 
 The no-AllGather path does not impose these DLO-specific synchronized-wave
-requirements.
+requirements. Up to `dp_size` heterogeneous requests may run independently;
+partial waves leave unmatched replicas idle. Model-parallel constraints within
+each replica still apply.
 
 The mmap loader is used only by the supported DLO+AllGather path when the
 model has a compatible checkpoint layout. Online quantization is incompatible
@@ -136,7 +170,9 @@ Current source-level validation includes:
 - HSDP + DLO without AllGather acceptance at configuration level;
 - TP rejection in the DLO+AllGather mmap path;
 - resident-layer requests requiring no-AllGather;
-- DP request-wave validation for denoising-step compatibility;
+- compatible-wave admission for AllGather DLO and heterogeneous admission for
+  rank-local DLO;
+- partial-wave idle-rank dispatch and DP-rank result routing;
 - sharding, double-buffer, AllGather-size, and heterogeneous-block regression
   tests.
 
@@ -150,7 +186,9 @@ on the target CUDA/NCCL or CANN/HCCL hardware.
   scaling path.
 - Use **SP + DLO AllGather** for long-sequence workloads when DP concurrency is
   not the goal.
-- Use **no-AllGather** to bring up TP or workstation PCIe configurations, with
-  the expectation of higher host-memory use and lower validation confidence.
+- Use **DP + no-AllGather** for mixed request shapes or asynchronous arrivals
+  that benefit from independent replicas, accepting a full host-side model per
+  DP rank.
+- Also use **no-AllGather** to bring up TP or workstation PCIe configurations.
 - Prefer **HSDP alone** for production HSDP deployments until the combined
   HSDP + DLO no-AllGather path has broader end-to-end coverage.

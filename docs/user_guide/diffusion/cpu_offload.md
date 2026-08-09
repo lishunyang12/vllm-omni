@@ -199,8 +199,9 @@ For the implementation design and compatibility matrix, see
   reconstructed per-layer via `all_gather_into_tensor`
 - **Fixed double-buffer**: exactly 2 transformer blocks on each device at any
   time, regardless of model size
-- **DP multi-concurrency**: N concurrent requests processed in parallel
-  (AllGather only gathers weight shards, which are request-independent)
+- **DP replica concurrency**: up to N requests execute across N DP replicas;
+  AllGather mode uses compatible waves, while no-AllGather mode permits
+  heterogeneous independent requests and idle replicas in partial waves
 - **mmap weight loading**: weights loaded as mmap views pointing to shared OS
   page cache, eliminating O(dp_size × model_size) RSS during model creation
 - **Platform-agnostic**: works on NVIDIA GPU (CUDA/NCCL) and Ascend NPU
@@ -224,7 +225,7 @@ vllm serve /path/to/model --omni \
   --enable-distributed-layerwise-offload \
   --data-parallel-size 4
 
-# Without DLO AllGather (each rank streams standard-loader rank-local weights)
+# Without DLO AllGather (independent replicas; heterogeneous requests allowed)
 vllm serve /path/to/model --omni \
   --enable-distributed-layerwise-offload \
   --data-parallel-size 4 \
@@ -294,17 +295,27 @@ When not declared, the offloader falls back to `_layerwise_offload_blocks_attrs`
 and heuristic attribute search.  This is backward-compatible — existing models
 work without any changes.
 
-### DP Multi-concurrency
+### DP request concurrency
 
-When `--data-parallel-size > 1` and AllGather is enabled, the scheduler batches
-up to `dp_size` requests per denoise step.  Each DP rank processes a different
-request while AllGather synchronizes only weight shards (request-independent).
+With `--data-parallel-size N`, both DLO modes admit up to N requests and assign
+at most one request to each DP replica. Submit requests normally; the scheduler
+forms replica waves automatically.
 
-**Requirements for concurrent requests:**
-- `num_inference_steps` must be specified explicitly (None is not allowed)
-- All concurrent requests must have the same `num_inference_steps` value
-- These constraints exist because AllGather is a collective that requires
-  every rank to participate at each denoise step
+| Mode | Requests admitted together | Partial wave behavior |
+|------|----------------------------|-----------------------|
+| DLO + AllGather | Requests must share shape, CFG, denoising schedule, output count, LoRA settings, and `extra_args`. Prompts must be non-empty. | Assignments may repeat so every rank enters the same weight collectives. |
+| DLO without AllGather | Requests may use different shapes, steps, guidance, output counts, LoRAs, and `extra_args`. | Unassigned replicas are idle and skip model execution. |
+
+For AllGather, all requests may either use the same explicit
+`num_inference_steps` or all use the model's default (`None`); mixing the two is
+incompatible. These constraints keep every rank on the same collective path.
+
+Rank-local DLO has no DLO weight collective, so heterogeneous requests can
+progress independently. The standard loader still defines each rank's tensor
+layout, and TP/SP/PP/CFG collectives remain active inside each DP replica. Pure
+DP also keeps a full host-side model copy per rank. This makes no-AllGather a
+good fit for mixed workloads and asynchronous arrivals, while AllGather is the
+host-memory-efficient choice for homogeneous waves.
 
 ### Limitations
 - Online quantization (FP8) is incompatible with mmap loading — falls back to
@@ -317,7 +328,7 @@ request while AllGather synchronizes only weight shards (request-independent).
 - HSDP + AllGather is rejected because it would double-shard parameters. HSDP
   with no-AllGather is accepted at configuration level, but has limited
   end-to-end validation.
-- `num_inference_steps=None` is not allowed in DP multi-concurrency mode
+- AllGather DP waves cannot mix incompatible sampling parameters or `extra_args`
 
 **Module Discovery**
 

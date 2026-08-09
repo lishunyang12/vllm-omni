@@ -35,8 +35,8 @@ Distributed layerwise offload has two scheduling contracts:
   weight collective in the same order.
 - **Rank-local mode** streams the tensors produced by the standard loader on
   each rank. DP replicas may execute heterogeneous requests independently, idle
-  replicas skip model execution, and request-scoped process groups keep runtime
-  collectives local to the assigned replica.
+  replicas skip model execution, and replica-local DiT groups keep runtime
+  collectives inside the assigned replica.
 
 These modes trade host-memory efficiency for scheduling independence. Changing
 the mode MUST update admission, dispatch, result routing, abort handling, and
