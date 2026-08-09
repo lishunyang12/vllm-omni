@@ -811,10 +811,12 @@ audio spectral cosine 0.9589 (minimum 0.80), and audio RMS ratio 0.9342. The
 resident per-GPU peak was 68.52 GiB for BF16 and 53.51 GiB for FP8, a 22%
 reduction.
 
-For direct human inspection, see the matched five-second BF16 and default
-global-FP8 [T2VA, I2VA, and Ref2VA video
-pairs](../../examples/online_serving/minimax_h3/precision_results/README.md).
-The comparison index also records per-task fidelity metrics and SHA256 values.
+For direct human inspection, see the external
+[BF16 versus global-FP8 comparison](https://lishunyang12.github.io/vllm-omni-rankings/scripts/minimax_h3_global_fp8_vs_bf16/),
+which includes matched five-second T2VA, I2VA, and Ref2VA videos. The
+[comparison sources](https://github.com/lishunyang12/vllm-omni-rankings/tree/main/scripts/minimax_h3_global_fp8_vs_bf16)
+also record per-task fidelity metrics and provenance without storing generated
+media in this repository.
 
 ## TeaCache acceleration
 
