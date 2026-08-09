@@ -687,9 +687,13 @@ class OmniDiffusionConfig:
     # Distributed layer-wise offloading with H2D + AllGather overlap (RFC-1)
     enable_distributed_layerwise_offload: bool = False
     # If True: shard weights 1/dp_size + AllGather (saves CPU memory, requires
-    # concurrent requests in DP mode). If False: each rank loads full weights
-    # via H2D only (N× CPU memory, but no AllGather synchronization needed).
+    # concurrent requests in DP mode). If False: each rank streams the standard
+    # loader's rank-local tensors (including TP-local shards) via H2D only.
+    # This avoids AllGather synchronization, while host memory follows the
+    # loader's existing rank-local layout instead of adding a second DP shard.
     dlo_use_allgather: bool = True
+    # Leading main-DiT blocks kept resident by distributed layerwise offload.
+    dlo_resident_layers: int = 0
 
     pin_cpu_memory: bool = True  # Use pinned memory for faster transfers when offloading
 
@@ -784,6 +788,7 @@ class OmniDiffusionConfig:
     # through a generic config field so serving code stays model-agnostic.
     supports_multimodal_inputs: bool = False
     max_multimodal_image_inputs: int | None = None
+    supports_mixed_reference_inputs: bool = False
 
     log_level: str = "info"
 
@@ -1118,6 +1123,7 @@ class OmniDiffusionConfig:
         metadata = get_diffusion_model_metadata(self.model_class_name)
         self.supports_multimodal_inputs = metadata.supports_multimodal_inputs
         self.max_multimodal_image_inputs = metadata.max_multimodal_image_inputs
+        self.supports_mixed_reference_inputs = metadata.supports_mixed_reference_inputs
 
     @staticmethod
     def _looks_like_lance_subfolder(model: str | None) -> bool:
@@ -1433,6 +1439,9 @@ class SkipSoftmaxSpec:
 class AttnQuantSpec:
     dtype_qk: str | None = None
     dtype_vo: str | None = None
+    q_scale: float | None = None
+    k_scale: float | None = None
+    v_scale: float | None = None
     q_block_size: int = 1
     k_block_size: int = 16
     flashinfer_backend: str | None = None
@@ -1449,10 +1458,45 @@ class AttnQuantSpec:
                 raise ValueError(
                     f"quant.{name}={v!r} unsupported; kernels exist only for {sorted(self._VALID_BLOCK_SIZES)}."
                 )
+        for name in ("q_scale", "k_scale", "v_scale"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            validated = _in_range(value, f"quant.{name}", 0.0, None)
+            if validated == 0:
+                raise ValueError(f"quant.{name} must be > 0")
+            setattr(self, name, validated)
 
     @property
     def enabled(self) -> bool:
         return self.dtype_qk is not None or self.dtype_vo is not None
+
+
+# Backends that select key blocks instead of attending densely, and so accept
+# a ``block_sparse`` spec. Each maps the same knobs onto its own kernel.
+BLOCK_SPARSE_BACKENDS = frozenset({"RAINFUSION_ATTN"})
+
+
+@dataclass
+class BlockSparseSpec:
+    """User-facing controls shared by block-sparse attention backends.
+
+    ``sparsity`` is the nominal fraction of key blocks dropped per query block;
+    ``start_step`` keeps the first N denoise steps dense and ``skip_layers`` (an
+    index selector such as "0-3,38") exempts individual DiT blocks. Those two are
+    the accuracy knobs to trade back quality at a fixed ``sparsity``.
+    """
+
+    sparsity: float = 0.8
+    start_step: int = 0
+    skip_layers: str | list[int] | None = None
+    skip_layer_indices: set[int] | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        self.sparsity = _in_range(self.sparsity, "block_sparse.sparsity", 0.0, 1.0) or 0.0
+        if self.start_step < 0:
+            raise ValueError(f"block_sparse.start_step must be >= 0; got {self.start_step!r}.")
+        self.skip_layer_indices = parse_kv_cache_skip_selector(self.skip_layers)
 
 
 @dataclass
@@ -1462,6 +1506,7 @@ class AttentionSpec:
     backend: str
     skip_softmax: SkipSoftmaxSpec | None = None
     quant: AttnQuantSpec | None = None
+    block_sparse: BlockSparseSpec | None = None
     skip_calibration: dict | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -1469,15 +1514,31 @@ class AttentionSpec:
             raise TypeError(f"Expected str for AttentionSpec.backend, got {type(self.backend)!r}")
         self.skip_softmax = self._coerce(self.skip_softmax, SkipSoftmaxSpec, "skip_softmax")
         self.quant = self._coerce(self.quant, AttnQuantSpec, "quant")
+        self.block_sparse = self._coerce(self.block_sparse, BlockSparseSpec, "block_sparse")
         if self.skip_softmax is not None and self.backend.upper() != "TRTLLM_ATTN":
             raise ValueError(
                 f"skip_softmax is only supported by the TRTLLM_ATTN backend, but backend={self.backend!r}. "
                 "Remove skip_softmax or set backend to TRTLLM_ATTN."
             )
-        if self.quant is not None and self.backend.upper() not in ("TRTLLM_ATTN", "FLASHINFER_ATTN"):
+        quant_backends = {
+            "TRTLLM_ATTN",
+            "FLASHINFER_ATTN",
+            "FLASHINFER_SM120_ATTN",
+        }
+        if self.quant is not None and self.backend.upper() not in quant_backends:
             raise ValueError(
-                f"quant is only supported by the TRTLLM_ATTN and FLASHINFER_ATTN backends, but "
+                "quant is only supported by the TRTLLM_ATTN, FLASHINFER_ATTN, "
+                "and FLASHINFER_SM120_ATTN backends, but "
                 f"backend={self.backend!r}. Remove quant or set a supported backend."
+            )
+        if self.backend.upper() in BLOCK_SPARSE_BACKENDS:
+            # Selecting the backend is the opt-in; without an explicit block the
+            # defaults apply rather than silently running dense.
+            self.block_sparse = self.block_sparse or BlockSparseSpec()
+        elif self.block_sparse is not None:
+            raise ValueError(
+                f"block_sparse is only supported by the {sorted(BLOCK_SPARSE_BACKENDS)} backends, but "
+                f"backend={self.backend!r}. Remove block_sparse or set a supported backend."
             )
 
     @staticmethod
@@ -1510,7 +1571,17 @@ class AttentionSpec:
                 quant_kw["dtype_vo"] = q.dtype_vo
             if q.flashinfer_backend is not None:
                 quant_kw["flashinfer_backend"] = q.flashinfer_backend
+            for name in ("q_scale", "k_scale", "v_scale"):
+                value = getattr(q, name)
+                if value is not None:
+                    quant_kw[name] = value
             kw["quant"] = quant_kw
+        if self.block_sparse is not None:
+            bs = self.block_sparse
+            kw["sparsity"] = bs.sparsity
+            kw["start_step"] = bs.start_step
+            if bs.skip_layer_indices:
+                kw["skip_layers"] = sorted(bs.skip_layer_indices)
         return kw or None
 
 
@@ -1580,7 +1651,7 @@ class AttentionConfig:
             normalized[role] = node
             return
 
-        spec_keys = {"backend", "skip_softmax", "quant"}
+        spec_keys = {"backend", "skip_softmax", "quant", "block_sparse"}
         node_dict = dict(node)
         node_keys = set(node_dict)
         if node_keys & spec_keys:
