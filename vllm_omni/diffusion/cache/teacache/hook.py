@@ -138,12 +138,19 @@ class TeaCacheHook(ModelHook):
         state = self.state_manager.get_state()
 
         # Decide whether to compute or cache based on modulated input similarity
-        should_compute = self._should_compute_full_transformer(state, ctx.modulated_input)
-
+        cache_budget_exhausted = (
+            self.config.max_cached_steps is not None and state.cached_steps >= self.config.max_cached_steps
+        )
+        should_compute = (
+            state.cnt < self.config.min_compute_steps
+            or cache_budget_exhausted
+            or self._should_compute_full_transformer(state, ctx.modulated_input)
+        )
         if not should_compute and state.previous_residual is not None:
             # ============================================================================
             # FAST PATH: Reuse cached residuals
             # ============================================================================
+            state.cached_steps += 1
             ctx.hidden_states = ctx.hidden_states + state.previous_residual
             if state.previous_residual_encoder is not None and ctx.encoder_hidden_states is not None:
                 ctx.encoder_hidden_states = ctx.encoder_hidden_states + state.previous_residual_encoder

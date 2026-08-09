@@ -26,7 +26,11 @@ from vllm_omni.diffusion.cache.cachedit import (
 )
 from vllm_omni.diffusion.cache.magcache import MagCacheBackend
 from vllm_omni.diffusion.cache.selector import get_cache_backend
-from vllm_omni.diffusion.cache.teacache import TeaCacheBackend
+from vllm_omni.diffusion.cache.teacache import (
+    TeaCacheBackend,
+    TeaCacheConfig,
+    TeaCacheHook,
+)
 from vllm_omni.diffusion.data import DiffusionCacheConfig
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
@@ -446,6 +450,17 @@ class TestCacheDiTBackend:
 class TestTeaCacheBackend:
     """Test TeaCacheBackend implementation."""
 
+    @pytest.mark.parametrize(
+        ("config", "field"),
+        [
+            ({"max_cached_steps": -1}, "max_cached_steps"),
+            ({"min_compute_steps": -1}, "min_compute_steps"),
+        ],
+    )
+    def test_config_rejects_negative_step_policy(self, config, field):
+        with pytest.raises(ValueError, match=field):
+            TeaCacheConfig(**config)
+
     def test_init(self):
         """Test initialization."""
         config = DiffusionCacheConfig(rel_l1_thresh=0.3)
@@ -481,18 +496,36 @@ class TestTeaCacheBackend:
         TeaCacheBackend(DiffusionCacheConfig()).enable(pipeline)
         assert mock_apply_hook.call_args.args[1].rel_l1_thresh == 0.2
 
-    @pytest.mark.parametrize("partition", ["fl2va", "combined"])
     @pytest.mark.parametrize(
-        ("configured_threshold", "expected_threshold"),
-        [(None, 0.17), (0.2, 0.2)],
+        ("partition", "expected_targets", "default_thresholds", "profiles", "max_cached_steps", "min_compute_steps"),
+        [
+            ("fl2va", ("transformer",), (0.17,), (None,), (None,), (0,)),
+            ("ref2va", ("transformer",), (0.295,), ("MiniMaxH3DiTModel:ref2va",), (5,), (35,)),
+            (
+                "combined",
+                ("transformer", "transformers_ref"),
+                (0.17, 0.295),
+                (None, "MiniMaxH3DiTModel:ref2va"),
+                (None, 5),
+                (0, 35),
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "configured_threshold",
+        [None, 0.2],
     )
     @patch("vllm_omni.diffusion.cache.teacache.backend.apply_teacache_hook")
-    def test_minimax_h3_only_enables_fl2va_teacache(
+    def test_minimax_h3_enables_each_partition_transformer(
         self,
         mock_apply_hook,
         partition,
+        expected_targets,
+        default_thresholds,
+        profiles,
         configured_threshold,
-        expected_threshold,
+        max_cached_steps,
+        min_compute_steps,
     ):
         pipeline = Mock()
         pipeline.__class__.__name__ = "MiniMaxH3Pipeline"
@@ -509,27 +542,42 @@ class TestTeaCacheBackend:
         backend = TeaCacheBackend(config)
         backend.enable(pipeline)
 
-        mock_apply_hook.assert_called_once()
-        transformer, teacache_config = mock_apply_hook.call_args.args
-        assert transformer is pipeline.transformer
-        assert transformer is not pipeline.transformers_ref
-        assert teacache_config.rel_l1_thresh == expected_threshold
+        expected_transformers = [getattr(pipeline, name) for name in expected_targets]
+        assert [call.args[0] for call in mock_apply_hook.call_args_list] == expected_transformers
+        configs = [call.args[1] for call in mock_apply_hook.call_args_list]
+        expected_thresholds = (
+            default_thresholds if configured_threshold is None else (configured_threshold,) * len(configs)
+        )
+        assert [config.rel_l1_thresh for config in configs] == list(expected_thresholds)
+        assert [config.calibration_profile for config in configs] == list(profiles)
+        assert [config.max_cached_steps for config in configs] == list(max_cached_steps)
+        assert [config.min_compute_steps for config in configs] == list(min_compute_steps)
+        assert len({id(config) for config in configs}) == len(configs)
 
-    @patch("vllm_omni.diffusion.cache.teacache.backend.apply_teacache_hook")
-    def test_minimax_h3_rejects_ref2va_teacache(self, mock_apply_hook):
+    @pytest.mark.parametrize(("num_inference_steps", "expected_ref_min_compute"), [(50, 35), (20, 20)])
+    def test_minimax_h3_refreshes_each_partition_transformer(self, num_inference_steps, expected_ref_min_compute):
         pipeline = Mock()
         pipeline.__class__.__name__ = "MiniMaxH3Pipeline"
-        pipeline.partition = "ref2va"
-        pipeline.transformer = Mock()
-        pipeline.transformer.__class__.__name__ = "MiniMaxH3DiTModel"
+        pipeline._dit_modules = ["transformer", "transformers_ref"]
+        pipeline.transformer = Mock(_hook_registry=Mock())
+        pipeline.transformers_ref = Mock(_hook_registry=Mock())
+        fl2va_hook = Mock(config=SimpleNamespace(calibration_profile=None, min_compute_steps=0))
+        ref2va_hook = Mock(
+            config=SimpleNamespace(
+                calibration_profile="MiniMaxH3DiTModel:ref2va",
+                min_compute_steps=35,
+            )
+        )
+        pipeline.transformer._hook_registry.get_hook.return_value = fl2va_hook
+        pipeline.transformers_ref._hook_registry.get_hook.return_value = ref2va_hook
 
         backend = TeaCacheBackend(DiffusionCacheConfig())
+        backend.refresh(pipeline, num_inference_steps=num_inference_steps)
 
-        with pytest.raises(ValueError, match="only supports the MiniMax-H3 FL2VA partition"):
-            backend.enable(pipeline)
-
-        assert backend.enabled is False
-        mock_apply_hook.assert_not_called()
+        for transformer in (pipeline.transformer, pipeline.transformers_ref):
+            transformer._hook_registry.reset_hook.assert_called_once_with(TeaCacheHook._HOOK_NAME)
+        assert fl2va_hook.config.min_compute_steps == 0
+        assert ref2va_hook.config.min_compute_steps == expected_ref_min_compute
 
     @patch("vllm_omni.diffusion.cache.teacache.backend.apply_teacache_hook")
     def test_enable_with_coefficients(self, mock_apply_hook):

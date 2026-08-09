@@ -705,6 +705,39 @@ class TestMiniMaxH3Extractor(BaseExtractorTest):
         assert video_logits.shape[0] == sample_inputs["img_pos_info"]["position_ids"].shape[0]
         assert audio_logits.shape[0] == sample_inputs["audio_pos_info"]["position_ids"].shape[0]
 
+    def test_teacache_honors_and_resets_cache_hit_budget(self, minimax_h3_module, sample_inputs, monkeypatch):
+        from vllm_omni.diffusion.cache.teacache.config import TeaCacheConfig
+        from vllm_omni.diffusion.cache.teacache.hook import TeaCacheHook
+
+        block = minimax_h3_module.blocks[0]
+        original_forward = block.forward
+        block_calls = 0
+
+        def counted_forward(*args, **kwargs):
+            nonlocal block_calls
+            block_calls += 1
+            return original_forward(*args, **kwargs)
+
+        monkeypatch.setattr(block, "forward", counted_forward)
+        hook = TeaCacheHook(
+            TeaCacheConfig(
+                transformer_type="MiniMaxH3DiTModel",
+                rel_l1_thresh=10.0,
+                max_cached_steps=1,
+                min_compute_steps=2,
+            )
+        )
+        hook.initialize_hook(minimax_h3_module)
+
+        for _ in range(4):
+            hook.new_forward(minimax_h3_module, **sample_inputs)
+        assert block_calls == 3
+
+        hook.reset_state(minimax_h3_module)
+        for _ in range(3):
+            hook.new_forward(minimax_h3_module, **sample_inputs)
+        assert block_calls == 5
+
     def test_invalid_module_raises_error(self):
         """Test that invalid module without blocks raises ValueError."""
         invalid_module = Mock()
