@@ -12,6 +12,7 @@ from vllm_omni.diffusion.sched.interface import (
     DiffusionRequestStatus,
     DiffusionSchedulerOutput,
     RequestBatchSamplingParamsKey,
+    SchedulerRequestState,
     _AdmissionWaitDecision,
 )
 
@@ -33,6 +34,16 @@ def build_request_batch_sampling_params_key(request: OmniDiffusionRequest) -> Re
     key_kwargs = {name: getattr(sampling, name) for name in _REQUEST_BATCH_SAMPLING_PARAMS_KEY_FIELD_NAMES}
     key_kwargs["lora_int_id"] = lora_request.lora_int_id if lora_request is not None else None
     return RequestBatchSamplingParamsKey(**key_kwargs)
+
+
+def _uses_rank_local_dlo_dp(od_config: object) -> bool:
+    parallel_config = getattr(od_config, "parallel_config", None)
+    dp_size = getattr(parallel_config, "data_parallel_size", 1)
+    return (
+        dp_size > 1
+        and getattr(od_config, "enable_distributed_layerwise_offload", False)
+        and not getattr(od_config, "dlo_use_allgather", True)
+    )
 
 
 class RequestScheduler(BaseScheduler):
@@ -73,6 +84,11 @@ class RequestScheduler(BaseScheduler):
             or (waiting > 0 and now - stable_since >= decision.stable_window_s)
             or (decision.deadline is not None and now >= decision.deadline)
         )
+
+    def _can_schedule_waiting(self, state: SchedulerRequestState) -> bool:
+        if self.od_config is not None and _uses_rank_local_dlo_dp(self.od_config):
+            return True
+        return super()._can_schedule_waiting(state)
 
     def _build_sampling_params_key(self, request: OmniDiffusionRequest) -> RequestBatchSamplingParamsKey:
         return build_request_batch_sampling_params_key(request)

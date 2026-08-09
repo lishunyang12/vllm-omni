@@ -372,7 +372,7 @@ class TestRequestBatchCapability:
         fake_executor_cls.assert_not_called()
 
     @pytest.mark.parametrize("dlo_use_allgather", [True, False])
-    def test_engine_allows_independent_dlo_dp_requests_for_single_request_pipeline(
+    def test_engine_configures_dlo_dp_request_admission(
         self,
         dlo_use_allgather: bool,
         monkeypatch: pytest.MonkeyPatch,
@@ -420,6 +420,20 @@ class TestRequestBatchCapability:
         assert engine.dp_concurrent is True
         assert engine.scheduler.max_num_running_reqs == 2
         assert od_config.request_batch_max_wait_ms == 0
+
+        for request_id, num_steps in (("req-a", 2), ("req-b", 3)):
+            engine.scheduler.add_request(
+                OmniDiffusionRequest(
+                    prompt=f"prompt_{request_id}",
+                    sampling_params=OmniDiffusionSamplingParams(num_inference_steps=num_steps),
+                    request_id=request_id,
+                )
+            )
+        scheduled = engine.scheduler.schedule()
+
+        expected_ids = ["req-a"] if dlo_use_allgather else ["req-a", "req-b"]
+        assert [request.request_id for request in scheduled.scheduled_new_reqs] == expected_ids
+        assert scheduled.num_waiting_reqs == int(dlo_use_allgather)
         fake_executor_cls.assert_called_once_with(od_config)
 
     @pytest.mark.parametrize("request_ids", [("req-a",), ("req-a", "req-b")])
