@@ -35,6 +35,10 @@ for required_file in "${RUNNER}" "${SUMMARIZER}"; do
     exit 1
   fi
 done
+if ! command -v setsid >/dev/null 2>&1; then
+  echo "Required command not found: setsid" >&2
+  exit 1
+fi
 for layers in ${RESIDENT_LAYER_CANDIDATES}; do
   if [[ ! ${layers} =~ ^[0-9]+$ ]] || (( layers < 20 || layers > 50 )); then
     echo "Resident-layer candidates must be integers in [20, 50], got: ${layers}" >&2
@@ -43,6 +47,35 @@ for layers in ${RESIDENT_LAYER_CANDIDATES}; do
 done
 
 mkdir -p "${RESULT_ROOT}"
+
+terminate_case_group() {
+  local pgid="$1"
+  local attempt
+
+  if ! kill -0 -- "-${pgid}" 2>/dev/null; then
+    return 0
+  fi
+
+  echo "Cleaning up processes left by case process group ${pgid}." >&2
+  kill -TERM -- "-${pgid}" 2>/dev/null || true
+  for attempt in {1..20}; do
+    if ! kill -0 -- "-${pgid}" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  kill -KILL -- "-${pgid}" 2>/dev/null || true
+}
+
+ACTIVE_CASE_PGID=""
+cleanup_active_case() {
+  if [[ -n "${ACTIVE_CASE_PGID}" ]]; then
+    terminate_case_group "${ACTIVE_CASE_PGID}"
+    ACTIVE_CASE_PGID=""
+  fi
+  return 0
+}
+trap cleanup_active_case EXIT
 
 case_passed() {
   local summary_path="$1"
@@ -60,6 +93,8 @@ run_case() {
   local label="$1" gpu_ids="$2" num_gpus="$3" tp="$4" ulysses="$5"
   local layers="$6" steps="$7" warmup_steps="$8"
   local output_dir="${RESULT_ROOT}/${label}"
+  local case_pid
+  local case_status
 
   if case_passed "${output_dir}/summary.json" && [[ -f "${output_dir}/gpu_peak_memory.csv" ]]; then
     echo "=== ${label} already passed; skipping ==="
@@ -67,7 +102,7 @@ run_case() {
   fi
 
   echo "=== ${label}: ${num_gpus} GPU, TP${tp} x Ulysses${ulysses}, resident ${layers} ==="
-  if env \
+  setsid env \
     PYTHON="${PYTHON}" \
     CUDA_VISIBLE_DEVICES="${gpu_ids}" \
     NUM_GPUS="${num_gpus}" \
@@ -80,7 +115,19 @@ run_case() {
     NUM_INFERENCE_STEPS="${steps}" WARMUP_STEPS="${warmup_steps}" \
     OUTPUT_DIR="${output_dir}" \
     numactl --cpunodebind="${NUMA_NODE}" --membind="${NUMA_NODE}" \
-    bash "${RUNNER}"; then
+    bash "${RUNNER}" &
+  case_pid=$!
+  ACTIVE_CASE_PGID="${case_pid}"
+
+  if wait "${case_pid}"; then
+    case_status=0
+  else
+    case_status=$?
+  fi
+  terminate_case_group "${case_pid}"
+  ACTIVE_CASE_PGID=""
+
+  if (( case_status == 0 )); then
     echo "=== ${label} passed ==="
     return 0
   fi
