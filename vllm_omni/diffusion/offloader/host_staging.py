@@ -8,7 +8,10 @@ import errno
 import mmap
 import os
 import tempfile
+import time
+from collections import deque
 from collections.abc import Iterable
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -119,7 +122,13 @@ class FileBackedShardStore:
 
 
 class PinnedHostStagingPool:
-    """A fixed-size ring of shared CPU staging buffers."""
+    """A fixed-size ring of shared CPU staging buffers.
+
+    File-backed shards are copied into these buffers on one background
+    thread. prepare is best effort and never waits for a free slot; stage is
+    the correctness boundary and waits only when the requested shard has not
+    finished staging yet.
+    """
 
     def __init__(
         self,
@@ -129,7 +138,18 @@ class PinnedHostStagingPool:
         self.buffers = buffers
         self.allocated_bytes = allocated_bytes
         self.slot_events: list[Any | None] = [None] * len(buffers)
-        self._next_slot = 0
+        self._available_slots = deque(range(len(buffers)))
+        self._leased_slots: set[int] = set()
+        self._pending: dict[int, tuple[int, Future[dict[torch.dtype, torch.Tensor]]]] = {}
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="dlo-host-stage")
+        self._closed = False
+
+        self.prefetch_scheduled = 0
+        self.prefetch_hits = 0
+        self.staging_misses = 0
+        self.staged_bytes = 0
+        self.prefetch_discarded = 0
+        self.stage_wait_seconds = 0.0
 
     @classmethod
     def from_shard_sets(
@@ -164,13 +184,17 @@ class PinnedHostStagingPool:
             buffers.append(slot)
         return cls(buffers, required_bytes)
 
-    def stage(
-        self,
-        sources: dict[torch.dtype, torch.Tensor],
-    ) -> tuple[int, dict[torch.dtype, torch.Tensor]]:
-        slot = self._next_slot
-        self._next_slot = (slot + 1) % len(self.buffers)
+    @staticmethod
+    def _source_key(sources: dict[torch.dtype, torch.Tensor]) -> int:
+        # Shard dictionaries belong to long-lived hooks, so their identity is
+        # stable for the lifetime of the pool and avoids hashing large tensors.
+        return id(sources)
 
+    def _stage_into(
+        self,
+        slot: int,
+        sources: dict[torch.dtype, torch.Tensor],
+    ) -> dict[torch.dtype, torch.Tensor]:
         previous_event = self.slot_events[slot]
         if previous_event is not None:
             previous_event.synchronize()
@@ -181,7 +205,115 @@ class PinnedHostStagingPool:
             target = self.buffers[slot][dtype][: source.numel()]
             target.copy_(source)
             staged[dtype] = target
+        return staged
+
+    def _submit(
+        self,
+        sources: dict[torch.dtype, torch.Tensor],
+    ) -> tuple[int, Future[dict[torch.dtype, torch.Tensor]]] | None:
+        if not self._available_slots:
+            return None
+        slot = self._available_slots.popleft()
+        future = self._executor.submit(self._stage_into, slot, sources)
+        return slot, future
+
+    def prepare(self, shard_sets: Iterable[dict[torch.dtype, torch.Tensor]]) -> int:
+        """Submit upcoming shards for background staging without blocking.
+
+        At least one slot is deliberately left unreserved so an unexpected
+        synchronous request (cache skip or module-group transition) can still
+        make progress without waiting for an unrelated prefetched shard.
+        """
+        if self._closed:
+            raise RuntimeError("pinned DLO host staging pool is closed")
+
+        scheduled = 0
+        max_pending = len(self.buffers) - 1
+        for sources in shard_sets:
+            key = self._source_key(sources)
+            if key in self._pending:
+                continue
+            if len(self._pending) >= max_pending:
+                break
+            submitted = self._submit(sources)
+            if submitted is None:
+                break
+            self._pending[key] = submitted
+            self.prefetch_scheduled += 1
+            scheduled += 1
+        return scheduled
+
+    def _discard_pending(self) -> None:
+        first_error: Exception | None = None
+        pending = list(self._pending.values())
+        self._pending.clear()
+        for slot, future in pending:
+            try:
+                if not future.cancel():
+                    future.result()
+            except Exception as exc:
+                if first_error is None:
+                    first_error = exc
+            finally:
+                self._available_slots.append(slot)
+        self.prefetch_discarded += len(pending)
+        if first_error is not None:
+            raise first_error
+
+    def stage(
+        self,
+        sources: dict[torch.dtype, torch.Tensor],
+    ) -> tuple[int, dict[torch.dtype, torch.Tensor]]:
+        if self._closed:
+            raise RuntimeError("pinned DLO host staging pool is closed")
+
+        key = self._source_key(sources)
+        pending = self._pending.pop(key, None)
+        if pending is None:
+            self.staging_misses += 1
+            if self._pending:
+                self._discard_pending()
+            submitted = self._submit(sources)
+            if submitted is None:
+                # prepare reserves at most N-1 slots, so this can only happen
+                # after an invalid lifecycle: a staged slot was not returned
+                # through mark_in_flight.
+                raise RuntimeError("no DLO host staging slot is available")
+            slot, future = submitted
+        else:
+            self.prefetch_hits += 1
+            slot, future = pending
+
+        wait_started = time.perf_counter()
+        try:
+            staged = future.result()
+        except Exception:
+            self._available_slots.append(slot)
+            raise
+        self.stage_wait_seconds += time.perf_counter() - wait_started
+        self.staged_bytes += sum(source.numel() * dtype_size(dtype) for dtype, source in sources.items())
+        self._leased_slots.add(slot)
         return slot, staged
 
     def mark_in_flight(self, slot: int, event: Any) -> None:
+        if slot not in self._leased_slots:
+            raise RuntimeError(f"DLO host staging slot {slot} is not leased")
+        self._leased_slots.remove(slot)
         self.slot_events[slot] = event
+        self._available_slots.append(slot)
+
+    @property
+    def pending_count(self) -> int:
+        return len(self._pending)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._executor.shutdown(wait=True)
+        for event in self.slot_events:
+            if event is not None:
+                event.synchronize()
+        self._pending.clear()
+        self._available_slots.clear()
+        self._leased_slots.clear()
+        self._closed = True

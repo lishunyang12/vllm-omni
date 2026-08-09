@@ -39,6 +39,35 @@ private transfer memory is approximately:
 staging buffer count × sum(max layer-shard elements per dtype)
 ```
 
+For the checked FL2VA BF16 checkpoint, safetensors metadata gives the following
+single-rank capacity model for the 50 DiT blocks and two token-refiner blocks:
+
+| DLO tensor payload | GiB |
+| --- | ---: |
+| Persistent pinned shards without bounded staging | 61.559 |
+| Largest layer | 1.202 |
+| Two bounded staging buffers | 2.405 |
+| Pinned payload avoided | 59.154 (96.09%) |
+
+These values describe tensor payload, not process RSS. Runtime TP sharding,
+quantization, allocator overhead, and model revisions can change the per-rank
+values, so the startup log reports the actual file-backed bytes,
+private staging bytes, and pinned-payload reduction for the selected topology.
+
+The background copy also prevents the new file-backed-to-pinned transfer from
+remaining entirely on the layer critical path. In a host-only microbenchmark
+using four 1.202 GiB file-backed BF16 shards, two pinned buffers, a 250 ms
+per-layer compute window, local ext4 storage, and 16 PyTorch CPU threads, the
+median of three alternating runs was:
+
+| Bounded staging path | Exposed staging wait | Four-layer pipeline time |
+| --- | ---: | ---: |
+| Synchronous copy | 1.8149 s | 2.8159 s |
+| Background one-layer-ahead copy | 1.0182 s (-43.90%) | 2.0196 s (1.394x) |
+
+This is a staging-pipeline microbenchmark, not an end-to-end H3 latency claim.
+Measure request latency and storage bandwidth on the production host.
+
 This mode has important capacity boundaries:
 
 - The cache directory needs space for one finalized rank-local streamed DiT copy
@@ -52,8 +81,10 @@ This mode has important capacity boundaries:
   200 GiB startup requirement in the table. A reusable preprocessed cache or
   streaming model loader is needed to remove that peak.
 - Cold requests can fault pages from NVMe. `--dlo-prefetch-depth 2` submits the
-  current and following shard for best-effort OS readahead; deeper values trade
-  more page-cache residency for fewer storage stalls.
+  current and following shard for OS readahead and copies the following shard
+  into a pinned buffer on a background worker. Deeper values extend readahead;
+  pinned background work remains bounded to at most one fewer than the configured
+  staging-buffer count.
 - Cache files are removed on clean shutdown. After `SIGKILL` or a host crash,
   remove stale `vllm-omni-dlo-*` directories manually.
 

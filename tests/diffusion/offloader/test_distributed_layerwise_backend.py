@@ -8,6 +8,7 @@ import gc
 import json
 import os
 import socket
+import threading
 from contextlib import contextmanager
 from types import SimpleNamespace
 
@@ -403,6 +404,90 @@ class TestBoundedHostStaging:
         hook.prefetch_layer(slot=0, non_blocking=False)
         assert pool.buffers[0][torch.float32].data_ptr() == first_slot_ptr
         assert first_event.synchronize_calls == 1
+
+    def test_background_prepare_stages_next_shard_without_blocking(
+        self,
+        monkeypatch,
+    ):
+        pool = dist_backend_module.PinnedHostStagingPool.from_shard_sets(
+            [{torch.float32: torch.arange(4, dtype=torch.float32)}],
+            pin_memory=False,
+            budget_bytes=32,
+        )
+        source = {torch.float32: torch.arange(4, dtype=torch.float32)}
+        copy_started = threading.Event()
+        allow_copy = threading.Event()
+        original_stage_into = pool._stage_into
+
+        def blocked_stage_into(slot, sources):
+            copy_started.set()
+            assert allow_copy.wait(timeout=5)
+            return original_stage_into(slot, sources)
+
+        monkeypatch.setattr(pool, "_stage_into", blocked_stage_into)
+
+        assert pool.prepare([source]) == 1
+        assert copy_started.wait(timeout=5)
+        assert pool.pending_count == 1
+        allow_copy.set()
+
+        slot, staged = pool.stage(source)
+        assert torch.equal(staged[torch.float32], source[torch.float32])
+        assert pool.prefetch_hits == 1
+        assert pool.staging_misses == 0
+        pool.mark_in_flight(slot, DummyEvent())
+        pool.close()
+
+    def test_prepare_waits_for_h2d_event_off_the_caller_thread(self):
+        class BlockingEvent:
+            def __init__(self):
+                self.synchronize_started = threading.Event()
+                self.allow_reuse = threading.Event()
+
+            def synchronize(self):
+                self.synchronize_started.set()
+                assert self.allow_reuse.wait(timeout=5)
+
+        sources = [{torch.float32: torch.full((4,), value, dtype=torch.float32)} for value in range(3)]
+        pool = dist_backend_module.PinnedHostStagingPool.from_shard_sets(
+            sources,
+            pin_memory=False,
+            budget_bytes=32,
+        )
+
+        first_slot, _ = pool.stage(sources[0])
+        blocking_event = BlockingEvent()
+        pool.mark_in_flight(first_slot, blocking_event)
+        second_slot, _ = pool.stage(sources[1])
+        pool.mark_in_flight(second_slot, DummyEvent())
+
+        # The worker owns the event wait; prepare itself must return.
+        assert pool.prepare([sources[2]]) == 1
+        assert blocking_event.synchronize_started.wait(timeout=5)
+        blocking_event.allow_reuse.set()
+
+        staged_slot, staged = pool.stage(sources[2])
+        assert staged_slot == first_slot
+        assert torch.equal(staged[torch.float32], sources[2][torch.float32])
+        pool.mark_in_flight(staged_slot, DummyEvent())
+        pool.close()
+
+    def test_prepare_keeps_one_slot_for_unexpected_request(self):
+        sources = [{torch.float32: torch.full((4,), value, dtype=torch.float32)} for value in range(3)]
+        pool = dist_backend_module.PinnedHostStagingPool.from_shard_sets(
+            sources,
+            pin_memory=False,
+            budget_bytes=32,
+        )
+
+        assert pool.prepare(sources[:2]) == 1
+        slot, staged = pool.stage(sources[2])
+        assert torch.equal(staged[torch.float32], sources[2][torch.float32])
+        assert pool.staging_misses == 1
+        pool.mark_in_flight(slot, DummyEvent())
+        assert pool.pending_count == 0
+        assert pool.prefetch_discarded == 1
+        pool.close()
 
     def test_file_backed_store_removes_ephemeral_cache_on_close(self, tmp_path):
         store = dist_backend_module.FileBackedShardStore(tmp_path)

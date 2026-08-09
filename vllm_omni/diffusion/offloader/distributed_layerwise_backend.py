@@ -383,6 +383,12 @@ class DistributedLayerwiseOffloadHook(ModelHook):
                     )
                 evt.record(self.comm_stream)
 
+        if staging_pool is not None and len(self.host_prefetch_shards) > 1:
+            # Copy the next file-backed shard into the other pinned slot
+            # while this layer's H2D/compute proceeds. prepare leaves one
+            # emergency slot free for cache skips and module-group switches.
+            staging_pool.prepare(self.host_prefetch_shards[1:])
+
         self.ready_events[slot] = evt
         self._prefetch_done = evt
         self._prefetched_slot = slot
@@ -609,6 +615,9 @@ class PinnedResidentLayerGroup:
             if self.host_shard_store is not None and self.host_prefetch_depth:
                 end = min(index + self.host_prefetch_depth, len(self._states))
                 self.host_shard_store.prefetch(candidate["cpu_shards"] for candidate in self._states[index:end])
+            if staging_pool is not None and self.host_prefetch_depth:
+                end = min(index + self.host_prefetch_depth, len(self._states))
+                staging_pool.prepare(candidate["cpu_shards"] for candidate in self._states[index:end])
 
             host_slot: int | None = None
             copy_sources = state["cpu_shards"]
@@ -1477,13 +1486,17 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                     group[(index + offset) % len(group)].cpu_shards for offset in range(group_depth)
                 ]
 
+        saved_pinned_bytes = max(store.allocated_bytes - pool.allocated_bytes, 0)
         logger.info(
             "Bounded DLO host staging enabled: file-backed shards=%.2f GiB, "
-            "private staging=%.2f GiB (%d buffers), prefetch_depth=%d. "
+            "private staging=%.2f GiB (%d buffers), pinned payload reduction=%.2f GiB (%.1f%%), "
+            "prefetch_depth=%d. "
             "OS page cache and initial checkpoint-loader memory are not bounded.",
             store.allocated_bytes / 1024**3,
             pool.allocated_bytes / 1024**3,
             len(pool.buffers),
+            saved_pinned_bytes / 1024**3,
+            100.0 * saved_pinned_bytes / store.allocated_bytes,
             prefetch_depth,
         )
 
@@ -1806,6 +1819,23 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
 
     def _release_host_storage(self) -> None:
         current_omni_platform.synchronize()
+        if self._host_staging_pool is not None:
+            pool = self._host_staging_pool
+            logger.info(
+                "Bounded DLO host staging runtime: staged=%.2f GiB, prefetched=%d, "
+                "prefetch_hits=%d, discarded=%d, synchronous_misses=%d, staging_wait=%.3fs",
+                pool.staged_bytes / 1024**3,
+                pool.prefetch_scheduled,
+                pool.prefetch_hits,
+                pool.prefetch_discarded,
+                pool.staging_misses,
+                pool.stage_wait_seconds,
+            )
+            # Pending workers still reference mmap-backed shard dictionaries.
+            # Stop them before clearing hooks or closing the backing mappings.
+            pool.close()
+        self._host_staging_pool = None
+
         for group in self._all_hook_groups:
             for hook in group:
                 hook.cpu_shards.clear()
@@ -1814,8 +1844,6 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 hook.host_shard_store = None
         if self._resident_layer_group is not None:
             self._resident_layer_group.release_host_storage()
-
-        self._host_staging_pool = None
         if self._host_shard_store is not None:
             import gc
 
