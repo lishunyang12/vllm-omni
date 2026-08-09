@@ -75,7 +75,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-inference-steps", type=int, default=50)
     parser.add_argument("--warmup-steps", type=int, default=0)
     parser.add_argument("--seed-base", type=int, default=1101)
-    parser.add_argument("--num-gpus", type=int, choices=(2, 4, 8), required=True)
+    parser.add_argument("--num-gpus", type=int, choices=(1, 2, 4, 8), required=True)
     parser.add_argument("--tensor-parallel-size", type=int, required=True)
     parser.add_argument("--ulysses-degree", type=int, default=1)
     parser.add_argument("--ring-degree", type=int, default=1)

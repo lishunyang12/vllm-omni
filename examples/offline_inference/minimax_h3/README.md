@@ -126,6 +126,18 @@ SCREEN_ROOT="$TEST_ROOT/results/sm120-4gpu-matrix" bash examples/offline_inferen
 SCREEN_ROOT="$TEST_ROOT/results/sm120-8gpu-matrix" bash examples/offline_inference/minimax_h3/run_sm120_8gpu_matrix.sh
 ```
 
+To test resident layers 20 through 50 across both two-GPU topologies and then
+one GPU, select the lowest worst-case T2VA/FL2VA latency with at least 4 GiB
+headroom, and fully validate both winners at 50 steps in one invocation:
+
+```bash
+RESULT_ROOT="$TEST_ROOT/results/sm120-1gpu-2gpu-residency" \
+  bash examples/offline_inference/minimax_h3/run_sm120_1gpu_2gpu_residency_sweep.sh
+```
+
+The sweep is resumable and writes `probe_summary.csv`, `selection.json`, and
+`conclusion.txt` below `RESULT_ROOT`.
+
 Run these one at a time on idle GPUs. Select the candidate with the lowest
 maximum steady-state T2VA/I2VA latency that also passes the external peak
 memory gate; only then run that winner with `RUN_REF2VA=1`.
