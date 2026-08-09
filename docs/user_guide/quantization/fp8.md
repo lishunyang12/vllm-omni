@@ -136,9 +136,18 @@ outputs = omni.generate(
 )
 ```
 
-For MiniMax-H3, the default FP8 mode covers both the DiT and the Qwen3-VL
-text decoder. The vision tower, embeddings, norms, RoPE, both VAEs, and the
-model's FP32 patch, timestep, and output projections keep checkpoint precision:
+A plain, global quantization configuration is passed unchanged to every
+quantization-aware component constructed by a pipeline. This includes an
+eligible encoder when that encoder is implemented with vLLM quantizable
+layers; it does not rewrite arbitrary ``torch.nn`` modules. A structured
+component map is the only way to narrow that scope. Pipeline integrations that
+do not yet expose an encoder through the quantization factory remain DiT-only.
+
+For MiniMax-H3, the default FP8 mode therefore covers both the DiT and the
+quantization-aware Qwen3-VL text decoder. The vision tower uses ordinary
+``torch.nn`` layers, so it stays in checkpoint precision together with the
+embeddings, norms, RoPE, both VAEs, and the model's FP32 patch, timestep, and
+output projections:
 
 ```python
 omni = Omni(
@@ -147,7 +156,7 @@ omni = Omni(
 )
 ```
 
-The H3 component scope is explicit:
+The resulting H3 component scope is:
 
 | Configuration | DiT | Qwen text decoder | Vision tower / VAEs |
 |---------------|-----|-------------------|---------------------|

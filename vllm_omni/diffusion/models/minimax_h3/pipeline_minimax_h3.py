@@ -54,6 +54,7 @@ from vllm_omni.model_executor.model_loader.weight_utils import (
     download_weights_from_hf_specific,
 )
 from vllm_omni.platforms import current_omni_platform
+from vllm_omni.quantization import resolve_component_quant_config as _resolve_component_quant_config
 
 from .condition_noise import (
     minimax_h3_audio_cond_noise_aug_rows,
@@ -173,12 +174,6 @@ def _resolve_minimax_h3_model_root(
 def _read_base_schedule(release: Mapping[str, Any]) -> DMD2SigmaSchedule | None:
     """Read a partition's distilled schedule. An absent key means legacy uniform."""
     return DMD2SigmaSchedule.from_metadata(release)
-
-
-def _resolve_component_quant_config(quant_config, component: str):
-    if hasattr(quant_config, "resolve"):
-        return quant_config.resolve(component)
-    return quant_config
 
 
 def _minimax_h3_post_process(output, output_type: str = "np"):
@@ -688,21 +683,30 @@ class MiniMaxH3Pipeline(
             )
         self.text_encoder_tp_size = text_encoder_tp_size
         self.text_encoder_group = self._build_text_encoder_group(text_encoder_tp_size)
+        load_text_encoder = rank < text_encoder_tp_size
         self.text_encoder = MiniMaxH3Qwen3VLEncoder(
             os.path.join(model_path, "text_encoder"),
             device=self.device,
-            load_model=rank < text_encoder_tp_size,
+            load_model=load_text_encoder,
             encoder_group=self.text_encoder_group,
             quant_config=_resolve_component_quant_config(
                 od_config.quantization_config,
                 "text_encoder",
             ),
         )
+        if load_text_encoder:
+            self.weights_sources.append(
+                DiffusersPipelineLoader.ComponentSource(
+                    model_or_path=str(model_path),
+                    subfolder="text_encoder",
+                    revision=od_config.revision,
+                    prefix="text_encoder.",
+                    fall_back_to_pt=False,
+                )
+            )
         stage_components = bool(
             od_config.enable_layerwise_offload or getattr(od_config, "enable_distributed_layerwise_offload", False)
         )
-        if stage_components:
-            self.text_encoder._process_online_fp8_weights(keep_on_device=False)
         component_load_device = torch.device("cpu") if stage_components else self.device
         self.video_vae = MiniMaxH3VideoVAE(
             os.path.join(model_path, "video_vae"),
@@ -731,7 +735,7 @@ class MiniMaxH3Pipeline(
         def source_prefix(item: tuple[str, torch.Tensor]) -> str:
             name, _ = item
             prefix = name.partition(".")[0] + "."
-            if prefix in {"transformer.", "transformers_ref."}:
+            if prefix in {"transformer.", "transformers_ref.", "text_encoder."}:
                 return prefix
             raise ValueError(f"unexpected MiniMax-H3 weight {name!r}")
 
@@ -741,17 +745,16 @@ class MiniMaxH3Pipeline(
             if prefix in loaded_prefixes:
                 raise ValueError(f"MiniMax-H3 weight source {prefix!r} is not contiguous")
             loaded_prefixes.add(prefix)
-            transformer = getattr(self, prefix.removesuffix("."))
-            loaded = transformer.load_weights((name[len(prefix) :], tensor) for name, tensor in grouped_weights)
-            transformer.post_load_weights()
+            component = getattr(self, prefix.removesuffix("."))
+            loaded = component.load_weights((name[len(prefix) :], tensor) for name, tensor in grouped_weights)
+            if prefix != "text_encoder.":
+                component.post_load_weights()
             loaded_with_prefix.update(prefix + name for name in loaded)
-        # The text encoder and both VAEs load eagerly in ``__init__`` rather
-        # than through ``weights_sources``. Record them for the runner's strict
-        # missing-parameter check. For the text encoder that report is exact
-        # because its loader raises on any unloaded parameter or partially filled
-        # fused parameter; weaken that and gaps here become invisible. The two
-        # VAEs carry no equivalent guarantee.
-        for component_name in ("text_encoder", "video_vae", "audio_vae"):
+        # Both VAEs load eagerly in ``__init__`` rather than through
+        # ``weights_sources``. The text encoder uses the shared component
+        # loader so online quantization and offload processing follow the same
+        # path as the DiT.
+        for component_name in ("video_vae", "audio_vae"):
             component = getattr(self, component_name)
             loaded_with_prefix.update(f"{component_name}.{name}" for name, _ in component.named_parameters())
         return loaded_with_prefix
