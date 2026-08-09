@@ -33,7 +33,6 @@ from vllm_omni.diffusion.distributed.sp_plan import (
     SequenceParallelInput,
     SequenceParallelOutput,
 )
-from vllm_omni.diffusion.layers.norm import RMSNorm
 from vllm_omni.diffusion.layers.rope import RotaryEmbedding
 
 if TYPE_CHECKING:
@@ -171,11 +170,13 @@ def _reorder_grouped_qkv_to_qkv(
     )
 
 
-def _norm(size: int, *, eps: float, dtype: torch.dtype = _BF16_DTYPE) -> RMSNorm:
+def _norm(size: int, *, eps: float, dtype: torch.dtype = _BF16_DTYPE) -> nn.RMSNorm:
     # RMSNorm uses fp32 accumulation with bf16 inputs and outputs.
     # torch.nn.RMSNorm upcasts reduced-precision inputs for the variance
-    # reduction, matching that accumulation semantic.
-    return RMSNorm(size, eps=eps, dtype=dtype)
+    # reduction, matching that accumulation semantic. Keep nn.RMSNorm here:
+    # the diffusion CustomOp RMSNorm has measurable HSDP-dependent BF16 drift
+    # across H3's 50 residual blocks when its weight is an FSDP DTensor.
+    return nn.RMSNorm(size, eps=eps, dtype=dtype)
 
 
 def _modulate_scale_shift(

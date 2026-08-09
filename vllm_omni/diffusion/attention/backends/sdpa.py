@@ -54,6 +54,7 @@ def _maybe_reshape_attn_mask(
 
 class SDPABackend(AttentionBackend):
     accept_output_buffer: bool = True
+    supports_prefix_kv_slicing: bool = True
 
     @classmethod
     def supports_attention_mask(cls) -> bool:
@@ -97,11 +98,30 @@ class SDPAImpl(AttentionImpl):
         attn_metadata: AttentionMetadata | None = None,
         mask_mode: SDPAMaskMode = "broadcast_k",
     ) -> torch.Tensor:
-        # Normalize mask before permuting q/k/v.
-        # _maybe_reshape_attn_mask expects sequence length on dim=1.
         attention_mask = None
         if attn_metadata:
-            attention_mask = _maybe_reshape_attn_mask(query, key, attn_metadata.attn_mask, mask_mode=mask_mode)
+            valid_kv_length = attn_metadata.extra.get("valid_kv_length")
+            if attn_metadata.attn_mask is None and isinstance(valid_kv_length, int):
+                if not 0 < valid_kv_length <= key.shape[1]:
+                    raise ValueError(
+                        "valid_kv_length must be within the K/V sequence, "
+                        f"got {valid_kv_length} for length {key.shape[1]}"
+                    )
+                # A contiguous valid prefix is equivalent to a broadcast
+                # key-padding mask. Keep Q/output aligned for sequence
+                # parallelism while avoiding a masked SDPA kernel for padding
+                # that is not part of the packed document.
+                key = key[:, :valid_kv_length]
+                value = value[:, :valid_kv_length]
+            else:
+                # Normalize mask before permuting q/k/v.
+                # _maybe_reshape_attn_mask expects sequence length on dim=1.
+                attention_mask = _maybe_reshape_attn_mask(
+                    query,
+                    key,
+                    attn_metadata.attn_mask,
+                    mask_mode=mask_mode,
+                )
 
         enable_gqa = query.shape[2] != key.shape[2]
         query, key, value = (x.permute(0, 2, 1, 3) for x in (query, key, value))

@@ -61,6 +61,17 @@ def test_packed_attention_is_a_regional_compile_boundary():
     assert getattr(MiniMaxH3Attention._run_packed_attention, "_torchdynamo_disable", False)
 
 
+def test_h3_keeps_native_rmsnorm_for_hsdp_accuracy():
+    from vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer import (
+        _norm,
+    )
+
+    norm = _norm(128, eps=1e-5)
+
+    assert type(norm) is nn.RMSNorm
+    assert norm.weight.dtype is torch.bfloat16
+
+
 def test_h3_fused_rope_matches_reference_and_preserves_unrotated_dims():
     from vllm_omni.diffusion.layers.rope import RotaryEmbedding
     from vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer import (
