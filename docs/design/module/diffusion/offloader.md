@@ -18,13 +18,29 @@ validation_paths:
   - tests/diffusion/offloader/**
 upstream_refs:
   - torch.nn.Module.to
-last_reviewed: 2026-07-16
+last_reviewed: 2026-08-09
 ---
 
 # Diffusion offloader
 
 The offloader owns component residency, transfer scheduling, memory accounting,
 prefetch, and teardown for diffusion execution.
+
+## Distributed layerwise execution modes
+
+Distributed layerwise offload has two scheduling contracts:
+
+- **AllGather mode** shards each layer across the participating ranks. Requests
+  execute in compatible collective waves because every rank must enter the same
+  weight collective in the same order.
+- **Rank-local mode** streams the tensors produced by the standard loader on
+  each rank. DP replicas may execute heterogeneous requests independently, idle
+  replicas skip model execution, and request-scoped process groups keep runtime
+  collectives local to the assigned replica.
+
+These modes trade host-memory efficiency for scheduling independence. Changing
+the mode MUST update admission, dispatch, result routing, abort handling, and
+teardown as one contract.
 
 ## Candidate invariants
 

@@ -14,13 +14,22 @@ depends_on:
 validation_paths:
   - tests/diffusion/batching/**
 upstream_refs: []
-last_reviewed: 2026-07-16
+last_reviewed: 2026-08-09
 ---
 
 # Diffusion continuous batching
 
 Continuous batching defines when diffusion requests are compatible, how they
 share an execution step, and how each request advances independently.
+
+## DLO admission contract
+
+Request compatibility depends on the DLO execution mode. AllGather-backed DLO
+retains the normal sampling-parameter compatibility gate so each collective wave
+is homogeneous. Rank-local DLO with DP greater than one may admit heterogeneous
+requests up to DP capacity because each replica executes one independently
+routed request. This exception MUST NOT relax batching for ordinary request
+batches or AllGather-backed DLO.
 
 ## Candidate invariants
 
