@@ -174,7 +174,13 @@ class LTXVideoAudioStepAdapter:
         return ((video_out, audio_out),)
 
 
-def _official_ltx_sigmas(scheduler: Any, steps: int, device: torch.device) -> torch.Tensor:
+def _official_ltx_sigmas(
+    scheduler: Any,
+    steps: int,
+    device: torch.device,
+    *,
+    image_seq_len: int | None = None,
+) -> torch.Tensor:
     """Build the official LTX one-stage sigma schedule in torch fp32."""
     config = scheduler.config
     base_anchor = config.get("base_image_seq_len", 1024)
@@ -184,8 +190,10 @@ def _official_ltx_sigmas(scheduler: Any, steps: int, device: torch.device) -> to
 
     sigmas = torch.linspace(1.0, 0.0, steps + 1)
     slope = (max_shift - base_shift) / (max_anchor - base_anchor)
-    # Official LTX2 one-stage intentionally uses the max sequence anchor, so the shift stays at max_shift.
-    sigma_shift = max_anchor * slope + (base_shift - slope * base_anchor)
+    # Legacy LTX paths use the max sequence anchor. The LTX-2.5 Full/SFT
+    # recipe passes its actual packed token count, matching Diffusers #14447.
+    shift_anchor = max_anchor if image_seq_len is None else image_seq_len
+    sigma_shift = shift_anchor * slope + (base_shift - slope * base_anchor)
     exp_shift = math.exp(sigma_shift)
     sigmas = torch.where(sigmas != 0, exp_shift / (exp_shift + (1 / sigmas - 1)), 0)
 
@@ -223,6 +231,7 @@ def prepare_scheduler_stage(
     latent_width: int,
     use_official_sigma_schedule: bool,
     image_conditioned: bool = False,
+    use_dynamic_sequence_shift: bool = False,
 ) -> tuple[Any, Any, torch.Tensor]:
     if sigmas is not None and timesteps is not None:
         raise ValueError("Only one of `sigmas` or `timesteps` may be provided.")
@@ -247,7 +256,21 @@ def prepare_scheduler_stage(
         return audio_scheduler, video_audio_step_adapter, timesteps_tensor
 
     if sigmas is None and timesteps is None and use_official_sigma_schedule:
-        scheduler_sigmas = _official_ltx_sigmas(pipeline.scheduler, request_inputs.num_inference_steps, device)
+        image_seq_len = None
+        if use_dynamic_sequence_shift:
+            patch_t = pipeline.transformer_temporal_patch_size
+            patch = pipeline.transformer_spatial_patch_size
+            image_seq_len = (
+                math.ceil(latent_num_frames / patch_t)
+                * math.ceil(latent_height / patch)
+                * math.ceil(latent_width / patch)
+            )
+        scheduler_sigmas = _official_ltx_sigmas(
+            pipeline.scheduler,
+            request_inputs.num_inference_steps,
+            device,
+            image_seq_len=image_seq_len,
+        )
         timesteps_tensor = _set_scheduler_sigmas(pipeline.scheduler, scheduler_sigmas)
         _set_scheduler_sigmas(audio_scheduler, scheduler_sigmas.clone())
         return audio_scheduler, video_audio_step_adapter, timesteps_tensor
@@ -338,6 +361,7 @@ def build_transformer_kwargs(
         "audio_num_frames": forward_ctx.padded_audio_num_frames,
         "video_coords": denoise_ctx.video_coords,
         "audio_coords": denoise_ctx.audio_coords,
+        "use_cross_timestep": getattr(pipeline, "model_version", "2") in ("2.3", "2.5"),
         "attention_kwargs": forward_ctx.attention_kwargs if attention_kwargs is None else attention_kwargs,
         "return_dict": False,
     }
@@ -423,6 +447,7 @@ class LTXPhaseExecutor:
             latent_width=latent_width,
             use_official_sigma_schedule=phase_recipe.use_official_sigma_schedule,
             image_conditioned=conditioning_mask is not None,
+            use_dynamic_sequence_shift=phase_recipe.use_dynamic_sequence_shift,
         )
         forward_ctx = LTXForwardContext(
             req=req,

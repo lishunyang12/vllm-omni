@@ -44,6 +44,11 @@ try:
 except ImportError:
     LTX2VocoderWithBWE = None
 
+try:
+    from transformers import Gemma4UnifiedForConditionalGeneration
+except ImportError:
+    Gemma4UnifiedForConditionalGeneration = None
+
 
 _LTX_COMPONENT_SUBFOLDERS = (
     "tokenizer",
@@ -69,7 +74,11 @@ class LTXComponentProfile:
     resident_modules: tuple[str, ...] = ()
     video_vae_cls: type = AutoencoderKLLTX2Video
     vocoder_cls: type = LTX2Vocoder
+    text_encoder_cls: type | None = Gemma3ForConditionalGeneration
     vocoder_fallback_cls: type | None = None
+    transformer_subfolder: str = "transformer"
+    scheduler_use_dynamic_shifting: bool = False
+    scheduler_shift_terminal: float | None = None
 
 
 LTX2_COMPONENT_PROFILE = LTXComponentProfile(
@@ -92,6 +101,37 @@ LTX23_COMPONENT_PROFILE = LTXComponentProfile(
     vocoder_fallback_cls=LTX2Vocoder,
 )
 
+LTX25_COMPONENT_PROFILE = LTXComponentProfile(
+    name="ltx2_5",
+    dit_modules=("transformer",),
+    encoder_modules=("text_encoder", "connectors"),
+    vae_modules=("vae", "audio_vae"),
+    resident_modules=("vocoder",),
+    video_vae_cls=DistributedAutoencoderKLLTX2Video,
+    vocoder_cls=LTX2VocoderWithBWE or LTX2Vocoder,
+    vocoder_fallback_cls=LTX2Vocoder,
+    text_encoder_cls=Gemma4UnifiedForConditionalGeneration,
+)
+
+# Pinned Diffusers LTX-2.5 integration (PR #14447, commit 7564fb016d)
+# explicitly loads the SFT weights and restores the scheduler settings that
+# the distilled model_index disables.
+LTX25_FULL_COMPONENT_PROFILE = LTXComponentProfile(
+    name="ltx2_5_full",
+    dit_modules=("transformer",),
+    encoder_modules=("text_encoder", "connectors"),
+    vae_modules=("vae", "audio_vae"),
+    resident_modules=("vocoder",),
+    video_vae_cls=DistributedAutoencoderKLLTX2Video,
+    vocoder_cls=LTX2VocoderWithBWE or LTX2Vocoder,
+    vocoder_fallback_cls=LTX2Vocoder,
+    text_encoder_cls=Gemma4UnifiedForConditionalGeneration,
+    transformer_subfolder="transformer_full",
+    scheduler_use_dynamic_shifting=True,
+    scheduler_shift_terminal=0.1,
+)
+
+
 LTX2_DISTILLED_COMPONENT_PROFILE = LTXComponentProfile(
     name="ltx2_distilled",
     dit_modules=("transformer",),
@@ -101,11 +141,26 @@ LTX2_DISTILLED_COMPONENT_PROFILE = LTXComponentProfile(
     video_vae_cls=DistributedAutoencoderKLLTX2Video,
 )
 
+LTX25_DISTILLED_COMPONENT_PROFILE = LTXComponentProfile(
+    name="ltx2_5_distilled",
+    dit_modules=("transformer",),
+    encoder_modules=("text_encoder", "connectors"),
+    vae_modules=("vae", "audio_vae"),
+    resident_modules=("vocoder", "latent_upsampler"),
+    video_vae_cls=DistributedAutoencoderKLLTX2Video,
+    vocoder_cls=LTX2VocoderWithBWE or LTX2Vocoder,
+    vocoder_fallback_cls=LTX2Vocoder,
+    text_encoder_cls=Gemma4UnifiedForConditionalGeneration,
+)
+
 
 _COMPONENT_PROFILES: dict[tuple[str, str], LTXComponentProfile] = {
+    ("full", "2.5"): LTX25_FULL_COMPONENT_PROFILE,
     ("one_stage", "2"): LTX2_COMPONENT_PROFILE,
     ("one_stage", "2.3"): LTX23_COMPONENT_PROFILE,
+    ("one_stage", "2.5"): LTX25_COMPONENT_PROFILE,
     ("distilled_two_stage", "2"): LTX2_DISTILLED_COMPONENT_PROFILE,
+    ("distilled_two_stage", "2.5"): LTX25_DISTILLED_COMPONENT_PROFILE,
     ("dmd2", "2"): LTX2_COMPONENT_PROFILE,
     ("dmd2", "2.3"): LTX23_COMPONENT_PROFILE,
 }
@@ -139,14 +194,31 @@ def _load_ltx_metadata_json(model: str, filename: str) -> dict[str, Any]:
 
 
 def detect_ltx_model_version(model: str) -> str:
-    """Detect LTX-2 versus LTX-2.3 from checkpoint component metadata.
+    """Detect the LTX model version from checkpoint component metadata.
 
     Official checkpoints use ``model_version`` metadata. Diffusers repositories
-    expose the equivalent distinction through the BWE vocoder introduced by
-    LTX-2.3. Unknown conversions retain the official LTX-2 fallback.
+    expose LTX-2.5 through the Gemma4 Unified text encoder and LTX-2.3 through
+    the BWE vocoder. Unknown conversions retain the official LTX-2 fallback.
     """
     model_index = _load_ltx_metadata_json(model, "model_index.json")
-    if str(model_index.get("model_version", "")).startswith("2.3"):
+    model_version = str(model_index.get("model_version", ""))
+    if model_version.startswith("2.5"):
+        return "2.5"
+    text_encoder_entry = model_index.get("text_encoder")
+    if isinstance(text_encoder_entry, (list, tuple)) and text_encoder_entry:
+        text_encoder_class = str(text_encoder_entry[-1])
+    elif isinstance(text_encoder_entry, dict):
+        text_encoder_class = str(text_encoder_entry.get("_class_name", ""))
+    else:
+        text_encoder_class = ""
+    if text_encoder_class == "Gemma4UnifiedForConditionalGeneration":
+        return "2.5"
+
+    text_encoder_config = _load_ltx_metadata_json(model, "text_encoder/config.json")
+    if text_encoder_config.get("model_type") == "gemma4_unified":
+        return "2.5"
+
+    if model_version.startswith("2.3"):
         return "2.3"
 
     vocoder_entry = model_index.get("vocoder")
@@ -329,7 +401,7 @@ def initialize_pipeline_components(pipeline: Any, od_config: Any) -> None:
     pipeline.weights_sources = [
         DiffusersPipelineLoader.ComponentSource(
             model_or_path=model,
-            subfolder="transformer",
+            subfolder=profile.transformer_subfolder,
             revision=None,
             prefix="transformer.",
             fall_back_to_pt=True,
@@ -342,9 +414,14 @@ def initialize_pipeline_components(pipeline: Any, od_config: Any) -> None:
         subfolder="tokenizer",
         local_files_only=local_files_only,
     )
+    if profile.text_encoder_cls is None:
+        raise ImportError(
+            "LTX-2.5 requires Gemma4UnifiedForConditionalGeneration. "
+            "Install transformers>=5.8,<5.15."
+        )
     with torch.device("cpu"):
         pipeline.text_encoder = _load_component(
-            Gemma3ForConditionalGeneration,
+            profile.text_encoder_cls,
             model,
             "text_encoder",
             local_files_only=local_files_only,
@@ -403,7 +480,7 @@ def initialize_pipeline_components(pipeline: Any, od_config: Any) -> None:
                 dtype=dtype,
             )
 
-    transformer_config = load_transformer_config(model, "transformer", local_files_only)
+    transformer_config = load_transformer_config(model, profile.transformer_subfolder, local_files_only)
     quant_config = getattr(od_config, "quantization_config", None)
     pipeline.transformer = create_transformer_from_config(transformer_config, quant_config=quant_config)
     _place_aux_components(pipeline)
@@ -412,6 +489,12 @@ def initialize_pipeline_components(pipeline: Any, od_config: Any) -> None:
         subfolder="scheduler",
         local_files_only=local_files_only,
     )
+    if profile.scheduler_use_dynamic_shifting:
+        pipeline.scheduler = FlowMatchEulerDiscreteScheduler.from_config(
+            pipeline.scheduler.config,
+            use_dynamic_shifting=True,
+            shift_terminal=profile.scheduler_shift_terminal,
+        )
 
     pipeline.vae_spatial_compression_ratio = pipeline.vae.spatial_compression_ratio
     pipeline.vae_temporal_compression_ratio = pipeline.vae.temporal_compression_ratio

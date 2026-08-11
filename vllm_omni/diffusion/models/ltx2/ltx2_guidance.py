@@ -285,10 +285,17 @@ class LTXGuidanceExecutor:
         ts: torch.Tensor,
         video_token_count: int,
         audio_token_count: int,
+        *,
+        expand_for_sequence_parallel: bool = False,
     ) -> dict[str, torch.Tensor]:
+        timestep = ts
+        audio_timestep = ts
+        if expand_for_sequence_parallel:
+            timestep = ts.reshape(-1, 1).expand(-1, video_token_count)
+            audio_timestep = ts.reshape(-1, 1).expand(-1, audio_token_count)
         return {
-            "timestep": ts.reshape(-1, 1).expand(-1, video_token_count),
-            "audio_timestep": ts.reshape(-1, 1).expand(-1, audio_token_count),
+            "timestep": timestep,
+            "audio_timestep": audio_timestep,
             "sigma": ts,
             "audio_sigma": ts,
         }

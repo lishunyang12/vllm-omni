@@ -13,11 +13,14 @@ import pytest
 import torch
 
 from vllm_omni.diffusion.data import DiffusionOutput
-from vllm_omni.diffusion.models.ltx2 import ltx2_components
+from vllm_omni.diffusion.models.ltx2 import ltx2_components, ltx2_latents
 from vllm_omni.diffusion.models.ltx2.ltx2_components import (
     LTX2_COMPONENT_PROFILE,
     LTX2_DISTILLED_COMPONENT_PROFILE,
     LTX23_COMPONENT_PROFILE,
+    LTX25_COMPONENT_PROFILE,
+    LTX25_DISTILLED_COMPONENT_PROFILE,
+    LTX25_FULL_COMPONENT_PROFILE,
     _install_connector_attention,
     detect_ltx_model_version,
 )
@@ -35,18 +38,25 @@ from vllm_omni.diffusion.models.ltx2.ltx2_guidance import (
     LTXModalityGuidance,
     build_perturbation_kwargs,
     combine_guided_x0,
+    velocity_from_x0,
+    x0_from_velocity,
 )
 from vllm_omni.diffusion.models.ltx2.ltx2_latents import LTXAVState
 from vllm_omni.diffusion.models.ltx2.ltx2_recipes import (
     LTX2_DISTILLED_TWO_STAGE_RECIPE,
     LTX2_ONE_STAGE_RECIPE,
     LTX23_ONE_STAGE_RECIPE,
+    LTX25_DISTILLED_TWO_STAGE_RECIPE,
+    LTX25_FULL_RECIPE,
+    LTX25_ONE_STAGE_RECIPE,
     LTX_DEFAULT_NEGATIVE_PROMPT,
+    LTX_DISTILLED_SIGMAS,
     LTX_POSITIVE_ONLY_RECIPE,
 )
 from vllm_omni.diffusion.models.ltx2.ltx2_request import LTXRequestInputs, validate_pipeline_request
 from vllm_omni.diffusion.models.ltx2.ltx2_runtime import LTXRuntime
 from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import (
+    LTX2FullPipeline,
     LTX2I2VDMD2Pipeline,
     LTX2Pipeline,
     LTX2T2VDMD2Pipeline,
@@ -110,9 +120,15 @@ def test_ltx_public_entries_share_runtime_and_keep_recipe_boundaries():
     assert LTX2DistilledPipeline.component_profile is LTX2_DISTILLED_COMPONENT_PROFILE
     assert LTX2_COMPONENT_PROFILE.video_vae_cls is DistributedAutoencoderKLLTX2Video
     assert LTX23_COMPONENT_PROFILE.video_vae_cls is DistributedAutoencoderKLLTX2Video
+    assert LTX25_COMPONENT_PROFILE.video_vae_cls is DistributedAutoencoderKLLTX2Video
 
 
 def test_ltx_checkpoint_version_detection_uses_metadata(tmp_path):
+    (tmp_path / "model_index.json").write_text(
+        json.dumps({"text_encoder": ["transformers", "Gemma4UnifiedForConditionalGeneration"]})
+    )
+    assert detect_ltx_model_version(str(tmp_path)) == "2.5"
+
     (tmp_path / "model_index.json").write_text(json.dumps({"vocoder": ["ltx2", "LTX2VocoderWithBWE"]}))
     assert detect_ltx_model_version(str(tmp_path)) == "2.3"
 
@@ -121,6 +137,153 @@ def test_ltx_checkpoint_version_detection_uses_metadata(tmp_path):
 
     (tmp_path / "model_index.json").write_text(json.dumps({"vocoder": ["ltx2", "LTX2Vocoder"]}))
     assert detect_ltx_model_version(str(tmp_path)) == "2"
+
+
+def test_ltx25_checkpoint_selects_distilled_one_stage_profile(tmp_path, monkeypatch):
+    from vllm_omni.diffusion.models.ltx2 import ltx2_runtime
+
+    (tmp_path / "model_index.json").write_text(
+        json.dumps({"text_encoder": ["transformers", "Gemma4UnifiedForConditionalGeneration"]})
+    )
+
+    def stub_components(pipe, od_config):
+        pipe.od_config = od_config
+        pipe.vae_spatial_compression_ratio = 32
+
+    monkeypatch.setattr(ltx2_runtime, "initialize_pipeline_components", stub_components)
+    monkeypatch.setattr(LTXRuntime, "setup_diffusion_pipeline_profiler", lambda *_args, **_kwargs: None)
+
+    pipe = LTX2Pipeline(od_config=SimpleNamespace(model=str(tmp_path), enable_diffusion_pipeline_profiler=False))
+
+    assert pipe.model_version == "2.5"
+    assert pipe.component_profile is LTX25_COMPONENT_PROFILE
+    assert pipe.pipeline_recipe is LTX25_ONE_STAGE_RECIPE
+    assert pipe.preserve_sp_padded_audio_duration
+    assert pipe.reports_stage_durations
+
+
+def test_ltx25_one_stage_recipe_matches_official_distilled_defaults():
+    (phase,) = LTX25_ONE_STAGE_RECIPE.phases
+
+    assert (LTX25_ONE_STAGE_RECIPE.height, LTX25_ONE_STAGE_RECIPE.width) == (544, 960)
+    assert LTX25_ONE_STAGE_RECIPE.num_frames == 121
+    assert LTX25_ONE_STAGE_RECIPE.frame_rate == 24.0
+
+    assert LTX25_ONE_STAGE_RECIPE.num_inference_steps == 8
+    assert phase.guidance == LTXGuidanceSpec.positive_only()
+    assert phase.sigmas == LTX_DISTILLED_SIGMAS
+    assert not phase.allow_guidance_override
+    assert not phase.use_official_sigma_schedule
+    assert not LTX25_ONE_STAGE_RECIPE.allow_request_sigmas
+    assert LTX25_ONE_STAGE_RECIPE.fixed_num_inference_steps
+
+
+def test_ltx25_full_checkpoint_selects_sft_profile_and_recipe(tmp_path, monkeypatch):
+    from vllm_omni.diffusion.models.ltx2 import ltx2_runtime
+
+    (tmp_path / "model_index.json").write_text(
+        json.dumps({"text_encoder": ["transformers", "Gemma4UnifiedForConditionalGeneration"]})
+    )
+
+    def stub_components(pipe, od_config):
+        pipe.od_config = od_config
+        pipe.vae_spatial_compression_ratio = 32
+
+    monkeypatch.setattr(ltx2_runtime, "initialize_pipeline_components", stub_components)
+    monkeypatch.setattr(LTXRuntime, "setup_diffusion_pipeline_profiler", lambda *_args, **_kwargs: None)
+
+    pipe = LTX2FullPipeline(od_config=SimpleNamespace(model=str(tmp_path), enable_diffusion_pipeline_profiler=False))
+
+    assert pipe.model_version == "2.5"
+    assert pipe.component_profile is LTX25_FULL_COMPONENT_PROFILE
+    assert pipe.pipeline_recipe is LTX25_FULL_RECIPE
+    assert not pipe.support_image_input
+
+def test_ltx25_full_recipe_matches_official_sft_defaults():
+    (phase,) = LTX25_FULL_RECIPE.phases
+
+    assert (LTX25_FULL_RECIPE.height, LTX25_FULL_RECIPE.width) == (544, 960)
+    assert LTX25_FULL_RECIPE.num_frames == 121
+    assert LTX25_FULL_RECIPE.frame_rate == 24.0
+    assert LTX25_FULL_RECIPE.num_inference_steps == 30
+    assert phase.guidance.video == LTXModalityGuidance(
+        cfg_scale=3.0,
+        stg_scale=1.0,
+        modality_scale=3.0,
+        rescale_scale=0.7,
+        stg_blocks=(28,),
+    )
+    assert phase.guidance.audio == LTXModalityGuidance(
+        cfg_scale=7.0,
+        stg_scale=1.0,
+        modality_scale=3.0,
+        rescale_scale=0.7,
+        stg_blocks=(28,),
+    )
+    assert phase.sigmas is None
+    assert phase.use_official_sigma_schedule
+    assert phase.use_dynamic_sequence_shift
+    assert LTX25_FULL_COMPONENT_PROFILE.transformer_subfolder == "transformer_full"
+    assert LTX25_FULL_COMPONENT_PROFILE.scheduler_use_dynamic_shifting
+    assert LTX25_FULL_COMPONENT_PROFILE.scheduler_shift_terminal == 0.1
+
+
+def test_ltx25_full_sigma_schedule_uses_actual_packed_sequence_length():
+    scheduler = SimpleNamespace(
+        config={
+            "base_image_seq_len": 1024,
+            "max_image_seq_len": 4096,
+            "base_shift": 0.95,
+            "max_shift": 2.05,
+            "shift_terminal": 0.1,
+        }
+    )
+
+    sigmas = _official_ltx_sigmas(
+        scheduler,
+        steps=30,
+        device=torch.device("cpu"),
+        image_seq_len=16 * 17 * 30,
+    )
+
+    torch.testing.assert_close(
+        sigmas[[0, 1, -2, -1]],
+        torch.tensor([1.0, 0.9979998, 0.1, 0.0]),
+        rtol=1e-5,
+        atol=1e-6,
+    )
+
+
+def test_ltx25_checkpoint_selects_distilled_two_stage_profile(tmp_path, monkeypatch):
+    from vllm_omni.diffusion.models.ltx2 import ltx2_runtime
+
+    (tmp_path / "model_index.json").write_text(
+        json.dumps({"text_encoder": ["transformers", "Gemma4UnifiedForConditionalGeneration"]})
+    )
+
+    def stub_components(pipe, od_config):
+        pipe.od_config = od_config
+        pipe.vae_spatial_compression_ratio = 32
+
+    monkeypatch.setattr(ltx2_runtime, "initialize_pipeline_components", stub_components)
+    monkeypatch.setattr(LTXRuntime, "setup_diffusion_pipeline_profiler", lambda *_args, **_kwargs: None)
+
+    pipe = LTX2DistilledPipeline(
+        od_config=SimpleNamespace(model=str(tmp_path), enable_diffusion_pipeline_profiler=False)
+    )
+
+    assert pipe.component_profile is LTX25_DISTILLED_COMPONENT_PROFILE
+    assert pipe.pipeline_recipe is LTX25_DISTILLED_TWO_STAGE_RECIPE
+
+
+def test_ltx25_distilled_two_stage_recipe_matches_model_card_resolution():
+    stage1, stage2 = LTX25_DISTILLED_TWO_STAGE_RECIPE.phases
+
+    assert (LTX25_DISTILLED_TWO_STAGE_RECIPE.height, LTX25_DISTILLED_TWO_STAGE_RECIPE.width) == (1088, 1920)
+    assert stage1.spatial_downscale == 2
+    assert stage1.sigmas == LTX_DISTILLED_SIGMAS
+    assert stage2.sigmas == (0.909375, 0.725, 0.421875, 0.0)
+    assert stage2.input_transform == "spatial_upsample"
 
 
 def test_ltx23_checkpoint_selects_version_specific_one_stage_profile(tmp_path, monkeypatch):
@@ -300,6 +463,80 @@ def test_ltx_guidance_combines_official_x0_deltas_in_fp32():
     ).to(cond.dtype)
 
     torch.testing.assert_close(actual, expected)
+
+
+def test_ltx_positive_only_guidance_preserves_official_x0_roundtrip():
+    sample = torch.full((1, 1), 1e8, dtype=torch.float32)
+    velocity = torch.ones((1, 1), dtype=torch.bfloat16)
+    sigma = torch.tensor(0.5)
+
+    actual = LTX_GUIDANCE_EXECUTOR._guide_modality(
+        sample,
+        {"cond": velocity},
+        sigma,
+        LTXModalityGuidance(),
+    )
+    expected = velocity_from_x0(sample, x0_from_velocity(sample, velocity, sigma), sigma)
+
+    assert actual.dtype == torch.float32
+    torch.testing.assert_close(actual, expected, rtol=0.0, atol=0.0)
+
+
+def test_ltx_t2v_denoise_state_is_initialized_in_fp32():
+    captured = {}
+
+    def prepare_latents(**kwargs):
+        captured["video_dtype"] = kwargs["dtype"]
+        return torch.empty(1, 1, 1, dtype=kwargs["dtype"])
+
+    def prepare_audio_latents(*_args, **kwargs):
+        captured["audio_dtype"] = kwargs["dtype"]
+        return torch.empty(1, 1, 1, dtype=kwargs["dtype"]), 1, 1
+
+    pipeline = SimpleNamespace(
+        transformer=SimpleNamespace(config=SimpleNamespace(in_channels=128)),
+        prepare_latents=prepare_latents,
+        prepare_audio_latents=prepare_audio_latents,
+        audio_sampling_rate=48_000,
+        audio_hop_length=160,
+        audio_vae_temporal_compression_ratio=4,
+        audio_vae_mel_compression_ratio=4,
+        audio_vae=SimpleNamespace(config=SimpleNamespace(mel_bins=64, latent_channels=8)),
+        _resolve_audio_latent_length=lambda length, _latents: length,
+    )
+    request = SimpleNamespace(
+        num_videos_per_prompt=1,
+        height=64,
+        width=64,
+        num_frames=1,
+        frame_rate=24.0,
+        generator=None,
+        latents=None,
+        audio_latents=None,
+        audio_latents_normalized=False,
+    )
+    prompt = SimpleNamespace(
+        batch_size=1,
+        positive_connector_prompt_embeds=torch.empty(1, dtype=torch.bfloat16),
+        positive_connector_audio_prompt_embeds=torch.empty(1, dtype=torch.bfloat16),
+    )
+
+    LTXRuntime._prepare_video_latents_stage(
+        pipeline,
+        request,
+        prompt,
+        device=torch.device("cpu"),
+        noise_scale=1.0,
+    )
+    LTXRuntime._prepare_audio_latents_stage(
+        pipeline,
+        request,
+        prompt,
+        device=torch.device("cpu"),
+        noise_scale=1.0,
+    )
+
+    assert captured == {"video_dtype": torch.float32, "audio_dtype": torch.float32}
 
 
 def test_ltx_guidance_skips_stg_without_perturbed_blocks():
@@ -558,6 +795,49 @@ def test_ltx_variants_share_denoise_loop_and_i2v_conditioning():
     assert LTX2Pipeline.prepare_latents is LTXI2VConditioningMixin.prepare_latents
     assert LTX2Pipeline.prepare_audio_latents is LTXRuntime.prepare_audio_latents
     assert LTX2Pipeline.decode_phase is LTXRuntime.decode_phase
+
+
+def test_ltx_seeded_latents_match_official_unpacked_rng_layout():
+    pipeline = SimpleNamespace(
+        vae_spatial_compression_ratio=2,
+        vae_temporal_compression_ratio=2,
+        transformer_spatial_patch_size=1,
+        transformer_temporal_patch_size=1,
+        audio_vae_mel_compression_ratio=2,
+        od_config=SimpleNamespace(parallel_config=SimpleNamespace(sequence_parallel_size=1)),
+    )
+    device = torch.device("cpu")
+    actual_generator = torch.Generator(device=device).manual_seed(123)
+    expected_generator = torch.Generator(device=device).manual_seed(123)
+
+    actual_video = ltx2_latents.prepare_video_latents(
+        pipeline,
+        batch_size=1,
+        num_channels_latents=2,
+        height=4,
+        width=6,
+        num_frames=3,
+        dtype=torch.float32,
+        device=device,
+        generator=actual_generator,
+    )
+    actual_audio, original_length, padded_length = ltx2_latents.prepare_audio_latents(
+        pipeline,
+        batch_size=1,
+        num_channels_latents=2,
+        audio_latent_length=3,
+        num_mel_bins=4,
+        dtype=torch.float32,
+        device=device,
+        generator=actual_generator,
+    )
+
+    expected_video = ltx2_latents.pack_latents(torch.randn((1, 2, 2, 2, 3), generator=expected_generator))
+    expected_audio = ltx2_latents.pack_audio_latents(torch.randn((1, 2, 3, 2), generator=expected_generator))
+
+    torch.testing.assert_close(actual_video, expected_video, rtol=0.0, atol=0.0)
+    torch.testing.assert_close(actual_audio, expected_audio, rtol=0.0, atol=0.0)
+    assert (original_length, padded_length) == (3, 3)
 
 
 def test_denoise_executor_owns_progress_and_interrupt():

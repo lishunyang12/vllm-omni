@@ -21,6 +21,50 @@ from vllm_omni.engine.stage_runtime import StageRuntime
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
 
 
+def test_get_diffusion_od_config_prefers_resolved_stage_model_class(monkeypatch):
+    engine = object.__new__(AsyncOmniEngine)
+    engine.model = "Lightricks/LTX-2.5-Diffusers"
+    engine._diffusion_od_config_view = None
+    engine.stage_configs = [
+        types.SimpleNamespace(
+            stage_type="diffusion",
+            engine_args=types.SimpleNamespace(model_class_name="LTX2DistilledPipeline"),
+        )
+    ]
+
+    def unexpected_fallback(_model):
+        raise AssertionError("explicit stage model_class_name must win")
+
+    monkeypatch.setattr(
+        "vllm_omni.diffusion.data.resolve_model_class_name",
+        unexpected_fallback,
+    )
+
+    od_config = engine.get_diffusion_od_config()
+
+    assert od_config.model_class_name == "LTX2DistilledPipeline"
+
+
+def test_get_diffusion_od_config_falls_back_to_model_metadata(monkeypatch):
+    engine = object.__new__(AsyncOmniEngine)
+    engine.model = "Lightricks/LTX-2.5-Diffusers"
+    engine._diffusion_od_config_view = None
+    engine.stage_configs = [
+        types.SimpleNamespace(
+            stage_type="diffusion",
+            engine_args=types.SimpleNamespace(model_class_name=None),
+        )
+    ]
+    monkeypatch.setattr(
+        "vllm_omni.diffusion.data.resolve_model_class_name",
+        lambda _model: "LTX2Pipeline",
+    )
+
+    od_config = engine.get_diffusion_od_config()
+
+    assert od_config.model_class_name == "LTX2Pipeline"
+
+
 def test_orchestrator_startup_timeout_warns_how_to_raise_limits(monkeypatch):
     engine = object.__new__(AsyncOmniEngine)
     engine.orchestrator_thread = types.SimpleNamespace(is_alive=lambda: True)

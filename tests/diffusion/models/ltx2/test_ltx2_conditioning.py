@@ -3,8 +3,10 @@
 
 """Unit tests for LTX image-to-video input and conditioning behavior."""
 
+import sys
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 import torch
 from PIL import Image
@@ -23,7 +25,7 @@ def _make_ltx23_request_pipe(cls):
 
 
 class TestLTXImageToVideoForwardStages:
-    def test_i2v_pil_preprocessing_matches_official_center_crop(self):
+    def test_i2v_pil_preprocessing_matches_official_bilinear_resize(self):
         from vllm_omni.diffusion.models.ltx2.ltx2_conditioning import _preprocess_i2v_pil_images
 
         pixels = torch.zeros(4, 8, 3, dtype=torch.uint8)
@@ -31,9 +33,82 @@ class TestLTXImageToVideoForwardStages:
         image = Image.fromarray(pixels.numpy())
 
         actual = _preprocess_i2v_pil_images(image, height=4, width=4)
-        expected = pixels[:, 2:6].permute(2, 0, 1).unsqueeze(0).float() / 127.5 - 1.0
+        resized = image.resize((4, 4), resample=Image.Resampling.BILINEAR)
+        expected = torch.from_numpy(np.asarray(resized).astype(np.float32) / 255.0)
+        expected = (2.0 * expected.permute(2, 0, 1).unsqueeze(0)) - 1.0
 
-        torch.testing.assert_close(actual, expected)
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+    def test_ltx25_i2v_applies_crf18_before_resize(self, monkeypatch):
+        import vllm_omni.diffusion.models.ltx2.ltx2_conditioning as conditioning
+        from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
+
+        captured_crfs = []
+        captured_prepare_kwargs = []
+
+        def fake_preprocess(image, *, height, width, crf, device, dtype):
+            del image, device
+            captured_crfs.append(crf)
+            return torch.zeros(1, 3, height, width, dtype=dtype)
+
+        def fake_prepare_latents(**kwargs):
+            captured_prepare_kwargs.append(kwargs)
+            return kwargs["image"], None
+
+        monkeypatch.setattr(conditioning, "_preprocess_i2v_pil_images", fake_preprocess)
+        pipe = object.__new__(LTX2Pipeline)
+        torch.nn.Module.__init__(pipe)
+        pipe.model_version = "2.5"
+        object.__setattr__(pipe, "transformer", SimpleNamespace(config=SimpleNamespace(in_channels=4)))
+        object.__setattr__(pipe, "prepare_latents", fake_prepare_latents)
+        request_inputs = SimpleNamespace(
+            height=4,
+            width=4,
+            num_frames=3,
+            num_videos_per_prompt=1,
+            generator=None,
+            latents=None,
+        )
+        prompt_context = SimpleNamespace(
+            batch_size=1,
+            positive_connector_prompt_embeds=torch.zeros(1, 1, 1, dtype=torch.bfloat16),
+        )
+
+        pipe._prepare_video_latents_stage(
+            request_inputs,
+            prompt_context,
+            device=torch.device("cpu"),
+            noise_scale=0.0,
+            image=Image.new("RGB", (8, 4)),
+        )
+
+        assert captured_crfs == [18]
+        assert captured_prepare_kwargs[0]["dtype"] is torch.float32
+        assert captured_prepare_kwargs[0]["image"].dtype is torch.bfloat16
+
+    def test_ltx25_i2v_rejects_inputs_that_cannot_receive_crf18(self):
+        from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
+
+        pipe = object.__new__(LTX2Pipeline)
+        torch.nn.Module.__init__(pipe)
+        pipe.model_version = "2.5"
+
+        with pytest.raises(ValueError, match="requires PIL images"):
+            pipe._prepare_video_latents_stage(
+                SimpleNamespace(),
+                SimpleNamespace(),
+                device=torch.device("cpu"),
+                noise_scale=0.0,
+                image=torch.zeros(3, 4, 4),
+            )
+
+    def test_ltx25_i2v_reports_missing_pyav(self, monkeypatch):
+        from vllm_omni.diffusion.models.ltx2.ltx2_conditioning import _apply_image_conditioning_crf
+
+        monkeypatch.setitem(sys.modules, "av", None)
+
+        with pytest.raises(ImportError, match="PyAV with a libx264 encoder"):
+            _apply_image_conditioning_crf(torch.zeros(4, 4, 3, dtype=torch.uint8).numpy(), 18)
 
     def test_forward_resolves_request_image_and_delegates_to_shared_recipe_runtime(self):
         from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
@@ -117,8 +192,41 @@ class TestLTXImageToVideoForwardStages:
         )
 
         torch.testing.assert_close(kwargs["timestep"], torch.tensor([[0.0, 2.0], [4.0, 0.0]]))
-        torch.testing.assert_close(kwargs["audio_timestep"], ts[:, None])
+        torch.testing.assert_close(kwargs["audio_timestep"], ts)
         torch.testing.assert_close(kwargs["sigma"], ts)
+
+    def test_ltx25_transformer_kwargs_enable_cross_timestep(self):
+        from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
+
+        pipe = object.__new__(LTX2Pipeline)
+        pipe.model_version = "2.5"
+        object.__setattr__(pipe, "_denoise_timestep_kwargs", lambda *_args, **_kwargs: {})
+        forward_ctx = SimpleNamespace(
+            latent_num_frames=2,
+            latent_height=1,
+            latent_width=1,
+            padded_audio_num_frames=1,
+            request_inputs=SimpleNamespace(frame_rate=24.0),
+            attention_kwargs=None,
+        )
+        denoise_ctx = SimpleNamespace(
+            video_coords=torch.zeros(1, 3, 2, 2),
+            audio_coords=torch.zeros(1, 1, 1, 2),
+        )
+
+        kwargs = pipe._build_transformer_kwargs(
+            forward_ctx,
+            denoise_ctx,
+            hidden_states=torch.zeros(1, 2, 4),
+            audio_hidden_states=torch.zeros(1, 1, 4),
+            encoder_hidden_states=torch.zeros(1, 1, 8),
+            audio_encoder_hidden_states=torch.zeros(1, 1, 8),
+            encoder_attention_mask=None,
+            audio_encoder_attention_mask=None,
+            ts=torch.tensor([1.0]),
+        )
+
+        assert kwargs["use_cross_timestep"] is True
 
 
 class TestLTXImageToVideoConditioning:
@@ -237,9 +345,9 @@ class TestLTXImageToVideoConditioning:
 
         torch.testing.assert_close(conditioning_mask, torch.tensor([[1.0, 0.0, 0.0]]))
         torch.testing.assert_close(out, torch.tensor([[[40.0, 41.0], [1.0, 1.0], [1.0, 1.0]]]))
-        assert sampled_shapes == [(1, 3, 2)]
+        assert sampled_shapes == [(1, 2, 3, 1, 1)]
 
-    def test_ltx23_i2v_image_noise_is_sampled_after_packing(self, monkeypatch):
+    def test_ltx23_i2v_image_noise_is_sampled_before_packing(self, monkeypatch):
         import vllm_omni.diffusion.models.ltx2.ltx2_conditioning as ltx2_conditioning
         from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
 
@@ -279,7 +387,7 @@ class TestLTXImageToVideoConditioning:
             device=torch.device("cpu"),
         )
 
-        assert sampled_shapes == [(1, 3, 2)]
+        assert sampled_shapes == [(1, 2, 3, 1, 1)]
         torch.testing.assert_close(conditioning_mask, torch.tensor([[1.0, 0.0, 0.0]]))
         torch.testing.assert_close(out, torch.tensor([[[10.0, 11.0], [1.0, 1.0], [1.0, 1.0]]]))
 

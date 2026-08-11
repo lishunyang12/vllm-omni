@@ -38,6 +38,7 @@ class LTXPhaseRecipe:
     input_transform: Literal["initial", "spatial_upsample"] = "initial"
     allow_guidance_override: bool = True
     use_official_sigma_schedule: bool = True
+    use_dynamic_sequence_shift: bool = False
 
     def __post_init__(self) -> None:
         if self.spatial_downscale < 1:
@@ -113,6 +114,34 @@ LTX23_ONE_STAGE_RECIPE = LTXPipelineRecipe(
     num_inference_steps=30,
     phases=(LTXPhaseRecipe(name="generate", guidance=_official_guidance(28)),),
 )
+LTX25_ONE_STAGE_RECIPE = LTXPipelineRecipe(
+    height=544,
+    width=960,
+    num_inference_steps=len(LTX_DISTILLED_SIGMAS) - 1,
+    phases=(
+        LTXPhaseRecipe(
+            name="generate",
+            guidance=LTXGuidanceSpec.positive_only(),
+            sigmas=LTX_DISTILLED_SIGMAS,
+            allow_guidance_override=False,
+            use_official_sigma_schedule=False,
+        ),
+    ),
+    allow_request_sigmas=False,
+    fixed_num_inference_steps=True,
+)
+LTX25_FULL_RECIPE = LTXPipelineRecipe(
+    height=544,
+    width=960,
+    num_inference_steps=30,
+    phases=(
+        LTXPhaseRecipe(
+            name="generate",
+            guidance=_official_guidance(28),
+            use_dynamic_sequence_shift=True,
+        ),
+    ),
+)
 LTX_POSITIVE_ONLY_RECIPE = LTXPipelineRecipe(
     phases=(
         LTXPhaseRecipe(
@@ -157,11 +186,46 @@ LTX2_DISTILLED_TWO_STAGE_RECIPE = LTXPipelineRecipe(
     fixed_num_inference_steps=True,
 )
 
+LTX25_DISTILLED_TWO_STAGE_RECIPE = LTXPipelineRecipe(
+    # The model card specifies Stage 1 at 544x960 and Stage 2 at 2x.
+    height=1088,
+    width=1920,
+    num_inference_steps=len(LTX_DISTILLED_SIGMAS) - 1,
+    phases=(
+        LTXPhaseRecipe(
+            name="generate_lowres",
+            guidance=LTXGuidanceSpec.positive_only(),
+            spatial_downscale=2,
+            sigmas=LTX_DISTILLED_SIGMAS,
+            noise_scale=1.0,
+            allow_guidance_override=False,
+            use_official_sigma_schedule=False,
+        ),
+        LTXPhaseRecipe(
+            name="refine",
+            guidance=LTXGuidanceSpec.positive_only(),
+            sigmas=LTX_STAGE_2_DISTILLED_SIGMAS,
+            noise_scale=LTX_STAGE_2_DISTILLED_SIGMAS[0],
+            input_transform="spatial_upsample",
+            allow_guidance_override=False,
+            use_official_sigma_schedule=False,
+        ),
+    ),
+    video_output_phase=1,
+    audio_output_phase=1,
+    allow_request_sigmas=False,
+    allow_request_latents=False,
+    fixed_num_inference_steps=True,
+)
+
 
 _PIPELINE_RECIPES: dict[tuple[str, str], LTXPipelineRecipe] = {
     ("one_stage", "2"): LTX2_ONE_STAGE_RECIPE,
     ("one_stage", "2.3"): LTX23_ONE_STAGE_RECIPE,
+    ("one_stage", "2.5"): LTX25_ONE_STAGE_RECIPE,
+    ("full", "2.5"): LTX25_FULL_RECIPE,
     ("distilled_two_stage", "2"): LTX2_DISTILLED_TWO_STAGE_RECIPE,
+    ("distilled_two_stage", "2.5"): LTX25_DISTILLED_TWO_STAGE_RECIPE,
     ("dmd2", "2"): LTX_POSITIVE_ONLY_RECIPE,
     ("dmd2", "2.3"): LTX_POSITIVE_ONLY_RECIPE,
 }

@@ -144,7 +144,7 @@ class LTXRuntime(
         self._encoder_modules = list(self.component_profile.encoder_modules)
         self._vae_modules = list(self.component_profile.vae_modules)
         self._resident_modules = list(self.component_profile.resident_modules)
-        if self.model_version == "2.3":
+        if self.model_version in ("2.3", "2.5"):
             self.preserve_sp_padded_audio_duration = True
             self.reports_stage_durations = True
         super().__init__()
@@ -515,7 +515,7 @@ class LTXRuntime(
             width=request_inputs.width,
             num_frames=request_inputs.num_frames,
             noise_scale=noise_scale,
-            dtype=prompt_context.positive_connector_prompt_embeds.dtype,
+            dtype=torch.float32,
             device=device,
             generator=request_inputs.generator,
             latents=request_inputs.latents,
@@ -564,7 +564,7 @@ class LTXRuntime(
             audio_latent_length=audio_num_frames,
             num_mel_bins=num_mel_bins,
             noise_scale=noise_scale,
-            dtype=prompt_context.positive_connector_audio_prompt_embeds.dtype,
+            dtype=torch.float32,
             device=device,
             generator=request_inputs.generator,
             latents=request_inputs.audio_latents,
@@ -610,7 +610,14 @@ class LTXRuntime(
         audio_token_count: int,
     ) -> dict[str, torch.Tensor]:
         del forward_ctx, denoise_ctx
-        return self.guidance_executor.timestep_kwargs(ts, video_token_count, audio_token_count)
+        parallel_config = getattr(getattr(self, "od_config", None), "parallel_config", None)
+        sp_size = int(getattr(parallel_config, "sequence_parallel_size", 1) or 1)
+        return self.guidance_executor.timestep_kwargs(
+            ts,
+            video_token_count,
+            audio_token_count,
+            expand_for_sequence_parallel=sp_size > 1,
+        )
 
     def _video_guidance_model_sigma(
         self,

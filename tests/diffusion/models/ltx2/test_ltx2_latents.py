@@ -23,7 +23,7 @@ def _make_pipeline(pipeline_cls, sequence_parallel_size: int = 1):
     return pipeline
 
 
-def test_prepare_video_latents_samples_directly_in_packed_token_space():
+def test_prepare_video_latents_samples_unpacked_then_packs_like_diffusers():
     pipeline = _make_pipeline(LTX2Pipeline)
     pipeline.vae_spatial_compression_ratio = 8
     pipeline.vae_temporal_compression_ratio = 8
@@ -31,7 +31,8 @@ def test_prepare_video_latents_samples_directly_in_packed_token_space():
     pipeline.transformer_temporal_patch_size = 1
 
     expected_generator = torch.Generator().manual_seed(42)
-    expected = torch.randn((1, 32, 16), generator=expected_generator)
+    expected_unpacked = torch.randn((1, 4, 2, 8, 8), generator=expected_generator)
+    expected = latent_ops.pack_latents(expected_unpacked, 2, 1)
     actual = pipeline.prepare_latents(
         batch_size=1,
         num_channels_latents=4,
@@ -46,11 +47,12 @@ def test_prepare_video_latents_samples_directly_in_packed_token_space():
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
 
 
-def test_prepare_audio_latents_samples_directly_in_packed_token_space():
+def test_prepare_audio_latents_samples_unpacked_then_packs_like_diffusers():
     pipeline = _make_pipeline(LTX2Pipeline)
 
     expected_generator = torch.Generator().manual_seed(42)
-    expected = torch.randn((1, 3, 32), generator=expected_generator)
+    expected_unpacked = torch.randn((1, 2, 3, 16), generator=expected_generator)
+    expected = latent_ops.pack_audio_latents(expected_unpacked)
     actual, original_num_frames, padded_num_frames = pipeline.prepare_audio_latents(
         batch_size=1,
         num_channels_latents=2,

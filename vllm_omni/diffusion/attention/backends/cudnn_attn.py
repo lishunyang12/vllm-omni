@@ -85,6 +85,24 @@ class CuDNNAttentionImpl(AttentionImpl):
 
         enable_gqa = query.shape[2] != key.shape[2]
         query, key, value = (x.permute(0, 2, 1, 3) for x in (query, key, value))
+        # cuDNN has no kernel for LTX self- or cross-attention when either
+        # sequence has one token. Route those degenerate shapes before entering the
+        # cuDNN-only context: under torch.compile, FakeTensor evaluation raises
+        # before the eager RuntimeError fallback below can run.
+        if query.shape[-2] == 1 or key.shape[-2] == 1:
+            with sdpa_kernel([SDPBackend.MATH]):
+                output = torch.nn.functional.scaled_dot_product_attention(
+                    query,
+                    key,
+                    value,
+                    attn_mask=attention_mask,
+                    dropout_p=0.0,
+                    is_causal=self.causal,
+                    scale=self.softmax_scale,
+                    enable_gqa=enable_gqa,
+                )
+            return output.permute(0, 2, 1, 3)
+
         # Pin cuDNN exclusively. A priority list like [CUDNN, FLASH, MATH] hits a
         # PyTorch SDPA dispatch quirk: when FLASH rejects a non-None attn_mask,
         # cuDNN gets runtime-disabled in the same call and the dispatcher falls

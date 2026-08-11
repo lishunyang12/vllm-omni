@@ -5,14 +5,13 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
+from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import PIL.Image
 import torch
-import torch.nn.functional as F
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img import retrieve_latents
 from diffusers.utils.torch_utils import randn_tensor
 from diffusers.video_processor import VideoProcessor
@@ -52,34 +51,64 @@ def _preprocess_i2v_pil_images(
     *,
     height: int,
     width: int,
+    crf: int = 0,
     device: torch.device | None = None,
     dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
-    """Match official LTX aspect-preserving resize and center crop."""
+    """Match official LTX PIL resize and normalization."""
     image_list = images if isinstance(images, list) else [images]
     processed = []
     for image in image_list:
-        pixels = (
-            torch.from_numpy(np.array(image.convert("RGB"), copy=True))
-            .permute(2, 0, 1)
-            .unsqueeze(0)
-            .to(device=device, dtype=torch.float32)
+        image_array = np.array(image.convert("RGB"), copy=True)
+        if crf:
+            image_array = _apply_image_conditioning_crf(image_array, crf)
+        image = PIL.Image.fromarray(image_array).resize(
+            (width, height),
+            resample=PIL.Image.Resampling.BILINEAR,
         )
-        source_height, source_width = pixels.shape[-2:]
-        scale = max(height / source_height, width / source_width)
-        resized_height = math.ceil(source_height * scale)
-        resized_width = math.ceil(source_width * scale)
-        pixels = F.interpolate(
-            pixels,
-            size=(resized_height, resized_width),
-            mode="bilinear",
-            align_corners=False,
-        )
-        crop_top = (resized_height - height) // 2
-        crop_left = (resized_width - width) // 2
-        pixels = pixels[:, :, crop_top : crop_top + height, crop_left : crop_left + width]
-        processed.append((pixels / 127.5 - 1.0).to(dtype=dtype))
+        pixels = torch.from_numpy(np.asarray(image).astype(np.float32) / 255.0)
+        pixels = pixels.permute(2, 0, 1).unsqueeze(0).to(device=device)
+        processed.append((2.0 * pixels - 1.0).to(dtype=dtype))
     return torch.cat(processed, dim=0)
+
+
+def _apply_image_conditioning_crf(image: np.ndarray, crf: int) -> np.ndarray:
+    """Round-trip one RGB frame through H.264 to match LTX-2.5 training."""
+    if image.dtype != np.uint8 or image.ndim != 3 or image.shape[-1] != 3:
+        raise ValueError("LTX image-conditioning CRF expects a uint8 RGB image.")
+    try:
+        import av
+    except ImportError as exc:
+        raise ImportError("PyAV with a libx264 encoder is required for LTX-2.5 image conditioning (CRF 18).") from exc
+
+    with BytesIO() as output_file:
+        container = av.open(output_file, "w", format="mp4")
+        try:
+            stream = container.add_stream("libx264", rate=1, options={"crf": str(crf), "preset": "veryfast"})
+            height = image.shape[0] // 2 * 2
+            width = image.shape[1] // 2 * 2
+            stream.height = height
+            stream.width = width
+            frame = av.VideoFrame.from_ndarray(image[:height, :width], format="rgb24").reformat(format="yuv420p")
+            container.mux(stream.encode(frame))
+            container.mux(stream.encode())
+        except Exception as exc:
+            raise RuntimeError(
+                "The installed PyAV/FFmpeg build cannot encode libx264 video required "
+                "for LTX-2.5 image conditioning (CRF 18)."
+            ) from exc
+        finally:
+            container.close()
+        video_bytes = output_file.getvalue()
+
+    with BytesIO(video_bytes) as video_file:
+        container = av.open(video_file)
+        try:
+            stream = next(stream for stream in container.streams if stream.type == "video")
+            frame = next(container.decode(stream))
+        finally:
+            container.close()
+    return frame.to_ndarray(format="rgb24")
 
 
 class LTXTextConditioningMixin:
@@ -528,6 +557,11 @@ class LTXI2VConditioningMixin:
                     # Official distilled Stage 2 starts from the upsampled Stage 1
                     # state, then reapplies the source image at final resolution.
                     latents = self._replace_first_latent_frame(latents, image_latents)
+                latents = latent_ops.create_noised_state(
+                    latents,
+                    noise_scale * (1 - conditioning_mask),
+                    generator,
+                )
                 latents = latent_ops.pack_latents(
                     latents,
                     self.transformer_spatial_patch_size,
@@ -547,15 +581,7 @@ class LTXI2VConditioningMixin:
                     "Provided `latents` tensor has shape"
                     f" {latents.shape}, but the expected shape is {conditioning_mask.shape + (num_channels_latents,)}."
                 )
-            if unpacked_latents:
-                # Official LTX patchifies the latent state before drawing noise.
-                # Sampling the packed shape preserves its seed-to-output contract.
-                latents = latent_ops.create_noised_state(
-                    latents,
-                    noise_scale * (1 - conditioning_mask).unsqueeze(-1),
-                    generator,
-                )
-            elif image is not None:
+            if not unpacked_latents and image is not None:
                 image_latents = self._encode_i2v_image_latents(
                     image,
                     batch_size=batch_size,
@@ -590,18 +616,25 @@ class LTXI2VConditioningMixin:
 
         conditioning_mask = torch.zeros(mask_shape, device=device, dtype=dtype)
         conditioning_mask[:, :, 0] = 1.0
-        init_latents = latent_ops.pack_latents(
-            init_latents,
-            self.transformer_spatial_patch_size,
-            self.transformer_temporal_patch_size,
+        # Ported from Diffusers LTX2ImageToVideoPipeline.prepare_latents:
+        # draw FP32 noise in unpacked [B, C, F, H, W] layout, then pack.
+        noise = randn_tensor(
+            (batch_size, num_channels_latents, num_frames, height, width),
+            generator=generator,
+            device=device,
+            dtype=dtype,
         )
+        latents = init_latents * conditioning_mask + noise * (1 - conditioning_mask)
         conditioning_mask = latent_ops.pack_latents(
             conditioning_mask,
             self.transformer_spatial_patch_size,
             self.transformer_temporal_patch_size,
         ).squeeze(-1)
-        noise = randn_tensor(init_latents.shape, generator=generator, device=device, dtype=dtype)
-        latents = init_latents * conditioning_mask.unsqueeze(-1) + noise * (1 - conditioning_mask).unsqueeze(-1)
+        latents = latent_ops.pack_latents(
+            latents,
+            self.transformer_spatial_patch_size,
+            self.transformer_temporal_patch_size,
+        )
         return latents, conditioning_mask
 
     def _step_video_latents_i2v(
@@ -665,6 +698,14 @@ class LTXI2VConditioningMixin:
             )
 
         if image is not None:
+            is_pil_input = isinstance(image, PIL.Image.Image) or (
+                isinstance(image, list) and image and all(isinstance(item, PIL.Image.Image) for item in image)
+            )
+            if self.model_version == "2.5" and not is_pil_input:
+                raise ValueError(
+                    "LTX-2.5 image conditioning requires PIL images so the mandatory H.264 CRF 18 "
+                    "preprocessing can be applied."
+                )
             if isinstance(image, torch.Tensor):
                 if image.ndim == 3:
                     image = image.unsqueeze(0)
@@ -677,6 +718,7 @@ class LTXI2VConditioningMixin:
                     image,
                     height=request_inputs.height,
                     width=request_inputs.width,
+                    crf=18 if self.model_version == "2.5" else 0,
                     device=device,
                     dtype=prompt_context.positive_connector_prompt_embeds.dtype,
                 )
@@ -699,7 +741,7 @@ class LTXI2VConditioningMixin:
             width=request_inputs.width,
             num_frames=request_inputs.num_frames,
             noise_scale=noise_scale,
-            dtype=prompt_context.positive_connector_prompt_embeds.dtype,
+            dtype=torch.float32,
             device=device,
             generator=request_inputs.generator,
             latents=request_inputs.latents,
