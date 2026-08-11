@@ -181,6 +181,21 @@ def build_cases(suite: str) -> list[ExperimentCase]:
             thresh_type="exact",
         )
     )
+    cases.append(
+        replace(
+            RECOMMENDED_CASE,
+            name="sol_exact_route",
+            group="dense_limit",
+            description="Sol kernel with nearly all blocks routed exact",
+            tau=-1000.0,
+            thresh_type="diag",
+            sink_tokens=0,
+            sink_start=0,
+            dense_steps=0,
+            dense_layers="",
+            kv_splits=1,
+        )
+    )
 
     unique: list[ExperimentCase] = []
     seen: set[tuple[Any, ...]] = set()

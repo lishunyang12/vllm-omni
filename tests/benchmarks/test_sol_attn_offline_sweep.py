@@ -53,6 +53,33 @@ def test_full_suite_is_unique_and_covers_each_sol_knob():
     }
 
 
+def test_exact_route_case_keeps_dense_guards_disabled():
+    case = next(case for case in MODULE.build_cases("full") if case.name == "sol_exact_route")
+
+    assert case.group == "dense_limit"
+    assert case.tau == -1000.0
+    assert case.thresh_type == "diag"
+    assert case.sink_tokens == 0
+    assert case.sink_start == 0
+    assert case.dense_steps == 0
+    assert case.dense_layers == ""
+    assert case.kv_splits == 1
+    assert case.attention_config() == {
+        "default": {
+            "backend": "SOL_ATTN",
+            "sol_attn": {
+                "tau": -1000.0,
+                "thresh_type": "diag",
+                "sink_tokens": 0,
+                "sink_start": 0,
+                "dense_steps": 0,
+                "dense_layers": "",
+                "kv_splits": 1,
+            },
+        }
+    }
+
+
 def test_metric_patterns_accept_ffmpeg_output():
     ssim = MODULE.SSIM_RE.search("SSIM Y:0.9 U:0.8 V:0.7 All:0.876543 (9.1)")
     psnr = MODULE.PSNR_RE.search("PSNR y:33.1 u:40.0 v:41.0 average:35.250000 min:20 max:50")
