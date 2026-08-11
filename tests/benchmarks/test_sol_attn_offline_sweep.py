@@ -57,9 +57,9 @@ def test_exact_route_case_keeps_dense_guards_disabled():
     case = next(case for case in MODULE.build_cases("full") if case.name == "sol_exact_route")
 
     assert case.group == "dense_limit"
-    assert case.tau == -1000.0
+    assert case.tau == 0.0
     assert case.thresh_type == "diag"
-    assert case.sink_tokens == 0
+    assert case.sink_tokens == 2_147_483_647
     assert case.sink_start == 0
     assert case.dense_steps == 0
     assert case.dense_layers == ""
@@ -68,9 +68,9 @@ def test_exact_route_case_keeps_dense_guards_disabled():
         "default": {
             "backend": "SOL_ATTN",
             "sol_attn": {
-                "tau": -1000.0,
+                "tau": 0.0,
                 "thresh_type": "diag",
-                "sink_tokens": 0,
+                "sink_tokens": 2_147_483_647,
                 "sink_start": 0,
                 "dense_steps": 0,
                 "dense_layers": "",
