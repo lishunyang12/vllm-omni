@@ -26,7 +26,8 @@ from vllm_omni.diffusion.cache.cachedit import (
     CacheDiTBackend,
     RequestScopedCacheDiTRuntime,
 )
-from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
+from vllm_omni.diffusion.cache.teacache.config import TeaCacheConfig
+from vllm_omni.diffusion.data import DiffusionCacheConfig, DiffusionOutput, OmniDiffusionConfig
 from vllm_omni.diffusion.distributed.parallel_state import (
     get_dit_group,
     init_world_group,
@@ -78,7 +79,11 @@ from .presentation import (
     minimax_h3_ref2va_video_presentation,
     minimax_h3_text_only_ids,
 )
-from .quality_policy import MINIMAX_H3_GENERIC_CACHE_KEY, MiniMaxH3QualityPolicy
+from .quality_policy import (
+    MINIMAX_H3_GENERIC_CACHE_KEY,
+    MiniMaxH3QualityPolicy,
+    minimax_h3_teacache_hook_configs,
+)
 from .reference_video import (
     load_audio_file,
     load_video_audio,
@@ -552,6 +557,10 @@ class MiniMaxH3Pipeline(
     # Only distilled releases pin a schedule, so the default keeps the legacy
     # uniform path available to partially constructed pipelines.
     _base_schedule_by_partition: ClassVar[Mapping[str, DMD2SigmaSchedule | None]] = {}
+
+    def _teacache_hook_configs(self, config: DiffusionCacheConfig) -> dict[str, TeaCacheConfig]:
+        """Return model-owned TeaCache policy keyed by DiT component path."""
+        return minimax_h3_teacache_hook_configs(self.partition, config)
 
     def adopt_cache_dit_backend(self, backend: CacheDiTBackend) -> None:
         """Adopt runner-installed generic Cache-DiT for request transitions."""

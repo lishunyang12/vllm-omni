@@ -64,6 +64,18 @@ class TeaCacheHook(ModelHook):
         self.state_manager = StateManager(TeaCacheState)
         self.extractor_fn = None
         self._forward_cnt = 0
+        self._request_min_compute_steps = config.min_compute_steps
+
+    def prepare_for_request(self, num_inference_steps: int) -> bool:
+        """Apply request-length policy before resetting cached state.
+
+        Returns whether the request matches the optional calibrated step count.
+        """
+        self._request_min_compute_steps = self.config.resolve_min_compute_steps(num_inference_steps)
+        return (
+            self.config.calibrated_num_inference_steps is None
+            or num_inference_steps == self.config.calibrated_num_inference_steps
+        )
 
     def initialize_hook(self, module: torch.nn.Module) -> torch.nn.Module:
         """
@@ -142,7 +154,7 @@ class TeaCacheHook(ModelHook):
             self.config.max_cached_steps is not None and state.cached_steps >= self.config.max_cached_steps
         )
         should_compute = (
-            state.cnt < self.config.min_compute_steps
+            state.cnt < self._request_min_compute_steps
             or cache_budget_exhausted
             or self._should_compute_full_transformer(state, ctx.modulated_input)
         )

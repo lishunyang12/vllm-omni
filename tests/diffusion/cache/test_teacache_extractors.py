@@ -33,6 +33,7 @@ from vllm_omni.diffusion.cache.teacache.extractors import (
     extract_flux_context,
     extract_minimax_h3_context,
 )
+from vllm_omni.diffusion.data import DiffusionCacheConfig
 from vllm_omni.diffusion.models.flux.flux_transformer import FluxTransformer2DModel
 from vllm_omni.diffusion.models.flux2_klein.flux2_klein_transformer import (
     Flux2Transformer2DModel,
@@ -677,8 +678,10 @@ class TestMiniMaxH3Extractor(BaseExtractorTest):
 
     def test_teacache_reuses_h3_block_residual(self, minimax_h3_module, sample_inputs, monkeypatch):
         """A guaranteed cache hit must skip the H3 transformer block."""
-        from vllm_omni.diffusion.cache.teacache.config import TeaCacheConfig
         from vllm_omni.diffusion.cache.teacache.hook import TeaCacheHook
+        from vllm_omni.diffusion.models.minimax_h3.quality_policy import (
+            minimax_h3_teacache_hook_configs,
+        )
 
         block = minimax_h3_module.blocks[0]
         original_forward = block.forward
@@ -690,12 +693,11 @@ class TestMiniMaxH3Extractor(BaseExtractorTest):
             return original_forward(*args, **kwargs)
 
         monkeypatch.setattr(block, "forward", counted_forward)
-        hook = TeaCacheHook(
-            TeaCacheConfig(
-                transformer_type="MiniMaxH3DiTModel",
-                rel_l1_thresh=0.3,
-            )
+        teacache_config = minimax_h3_teacache_hook_configs(
+            "fl2va",
+            DiffusionCacheConfig(rel_l1_thresh=0.3),
         )
+        hook = TeaCacheHook(teacache_config["transformer"])
         hook.initialize_hook(minimax_h3_module)
 
         hook.new_forward(minimax_h3_module, **sample_inputs)
@@ -706,8 +708,10 @@ class TestMiniMaxH3Extractor(BaseExtractorTest):
         assert audio_logits.shape[0] == sample_inputs["audio_pos_info"]["position_ids"].shape[0]
 
     def test_teacache_honors_and_resets_cache_hit_budget(self, minimax_h3_module, sample_inputs, monkeypatch):
-        from vllm_omni.diffusion.cache.teacache.config import TeaCacheConfig
         from vllm_omni.diffusion.cache.teacache.hook import TeaCacheHook
+        from vllm_omni.diffusion.models.minimax_h3.quality_policy import (
+            minimax_h3_teacache_hook_configs,
+        )
 
         block = minimax_h3_module.blocks[0]
         original_forward = block.forward
@@ -719,14 +723,13 @@ class TestMiniMaxH3Extractor(BaseExtractorTest):
             return original_forward(*args, **kwargs)
 
         monkeypatch.setattr(block, "forward", counted_forward)
-        hook = TeaCacheHook(
-            TeaCacheConfig(
-                transformer_type="MiniMaxH3DiTModel",
-                rel_l1_thresh=10.0,
-                max_cached_steps=1,
-                min_compute_steps=2,
-            )
+        teacache_config = minimax_h3_teacache_hook_configs(
+            "fl2va",
+            DiffusionCacheConfig(rel_l1_thresh=10.0),
         )
+        teacache_config["transformer"].max_cached_steps = 1
+        teacache_config["transformer"].min_compute_steps = 2
+        hook = TeaCacheHook(teacache_config["transformer"])
         hook.initialize_hook(minimax_h3_module)
 
         for _ in range(4):

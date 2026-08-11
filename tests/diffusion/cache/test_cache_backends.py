@@ -455,6 +455,8 @@ class TestTeaCacheBackend:
         [
             ({"max_cached_steps": -1}, "max_cached_steps"),
             ({"min_compute_steps": -1}, "min_compute_steps"),
+            ({"calibrated_num_inference_steps": 0}, "calibrated_num_inference_steps"),
+            ({"calibrated_num_inference_steps": -1}, "calibrated_num_inference_steps"),
         ],
     )
     def test_config_rejects_negative_step_policy(self, config, field):
@@ -496,88 +498,64 @@ class TestTeaCacheBackend:
         TeaCacheBackend(DiffusionCacheConfig()).enable(pipeline)
         assert mock_apply_hook.call_args.args[1].rel_l1_thresh == 0.2
 
-    @pytest.mark.parametrize(
-        ("partition", "expected_targets", "default_thresholds", "profiles", "max_cached_steps", "min_compute_steps"),
-        [
-            ("fl2va", ("transformer",), (0.17,), (None,), (None,), (0,)),
-            ("ref2va", ("transformer",), (0.295,), ("MiniMaxH3DiTModel:ref2va",), (5,), (35,)),
-            (
-                "combined",
-                ("transformer", "transformers_ref"),
-                (0.17, 0.295),
-                (None, "MiniMaxH3DiTModel:ref2va"),
-                (None, 5),
-                (0, 35),
-            ),
-        ],
-    )
-    @pytest.mark.parametrize(
-        "configured_threshold",
-        [None, 0.2],
-    )
     @patch("vllm_omni.diffusion.cache.teacache.backend.apply_teacache_hook")
-    def test_minimax_h3_enables_each_partition_transformer(
-        self,
-        mock_apply_hook,
-        partition,
-        expected_targets,
-        default_thresholds,
-        profiles,
-        configured_threshold,
-        max_cached_steps,
-        min_compute_steps,
-    ):
-        pipeline = Mock()
-        pipeline.__class__.__name__ = "MiniMaxH3Pipeline"
-        pipeline.partition = partition
-        pipeline.transformer = Mock()
-        pipeline.transformer.__class__.__name__ = "MiniMaxH3DiTModel"
-        pipeline.transformers_ref = Mock()
+    def test_enable_uses_pipeline_declared_hook_configs(self, mock_apply_hook):
+        primary = Mock()
+        secondary = Mock()
+        primary_config = TeaCacheConfig()
+        secondary_config = TeaCacheConfig(rel_l1_thresh=0.3)
 
-        config = (
-            DiffusionCacheConfig()
-            if configured_threshold is None
-            else DiffusionCacheConfig(rel_l1_thresh=configured_threshold)
-        )
-        backend = TeaCacheBackend(config)
+        class DeclaredPipeline:
+            transformer = primary
+            nested = SimpleNamespace(transformer=secondary)
+
+            def _teacache_hook_configs(self, config):
+                assert config.rel_l1_thresh == 0.4
+                return {
+                    "transformer": primary_config,
+                    "nested.transformer": secondary_config,
+                }
+
+        backend = TeaCacheBackend(DiffusionCacheConfig(rel_l1_thresh=0.4))
+        pipeline = DeclaredPipeline()
         backend.enable(pipeline)
 
-        expected_transformers = [getattr(pipeline, name) for name in expected_targets]
-        assert [call.args[0] for call in mock_apply_hook.call_args_list] == expected_transformers
-        configs = [call.args[1] for call in mock_apply_hook.call_args_list]
-        expected_thresholds = (
-            default_thresholds if configured_threshold is None else (configured_threshold,) * len(configs)
-        )
-        assert [config.rel_l1_thresh for config in configs] == list(expected_thresholds)
-        assert [config.calibration_profile for config in configs] == list(profiles)
-        assert [config.max_cached_steps for config in configs] == list(max_cached_steps)
-        assert [config.min_compute_steps for config in configs] == list(min_compute_steps)
-        assert len({id(config) for config in configs}) == len(configs)
+        assert mock_apply_hook.call_args_list[0].args == (primary, primary_config)
+        assert mock_apply_hook.call_args_list[1].args == (secondary, secondary_config)
 
-    @pytest.mark.parametrize(("num_inference_steps", "expected_ref_min_compute"), [(50, 35), (20, 20)])
-    def test_minimax_h3_refreshes_each_partition_transformer(self, num_inference_steps, expected_ref_min_compute):
-        pipeline = Mock()
-        pipeline.__class__.__name__ = "MiniMaxH3Pipeline"
-        pipeline._dit_modules = ["transformer", "transformers_ref"]
-        pipeline.transformer = Mock(_hook_registry=Mock())
-        pipeline.transformers_ref = Mock(_hook_registry=Mock())
-        fl2va_hook = Mock(config=SimpleNamespace(calibration_profile=None, min_compute_steps=0))
-        ref2va_hook = Mock(
-            config=SimpleNamespace(
-                calibration_profile="MiniMaxH3DiTModel:ref2va",
-                min_compute_steps=35,
-            )
+    def test_refresh_prepares_each_declared_dit(self):
+        primary_hook = Mock()
+        primary_hook.prepare_for_request.return_value = True
+        secondary_hook = Mock(
+            config=SimpleNamespace(calibrated_num_inference_steps=50),
         )
-        pipeline.transformer._hook_registry.get_hook.return_value = fl2va_hook
-        pipeline.transformers_ref._hook_registry.get_hook.return_value = ref2va_hook
+        secondary_hook.prepare_for_request.return_value = False
+        primary = SimpleNamespace(_hook_registry=Mock())
+        secondary = SimpleNamespace(_hook_registry=Mock())
+        primary._hook_registry.get_hook.return_value = primary_hook
+        secondary._hook_registry.get_hook.return_value = secondary_hook
+        pipeline = SimpleNamespace(
+            _dit_modules=["transformer", "nested.transformer"],
+            transformer=primary,
+            nested=SimpleNamespace(transformer=secondary),
+        )
 
         backend = TeaCacheBackend(DiffusionCacheConfig())
-        backend.refresh(pipeline, num_inference_steps=num_inference_steps)
+        backend.refresh(pipeline, num_inference_steps=20)
 
-        for transformer in (pipeline.transformer, pipeline.transformers_ref):
+        for hook in (primary_hook, secondary_hook):
+            hook.prepare_for_request.assert_called_once_with(20)
+        for transformer in (primary, secondary):
             transformer._hook_registry.reset_hook.assert_called_once_with(TeaCacheHook._HOOK_NAME)
-        assert fl2va_hook.config.min_compute_steps == 0
-        assert ref2va_hook.config.min_compute_steps == expected_ref_min_compute
+
+    def test_config_fails_closed_outside_calibrated_step_count(self):
+        config = TeaCacheConfig(
+            min_compute_steps=35,
+            calibrated_num_inference_steps=50,
+        )
+
+        assert config.resolve_min_compute_steps(50) == 35
+        assert config.resolve_min_compute_steps(20) == 20
 
     @patch("vllm_omni.diffusion.cache.teacache.backend.apply_teacache_hook")
     def test_enable_with_coefficients(self, mock_apply_hook):

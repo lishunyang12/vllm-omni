@@ -8,6 +8,7 @@ This module provides the TeaCache backend that implements the CacheBackend
 interface using the hooks-based TeaCache system.
 """
 
+from operator import attrgetter
 from typing import Any
 
 from vllm.logger import init_logger
@@ -18,11 +19,6 @@ from vllm_omni.diffusion.cache.teacache.hook import TeaCacheHook, apply_teacache
 from vllm_omni.diffusion.data import DiffusionCacheConfig
 
 logger = init_logger(__name__)
-
-_MINIMAX_H3_REF2VA_PROFILE = "MiniMaxH3DiTModel:ref2va"
-_MINIMAX_H3_REF2VA_CALIBRATED_STEPS = 50
-_MINIMAX_H3_REF2VA_MIN_COMPUTE_STEPS = 35
-_MINIMAX_H3_REF2VA_MAX_CACHED_STEPS = 5
 
 
 def enable_hunyuan_image3_teacache(pipeline: Any, config: DiffusionCacheConfig) -> None:
@@ -78,40 +74,6 @@ def enable_sensenova_u1_teacache(pipeline: Any, config: DiffusionCacheConfig) ->
     )
 
 
-def enable_minimax_h3_teacache(pipeline: Any, config: DiffusionCacheConfig) -> None:
-    """Enable TeaCache for every loaded MiniMax-H3 task partition."""
-    partition = getattr(pipeline, "partition", None)
-    if partition == "fl2va":
-        targets = (("FL2VA", pipeline.transformer, None),)
-    elif partition == "ref2va":
-        targets = (("Ref2VA", pipeline.transformer, _MINIMAX_H3_REF2VA_PROFILE),)
-    elif partition == "combined":
-        transformer_ref = getattr(pipeline, "transformers_ref", None)
-        if transformer_ref is None:
-            raise ValueError("MiniMax-H3 combined partition is missing transformers_ref")
-        targets = (
-            ("FL2VA", pipeline.transformer, None),
-            ("Ref2VA", transformer_ref, _MINIMAX_H3_REF2VA_PROFILE),
-        )
-    else:
-        raise ValueError(f"Unsupported MiniMax-H3 partition for TeaCache: {partition!r}")
-
-    for partition_name, transformer, calibration_profile in targets:
-        teacache_config = TeaCacheConfig(
-            transformer_type="MiniMaxH3DiTModel",
-            calibration_profile=calibration_profile,
-            max_cached_steps=_MINIMAX_H3_REF2VA_MAX_CACHED_STEPS if calibration_profile is not None else None,
-            min_compute_steps=_MINIMAX_H3_REF2VA_MIN_COMPUTE_STEPS if calibration_profile is not None else 0,
-            rel_l1_thresh=config.rel_l1_thresh,
-            coefficients=config.coefficients,
-        )
-        apply_teacache_hook(transformer, teacache_config)
-        logger.info(
-            f"TeaCache applied with rel_l1_thresh={teacache_config.rel_l1_thresh}, "
-            f"transformer_class=MiniMaxH3DiTModel, partition={partition_name}"
-        )
-
-
 def enable_flux2_klein_teacache(pipeline: Any, config: DiffusionCacheConfig) -> None:
     """
     Enable TeaCache for Flux2 Klein model.
@@ -135,7 +97,6 @@ CUSTOM_TEACACHE_ENABLERS = {
     "BagelPipeline": enable_bagel_teacache,
     "Flux2KleinPipeline": enable_flux2_klein_teacache,
     "HunyuanImage3Pipeline": enable_hunyuan_image3_teacache,
-    "MiniMaxH3Pipeline": enable_minimax_h3_teacache,
     "SenseNovaU1Pipeline": enable_sensenova_u1_teacache,
 }
 
@@ -172,11 +133,28 @@ class TeaCacheBackend(CacheBackend):
                      - transformer: pipeline.transformer
                      - transformer_type: pipeline.transformer.__class__.__name__
         """
-        # Helper to get pipeline class name
         pipeline_type = pipeline.__class__.__name__
+        config_factory = getattr(type(pipeline), "_teacache_hook_configs", None)
 
-        # Check for pipeline-level custom enablers
-        if pipeline_type in CUSTOM_TEACACHE_ENABLERS:
+        if callable(config_factory):
+            hook_configs = config_factory(pipeline, self.config)
+            if not hook_configs:
+                raise ValueError(f"{pipeline_type} declared no TeaCache hook targets")
+            for target_path, teacache_config in hook_configs.items():
+                if not isinstance(teacache_config, TeaCacheConfig):
+                    raise TypeError(
+                        f"{pipeline_type} TeaCache config for {target_path!r} "
+                        f"must be TeaCacheConfig, got {type(teacache_config).__name__}"
+                    )
+                transformer = attrgetter(target_path)(pipeline)
+                apply_teacache_hook(transformer, teacache_config)
+                logger.info(
+                    "TeaCache applied with rel_l1_thresh=%s, transformer_class=%s, component=%s",
+                    teacache_config.rel_l1_thresh,
+                    teacache_config.transformer_type,
+                    target_path,
+                )
+        elif pipeline_type in CUSTOM_TEACACHE_ENABLERS:
             logger.info(f"Using custom TeaCache enabler for model: {pipeline_type}")
             CUSTOM_TEACACHE_ENABLERS[pipeline_type](pipeline, self.config)
         else:
@@ -234,9 +212,11 @@ class TeaCacheBackend(CacheBackend):
                 logger.debug(f"TeaCache state refreshed for HunyuanImage3 (num_inference_steps={num_inference_steps})")
             return
 
-        if pipeline.__class__.__name__ == "MiniMaxH3Pipeline":
-            target_names = getattr(pipeline, "_dit_modules", ("transformer",))
-            targets = [(name, getattr(pipeline, name)) for name in target_names if hasattr(pipeline, name)]
+        target_names = vars(pipeline).get("_dit_modules")
+        if target_names is None:
+            target_names = getattr(type(pipeline), "_dit_modules", None)
+        if target_names:
+            targets = [(name, attrgetter(name)(pipeline)) for name in target_names]
         else:
             transformer = pipeline.transformer
             target_name = "transformer"
@@ -256,19 +236,15 @@ class TeaCacheBackend(CacheBackend):
                 if verbose:
                     logger.warning(f"TeaCache hook not found on {target_name}, nothing to refresh")
             else:
-                hook_config = getattr(hook, "config", None)
-                if getattr(hook_config, "calibration_profile", None) == _MINIMAX_H3_REF2VA_PROFILE:
-                    if num_inference_steps == _MINIMAX_H3_REF2VA_CALIBRATED_STEPS:
-                        hook_config.min_compute_steps = _MINIMAX_H3_REF2VA_MIN_COMPUTE_STEPS
-                    else:
-                        hook_config.min_compute_steps = num_inference_steps
-                        if verbose:
-                            logger.warning(
-                                "MiniMax-H3 Ref2VA TeaCache is calibrated for %d inference steps; "
-                                "got %d, so this request will run uncached",
-                                _MINIMAX_H3_REF2VA_CALIBRATED_STEPS,
-                                num_inference_steps,
-                            )
+                calibration_matches = hook.prepare_for_request(num_inference_steps)
+                if not calibration_matches and verbose:
+                    logger.warning(
+                        "TeaCache on %s is calibrated for %d inference steps; "
+                        "got %d, so this request will run uncached",
+                        target_name,
+                        hook.config.calibrated_num_inference_steps,
+                        num_inference_steps,
+                    )
                 transformer._hook_registry.reset_hook(TeaCacheHook._HOOK_NAME)
                 if verbose:
                     logger.debug(

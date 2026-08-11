@@ -83,29 +83,9 @@ _MODEL_COEFFICIENTS = {
     ],
     # LongCat Image transformer coefficients
     "LongCatImageTransformer2DModel": [652.5980, -424.1615, 84.5526, -4.5923, 0.1694],
-    # MiniMax-H3 FL2VA coefficients.
-    "MiniMaxH3DiTModel": [
-        2.283704065852778e03,
-        -7.775977277886368e02,
-        9.408414741359490e01,
-        -4.232669906169421e00,
-        2.173782527946167e-01,
-    ],
-    # MiniMax-H3 Ref2VA coefficients.
-    "MiniMaxH3DiTModel:ref2va": [
-        2.1282372412524368e04,
-        -2.2712379331933703e03,
-        -5.8373015511205919e00,
-        6.2854270826260406e00,
-        2.5209538122600766e-01,
-    ],
 }
 
 _DEFAULT_REL_L1_THRESH = 0.2
-_MODEL_DEFAULT_REL_L1_THRESH = {
-    "MiniMaxH3DiTModel": 0.17,
-    "MiniMaxH3DiTModel:ref2va": 0.295,
-}
 
 
 @dataclass
@@ -119,43 +99,43 @@ class TeaCacheConfig:
 
     Args:
         rel_l1_thresh: Threshold for accumulated relative L1 distance. When below threshold,
-            cached residual is reused. If None, uses the model-specific default or 0.2
-            when no model-specific default is registered.
+            cached residual is reused. Defaults to 0.2.
         coefficients: Polynomial coefficients for rescaling L1 distance. If None, uses
             model-specific defaults based on transformer_type.
         transformer_type: Transformer class name (e.g., "QwenImageTransformer2DModel").
             Auto-detected from pipeline.transformer.__class__.__name__ in backend.
             Defaults to "QwenImageTransformer2DModel".
-        calibration_profile: Optional coefficient/default-threshold profile. This lets
-            task-specific checkpoints of the same transformer class use independent
-            calibration while retaining the transformer_type extractor.
         max_cached_steps: Optional total cache-hit budget per inference. None means
             unlimited.
         min_compute_steps: Number of initial denoising calls that must run the full transformer.
+        calibrated_num_inference_steps: Optional calibrated request length. When set,
+            requests with a different number of inference steps run uncached.
     """
 
     rel_l1_thresh: float | None = None
     coefficients: list[float] | None = None
     transformer_type: str = "QwenImageTransformer2DModel"
-    calibration_profile: str | None = None
     max_cached_steps: int | None = None
     min_compute_steps: int = 0
+    calibrated_num_inference_steps: int | None = None
 
     def __post_init__(self) -> None:
         """Validate and set default coefficients."""
-        profile = self.calibration_profile or self.transformer_type
         threshold = self.rel_l1_thresh
         if threshold is None:
-            threshold = _MODEL_DEFAULT_REL_L1_THRESH.get(profile, _DEFAULT_REL_L1_THRESH)
+            threshold = _DEFAULT_REL_L1_THRESH
         if threshold <= 0:
             raise ValueError(f"rel_l1_thresh must be positive, got {threshold}")
         self.rel_l1_thresh = threshold
 
         if self.coefficients is None:
             # Use model-specific coefficients, explicitly check if the type exists or not
-            if profile not in _MODEL_COEFFICIENTS:
-                raise KeyError(f"Cannot find coefficients for {profile}. Supported: {list(_MODEL_COEFFICIENTS.keys())}")
-            self.coefficients = _MODEL_COEFFICIENTS[profile]
+            if self.transformer_type not in _MODEL_COEFFICIENTS:
+                raise KeyError(
+                    f"Cannot find coefficients for {self.transformer_type}. "
+                    f"Supported: {list(_MODEL_COEFFICIENTS.keys())}"
+                )
+            self.coefficients = _MODEL_COEFFICIENTS[self.transformer_type]
 
         if len(self.coefficients) != 5:
             raise ValueError(f"coefficients must contain exactly 5 elements, got {len(self.coefficients)}")
@@ -165,3 +145,17 @@ class TeaCacheConfig:
 
         if self.min_compute_steps < 0:
             raise ValueError(f"min_compute_steps must be non-negative, got {self.min_compute_steps}")
+
+        if self.calibrated_num_inference_steps is not None and self.calibrated_num_inference_steps <= 0:
+            raise ValueError(
+                f"calibrated_num_inference_steps must be positive or None, got {self.calibrated_num_inference_steps}"
+            )
+
+    def resolve_min_compute_steps(self, num_inference_steps: int) -> int:
+        """Return the request-local warmup, failing closed outside calibration."""
+        if (
+            self.calibrated_num_inference_steps is not None
+            and num_inference_steps != self.calibrated_num_inference_steps
+        ):
+            return num_inference_steps
+        return self.min_compute_steps
