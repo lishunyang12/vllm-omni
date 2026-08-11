@@ -368,12 +368,25 @@ def calculate_dimensions(
     return height, width
 
 
+def prepare_primary_image(
+    image: PIL.Image.Image,
+    width: int,
+    height: int,
+    defer_resize_to_pipeline: bool = False,
+) -> PIL.Image.Image:
+    """Prepare the primary I2V image without changing model-specific ordering."""
+    if defer_resize_to_pipeline:
+        return image
+    return image.resize((width, height), PIL.Image.Resampling.LANCZOS)
+
+
 def main():
     args = parse_args()
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(args.seed)
     model_name = str(args.model).lower() if args.model is not None else ""
     model_class_name = args.model_class_name
     model_class_name_lower = (model_class_name or "").lower()
+    is_ltx25 = "ltx-2.5" in model_name or "ltx_2.5" in model_name or "ltx25" in model_name
     is_ltx2_distilled = "distilled" in model_class_name_lower or "distilled" in model_name
     is_ltx23 = "ltx23" in model_class_name_lower or "ltx-2.3" in model_name
     is_ltx2 = is_ltx2_distilled or is_ltx23 or "ltx2" in model_class_name_lower or "ltx-2" in model_name
@@ -413,6 +426,16 @@ def main():
             10.0,
             1280 * 720,
             16,
+        )
+    elif is_ltx25:
+        d_fps, d_guidance, d_num_frames, d_steps, d_flow_shift, d_max_area, d_mod = (
+            24,
+            None,
+            121,
+            8,
+            None,
+            544 * 960,
+            32,
         )
     elif is_ltx2_distilled:
         d_fps, d_guidance, d_num_frames, d_steps, d_flow_shift, d_max_area, d_mod = (
@@ -454,7 +477,9 @@ def main():
 
     media_inputs: dict[str, Any] = {}
     if image is not None:
-        media_inputs["image"] = image.resize((width, height), PIL.Image.Resampling.LANCZOS)
+        # LTX-2.5 must apply its CRF 18 round-trip before pipeline-side
+        # bilinear resizing, so preserve the original primary image here.
+        media_inputs["image"] = prepare_primary_image(image, width, height, defer_resize_to_pipeline=is_ltx25)
     if last_image is not None:
         media_inputs["last_image"] = last_image.resize((width, height), PIL.Image.Resampling.LANCZOS)
     if mask_image is not None:

@@ -9,9 +9,10 @@ from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
 
 
-def _make_pipeline(pipeline_cls, sequence_parallel_size: int = 1):
+def _make_pipeline(pipeline_cls, sequence_parallel_size: int = 1, model_version: str = "2"):
     pipeline = object.__new__(pipeline_cls)
     torch.nn.Module.__init__(pipeline)
+    pipeline.model_version = model_version
     pipeline.audio_vae_temporal_compression_ratio = 4
     pipeline.audio_vae_mel_compression_ratio = 4
     pipeline.od_config = SimpleNamespace(parallel_config=SimpleNamespace(sequence_parallel_size=sequence_parallel_size))
@@ -24,7 +25,7 @@ def _make_pipeline(pipeline_cls, sequence_parallel_size: int = 1):
 
 
 def test_prepare_video_latents_samples_unpacked_then_packs_like_diffusers():
-    pipeline = _make_pipeline(LTX2Pipeline)
+    pipeline = _make_pipeline(LTX2Pipeline, model_version="2.5")
     pipeline.vae_spatial_compression_ratio = 8
     pipeline.vae_temporal_compression_ratio = 8
     pipeline.transformer_spatial_patch_size = 2
@@ -48,7 +49,7 @@ def test_prepare_video_latents_samples_unpacked_then_packs_like_diffusers():
 
 
 def test_prepare_audio_latents_samples_unpacked_then_packs_like_diffusers():
-    pipeline = _make_pipeline(LTX2Pipeline)
+    pipeline = _make_pipeline(LTX2Pipeline, model_version="2.5")
 
     expected_generator = torch.Generator().manual_seed(42)
     expected_unpacked = torch.randn((1, 2, 3, 16), generator=expected_generator)
@@ -66,6 +67,42 @@ def test_prepare_audio_latents_samples_unpacked_then_packs_like_diffusers():
     assert original_num_frames == 3
     assert padded_num_frames == 3
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("model_version", ["2", "2.3"])
+def test_prepare_latents_preserves_legacy_packed_rng_layout(model_version):
+    pipeline = _make_pipeline(LTX2Pipeline, model_version=model_version)
+    pipeline.vae_spatial_compression_ratio = 8
+    pipeline.vae_temporal_compression_ratio = 8
+    pipeline.transformer_spatial_patch_size = 2
+    pipeline.transformer_temporal_patch_size = 1
+
+    expected_video = torch.randn((1, 32, 16), generator=torch.Generator().manual_seed(42))
+    actual_video = pipeline.prepare_latents(
+        batch_size=1,
+        num_channels_latents=4,
+        height=64,
+        width=64,
+        num_frames=9,
+        dtype=torch.float32,
+        device=torch.device("cpu"),
+        generator=torch.Generator().manual_seed(42),
+    )
+
+    expected_audio = torch.randn((1, 3, 32), generator=torch.Generator().manual_seed(42))
+    actual_audio, original_num_frames, padded_num_frames = pipeline.prepare_audio_latents(
+        batch_size=1,
+        num_channels_latents=2,
+        num_mel_bins=64,
+        audio_latent_length=3,
+        dtype=torch.float32,
+        device=torch.device("cpu"),
+        generator=torch.Generator().manual_seed(42),
+    )
+
+    torch.testing.assert_close(actual_video, expected_video, rtol=0, atol=0)
+    torch.testing.assert_close(actual_audio, expected_audio, rtol=0, atol=0)
+    assert (original_num_frames, padded_num_frames) == (3, 3)
 
 
 def test_prepare_audio_latents_pads_generated_dummy_length_for_sp():

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
@@ -12,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import PIL.Image
 import torch
+import torch.nn.functional as F
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img import retrieve_latents
 from diffusers.utils.torch_utils import randn_tensor
 from diffusers.video_processor import VideoProcessor
@@ -55,20 +57,37 @@ def _preprocess_i2v_pil_images(
     device: torch.device | None = None,
     dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
-    """Match official LTX PIL resize and normalization."""
+    """Match the version-specific official LTX PIL preprocessing."""
     image_list = images if isinstance(images, list) else [images]
     processed = []
     for image in image_list:
         image_array = np.array(image.convert("RGB"), copy=True)
         if crf:
             image_array = _apply_image_conditioning_crf(image_array, crf)
-        image = PIL.Image.fromarray(image_array).resize(
-            (width, height),
-            resample=PIL.Image.Resampling.BILINEAR,
+            image = PIL.Image.fromarray(image_array).resize(
+                (width, height),
+                resample=PIL.Image.Resampling.BILINEAR,
+            )
+            pixels = torch.from_numpy(np.asarray(image).astype(np.float32) / 255.0)
+            pixels = pixels.permute(2, 0, 1).unsqueeze(0).to(device=device)
+            processed.append((2.0 * pixels - 1.0).to(dtype=dtype))
+            continue
+
+        pixels = torch.from_numpy(image_array).permute(2, 0, 1).unsqueeze(0).to(device=device, dtype=torch.float32)
+        source_height, source_width = pixels.shape[-2:]
+        scale = max(height / source_height, width / source_width)
+        resized_height = math.ceil(source_height * scale)
+        resized_width = math.ceil(source_width * scale)
+        pixels = F.interpolate(
+            pixels,
+            size=(resized_height, resized_width),
+            mode="bilinear",
+            align_corners=False,
         )
-        pixels = torch.from_numpy(np.asarray(image).astype(np.float32) / 255.0)
-        pixels = pixels.permute(2, 0, 1).unsqueeze(0).to(device=device)
-        processed.append((2.0 * pixels - 1.0).to(dtype=dtype))
+        crop_top = (resized_height - height) // 2
+        crop_left = (resized_width - width) // 2
+        pixels = pixels[:, :, crop_top : crop_top + height, crop_left : crop_left + width]
+        processed.append((pixels / 127.5 - 1.0).to(dtype=dtype))
     return torch.cat(processed, dim=0)
 
 
@@ -530,6 +549,7 @@ class LTXI2VConditioningMixin:
             vae_temporal_compression_ratio=self.vae_temporal_compression_ratio,
         )
         mask_shape = (batch_size, 1, num_frames, height, width)
+        is_ltx25 = getattr(self, "model_version", None) == "2.5"
 
         if latents is not None:
             unpacked_latents = latents.ndim == 5
@@ -557,11 +577,12 @@ class LTXI2VConditioningMixin:
                     # Official distilled Stage 2 starts from the upsampled Stage 1
                     # state, then reapplies the source image at final resolution.
                     latents = self._replace_first_latent_frame(latents, image_latents)
-                latents = latent_ops.create_noised_state(
-                    latents,
-                    noise_scale * (1 - conditioning_mask),
-                    generator,
-                )
+                if is_ltx25:
+                    latents = latent_ops.create_noised_state(
+                        latents,
+                        noise_scale * (1 - conditioning_mask),
+                        generator,
+                    )
                 latents = latent_ops.pack_latents(
                     latents,
                     self.transformer_spatial_patch_size,
@@ -581,7 +602,13 @@ class LTXI2VConditioningMixin:
                     "Provided `latents` tensor has shape"
                     f" {latents.shape}, but the expected shape is {conditioning_mask.shape + (num_channels_latents,)}."
                 )
-            if not unpacked_latents and image is not None:
+            if unpacked_latents and not is_ltx25:
+                latents = latent_ops.create_noised_state(
+                    latents,
+                    noise_scale * (1 - conditioning_mask).unsqueeze(-1),
+                    generator,
+                )
+            elif not unpacked_latents and image is not None:
                 image_latents = self._encode_i2v_image_latents(
                     image,
                     batch_size=batch_size,
@@ -616,25 +643,41 @@ class LTXI2VConditioningMixin:
 
         conditioning_mask = torch.zeros(mask_shape, device=device, dtype=dtype)
         conditioning_mask[:, :, 0] = 1.0
-        # Ported from Diffusers LTX2ImageToVideoPipeline.prepare_latents:
-        # draw FP32 noise in unpacked [B, C, F, H, W] layout, then pack.
-        noise = randn_tensor(
-            (batch_size, num_channels_latents, num_frames, height, width),
-            generator=generator,
-            device=device,
-            dtype=dtype,
-        )
-        latents = init_latents * conditioning_mask + noise * (1 - conditioning_mask)
+        if is_ltx25:
+            # LTX-2.5 draws FP32 noise in unpacked [B, C, F, H, W]
+            # layout before patchifying the latent state.
+            noise = randn_tensor(
+                (batch_size, num_channels_latents, num_frames, height, width),
+                generator=generator,
+                device=device,
+                dtype=dtype,
+            )
+            latents = init_latents * conditioning_mask + noise * (1 - conditioning_mask)
+            latents = latent_ops.pack_latents(
+                latents,
+                self.transformer_spatial_patch_size,
+                self.transformer_temporal_patch_size,
+            )
+        else:
+            init_latents = latent_ops.pack_latents(
+                init_latents,
+                self.transformer_spatial_patch_size,
+                self.transformer_temporal_patch_size,
+            )
+            packed_conditioning_mask = latent_ops.pack_latents(
+                conditioning_mask,
+                self.transformer_spatial_patch_size,
+                self.transformer_temporal_patch_size,
+            ).squeeze(-1)
+            noise = randn_tensor(init_latents.shape, generator=generator, device=device, dtype=dtype)
+            latents = init_latents * packed_conditioning_mask.unsqueeze(-1) + noise * (
+                1 - packed_conditioning_mask
+            ).unsqueeze(-1)
         conditioning_mask = latent_ops.pack_latents(
             conditioning_mask,
             self.transformer_spatial_patch_size,
             self.transformer_temporal_patch_size,
         ).squeeze(-1)
-        latents = latent_ops.pack_latents(
-            latents,
-            self.transformer_spatial_patch_size,
-            self.transformer_temporal_patch_size,
-        )
         return latents, conditioning_mask
 
     def _step_video_latents_i2v(
@@ -741,7 +784,9 @@ class LTXI2VConditioningMixin:
             width=request_inputs.width,
             num_frames=request_inputs.num_frames,
             noise_scale=noise_scale,
-            dtype=torch.float32,
+            dtype=(
+                torch.float32 if self.model_version == "2.5" else prompt_context.positive_connector_prompt_embeds.dtype
+            ),
             device=device,
             generator=request_inputs.generator,
             latents=request_inputs.latents,

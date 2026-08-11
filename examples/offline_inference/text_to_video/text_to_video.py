@@ -104,12 +104,43 @@ _MODEL_PRESETS = {
         "fps": 24,
         "output": "ltx23_output.mp4",
     },
+    "ltx25": {
+        "height": 544,
+        "width": 960,
+        "num_frames": 121,
+        "num_inference_steps": 8,
+        "fps": 24,
+        "output": "ltx25_output.mp4",
+    },
+    "ltx25_distilled": {
+        "height": 1088,
+        "width": 1920,
+        "num_frames": 121,
+        "num_inference_steps": 8,
+        "fps": 24,
+        "output": "ltx25_distilled_output.mp4",
+    },
+    "ltx25_full": {
+        "height": 544,
+        "width": 960,
+        "num_frames": 121,
+        "num_inference_steps": 30,
+        "fps": 24,
+        "output": "ltx25_full_output.mp4",
+    },
 }
 
 
 def _detect_preset(model: str, model_class_name: str | None = None) -> dict:
     model_lower = model.lower()
     class_lower = (model_class_name or "").lower()
+    is_ltx25 = "ltx-2.5" in model_lower or "ltx_2.5" in model_lower or "ltx25" in model_lower
+    if is_ltx25 and "distilled" in class_lower:
+        return _MODEL_PRESETS["ltx25_distilled"]
+    if is_ltx25 and "full" in class_lower:
+        return _MODEL_PRESETS["ltx25_full"]
+    if is_ltx25:
+        return _MODEL_PRESETS["ltx25"]
     if "distilled" in class_lower or "distilled" in model_lower:
         return _MODEL_PRESETS["ltx2_distilled"]
     if "ltx23" in class_lower or "ltx-2.3" in model_lower or "ltx_2.3" in model_lower:
@@ -516,7 +547,14 @@ def main():
     prompt_dict = {"prompt": args.prompt}
     if args.negative_prompt is not None:
         prompt_dict["negative_prompt"] = args.negative_prompt
-    elif preset not in (_MODEL_PRESETS["ltx2"], _MODEL_PRESETS["ltx23"]):
+    elif preset not in (
+        _MODEL_PRESETS["ltx2"],
+        _MODEL_PRESETS["ltx2_distilled"],
+        _MODEL_PRESETS["ltx23"],
+        _MODEL_PRESETS["ltx25"],
+        _MODEL_PRESETS["ltx25_distilled"],
+        _MODEL_PRESETS["ltx25_full"],
+    ):
         # Preserve the historical empty-prompt behavior for non-LTX examples.
         prompt_dict["negative_prompt"] = ""
 
@@ -534,6 +572,8 @@ def main():
         num_frames=args.num_frames,
         extra_args=extra_args,
     )
+    if args.frame_rate is not None:
+        sampling_kwargs["frame_rate"] = args.frame_rate
     if args.guidance_scale_high is not None:
         sampling_kwargs["guidance_scale_2"] = args.guidance_scale_high
 

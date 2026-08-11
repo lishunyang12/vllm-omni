@@ -483,7 +483,11 @@ def test_ltx_positive_only_guidance_preserves_official_x0_roundtrip():
     torch.testing.assert_close(actual, expected, rtol=0.0, atol=0.0)
 
 
-def test_ltx_t2v_denoise_state_is_initialized_in_fp32():
+@pytest.mark.parametrize(
+    ("model_version", "expected_dtype"),
+    [("2.5", torch.float32), ("2.3", torch.bfloat16)],
+)
+def test_ltx_t2v_denoise_state_uses_version_specific_dtype(model_version, expected_dtype):
     captured = {}
 
     def prepare_latents(**kwargs):
@@ -495,6 +499,7 @@ def test_ltx_t2v_denoise_state_is_initialized_in_fp32():
         return torch.empty(1, 1, 1, dtype=kwargs["dtype"]), 1, 1
 
     pipeline = SimpleNamespace(
+        model_version=model_version,
         transformer=SimpleNamespace(config=SimpleNamespace(in_channels=128)),
         prepare_latents=prepare_latents,
         prepare_audio_latents=prepare_audio_latents,
@@ -537,7 +542,7 @@ def test_ltx_t2v_denoise_state_is_initialized_in_fp32():
         noise_scale=1.0,
     )
 
-    assert captured == {"video_dtype": torch.float32, "audio_dtype": torch.float32}
+    assert captured == {"video_dtype": expected_dtype, "audio_dtype": expected_dtype}
 
 
 def test_ltx_guidance_skips_stg_without_perturbed_blocks():
@@ -800,6 +805,7 @@ def test_ltx_variants_share_denoise_loop_and_i2v_conditioning():
 
 def test_ltx_seeded_latents_match_official_unpacked_rng_layout():
     pipeline = SimpleNamespace(
+        model_version="2.5",
         vae_spatial_compression_ratio=2,
         vae_temporal_compression_ratio=2,
         transformer_spatial_patch_size=1,

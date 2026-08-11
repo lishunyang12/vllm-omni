@@ -25,7 +25,7 @@ def _make_ltx23_request_pipe(cls):
 
 
 class TestLTXImageToVideoForwardStages:
-    def test_i2v_pil_preprocessing_matches_official_bilinear_resize(self):
+    def test_legacy_i2v_pil_preprocessing_preserves_aspect_ratio_and_center_crops(self):
         from vllm_omni.diffusion.models.ltx2.ltx2_conditioning import _preprocess_i2v_pil_images
 
         pixels = torch.zeros(4, 8, 3, dtype=torch.uint8)
@@ -33,6 +33,19 @@ class TestLTXImageToVideoForwardStages:
         image = Image.fromarray(pixels.numpy())
 
         actual = _preprocess_i2v_pil_images(image, height=4, width=4)
+        expected = pixels[:, 2:6].permute(2, 0, 1).unsqueeze(0).float() / 127.5 - 1.0
+
+        torch.testing.assert_close(actual, expected)
+
+    def test_ltx25_i2v_pil_preprocessing_directly_resizes_after_crf(self, monkeypatch):
+        import vllm_omni.diffusion.models.ltx2.ltx2_conditioning as conditioning
+
+        pixels = torch.zeros(4, 8, 3, dtype=torch.uint8)
+        pixels[:, :, 0] = torch.arange(8, dtype=torch.uint8)
+        image = Image.fromarray(pixels.numpy())
+        monkeypatch.setattr(conditioning, "_apply_image_conditioning_crf", lambda image_array, _crf: image_array)
+
+        actual = conditioning._preprocess_i2v_pil_images(image, height=4, width=4, crf=18)
         resized = image.resize((4, 4), resample=Image.Resampling.BILINEAR)
         expected = torch.from_numpy(np.asarray(resized).astype(np.float32) / 255.0)
         expected = (2.0 * expected.permute(2, 0, 1).unsqueeze(0)) - 1.0
@@ -297,13 +310,18 @@ class TestLTXImageToVideoConditioning:
         torch.testing.assert_close(conditioning_mask, torch.tensor([[1.0, 0.0, 0.0]]))
         torch.testing.assert_close(out, torch.tensor([[[40.0, 41.0], [20.0, 21.0], [30.0, 31.0]]]))
 
-    def test_ltx23_i2v_5d_latents_noise_preserves_conditioning_frame(self, monkeypatch):
+    @pytest.mark.parametrize(
+        ("model_version", "sampled_shape"),
+        [("2.3", (1, 3, 2)), ("2.5", (1, 2, 3, 1, 1))],
+    )
+    def test_i2v_5d_latents_noise_preserves_version_rng_layout(self, monkeypatch, model_version, sampled_shape):
         import vllm_omni.diffusion.models.ltx2.ltx2_conditioning as ltx2_conditioning
         import vllm_omni.diffusion.models.ltx2.ltx2_latents as ltx2_latents
         from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
 
         pipe = object.__new__(LTX2Pipeline)
         torch.nn.Module.__init__(pipe)
+        pipe.model_version = model_version
         pipe.vae_spatial_compression_ratio = 1
         pipe.vae_temporal_compression_ratio = 1
         pipe.transformer_spatial_patch_size = 1
@@ -345,14 +363,19 @@ class TestLTXImageToVideoConditioning:
 
         torch.testing.assert_close(conditioning_mask, torch.tensor([[1.0, 0.0, 0.0]]))
         torch.testing.assert_close(out, torch.tensor([[[40.0, 41.0], [1.0, 1.0], [1.0, 1.0]]]))
-        assert sampled_shapes == [(1, 2, 3, 1, 1)]
+        assert sampled_shapes == [sampled_shape]
 
-    def test_ltx23_i2v_image_noise_is_sampled_before_packing(self, monkeypatch):
+    @pytest.mark.parametrize(
+        ("model_version", "sampled_shape"),
+        [("2.3", (1, 3, 2)), ("2.5", (1, 2, 3, 1, 1))],
+    )
+    def test_i2v_image_noise_preserves_version_rng_layout(self, monkeypatch, model_version, sampled_shape):
         import vllm_omni.diffusion.models.ltx2.ltx2_conditioning as ltx2_conditioning
         from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
 
         pipe = object.__new__(LTX2Pipeline)
         torch.nn.Module.__init__(pipe)
+        pipe.model_version = model_version
         pipe.vae_spatial_compression_ratio = 1
         pipe.vae_temporal_compression_ratio = 1
         pipe.transformer_spatial_patch_size = 1
@@ -387,7 +410,7 @@ class TestLTXImageToVideoConditioning:
             device=torch.device("cpu"),
         )
 
-        assert sampled_shapes == [(1, 2, 3, 1, 1)]
+        assert sampled_shapes == [sampled_shape]
         torch.testing.assert_close(conditioning_mask, torch.tensor([[1.0, 0.0, 0.0]]))
         torch.testing.assert_close(out, torch.tensor([[[10.0, 11.0], [1.0, 1.0], [1.0, 1.0]]]))
 

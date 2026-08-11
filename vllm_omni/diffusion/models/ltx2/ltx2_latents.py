@@ -195,24 +195,34 @@ def prepare_video_latents(
     )
     spatial_patch_size = pipeline.transformer_spatial_patch_size
     temporal_patch_size = pipeline.transformer_temporal_patch_size
-    shape = (
-        batch_size,
-        num_channels_latents,
-        num_frames,
-        height,
-        width,
-    )
+    use_unpacked_rng = getattr(pipeline, "model_version", None) == "2.5"
+    if use_unpacked_rng:
+        shape = (
+            batch_size,
+            num_channels_latents,
+            num_frames,
+            height,
+            width,
+        )
+    else:
+        shape = (
+            batch_size,
+            (num_frames // temporal_patch_size) * (height // spatial_patch_size) * (width // spatial_patch_size),
+            num_channels_latents * temporal_patch_size * spatial_patch_size * spatial_patch_size,
+        )
     if isinstance(generator, list) and len(generator) != batch_size:
         raise ValueError(
             f"You have passed a list of generators of length {len(generator)}, but requested an effective batch"
             f" size of {batch_size}. Make sure the batch size matches the length of the generators."
         )
     latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
-    return pack_latents(
-        latents,
-        spatial_patch_size,
-        temporal_patch_size,
-    )
+    if use_unpacked_rng:
+        latents = pack_latents(
+            latents,
+            spatial_patch_size,
+            temporal_patch_size,
+        )
+    return latents
 
 
 def prepare_audio_latents(
@@ -262,12 +272,17 @@ def prepare_audio_latents(
             latents = torch.cat([latents, padding], dim=1)
         return latents.to(device=device, dtype=dtype), original_latent_length, padded_latent_length
 
-    shape = (batch_size, num_channels_latents, padded_latent_length, latent_mel_bins)
+    use_unpacked_rng = getattr(pipeline, "model_version", None) == "2.5"
+    if use_unpacked_rng:
+        shape = (batch_size, num_channels_latents, padded_latent_length, latent_mel_bins)
+    else:
+        shape = (batch_size, padded_latent_length, num_channels_latents * latent_mel_bins)
     if isinstance(generator, list) and len(generator) != batch_size:
         raise ValueError(
             f"You have passed a list of generators of length {len(generator)}, but requested an effective batch"
             f" size of {batch_size}. Make sure the batch size matches the length of the generators."
         )
     latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
-    latents = pack_audio_latents(latents)
+    if use_unpacked_rng:
+        latents = pack_audio_latents(latents)
     return latents, original_latent_length, padded_latent_length

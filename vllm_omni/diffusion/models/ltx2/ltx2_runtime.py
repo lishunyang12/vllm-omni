@@ -515,7 +515,9 @@ class LTXRuntime(
             width=request_inputs.width,
             num_frames=request_inputs.num_frames,
             noise_scale=noise_scale,
-            dtype=torch.float32,
+            dtype=(
+                torch.float32 if self.model_version == "2.5" else prompt_context.positive_connector_prompt_embeds.dtype
+            ),
             device=device,
             generator=request_inputs.generator,
             latents=request_inputs.latents,
@@ -564,7 +566,11 @@ class LTXRuntime(
             audio_latent_length=audio_num_frames,
             num_mel_bins=num_mel_bins,
             noise_scale=noise_scale,
-            dtype=torch.float32,
+            dtype=(
+                torch.float32
+                if self.model_version == "2.5"
+                else prompt_context.positive_connector_audio_prompt_embeds.dtype
+            ),
             device=device,
             generator=request_inputs.generator,
             latents=request_inputs.audio_latents,
