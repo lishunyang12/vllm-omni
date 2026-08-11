@@ -199,6 +199,7 @@ def test_ltx25_full_checkpoint_selects_sft_profile_and_recipe(tmp_path, monkeypa
     assert pipe.pipeline_recipe is LTX25_FULL_RECIPE
     assert not pipe.support_image_input
 
+
 def test_ltx25_full_recipe_matches_official_sft_defaults():
     (phase,) = LTX25_FULL_RECIPE.phases
 

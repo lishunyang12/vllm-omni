@@ -415,10 +415,7 @@ def initialize_pipeline_components(pipeline: Any, od_config: Any) -> None:
         local_files_only=local_files_only,
     )
     if profile.text_encoder_cls is None:
-        raise ImportError(
-            "LTX-2.5 requires Gemma4UnifiedForConditionalGeneration. "
-            "Install transformers>=5.8,<5.15."
-        )
+        raise ImportError("LTX-2.5 requires Gemma4UnifiedForConditionalGeneration. Install transformers>=5.8,<5.15.")
     with torch.device("cpu"):
         pipeline.text_encoder = _load_component(
             profile.text_encoder_cls,

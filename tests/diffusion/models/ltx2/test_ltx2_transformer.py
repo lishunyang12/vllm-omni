@@ -44,10 +44,14 @@ def test_ltx_split_rope_matches_official_fp32_arithmetic():
     first_x, second_x = split_x.chunk(2, dim=-2)
     cos_u = cos.unsqueeze(-2)
     sin_u = sin.unsqueeze(-2)
-    expected = torch.cat(
-        [first_x * cos_u - second_x * sin_u, second_x * cos_u + first_x * sin_u],
-        dim=-2,
-    ).reshape_as(x).to(x.dtype)
+    expected = (
+        torch.cat(
+            [first_x * cos_u - second_x * sin_u, second_x * cos_u + first_x * sin_u],
+            dim=-2,
+        )
+        .reshape_as(x)
+        .to(x.dtype)
+    )
 
     actual = apply_split_rotary_emb(x, (cos, sin), head_dim=8)
 
