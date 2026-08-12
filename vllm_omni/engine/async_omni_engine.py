@@ -309,9 +309,8 @@ class AsyncOmniEngine:
     def get_diffusion_od_config(self) -> Any:
         """Expose the diffusion ``model_class_name`` to client-side model-extras.
 
-        Prefer the already-resolved stage configuration so explicit pipeline
-        overrides are preserved. Fall back to model metadata when the stage does
-        not specify a class. ``model_class_name`` may be ``None``.
+        The worker holds the full config; here we just resolve the pipeline class
+        name from the model config (cached). ``model_class_name`` may be ``None``.
         """
         if self._diffusion_od_config_view is None:
             from types import SimpleNamespace
@@ -319,16 +318,7 @@ class AsyncOmniEngine:
             from vllm_omni.diffusion.data import resolve_model_class_name
             from vllm_omni.diffusion.model_metadata import get_diffusion_model_metadata
 
-            model_class_name = None
-            for stage_config in self.stage_configs:
-                if getattr(stage_config, "stage_type", None) != "diffusion":
-                    continue
-                engine_args = getattr(stage_config, "engine_args", None)
-                model_class_name = getattr(engine_args, "model_class_name", None)
-                if model_class_name is not None:
-                    break
-            if model_class_name is None:
-                model_class_name = resolve_model_class_name(self.model)
+            model_class_name = resolve_model_class_name(self.model)
             metadata = get_diffusion_model_metadata(model_class_name)
             self._diffusion_od_config_view = SimpleNamespace(
                 model_class_name=model_class_name,

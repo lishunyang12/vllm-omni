@@ -85,7 +85,7 @@ class CuDNNAttentionImpl(AttentionImpl):
 
         enable_gqa = query.shape[2] != key.shape[2]
         query, key, value = (x.permute(0, 2, 1, 3) for x in (query, key, value))
-        # cuDNN has no kernel for LTX self- or cross-attention when either
+        # cuDNN has no kernel for degenerate attention shapes when either
         # sequence has one token. Route those degenerate shapes before entering the
         # cuDNN-only context: under torch.compile, FakeTensor evaluation raises
         # before the eager RuntimeError fallback below can run.

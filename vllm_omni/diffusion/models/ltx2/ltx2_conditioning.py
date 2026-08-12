@@ -744,7 +744,7 @@ class LTXI2VConditioningMixin:
             is_pil_input = isinstance(image, PIL.Image.Image) or (
                 isinstance(image, list) and image and all(isinstance(item, PIL.Image.Image) for item in image)
             )
-            if self.model_version == "2.5" and not is_pil_input:
+            if getattr(self, "model_version", "2.0") == "2.5" and not is_pil_input:
                 raise ValueError(
                     "LTX-2.5 image conditioning requires PIL images so the mandatory H.264 CRF 18 "
                     "preprocessing can be applied."
@@ -761,7 +761,7 @@ class LTXI2VConditioningMixin:
                     image,
                     height=request_inputs.height,
                     width=request_inputs.width,
-                    crf=18 if self.model_version == "2.5" else 0,
+                    crf=18 if getattr(self, "model_version", "2.0") == "2.5" else 0,
                     device=device,
                     dtype=prompt_context.positive_connector_prompt_embeds.dtype,
                 )
@@ -785,7 +785,9 @@ class LTXI2VConditioningMixin:
             num_frames=request_inputs.num_frames,
             noise_scale=noise_scale,
             dtype=(
-                torch.float32 if self.model_version == "2.5" else prompt_context.positive_connector_prompt_embeds.dtype
+                torch.float32
+                if getattr(self, "model_version", "2.0") == "2.5"
+                else prompt_context.positive_connector_prompt_embeds.dtype
             ),
             device=device,
             generator=request_inputs.generator,

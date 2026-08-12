@@ -549,7 +549,6 @@ def main():
         prompt_dict["negative_prompt"] = args.negative_prompt
     elif preset not in (
         _MODEL_PRESETS["ltx2"],
-        _MODEL_PRESETS["ltx2_distilled"],
         _MODEL_PRESETS["ltx23"],
         _MODEL_PRESETS["ltx25"],
         _MODEL_PRESETS["ltx25_distilled"],

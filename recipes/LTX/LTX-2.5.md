@@ -204,28 +204,37 @@ step count from the pipeline table.
 
 ## B300 validation
 
-The public offline examples above completed with cuDNN attention in eager
-mode and produced MP4 files with synchronized audio:
+The generic offline examples and the OpenAI-compatible online server were
+validated on one NVIDIA B300 with `CUDNN_ATTN`. All four modes returned H.264
+video with synchronized 48 kHz stereo AAC and a duration of 5.0417 seconds.
 
-| Public offline example | Pipeline generation | Reported peak GPU memory |
-|---|---:|---:|
-| One-stage T2V | 4.323 s | 78,016 MiB |
-| First-frame I2V | 4.627 s | — |
+| Mode | Public offline generation | Online status | Output |
+|---|---:|---:|---|
+| One-stage T2V | 4.323 s | HTTP 200 | 960x544, 121 frames |
+| First-frame I2V | 4.627 s | HTTP 200 | 960x544, 121 frames |
+| Two-stage distilled T2V | 12.954 s | HTTP 200 | 1920x1088, 121 frames |
+| Full/SFT T2V | 39.134 s | HTTP 200 | 960x544, 121 frames |
 
-The remaining pipeline coverage used the same one-B300 cuDNN baseline. These
-are single cold runs: pipeline generation excludes model loading, while cold
-end-to-end includes initialization. They are reproducibility records, not
-warmed throughput claims.
+These are single-run diagnostics, not warmed throughput claims.
 
-| Mode | Pipeline generation | Cold end-to-end | Reported peak GPU memory |
-|---|---:|---:|---:|
-| One-stage T2V | 4.487 s | 39.018 s | 78,640 MiB |
-| First-frame I2V | 4.567 s | 37.388 s | 78,640 MiB |
-| Two-stage distilled T2V | 13.770 s | 47.264 s | 109,666 MiB |
-| Full/SFT T2V | 40.917 s | 77.137 s | 79,678 MiB |
+### Feature qualification
 
-Online validation completed `/health` and `/v1/videos/sync` with HTTP 200 and
-produced an MP4 containing 960x544 H.264 video plus 48 kHz stereo AAC.
+| Feature | Status on LTX-2.5 | Notes |
+|---|---|---|
+| `CUDNN_ATTN` | Release-qualified | Recommended B300 path; all four modes passed. |
+| `TORCH_SDPA` | Functional baseline | All four modes passed; intended for debugging and portability. |
+| Native DP2 | Release-qualified | Two workers completed a fixed-seed single request and a two-request concurrent wave. |
+| HSDP2 | Capacity fallback | Output matched eager; peak memory decreased, with lower performance. |
+| Distributed layerwise offload DP2 | Capacity fallback | Output matched eager; primary-rank peak memory decreased by 43.3%, with lower performance. |
+| VAE slicing | Release-qualified | Output matched eager. |
+| VAE tiling | Release-qualified | Audio matched eager; decoded-video SSIM was 0.9867 and PSNR was 40.29 dB; peak memory decreased by 5.6%. |
+| Whole-model CPU offload | Capacity fallback | Output matched eager; peak memory decreased by 35.3%, with lower performance. |
+| TP2 / Ulysses SP2 | Experimental | Both completed, but did not pass the fixed-seed quality gate. |
+| Regional `torch.compile` | Experimental | Generation completed, but the first run was slower and did not pass the fixed-seed quality gate. |
+| FP8 | Experimental | Generation completed with lower memory, but did not pass the quality gate. |
+| Cache-DiT | Experimental | Threshold 0.12 produced no cache hit; threshold 0.15 produced one hit but failed the quality gate. |
+| `TRTLLM_ATTN` / Ring SP2 / TeaCache | Unsupported | Current kernels or model-specific adapters do not support these paths. |
+| FlashAttention-3 on H100 | Unverified | No H100 was available; the installed Hopper extension cannot be validated on B300. |
 
 ## Constraints and unsupported paths
 
@@ -239,15 +248,7 @@ produced an MP4 containing 960x544 H.264 video plus 48 kHz stereo AAC.
   API default is one frame.
 - Only first-frame I2V through `LTX2Pipeline` is release-qualified. Two-stage
   I2V and Full/SFT I2V are not claimed by this recipe.
-- `TRTLLM_ATTN` is not supported for the LTX-2.5 head dimension of 64 in the
-  current backend. The tested Hopper FlashAttention-3 extension also had no
-  SM120 kernel image, so use `CUDNN_ATTN` on B300.
-- Tensor parallelism, Ulysses sequence parallelism, regional compile, FP8,
-  and Cache-DiT are not release-qualified for LTX-2.5.
-- Distributed layerwise offload with DP2, AllGather, and
-  `resident_layers=0` produced bitwise-identical output and reduced the
-  primary rank's reported peak from 78,016 MiB to 44,206 MiB (43.3%), but
-  generation was 2.26x slower and cold end-to-end was 2.95x slower. Treat
-  DLO, CPU offload, and HSDP offload as capacity fallbacks, not speedups.
-- Cache-DiT produced no cache hits at a `0.12` threshold and failed the quality
-  gate at `0.15`; it is not release-qualified for this model.
+- `TRTLLM_ATTN` currently rejects the LTX-2.5 head dimension of 64. Use
+  `CUDNN_ATTN` on B300.
+- DLO, CPU offload, and HSDP are memory-capacity fallbacks, not latency
+  accelerators for this model.
