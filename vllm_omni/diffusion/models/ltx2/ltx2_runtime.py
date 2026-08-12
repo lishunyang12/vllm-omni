@@ -517,7 +517,7 @@ class LTXRuntime(
             noise_scale=noise_scale,
             dtype=(
                 torch.float32
-                if getattr(self, "model_version", "2.0") == "2.5"
+                if getattr(self, "model_version", "2") == "2.5"
                 else prompt_context.positive_connector_prompt_embeds.dtype
             ),
             device=device,
@@ -570,7 +570,7 @@ class LTXRuntime(
             noise_scale=noise_scale,
             dtype=(
                 torch.float32
-                if getattr(self, "model_version", "2.0") == "2.5"
+                if getattr(self, "model_version", "2") == "2.5"
                 else prompt_context.positive_connector_audio_prompt_embeds.dtype
             ),
             device=device,

@@ -149,7 +149,7 @@ export MODEL=Lightricks/LTX-2.5-Diffusers
 export PORT=8000
 
 CUDA_VISIBLE_DEVICES=0 \
-vllm-omni serve "${MODEL}" \
+vllm serve "${MODEL}" \
   --omni \
   --model-class-name LTX2Pipeline \
   --host 0.0.0.0 \
@@ -223,7 +223,7 @@ These are single-run diagnostics, not warmed throughput claims.
 |---|---|---|
 | `CUDNN_ATTN` | Release-qualified | Recommended B300 path; all four modes passed. |
 | `TORCH_SDPA` | Functional baseline | All four modes passed; intended for debugging and portability. |
-| Native DP2 | Release-qualified | Two workers completed a fixed-seed single request and a two-request concurrent wave. |
+| Native DP2 | Unverified | The current run initialized two workers inside one stage replica; independent replica scheduling was not demonstrated. |
 | HSDP2 | Capacity fallback | Output matched eager; peak memory decreased, with lower performance. |
 | Distributed layerwise offload DP2 | Capacity fallback | Output matched eager; primary-rank peak memory decreased by 43.3%, with lower performance. |
 | VAE slicing | Release-qualified | Output matched eager. |
