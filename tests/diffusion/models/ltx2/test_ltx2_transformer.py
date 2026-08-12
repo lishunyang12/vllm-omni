@@ -16,8 +16,6 @@ from vllm_omni.diffusion.models.ltx2.ltx2_transformer import (
     apply_split_rotary_emb,
 )
 
-pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
-
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
 
 
