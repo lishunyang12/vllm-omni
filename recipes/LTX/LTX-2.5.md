@@ -6,7 +6,7 @@
 ## Summary
 
 - Vendor: Lightricks
-- Model:
+- Supported checkpoint:
   [`Lightricks/LTX-2.5-Diffusers`](https://huggingface.co/Lightricks/LTX-2.5-Diffusers)
 - Tasks: one-stage T2V/I2V, two-stage distilled T2V, and Full/SFT T2V
 - Modes: offline inference and OpenAI-compatible `/v1/videos` HTTP serving
@@ -14,6 +14,10 @@
 
 LTX-2.5 generates video and synchronized 48 kHz stereo audio. vLLM-Omni
 supports four generation modes through three pipeline classes:
+
+> **Checkpoint layout:** This integration directly supports only
+> `Lightricks/LTX-2.5-Diffusers`. The raw `Lightricks/LTX-2.5` repository uses
+> split artifacts and cannot be passed directly to `--model` on this path.
 
 | Mode | `--model-class-name` | Output | Steps | Transformer |
 |---|---|---:|---:|---|
@@ -23,7 +27,9 @@ supports four generation modes through three pipeline classes:
 | Full/SFT T2V | `LTX2FullPipeline` | 960x544, 121 frames at 24 FPS | 30 | `transformer_full/` |
 
 The two-stage pipeline first generates at 960x544, applies the model's x2
-latent upsampler, and runs the official three-step refinement tail.
+latent upsampler, and runs the official three-step refinement tail. One-stage
+requests default to the official eight-step sigma schedule and may override it
+with an explicit `sigmas` list.
 
 ## When to use this recipe
 
@@ -64,7 +70,7 @@ uv pip install -e .
 
 `ffmpeg` and `ffprobe` must be on `PATH` for MP4 output. I2V also requires
 PyAV backed by an FFmpeg build with `libx264`; the LTX-2.5 conditioning path
-performs the model's required H.264 CRF-18 first-frame round trip.
+uses the model's H.264 CRF-18 first-frame round trip by default.
 
 ## Offline inference
 
@@ -88,6 +94,10 @@ python examples/offline_inference/text_to_video/text_to_video.py \
   --output ltx25-one-stage.mp4
 ```
 
+To override the one-stage schedule, add `--extra-body` with a sigma list, for
+example `--extra-body '{"sigmas":[1.0,0.5,0.0]}'`. The number of
+denoising steps is derived from the supplied schedule.
+
 ### First-frame I2V
 
 ```bash
@@ -105,6 +115,9 @@ python examples/offline_inference/image_to_video/image_to_video.py \
   --enforce-eager \
   --output ltx25-one-stage-i2v.mp4
 ```
+
+CRF 18 is the LTX-2.5 default. Add `--extra-body '{"image_crf":0}'` only
+when an application explicitly needs to bypass the conditioning round trip.
 
 ### Two-stage distilled T2V
 
@@ -198,42 +211,59 @@ curl -sS --fail-with-body \
   -o ltx25-online-i2v.mp4
 ```
 
+The online equivalent of the two request-level overrides is multipart JSON:
+`-F 'extra_params={"image_crf":0}'` for I2V or
+`-F 'extra_params={"sigmas":[1.0,0.5,0.0]}'` for a custom one-stage
+schedule.
+
 Restart the server with `LTX2DistilledPipeline` or `LTX2FullPipeline` to run
 the corresponding two-stage or Full/SFT T2V command. Use the dimensions and
 step count from the pipeline table.
 
 ## B300 validation
 
-The generic offline examples and the OpenAI-compatible online server were
-validated on one NVIDIA B300 with `CUDNN_ATTN`. All four modes returned H.264
-video with synchronized 48 kHz stereo AAC and a duration of 5.0417 seconds.
+The generic offline examples and OpenAI-compatible online server were validated
+on one NVIDIA B300 with `CUDNN_ATTN`; all four online modes returned HTTP 200.
+The following are single-process cold-run diagnostics, not warmed throughput
+claims. Generation excludes MP4 encoding; end to end includes model loading.
 
-| Mode | Public offline generation | Online status | Output |
-|---|---:|---:|---|
-| One-stage T2V | 4.323 s | HTTP 200 | 960x544, 121 frames |
-| First-frame I2V | 4.627 s | HTTP 200 | 960x544, 121 frames |
-| Two-stage distilled T2V | 12.954 s | HTTP 200 | 1920x1088, 121 frames |
-| Full/SFT T2V | 39.134 s | HTTP 200 | 960x544, 121 frames |
+| Mode | Generation | End to end | Peak GPU memory | Diffusers generation speedup |
+|---|---:|---:|---:|---:|
+| One-stage T2V · 960x544 | 4.487 s | 39.018 s | 78,640 MiB | 10.10x |
+| First-frame I2V · 960x544 | 4.567 s | 37.388 s | 78,640 MiB | 9.85x |
+| Two-stage distilled T2V · 1920x1088 | 13.770 s | 47.264 s | 109,666 MiB | 5.47x |
+| Full/SFT T2V · 960x544 | 40.917 s | 77.137 s | 79,678 MiB | 2.04x |
 
-These are single-run diagnostics, not warmed throughput claims.
+| Mode | Mean SSIM ↑ | Mean PSNR ↑ | Mean LPIPS ↓ |
+|---|---:|---:|---:|
+| One-stage T2V | 0.8840 | 22.285 dB | 0.0696 |
+| First-frame I2V | 0.9897 | 35.771 dB | 0.0071 |
+| Two-stage distilled T2V | 0.8965 | 23.245 dB | 0.0854 |
+| Full/SFT T2V | 0.7656 | 18.530 dB | 0.1530 |
+
+All decoded outputs included synchronized 48 kHz stereo audio. Extended
+1920x1088, 481-frame official-prompt results are available in the
+[LTX-2.5 B300 gallery](https://lishunyang12.github.io/vllm-omni-rankings/scripts/ltx25_official_b300_1080p20s/).
 
 ### Feature qualification
 
 | Feature | Status on LTX-2.5 | Notes |
 |---|---|---|
-| `CUDNN_ATTN` | Release-qualified | Recommended B300 path; all four modes passed. |
+| `CUDNN_ATTN` | Release-qualified | Recommended B300 path; all four modes passed offline and online. |
 | `TORCH_SDPA` | Functional baseline | All four modes passed; intended for debugging and portability. |
-| Native DP2 | Unverified | The current run initialized two workers inside one stage replica; independent replica scheduling was not demonstrated. |
-| HSDP2 | Capacity fallback | Output matched eager; peak memory decreased, with lower performance. |
+| Native DP2 | Unverified | The run initialized two diffusion workers inside one stage replica; every request reported `replica_id=0`, so independent replica scheduling was not demonstrated. |
+| HSDP2 | Capacity fallback | Output matched eager; peak memory decreased by 21.9%, with lower performance. |
 | Distributed layerwise offload DP2 | Capacity fallback | Output matched eager; primary-rank peak memory decreased by 43.3%, with lower performance. |
-| VAE slicing | Release-qualified | Output matched eager. |
-| VAE tiling | Release-qualified | Audio matched eager; decoded-video SSIM was 0.9867 and PSNR was 40.29 dB; peak memory decreased by 5.6%. |
 | Whole-model CPU offload | Capacity fallback | Output matched eager; peak memory decreased by 35.3%, with lower performance. |
-| TP2 / Ulysses SP2 | Experimental | Both completed, but did not pass the fixed-seed quality gate. |
+| VAE slicing | Release-qualified | Output matched eager. |
+| VAE tiling | Release-qualified | Audio was bit-exact with eager; decoded-video mean SSIM was 0.9730 and mean PSNR was 36.72 dB; peak memory decreased by 5.6%. |
+| TP2 / Ulysses SP2 | Experimental | Both completed, but neither passed the fixed-seed quality gate. |
 | Regional `torch.compile` | Experimental | Generation completed, but the first run was slower and did not pass the fixed-seed quality gate. |
-| FP8 | Experimental | Generation completed with lower memory, but did not pass the quality gate. |
-| Cache-DiT | Experimental | Threshold 0.12 produced no cache hit; threshold 0.15 produced one hit but failed the quality gate. |
-| `TRTLLM_ATTN` / Ring SP2 / TeaCache | Unsupported | Current kernels or model-specific adapters do not support these paths. |
+| FP8 | Experimental | Generation completed with 23.4% lower peak memory, but did not pass the quality gate. |
+| Cache-DiT | Experimental | Threshold 0.12 preserved eager output but recorded zero cache steps; threshold 0.15 exercised caching but failed the fixed-seed quality gate. |
+| `TRTLLM_ATTN` | Unsupported | The current kernel rejects LTX-2.5's head dimension of 64. |
+| Ring SP2 | Unsupported | The tested path did not complete successfully. |
+| TeaCache | Unsupported | LTX-2.5 has no validated TeaCache residual extractor or coefficient profile. |
 | FlashAttention-3 on H100 | Unverified | No H100 was available; the installed Hopper extension cannot be validated on B300. |
 
 ## Constraints and unsupported paths
@@ -242,12 +272,13 @@ These are single-run diagnostics, not warmed throughput claims.
   `transformer_full/`.
 - `num_frames` must be `8k+1`. One-stage dimensions must be divisible by 32;
   two-stage final dimensions must be divisible by 64.
-- One-stage and two-stage distilled modes use the fixed eight-step schedule.
-  Full/SFT uses 30 steps.
+- One-stage defaults to the official eight-step schedule and Full/SFT defaults
+  to 30 steps; both accept a custom `sigmas` list. The two-stage distilled
+  schedule remains fixed.
 - Set `num_frames` explicitly for online requests because the generic video
   API default is one frame.
 - Only first-frame I2V through `LTX2Pipeline` is release-qualified. Two-stage
-  I2V and Full/SFT I2V are not claimed by this recipe.
+  I2V, Full/SFT I2V, and multi-frame conditioning are not claimed.
 - `TRTLLM_ATTN` currently rejects the LTX-2.5 head dimension of 64. Use
   `CUDNN_ATTN` on B300.
 - DLO, CPU offload, and HSDP are memory-capacity fallbacks, not latency

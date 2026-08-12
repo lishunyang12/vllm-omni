@@ -227,6 +227,8 @@ def test_ltx_extra_registry_declares_official_guidance_params() -> None:
             "audio_rescale_scale",
             "video_stg_blocks",
             "audio_stg_blocks",
+            "sigmas",
+            "image_crf",
         }
     )
 

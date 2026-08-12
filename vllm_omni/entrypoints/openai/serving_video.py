@@ -101,6 +101,14 @@ class OmniOpenAIServingVideo:
             self._stage_configs = stage_configs
 
     @property
+    def preserves_reference_image_size(self) -> bool:
+        """Return whether the pipeline owns reference-image resizing."""
+        get_od_config = getattr(self._engine_client, "get_diffusion_od_config", None)
+        od_config = get_od_config() if callable(get_od_config) else getattr(self._engine_client, "od_config", None)
+        model_class_name = None if od_config is None else getattr(od_config, "model_class_name", None)
+        return get_diffusion_model_metadata(model_class_name).preserves_reference_image_size
+
+    @property
     def supports_mixed_reference_inputs(self) -> bool:
         """Return whether the configured diffusion model accepts mixed refs."""
         get_od_config = getattr(self._engine_client, "get_diffusion_od_config", None)
@@ -154,7 +162,12 @@ class OmniOpenAIServingVideo:
         provided_fields = request.model_fields_set
         fps_provided = self._request_fps_provided(request)
         vp = request.resolve_video_params()
-        if input_image is not None and vp.width is not None and vp.height is not None:
+        if (
+            input_image is not None
+            and vp.width is not None
+            and vp.height is not None
+            and not self.preserves_reference_image_size
+        ):
             target_size = (vp.width, vp.height)
             image_items = input_image if isinstance(input_image, list) else [input_image]
             resized_images = [

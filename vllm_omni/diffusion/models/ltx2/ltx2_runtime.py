@@ -159,6 +159,7 @@ class LTXRuntime(
         req: DiffusionRequestBatch,
         *,
         image: Any | None = None,
+        image_crf: int | None = None,
         prompt: str | list[str] | None = None,
         negative_prompt: str | list[str] | None = None,
         height: int | None = None,
@@ -203,6 +204,7 @@ class LTXRuntime(
             decode_noise_scale=decode_noise_scale,
             output_type=output_type,
             max_sequence_length=max_sequence_length,
+            image_crf=image_crf,
         )
         image = self._resolve_request_image(req, image, request_inputs)
         request_sigmas = self._resolve_request_sigmas(req, sigmas)
@@ -239,7 +241,11 @@ class LTXRuntime(
                 req,
                 phase_inputs,
                 noise_scale=phase_recipe.noise_scale,
-                sigmas=list(phase_recipe.sigmas) if phase_recipe.sigmas is not None else request_sigmas,
+                sigmas=(
+                    request_sigmas
+                    if request_sigmas is not None
+                    else (list(phase_recipe.sigmas) if phase_recipe.sigmas is not None else None)
+                ),
                 timesteps=None,
                 attention_kwargs=None,
                 phase_recipe=phase_recipe,

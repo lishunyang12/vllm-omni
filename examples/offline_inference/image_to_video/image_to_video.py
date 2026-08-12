@@ -56,7 +56,8 @@ import numpy as np
 import PIL.Image
 import torch
 
-from vllm_omni.diffusion.data import DiffusionParallelConfig
+from vllm_omni.diffusion.data import DiffusionParallelConfig, resolve_model_class_name
+from vllm_omni.diffusion.models.ltx2.ltx2_components import detect_ltx_model_version
 from vllm_omni.diffusion.utils.param_utils import apply_declared_extra_args
 from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
@@ -380,16 +381,24 @@ def prepare_primary_image(
     return image.resize((width, height), PIL.Image.Resampling.LANCZOS)
 
 
+def _detect_ltx_checkpoint_version(model: str, model_class_name: str | None = None) -> str | None:
+    model_class_name = model_class_name or resolve_model_class_name(model)
+    if "ltx2" not in (model_class_name or "").lower():
+        return None
+    return detect_ltx_model_version(model)
+
+
 def main():
     args = parse_args()
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(args.seed)
     model_name = str(args.model).lower() if args.model is not None else ""
-    model_class_name = args.model_class_name
+    model_class_name = args.model_class_name or resolve_model_class_name(args.model)
     model_class_name_lower = (model_class_name or "").lower()
-    is_ltx25 = "ltx-2.5" in model_name or "ltx_2.5" in model_name or "ltx25" in model_name
+    ltx_version = _detect_ltx_checkpoint_version(args.model, model_class_name)
+    is_ltx25 = ltx_version == "2.5"
     is_ltx2_distilled = "distilled" in model_class_name_lower or "distilled" in model_name
-    is_ltx23 = "ltx23" in model_class_name_lower or "ltx-2.3" in model_name
-    is_ltx2 = is_ltx2_distilled or is_ltx23 or "ltx2" in model_class_name_lower or "ltx-2" in model_name
+    is_ltx23 = ltx_version == "2.3"
+    is_ltx2 = ltx_version is not None
     is_cosmos = "cosmos" in model_name or (model_class_name is not None and "cosmos" in model_class_name.lower())
     is_cosmos_edge = is_cosmos and ("edge" in model_name or "edge" in model_class_name_lower)
 

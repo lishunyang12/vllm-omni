@@ -10,7 +10,8 @@ from typing import Any
 import numpy as np
 import torch
 
-from vllm_omni.diffusion.data import DiffusionParallelConfig
+from vllm_omni.diffusion.data import DiffusionParallelConfig, resolve_model_class_name
+from vllm_omni.diffusion.models.ltx2.ltx2_components import detect_ltx_model_version
 from vllm_omni.diffusion.utils.param_utils import apply_declared_extra_args
 from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
@@ -133,8 +134,10 @@ _MODEL_PRESETS = {
 
 def _detect_preset(model: str, model_class_name: str | None = None) -> dict:
     model_lower = model.lower()
+    model_class_name = model_class_name or resolve_model_class_name(model)
     class_lower = (model_class_name or "").lower()
-    is_ltx25 = "ltx-2.5" in model_lower or "ltx_2.5" in model_lower or "ltx25" in model_lower
+    ltx_version = detect_ltx_model_version(model) if "ltx2" in class_lower else None
+    is_ltx25 = ltx_version == "2.5"
     if is_ltx25 and "distilled" in class_lower:
         return _MODEL_PRESETS["ltx25_distilled"]
     if is_ltx25 and "full" in class_lower:
@@ -143,9 +146,9 @@ def _detect_preset(model: str, model_class_name: str | None = None) -> dict:
         return _MODEL_PRESETS["ltx25"]
     if "distilled" in class_lower or "distilled" in model_lower:
         return _MODEL_PRESETS["ltx2_distilled"]
-    if "ltx23" in class_lower or "ltx-2.3" in model_lower or "ltx_2.3" in model_lower:
+    if ltx_version == "2.3" or "ltx23" in class_lower or "ltx-2.3" in model_lower or "ltx_2.3" in model_lower:
         return _MODEL_PRESETS["ltx23"]
-    if "ltx2" in class_lower or "ltx-2" in model_lower or "ltx_2" in model_lower:
+    if ltx_version is not None or "ltx-2" in model_lower or "ltx_2" in model_lower:
         return _MODEL_PRESETS["ltx2"]
     if "vace" in model_lower:
         return _MODEL_PRESETS["vace"]

@@ -19,7 +19,7 @@ from diffusers.pipelines.ltx2.latent_upsampler import LTX2LatentUpsamplerModel
 from diffusers.pipelines.ltx2.vocoder import LTX2Vocoder
 from diffusers.video_processor import VideoProcessor
 from huggingface_hub import hf_hub_download
-from transformers import AutoTokenizer, Gemma3ForConditionalGeneration
+from transformers import AutoModelForImageTextToText, AutoTokenizer, Gemma3ForConditionalGeneration
 
 from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
 from vllm_omni.diffusion.attention.layer import Attention as OmniAttention
@@ -45,10 +45,12 @@ except ImportError:
     LTX2VocoderWithBWE = None
 
 try:
-    from transformers import Gemma4UnifiedForConditionalGeneration
+    from transformers import Gemma4UnifiedForConditionalGeneration as _Gemma4UnifiedForConditionalGeneration
 except ImportError:
-    Gemma4UnifiedForConditionalGeneration = None
+    _Gemma4UnifiedForConditionalGeneration = None
 
+
+_LTX25_TEXT_ENCODER_CLS = AutoModelForImageTextToText if _Gemma4UnifiedForConditionalGeneration is not None else None
 
 _LTX_COMPONENT_SUBFOLDERS = (
     "tokenizer",
@@ -110,7 +112,7 @@ LTX25_COMPONENT_PROFILE = LTXComponentProfile(
     video_vae_cls=DistributedAutoencoderKLLTX2Video,
     vocoder_cls=LTX2VocoderWithBWE or LTX2Vocoder,
     vocoder_fallback_cls=LTX2Vocoder,
-    text_encoder_cls=Gemma4UnifiedForConditionalGeneration,
+    text_encoder_cls=_LTX25_TEXT_ENCODER_CLS,
 )
 
 # Pinned Diffusers LTX-2.5 integration (PR #14447, commit 7564fb016d)
@@ -125,7 +127,7 @@ LTX25_FULL_COMPONENT_PROFILE = LTXComponentProfile(
     video_vae_cls=DistributedAutoencoderKLLTX2Video,
     vocoder_cls=LTX2VocoderWithBWE or LTX2Vocoder,
     vocoder_fallback_cls=LTX2Vocoder,
-    text_encoder_cls=Gemma4UnifiedForConditionalGeneration,
+    text_encoder_cls=_LTX25_TEXT_ENCODER_CLS,
     transformer_subfolder="transformer_full",
     scheduler_use_dynamic_shifting=True,
     scheduler_shift_terminal=0.1,
@@ -150,7 +152,7 @@ LTX25_DISTILLED_COMPONENT_PROFILE = LTXComponentProfile(
     video_vae_cls=DistributedAutoencoderKLLTX2Video,
     vocoder_cls=LTX2VocoderWithBWE or LTX2Vocoder,
     vocoder_fallback_cls=LTX2Vocoder,
-    text_encoder_cls=Gemma4UnifiedForConditionalGeneration,
+    text_encoder_cls=_LTX25_TEXT_ENCODER_CLS,
 )
 
 
@@ -215,11 +217,20 @@ def detect_ltx_model_version(model: str) -> str:
         return "2.5"
 
     text_encoder_config = _load_ltx_metadata_json(model, "text_encoder/config.json")
-    if text_encoder_config.get("model_type") == "gemma4_unified":
+    if text_encoder_config.get("model_type") in ("gemma4_unified", "gemma4"):
         return "2.5"
 
+    # Explicit checkpoint metadata takes precedence over structural heuristics.
     if model_version.startswith("2.3"):
         return "2.3"
+
+    # Converted checkpoints may record an AutoModel class in model_index.json
+    # instead of the concrete Gemma4 class. The 2.5 transformer drops the
+    # video FFN bias; this is the only transformer-config delta from 2.3 that
+    # is present in both 2.5 and 2.5.1+ conversions.
+    transformer_config = _load_ltx_metadata_json(model, "transformer/config.json")
+    if transformer_config.get("ff_bias") is False:
+        return "2.5"
 
     vocoder_entry = model_index.get("vocoder")
     if isinstance(vocoder_entry, (list, tuple)) and vocoder_entry:
@@ -415,7 +426,7 @@ def initialize_pipeline_components(pipeline: Any, od_config: Any) -> None:
         local_files_only=local_files_only,
     )
     if profile.text_encoder_cls is None:
-        raise ImportError("LTX-2.5 requires Gemma4UnifiedForConditionalGeneration. Install transformers>=5.8,<5.15.")
+        raise ImportError("LTX-2.5 requires Gemma4UnifiedForConditionalGeneration. Install transformers>=5.10.1,<5.15.")
     with torch.device("cpu"):
         pipeline.text_encoder = _load_component(
             profile.text_encoder_cls,

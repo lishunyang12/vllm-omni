@@ -115,6 +115,44 @@ class TestLTXImageToVideoForwardStages:
                 image=torch.zeros(3, 4, 4),
             )
 
+    def test_ltx25_i2v_tensor_input_can_opt_out_of_crf18(self):
+        from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
+
+        captured_prepare_kwargs = []
+
+        def fake_prepare_latents(**kwargs):
+            captured_prepare_kwargs.append(kwargs)
+            return kwargs["image"], None
+
+        pipe = object.__new__(LTX2Pipeline)
+        torch.nn.Module.__init__(pipe)
+        pipe.model_version = "2.5"
+        object.__setattr__(pipe, "transformer", SimpleNamespace(config=SimpleNamespace(in_channels=4)))
+        object.__setattr__(pipe, "prepare_latents", fake_prepare_latents)
+        request_inputs = SimpleNamespace(
+            height=4,
+            width=4,
+            num_frames=3,
+            num_videos_per_prompt=1,
+            generator=None,
+            latents=None,
+            image_crf=0,
+        )
+        prompt_context = SimpleNamespace(
+            batch_size=1,
+            positive_connector_prompt_embeds=torch.zeros(1, 1, 1, dtype=torch.bfloat16),
+        )
+
+        pipe._prepare_video_latents_stage(
+            request_inputs,
+            prompt_context,
+            device=torch.device("cpu"),
+            noise_scale=0.0,
+            image=torch.zeros(3, 4, 4),
+        )
+
+        assert captured_prepare_kwargs[0]["image"].shape == (1, 3, 4, 4)
+
     def test_ltx25_i2v_reports_missing_pyav(self, monkeypatch):
         from vllm_omni.diffusion.models.ltx2.ltx2_conditioning import _apply_image_conditioning_crf
 

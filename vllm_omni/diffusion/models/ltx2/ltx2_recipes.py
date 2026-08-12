@@ -127,7 +127,7 @@ LTX25_ONE_STAGE_RECIPE = LTXPipelineRecipe(
             use_official_sigma_schedule=False,
         ),
     ),
-    allow_request_sigmas=False,
+    allow_request_sigmas=True,
     fixed_num_inference_steps=True,
 )
 LTX25_FULL_RECIPE = LTXPipelineRecipe(

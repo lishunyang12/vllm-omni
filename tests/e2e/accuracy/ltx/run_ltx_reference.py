@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-"""Generate raw LTX video and audio outputs with the official or Omni runtime."""
+"""Generate raw LTX video and audio outputs with Diffusers, official, or Omni."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from PIL import Image
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--backend", choices=("official", "omni"), required=True)
+    parser.add_argument("--backend", choices=("diffusers", "official", "omni"), required=True)
     parser.add_argument("--request", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--model")
@@ -37,6 +37,7 @@ def _save_outputs(
     video: torch.Tensor,
     audio: torch.Tensor,
     audio_sample_rate: int,
+    fps: float,
     metadata: dict[str, Any],
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -44,6 +45,22 @@ def _save_outputs(
     audio = audio.detach().float().cpu()
     np.save(output_dir / "video.npy", video.numpy())
     np.save(output_dir / "audio.npy", audio.numpy())
+
+    from vllm_omni.diffusion.utils.media_utils import mux_video_audio_bytes
+
+    frames_u8 = video.mul(255.0).round().to(torch.uint8).numpy()
+    audio_array = audio.numpy()
+    while audio_array.ndim > 2 and audio_array.shape[0] == 1:
+        audio_array = audio_array[0]
+    (output_dir / "output.mp4").write_bytes(
+        mux_video_audio_bytes(
+            frames_u8,
+            audio_array,
+            fps=float(fps),
+            audio_sample_rate=int(audio_sample_rate),
+            video_codec_options={"preset": "ultrafast"},
+        )
+    )
 
     frame_indices = sorted({0, video.shape[0] // 2, video.shape[0] - 1})
     for index in frame_indices:
@@ -56,6 +73,7 @@ def _save_outputs(
             "audio_shape": list(audio.shape),
             "audio_sample_rate": int(audio_sample_rate),
             "frame_indices": frame_indices,
+            "mp4": "output.mp4",
         }
     )
     (output_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
@@ -174,11 +192,72 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
         video=_canonical_video(video_tensor),
         audio=audio.waveform,
         audio_sample_rate=audio.sampling_rate,
+        fps=float(request["fps"]),
         metadata={
             "backend": "official",
             "attention_backend": "torch_sdpa",
             "official_revision": os.environ.get("VLLM_TEST_LTX_OFFICIAL_REVISION"),
             "checkpoint": str(args.checkpoint),
+        },
+    )
+
+
+@torch.inference_mode()
+def _run_diffusers(args: argparse.Namespace, request: dict[str, Any]) -> None:
+    """Run the pinned official Diffusers LTX-2.5 one-stage recipe."""
+    if args.model is None:
+        raise ValueError("Diffusers backend requires --model")
+    if "sigmas" not in request:
+        raise ValueError("Diffusers LTX-2.5 reference requires the distilled sigma schedule")
+
+    # Match Omni's TORCH_SDPA accuracy path rather than allowing cuDNN SDPA
+    # dispatch to introduce a second numerical variable.
+    torch.backends.cuda.enable_cudnn_sdp(False)
+
+    import diffusers
+    from diffusers import LTX2Pipeline
+
+    pipeline = LTX2Pipeline.from_pretrained(
+        args.model,
+        dtype=torch.bfloat16,
+        duration_head=None,
+    )
+    pipeline.enable_sequential_cpu_offload(device="cuda")
+    pipeline.vae.enable_tiling()
+    generator = torch.Generator("cuda").manual_seed(request["seed"])
+    video, audio = pipeline(
+        prompt=request["prompt"],
+        negative_prompt=request["negative_prompt"],
+        height=request["height"],
+        width=request["width"],
+        num_frames=request["num_frames"],
+        frame_rate=float(request["fps"]),
+        sigmas=request["sigmas"],
+        guidance_scale=request["video_cfg_scale"],
+        audio_guidance_scale=request["audio_cfg_scale"],
+        stg_scale=request["video_stg_scale"],
+        audio_stg_scale=request["audio_stg_scale"],
+        modality_scale=request["video_modality_scale"],
+        audio_modality_scale=request["audio_modality_scale"],
+        guidance_rescale=request["video_rescale_scale"],
+        audio_guidance_rescale=request["audio_rescale_scale"],
+        generator=generator,
+        output_type="np",
+        return_dict=False,
+    )
+    audio_tensor = torch.as_tensor(np.asarray(audio) if not isinstance(audio, torch.Tensor) else audio)
+    _save_outputs(
+        args.output_dir,
+        video=_canonical_video(video),
+        audio=audio_tensor,
+        audio_sample_rate=int(pipeline.vocoder.config.output_sampling_rate),
+        fps=float(request["fps"]),
+        metadata={
+            "backend": "diffusers",
+            "attention_backend": "torch_sdpa",
+            "diffusers_version": diffusers.__version__,
+            "diffusers_revision": os.environ.get("VLLM_TEST_LTX_DIFFUSERS_REVISION"),
+            "model": args.model,
         },
     )
 
@@ -307,6 +386,7 @@ def _run_omni(args: argparse.Namespace, request: dict[str, Any]) -> None:
             video=_canonical_video(video),
             audio=audio_tensor,
             audio_sample_rate=audio_sample_rate,
+            fps=float(request["fps"]),
             metadata={
                 "backend": "omni",
                 "attention_backend": "torch_sdpa",
@@ -323,6 +403,8 @@ def main() -> None:
     request = json.loads(args.request.read_text())
     if args.backend == "official":
         _run_official(args, request)
+    elif args.backend == "diffusers":
+        _run_diffusers(args, request)
     else:
         _run_omni(args, request)
 

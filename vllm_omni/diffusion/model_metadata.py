@@ -11,6 +11,7 @@ class DiffusionModelMetadata:
     supports_multimodal_inputs: bool = False
     max_multimodal_image_inputs: int | None = None
     supports_mixed_reference_inputs: bool = False
+    preserves_reference_image_size: bool = False
     attention_mask_free: bool = False
 
 
@@ -52,6 +53,7 @@ _DIFFUSION_MODEL_METADATA: dict[str, DiffusionModelMetadata] = {
         max_multimodal_image_inputs=9,
         supports_mixed_reference_inputs=True,
     ),
+    "LTX2Pipeline": DiffusionModelMetadata(preserves_reference_image_size=True),
     "WanPipeline": DiffusionModelMetadata(attention_mask_free=True),
     "WanImageToVideoPipeline": DiffusionModelMetadata(attention_mask_free=True),
     "WanVACEPipeline": DiffusionModelMetadata(attention_mask_free=True),

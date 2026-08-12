@@ -114,13 +114,35 @@ def test_ltx_public_entries_share_runtime_and_keep_recipe_boundaries():
     )
 
     assert issubclass(LTX2Pipeline, LTXRuntime)
+    assert issubclass(LTX2FullPipeline, LTXRuntime)
     assert issubclass(LTX2DistilledPipeline, LTXRuntime)
     assert LTX2Pipeline.component_profile is LTX2_COMPONENT_PROFILE
     assert LTX2Pipeline.pipeline_recipe is LTX2_ONE_STAGE_RECIPE
+    assert LTX2FullPipeline.component_profile is LTX25_FULL_COMPONENT_PROFILE
+    assert LTX2FullPipeline.pipeline_recipe is LTX25_FULL_RECIPE
     assert LTX2DistilledPipeline.component_profile is LTX2_DISTILLED_COMPONENT_PROFILE
     assert LTX2_COMPONENT_PROFILE.video_vae_cls is DistributedAutoencoderKLLTX2Video
     assert LTX23_COMPONENT_PROFILE.video_vae_cls is DistributedAutoencoderKLLTX2Video
     assert LTX25_COMPONENT_PROFILE.video_vae_cls is DistributedAutoencoderKLLTX2Video
+    assert LTX25_COMPONENT_PROFILE.text_encoder_cls is ltx2_components.AutoModelForImageTextToText
+    assert LTX25_FULL_COMPONENT_PROFILE.text_encoder_cls is ltx2_components.AutoModelForImageTextToText
+    assert LTX25_DISTILLED_COMPONENT_PROFILE.text_encoder_cls is ltx2_components.AutoModelForImageTextToText
+
+
+def test_ltx25_missing_gemma4_recommends_supported_transformers_range(monkeypatch):
+    pipe = SimpleNamespace(component_profile=replace(LTX25_COMPONENT_PROFILE, text_encoder_cls=None))
+    od_config = SimpleNamespace(model="Lightricks/LTX-2.5-Diffusers", dtype=torch.bfloat16)
+
+    monkeypatch.setattr(ltx2_components, "get_local_device", lambda: torch.device("cpu"))
+    monkeypatch.setattr(ltx2_components, "prefetch_subfolders", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(ltx2_components.AutoTokenizer, "from_pretrained", lambda *_args, **_kwargs: object())
+
+    with pytest.raises(ImportError) as exc_info:
+        ltx2_components.initialize_pipeline_components(pipe, od_config)
+
+    assert str(exc_info.value) == (
+        "LTX-2.5 requires Gemma4UnifiedForConditionalGeneration. Install transformers>=5.10.1,<5.15."
+    )
 
 
 def test_ltx_checkpoint_version_detection_uses_metadata(tmp_path):
@@ -137,6 +159,14 @@ def test_ltx_checkpoint_version_detection_uses_metadata(tmp_path):
 
     (tmp_path / "model_index.json").write_text(json.dumps({"vocoder": ["ltx2", "LTX2Vocoder"]}))
     assert detect_ltx_model_version(str(tmp_path)) == "2"
+
+
+def test_ltx_checkpoint_explicit_version_precedes_structural_heuristics(tmp_path):
+    (tmp_path / "model_index.json").write_text(json.dumps({"model_version": "2.3.1"}))
+    (tmp_path / "transformer").mkdir()
+    (tmp_path / "transformer" / "config.json").write_text(json.dumps({"ff_bias": False}))
+
+    assert detect_ltx_model_version(str(tmp_path)) == "2.3"
 
 
 def test_ltx25_checkpoint_selects_distilled_one_stage_profile(tmp_path, monkeypatch):
@@ -174,7 +204,7 @@ def test_ltx25_one_stage_recipe_matches_official_distilled_defaults():
     assert phase.sigmas == LTX_DISTILLED_SIGMAS
     assert not phase.allow_guidance_override
     assert not phase.use_official_sigma_schedule
-    assert not LTX25_ONE_STAGE_RECIPE.allow_request_sigmas
+    assert LTX25_ONE_STAGE_RECIPE.allow_request_sigmas
     assert LTX25_ONE_STAGE_RECIPE.fixed_num_inference_steps
 
 
@@ -1119,6 +1149,50 @@ def test_ltx_two_stage_recipe_rejects_sigmas():
         )
 
 
+def test_ltx25_one_stage_recipe_accepts_custom_sigmas():
+    request = LTXRequestInputs(
+        prompt="prompt",
+        negative_prompt="",
+        height=64,
+        width=64,
+        num_frames=1,
+        frame_rate=24.0,
+        num_inference_steps=3,
+        guidance=LTXGuidanceSpec.positive_only(),
+        num_videos_per_prompt=1,
+        generator=None,
+        latents=None,
+        audio_latents=None,
+        prompt_embeds=None,
+        negative_prompt_embeds=None,
+        prompt_attention_mask=None,
+        negative_prompt_attention_mask=None,
+        decode_timestep=0.0,
+        decode_noise_scale=None,
+        output_type="np",
+        max_sequence_length=16,
+    )
+
+    with pytest.raises(ValueError, match="at least two"):
+        validate_pipeline_request(
+            request,
+            pipeline_recipe=LTX25_ONE_STAGE_RECIPE,
+            vae_spatial_compression_ratio=32,
+            vae_temporal_compression_ratio=8,
+            pipeline_name="LTX2Pipeline",
+            request_sigmas=[],
+        )
+
+    validate_pipeline_request(
+        request,
+        pipeline_recipe=LTX25_ONE_STAGE_RECIPE,
+        vae_spatial_compression_ratio=32,
+        vae_temporal_compression_ratio=8,
+        pipeline_name="LTX2Pipeline",
+        request_sigmas=[1.0, 0.5, 0.0],
+    )
+
+
 @pytest.mark.parametrize(
     ("direct_kwargs", "sampling_kwargs", "error"),
     [
@@ -1442,6 +1516,43 @@ class TestLTXRequestParsing:
         assert common.guidance.video.rescale_scale == 0.2
         assert common.guidance.audio.rescale_scale == 0.3
 
+    def test_request_resolves_custom_sigmas_from_extra_args(self):
+        from vllm_omni.diffusion.request import OmniDiffusionRequest
+        from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
+        from vllm_omni.inputs.data import OmniDiffusionSamplingParams
+
+        sigmas = [1.0, 0.5, 0.0]
+        req = DiffusionRequestBatch(
+            [
+                OmniDiffusionRequest(
+                    prompt="prompt",
+                    sampling_params=OmniDiffusionSamplingParams(extra_args={"sigmas": sigmas}),
+                    request_id="ltx-custom-sigmas",
+                )
+            ]
+        )
+
+        assert _make_ltx_request_pipe(LTX2Pipeline)._resolve_request_sigmas(req, None) == sigmas
+
+    @pytest.mark.parametrize("value", [-1, 52, 1.5, True])
+    def test_request_rejects_invalid_image_crf(self, value):
+        from vllm_omni.diffusion.request import OmniDiffusionRequest
+        from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
+        from vllm_omni.inputs.data import OmniDiffusionSamplingParams
+
+        req = DiffusionRequestBatch(
+            [
+                OmniDiffusionRequest(
+                    prompt="prompt",
+                    sampling_params=OmniDiffusionSamplingParams(extra_args={"image_crf": value}),
+                    request_id="ltx-invalid-image-crf",
+                )
+            ]
+        )
+
+        with pytest.raises(ValueError, match="image_crf"):
+            _resolve_request_inputs_for_test(_make_ltx_request_pipe(LTX2Pipeline), req)
+
     def test_request_rejects_unsupported_generic_scheduler_and_rescale_controls(self):
         from vllm_omni.diffusion.request import OmniDiffusionRequest
         from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
@@ -1764,6 +1875,11 @@ class TestRegistryIntegration:
         from vllm_omni.diffusion.registry import _DIFFUSION_MODELS
 
         assert _DIFFUSION_MODELS["LTX2Pipeline"] == ("ltx2", "pipeline_ltx2", "LTX2Pipeline")
+        assert _DIFFUSION_MODELS["LTX2FullPipeline"] == (
+            "ltx2",
+            "pipeline_ltx2",
+            "LTX2FullPipeline",
+        )
         assert _DIFFUSION_MODELS["LTX2DistilledPipeline"] == (
             "ltx2",
             "pipeline_ltx2_two_stage",
@@ -1784,6 +1900,7 @@ class TestRegistryIntegration:
 
         expected = [
             "LTX2Pipeline",
+            "LTX2FullPipeline",
             "LTX2DistilledPipeline",
             "LTX2T2VDMD2Pipeline",
             "LTX2I2VDMD2Pipeline",
@@ -1796,6 +1913,7 @@ class TestRegistryIntegration:
         "model_class_name",
         [
             "LTX2Pipeline",
+            "LTX2FullPipeline",
             "LTX2DistilledPipeline",
             "LTX2T2VDMD2Pipeline",
             "LTX2I2VDMD2Pipeline",
