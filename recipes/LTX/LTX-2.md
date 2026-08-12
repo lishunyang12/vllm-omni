@@ -295,8 +295,9 @@ params = OmniDiffusionSamplingParams(sigmas=[1.0, 0.75, 0.5, 0.25])
 
 Each nonterminal value produces one denoise step, and a terminal `0.0` is
 appended when omitted. This schedule overrides `num_inference_steps`. All
-requests in a fused batch must use the same list. The video form API and
-bundled offline CLI do not currently expose `sigmas`.
+requests in a fused batch must use the same list. The video form API
+accepts `sigmas` through `extra_params`; bundled offline CLIs accept it through
+`--extra-body`.
 
 ### Constraints
 
