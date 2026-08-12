@@ -115,9 +115,9 @@ LTX25_COMPONENT_PROFILE = LTXComponentProfile(
     text_encoder_cls=_LTX25_TEXT_ENCODER_CLS,
 )
 
-# Pinned Diffusers LTX-2.5 integration (PR #14447, commit 7564fb016d)
-# explicitly loads the SFT weights and restores the scheduler settings that
-# the distilled model_index disables.
+# The converted LTX-2.5 checkpoint stores the official dev/SFT weights in
+# transformer_full/. Restore the official LTX2Scheduler defaults that its
+# distilled model_index disables.
 LTX25_FULL_COMPONENT_PROFILE = LTXComponentProfile(
     name="ltx2_5_full",
     dit_modules=("transformer",),

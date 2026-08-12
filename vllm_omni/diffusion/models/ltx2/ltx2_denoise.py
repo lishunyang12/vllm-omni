@@ -87,6 +87,11 @@ class LTXDenoisePipeline(Protocol):
 
 LTXDenoiseStep = Callable[[int, torch.Tensor, LTXAVState], LTXAVState]
 
+LTX_ANCESTRAL_ETA = 1.0
+LTX_ANCESTRAL_S_NOISE = 1.0
+LTX_ANCESTRAL_NOISE_SEED_OFFSET = 10000
+LTX_OFFICIAL_DEFAULT_SEED = 10
+
 
 class LTXDenoiseExecutor:
     """Run the one shared LTX denoise loop.
@@ -137,6 +142,9 @@ class LTXVideoAudioStepAdapter:
         latent_width: int,
         *,
         image_conditioned: bool,
+        sampler: str = "euler",
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        conditioning_mask: torch.Tensor | None = None,
     ) -> None:
         self._pipeline = pipeline
         self._audio_scheduler = audio_scheduler
@@ -144,11 +152,27 @@ class LTXVideoAudioStepAdapter:
         self._latent_height = latent_height
         self._latent_width = latent_width
         self._image_conditioned = image_conditioned
+        self._sampler = sampler
+        self._conditioning_mask = conditioning_mask
+        self._ancestral_generators = (
+            _make_ancestral_generators(generator, pipeline.device) if sampler == "euler_ancestral" else None
+        )
         self._step_index = 0
 
     def step(self, noise_pred, t, latents, return_dict=False, generator=None):
         del t, return_dict, generator
-        if self._image_conditioned:
+        if self._sampler == "euler_ancestral":
+            video_out = _ancestral_euler_step_from_velocity(
+                latents[0],
+                noise_pred[0],
+                self._pipeline.scheduler.sigmas,
+                self._step_index,
+                self._ancestral_generators,
+            )
+            if self._conditioning_mask is not None:
+                mask = self._conditioning_mask.unsqueeze(-1).to(video_out.dtype)
+                video_out = torch.lerp(video_out, latents[0], mask)
+        elif self._image_conditioned:
             video_out = self._pipeline._step_video_latents_i2v(
                 noise_pred[0],
                 latents[0],
@@ -164,22 +188,95 @@ class LTXVideoAudioStepAdapter:
                 self._pipeline.scheduler.sigmas,
                 self._step_index,
             )
-        audio_out = euler_step_from_velocity(
-            latents[1],
-            noise_pred[1],
-            self._audio_scheduler.sigmas,
-            self._step_index,
-        )
+        if self._sampler == "euler_ancestral":
+            audio_out = _ancestral_euler_step_from_velocity(
+                latents[1],
+                noise_pred[1],
+                self._audio_scheduler.sigmas,
+                self._step_index,
+                self._ancestral_generators,
+            )
+        else:
+            audio_out = euler_step_from_velocity(
+                latents[1],
+                noise_pred[1],
+                self._audio_scheduler.sigmas,
+                self._step_index,
+            )
         self._step_index += 1
         return ((video_out, audio_out),)
+
+
+def _make_ancestral_generators(
+    generator: torch.Generator | list[torch.Generator] | None,
+    device: torch.device,
+) -> torch.Generator | list[torch.Generator]:
+    """Create the official independent ``seed + 10000`` noise stream."""
+
+    def _offset(source: torch.Generator | None) -> torch.Generator:
+        seed = LTX_OFFICIAL_DEFAULT_SEED if source is None else source.initial_seed()
+        return torch.Generator(device=device).manual_seed(seed + LTX_ANCESTRAL_NOISE_SEED_OFFSET)
+
+    if isinstance(generator, list):
+        return [_offset(item) for item in generator]
+    return _offset(generator)
+
+
+def _randn_like_with_generators(
+    sample: torch.Tensor,
+    generators: torch.Generator | list[torch.Generator],
+) -> torch.Tensor:
+    if not isinstance(generators, list):
+        return torch.randn(sample.shape, generator=generators, dtype=sample.dtype, device=sample.device)
+    if len(generators) != sample.shape[0]:
+        raise ValueError(
+            f"LTX ancestral sampling received {len(generators)} generators for batch size {sample.shape[0]}."
+        )
+    return torch.cat(
+        [
+            torch.randn((1, *sample.shape[1:]), generator=item, dtype=sample.dtype, device=sample.device)
+            for item in generators
+        ]
+    )
+
+
+def _ancestral_euler_step_from_velocity(
+    sample: torch.Tensor,
+    velocity: torch.Tensor,
+    sigmas: torch.Tensor,
+    step_index: int,
+    generators: torch.Generator | list[torch.Generator] | None,
+) -> torch.Tensor:
+    """Apply the official LTX-2.5 rectified-flow ancestral Euler step."""
+    sigma = sigmas[step_index].to(torch.float32)
+    sigma_next = sigmas[step_index + 1].to(torch.float32)
+    # Official X0Model materializes the denoised prediction in the model
+    # dtype before the ancestral step promotes it back to float32.
+    denoised_model_dtype = (sample.float() - velocity.float() * sigma).to(sample.dtype)
+    denoised = denoised_model_dtype.float()
+    if sigma_next == 0:
+        return denoised.to(sample.dtype)
+    if generators is None:
+        raise ValueError("LTX ancestral Euler sampling requires a noise generator.")
+
+    downstep_ratio = 1.0 + (sigma_next / sigma - 1.0) * LTX_ANCESTRAL_ETA
+    sigma_down = sigma_next * downstep_ratio
+    sigma_down_ratio = sigma_down / sigma
+    x_next = sigma_down_ratio * sample.float() + (1.0 - sigma_down_ratio) * denoised
+
+    alpha_next = 1.0 - sigma_next
+    alpha_down = 1.0 - sigma_down
+    renoise_coeff = (sigma_next**2 - sigma_down**2 * alpha_next**2 / alpha_down**2).clamp(min=0).sqrt()
+    noise = _randn_like_with_generators(sample, generators)
+    x_next = (alpha_next / alpha_down) * x_next + noise.float() * LTX_ANCESTRAL_S_NOISE * renoise_coeff
+    result = x_next.to(sample.dtype)
+    return result
 
 
 def _official_ltx_sigmas(
     scheduler: Any,
     steps: int,
     device: torch.device,
-    *,
-    image_seq_len: int | None = None,
 ) -> torch.Tensor:
     """Build the official LTX one-stage sigma schedule in torch fp32."""
     config = scheduler.config
@@ -190,10 +287,9 @@ def _official_ltx_sigmas(
 
     sigmas = torch.linspace(1.0, 0.0, steps + 1)
     slope = (max_shift - base_shift) / (max_anchor - base_anchor)
-    # Legacy LTX paths use the max sequence anchor. The LTX-2.5 Full/SFT
-    # recipe passes its actual packed token count, matching Diffusers #14447.
-    shift_anchor = max_anchor if image_seq_len is None else image_seq_len
-    sigma_shift = shift_anchor * slope + (base_shift - slope * base_anchor)
+    # Official LTX one-stage pipelines omit the latent when constructing
+    # this schedule, so the shift stays at the max sequence anchor.
+    sigma_shift = max_anchor * slope + (base_shift - slope * base_anchor)
     exp_shift = math.exp(sigma_shift)
     sigmas = torch.where(sigmas != 0, exp_shift / (exp_shift + (1 / sigmas - 1)), 0)
 
@@ -231,7 +327,9 @@ def prepare_scheduler_stage(
     latent_width: int,
     use_official_sigma_schedule: bool,
     image_conditioned: bool = False,
-    use_dynamic_sequence_shift: bool = False,
+    sampler: str = "euler",
+    generator: torch.Generator | list[torch.Generator] | None = None,
+    conditioning_mask: torch.Tensor | None = None,
 ) -> tuple[Any, Any, torch.Tensor]:
     if sigmas is not None and timesteps is not None:
         raise ValueError("Only one of `sigmas` or `timesteps` may be provided.")
@@ -244,6 +342,9 @@ def prepare_scheduler_stage(
         latent_height,
         latent_width,
         image_conditioned=image_conditioned,
+        sampler=sampler,
+        generator=generator,
+        conditioning_mask=conditioning_mask,
     )
     if sigmas is not None:
         scheduler_sigmas = torch.as_tensor(sigmas, dtype=torch.float32, device=device)
@@ -256,21 +357,7 @@ def prepare_scheduler_stage(
         return audio_scheduler, video_audio_step_adapter, timesteps_tensor
 
     if sigmas is None and timesteps is None and use_official_sigma_schedule:
-        image_seq_len = None
-        if use_dynamic_sequence_shift:
-            patch_t = pipeline.transformer_temporal_patch_size
-            patch = pipeline.transformer_spatial_patch_size
-            image_seq_len = (
-                math.ceil(latent_num_frames / patch_t)
-                * math.ceil(latent_height / patch)
-                * math.ceil(latent_width / patch)
-            )
-        scheduler_sigmas = _official_ltx_sigmas(
-            pipeline.scheduler,
-            request_inputs.num_inference_steps,
-            device,
-            image_seq_len=image_seq_len,
-        )
+        scheduler_sigmas = _official_ltx_sigmas(pipeline.scheduler, request_inputs.num_inference_steps, device)
         timesteps_tensor = _set_scheduler_sigmas(pipeline.scheduler, scheduler_sigmas)
         _set_scheduler_sigmas(audio_scheduler, scheduler_sigmas.clone())
         return audio_scheduler, video_audio_step_adapter, timesteps_tensor
@@ -323,6 +410,20 @@ def prepare_rope_coords_stage(
     return video_coords, audio_coords
 
 
+def _first_frame_keyframes_mask(reference: torch.Tensor, latent_num_frames: int) -> torch.Tensor:
+    """Mark the first causal latent frame, matching official LTX-2.5."""
+    if latent_num_frames <= 0:
+        raise ValueError(f"LTX latent frame count must be positive, got {latent_num_frames}.")
+    tokens_per_frame, remainder = divmod(reference.shape[1], latent_num_frames)
+    if remainder:
+        raise ValueError(
+            f"LTX video token count {reference.shape[1]} is not divisible by {latent_num_frames} latent frames."
+        )
+    mask = reference.new_zeros((reference.shape[0], reference.shape[1], 1))
+    mask[:, :tokens_per_frame] = 1
+    return mask
+
+
 def build_transformer_kwargs(
     pipeline: Any,
     forward_ctx: LTXForwardContext,
@@ -338,9 +439,13 @@ def build_transformer_kwargs(
     attention_kwargs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     del encoder_attention_mask, audio_encoder_attention_mask
+    keyframes_mask = None
+    if getattr(pipeline.transformer.config, "use_keyframes_abs_pos_embedding", False):
+        keyframes_mask = _first_frame_keyframes_mask(hidden_states, forward_ctx.latent_num_frames)
     return {
         "hidden_states": hidden_states,
         "audio_hidden_states": audio_hidden_states,
+        "keyframes_mask": keyframes_mask,
         "encoder_hidden_states": encoder_hidden_states,
         "audio_encoder_hidden_states": audio_encoder_hidden_states,
         **pipeline._denoise_timestep_kwargs(
@@ -361,7 +466,6 @@ def build_transformer_kwargs(
         "audio_num_frames": forward_ctx.padded_audio_num_frames,
         "video_coords": denoise_ctx.video_coords,
         "audio_coords": denoise_ctx.audio_coords,
-        "use_cross_timestep": getattr(pipeline, "model_version", "2") in ("2.3", "2.5"),
         "attention_kwargs": forward_ctx.attention_kwargs if attention_kwargs is None else attention_kwargs,
         "return_dict": False,
     }
@@ -447,7 +551,9 @@ class LTXPhaseExecutor:
             latent_width=latent_width,
             use_official_sigma_schedule=phase_recipe.use_official_sigma_schedule,
             image_conditioned=conditioning_mask is not None,
-            use_dynamic_sequence_shift=phase_recipe.use_dynamic_sequence_shift,
+            sampler=phase_recipe.sampler,
+            generator=request_inputs.generator,
+            conditioning_mask=conditioning_mask,
         )
         forward_ctx = LTXForwardContext(
             req=req,

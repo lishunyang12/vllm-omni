@@ -126,7 +126,10 @@ def x0_from_velocity(sample: torch.Tensor, velocity: torch.Tensor, sigma: torch.
 
 def velocity_from_x0(sample: torch.Tensor, x0: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
     """Convert x0 back to velocity using the official fp32 arithmetic order."""
-    sigma = sigma.to(torch.float32)
+    # Official LTX materializes the scalar schedule value on the host before
+    # dividing. CUDA tensor-scalar division can cross bfloat16 rounding bounds
+    # even when the scalar has the same float32 value.
+    sigma = sigma.to(torch.float32).item()
     return ((sample.to(torch.float32) - x0.to(torch.float32)) / sigma).to(sample.dtype)
 
 
@@ -175,6 +178,8 @@ def combine_guided_x0(
 
 
 def _repeat_batch(tensor: torch.Tensor, repeats: int) -> torch.Tensor:
+    if repeats == 1:
+        return tensor
     return tensor.repeat((repeats,) + (1,) * (tensor.ndim - 1))
 
 
@@ -329,7 +334,10 @@ class LTXGuidanceExecutor:
         guidance: LTXModalityGuidance,
         *,
         model_sigma: torch.Tensor | None = None,
+        preserve_positive_velocity: bool = False,
     ) -> torch.Tensor:
+        if preserve_positive_velocity and tuple(splits) == ("cond",):
+            return splits["cond"]
         model_sigma = sigma if model_sigma is None else model_sigma
         # Official guidance reduces contiguous BSC tensors. The fused
         # transformer output may be channel-major after splitting, which
@@ -353,6 +361,7 @@ class LTXGuidanceExecutor:
         state: LTXAVState,
         forward_ctx: LTXForwardContext,
         denoise_ctx: LTXDenoiseContext,
+        preserve_positive_velocity: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         guidance_world_size = get_guidance_parallel_world_size()
         self.validate_guidance_world_size(plan, guidance_world_size)
@@ -435,12 +444,14 @@ class LTXGuidanceExecutor:
                 video_sigma,
                 plan.spec.video,
                 model_sigma=pipeline._video_guidance_model_sigma(video_sigma, denoise_ctx),
+                preserve_positive_velocity=preserve_positive_velocity,
             ),
             self._guide_modality(
                 state.audio,
                 audio_splits,
                 forward_ctx.audio_scheduler.sigmas[index],
                 plan.spec.audio,
+                preserve_positive_velocity=preserve_positive_velocity,
             ),
         )
 
@@ -453,9 +464,19 @@ class LTXGuidanceExecutor:
         state: LTXAVState,
         forward_ctx: LTXForwardContext,
         denoise_ctx: LTXDenoiseContext,
+        preserve_positive_velocity: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if forward_ctx.guidance_parallel_ready:
-            return self.predict_parallel_guidance(pipeline, plan, index, timestep, state, forward_ctx, denoise_ctx)
+            return self.predict_parallel_guidance(
+                pipeline,
+                plan,
+                index,
+                timestep,
+                state,
+                forward_ctx,
+                denoise_ctx,
+                preserve_positive_velocity=preserve_positive_velocity,
+            )
 
         prompt = forward_ctx.prompt_context
         video_contexts: list[torch.Tensor] = []
@@ -510,12 +531,14 @@ class LTXGuidanceExecutor:
                     pipeline.scheduler.sigmas[index],
                     denoise_ctx,
                 ),
+                preserve_positive_velocity=preserve_positive_velocity,
             ),
             self._guide_modality(
                 state.audio,
                 audio_splits,
                 forward_ctx.audio_scheduler.sigmas[index],
                 plan.spec.audio,
+                preserve_positive_velocity=preserve_positive_velocity,
             ),
         )
 

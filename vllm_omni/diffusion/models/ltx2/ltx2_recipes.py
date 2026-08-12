@@ -38,13 +38,15 @@ class LTXPhaseRecipe:
     input_transform: Literal["initial", "spatial_upsample"] = "initial"
     allow_guidance_override: bool = True
     use_official_sigma_schedule: bool = True
-    use_dynamic_sequence_shift: bool = False
+    sampler: Literal["euler", "euler_ancestral"] = "euler"
 
     def __post_init__(self) -> None:
         if self.spatial_downscale < 1:
             raise ValueError("LTX phase spatial_downscale must be positive.")
         if self.sigmas is not None and len(self.sigmas) < 2:
             raise ValueError("An explicit LTX sigma schedule must contain at least two denoise sigmas.")
+        if self.sampler not in ("euler", "euler_ancestral"):
+            raise ValueError(f"Unsupported LTX sampler: {self.sampler!r}.")
 
     @property
     def num_inference_steps(self) -> int | None:
@@ -65,6 +67,7 @@ class LTXPipelineRecipe:
     video_output_phase: int = -1
     audio_output_phase: int = -1
     allow_request_sigmas: bool = True
+    allow_request_phase_sigmas: bool = False
     allow_request_latents: bool = True
     allow_negative_prompt: bool = True
     fixed_num_inference_steps: bool = False
@@ -138,7 +141,6 @@ LTX25_FULL_RECIPE = LTXPipelineRecipe(
         LTXPhaseRecipe(
             name="generate",
             guidance=_official_guidance(28),
-            use_dynamic_sequence_shift=True,
         ),
     ),
 )
@@ -200,6 +202,7 @@ LTX25_DISTILLED_TWO_STAGE_RECIPE = LTXPipelineRecipe(
             noise_scale=1.0,
             allow_guidance_override=False,
             use_official_sigma_schedule=False,
+            sampler="euler_ancestral",
         ),
         LTXPhaseRecipe(
             name="refine",
@@ -214,6 +217,7 @@ LTX25_DISTILLED_TWO_STAGE_RECIPE = LTXPipelineRecipe(
     video_output_phase=1,
     audio_output_phase=1,
     allow_request_sigmas=False,
+    allow_request_phase_sigmas=True,
     allow_request_latents=False,
     fixed_num_inference_steps=True,
 )

@@ -102,11 +102,26 @@ class OmniOpenAIServingVideo:
 
     @property
     def preserves_reference_image_size(self) -> bool:
-        """Return whether the pipeline owns reference-image resizing."""
+        """Return whether the active pipeline owns reference-image resizing."""
         get_od_config = getattr(self._engine_client, "get_diffusion_od_config", None)
         od_config = get_od_config() if callable(get_od_config) else getattr(self._engine_client, "od_config", None)
         model_class_name = None if od_config is None else getattr(od_config, "model_class_name", None)
-        return get_diffusion_model_metadata(model_class_name).preserves_reference_image_size
+        metadata = get_diffusion_model_metadata(model_class_name)
+        if not metadata.preserves_reference_image_size:
+            return False
+        if model_class_name != "LTX2Pipeline":
+            return True
+
+        # LTX2Pipeline is shared by LTX-2, LTX-2.3, and LTX-2.5. Only 2.5
+        # requires CRF-18 before resize; preserve the released 2/2.3 server
+        # preprocessing contract without changing async engine plumbing.
+        model = getattr(od_config, "model", None) if od_config is not None else None
+        model = model or self.model_name
+        if model is None:
+            return False
+        from vllm_omni.diffusion.models.ltx2.ltx2_components import detect_ltx_model_version
+
+        return detect_ltx_model_version(str(model)) == "2.5"
 
     @property
     def supports_mixed_reference_inputs(self) -> bool:

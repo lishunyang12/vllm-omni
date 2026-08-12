@@ -28,6 +28,7 @@ from vllm_omni.diffusion.models.ltx2.ltx2_conditioning import LTXI2VConditioning
 from vllm_omni.diffusion.models.ltx2.ltx2_denoise import (
     LTXDenoiseExecutor,
     LTXPhaseResult,
+    _first_frame_keyframes_mask,
     _official_ltx_sigmas,
     prepare_scheduler_stage,
 )
@@ -64,6 +65,37 @@ from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import (
 from vllm_omni.diffusion.models.ltx2.pipeline_ltx2_two_stage import LTX2DistilledPipeline
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
+
+
+def test_ltx25_timestep_adaln_expands_per_token_like_official():
+    pipe = object.__new__(LTX2Pipeline)
+    pipe.model_version = "2.5"
+    pipe.od_config = SimpleNamespace(parallel_config=SimpleNamespace(sequence_parallel_size=1))
+    ts = torch.tensor([750.0, 500.0])
+
+    kwargs = LTXRuntime._denoise_timestep_kwargs(
+        pipe,
+        ts,
+        SimpleNamespace(),
+        SimpleNamespace(),
+        video_token_count=4,
+        audio_token_count=3,
+    )
+
+    torch.testing.assert_close(kwargs["timestep"], ts[:, None].expand(-1, 4))
+    torch.testing.assert_close(kwargs["audio_timestep"], ts[:, None].expand(-1, 3))
+    assert kwargs["sigma"] is ts
+    assert kwargs["audio_sigma"] is ts
+
+
+def test_ltx25_first_causal_latent_frame_is_marked_for_keyframe_embedding():
+    reference = torch.zeros(2, 12, 8)
+
+    mask = _first_frame_keyframes_mask(reference, latent_num_frames=3)
+
+    assert mask.shape == (2, 12, 1)
+    torch.testing.assert_close(mask[:, :4], torch.ones(2, 4, 1))
+    torch.testing.assert_close(mask[:, 4:], torch.zeros(2, 8, 1))
 
 
 def _make_ltx_request_pipe(cls):
@@ -227,7 +259,8 @@ def test_ltx25_full_checkpoint_selects_sft_profile_and_recipe(tmp_path, monkeypa
     assert pipe.model_version == "2.5"
     assert pipe.component_profile is LTX25_FULL_COMPONENT_PROFILE
     assert pipe.pipeline_recipe is LTX25_FULL_RECIPE
-    assert not pipe.support_image_input
+    assert pipe.support_image_input
+    assert pipe.unified_text_image_entry
 
 
 def test_ltx25_full_recipe_matches_official_sft_defaults():
@@ -253,13 +286,12 @@ def test_ltx25_full_recipe_matches_official_sft_defaults():
     )
     assert phase.sigmas is None
     assert phase.use_official_sigma_schedule
-    assert phase.use_dynamic_sequence_shift
     assert LTX25_FULL_COMPONENT_PROFILE.transformer_subfolder == "transformer_full"
     assert LTX25_FULL_COMPONENT_PROFILE.scheduler_use_dynamic_shifting
     assert LTX25_FULL_COMPONENT_PROFILE.scheduler_shift_terminal == 0.1
 
 
-def test_ltx25_full_sigma_schedule_uses_actual_packed_sequence_length():
+def test_ltx25_full_sigma_schedule_uses_official_default_sequence_anchor():
     scheduler = SimpleNamespace(
         config={
             "base_image_seq_len": 1024,
@@ -274,12 +306,11 @@ def test_ltx25_full_sigma_schedule_uses_actual_packed_sequence_length():
         scheduler,
         steps=30,
         device=torch.device("cpu"),
-        image_seq_len=16 * 17 * 30,
     )
 
     torch.testing.assert_close(
         sigmas[[0, 1, -2, -1]],
-        torch.tensor([1.0, 0.9979998, 0.1, 0.0]),
+        torch.tensor([1.0, 0.9949570, 0.1, 0.0]),
         rtol=1e-5,
         atol=1e-6,
     )
@@ -313,6 +344,8 @@ def test_ltx25_distilled_two_stage_recipe_matches_model_card_resolution():
     assert (LTX25_DISTILLED_TWO_STAGE_RECIPE.height, LTX25_DISTILLED_TWO_STAGE_RECIPE.width) == (1088, 1920)
     assert stage1.spatial_downscale == 2
     assert stage1.sigmas == LTX_DISTILLED_SIGMAS
+    assert stage1.sampler == "euler_ancestral"
+    assert stage2.sampler == "euler"
     assert stage2.sigmas == (0.909375, 0.725, 0.421875, 0.0)
     assert stage2.input_transform == "spatial_upsample"
 
@@ -513,11 +546,44 @@ def test_ltx_positive_only_guidance_preserves_official_x0_roundtrip():
     torch.testing.assert_close(actual, expected, rtol=0.0, atol=0.0)
 
 
-@pytest.mark.parametrize(
-    ("model_version", "expected_dtype"),
-    [("2.5", torch.float32), ("2.3", torch.bfloat16)],
-)
-def test_ltx_t2v_denoise_state_uses_version_specific_dtype(model_version, expected_dtype):
+def test_ltx_velocity_from_x0_materializes_official_scalar_sigma():
+    item_calls = []
+
+    class TrackingTensor(torch.Tensor):
+        @staticmethod
+        def __new__(cls):
+            return torch.Tensor._make_subclass(cls, torch.tensor(0.725), False)
+
+        def item(self):
+            item_calls.append(True)
+            return super().item()
+
+    sample = torch.tensor([[1.0]], dtype=torch.bfloat16)
+    x0 = torch.tensor([[0.5]], dtype=torch.bfloat16)
+
+    velocity_from_x0(sample, x0, TrackingTensor())
+
+    assert item_calls == [True]
+
+
+def test_ltx_ancestral_positive_only_guidance_preserves_raw_velocity():
+    sample = torch.full((1, 1), 1e8, dtype=torch.float32)
+    velocity = torch.ones((1, 1), dtype=torch.bfloat16)
+
+    actual = LTX_GUIDANCE_EXECUTOR._guide_modality(
+        sample,
+        {"cond": velocity},
+        torch.tensor(0.5),
+        LTXModalityGuidance(),
+        preserve_positive_velocity=True,
+    )
+
+    assert actual is velocity
+
+
+@pytest.mark.parametrize("model_version", ["2.5", "2.3"])
+def test_ltx_t2v_denoise_state_uses_official_bfloat16_dtype(model_version):
+    expected_dtype = torch.bfloat16
     captured = {}
 
     def prepare_latents(**kwargs):
@@ -833,7 +899,7 @@ def test_ltx_variants_share_denoise_loop_and_i2v_conditioning():
     assert LTX2Pipeline.decode_phase is LTXRuntime.decode_phase
 
 
-def test_ltx_seeded_latents_match_official_unpacked_rng_layout():
+def test_ltx_seeded_latents_match_official_packed_rng_layout():
     pipeline = SimpleNamespace(
         model_version="2.5",
         vae_spatial_compression_ratio=2,
@@ -869,8 +935,8 @@ def test_ltx_seeded_latents_match_official_unpacked_rng_layout():
         generator=actual_generator,
     )
 
-    expected_video = ltx2_latents.pack_latents(torch.randn((1, 2, 2, 2, 3), generator=expected_generator))
-    expected_audio = ltx2_latents.pack_audio_latents(torch.randn((1, 2, 3, 2), generator=expected_generator))
+    expected_video = torch.randn((1, 12, 2), generator=expected_generator)
+    expected_audio = torch.randn((1, 3, 4), generator=expected_generator)
 
     torch.testing.assert_close(actual_video, expected_video, rtol=0.0, atol=0.0)
     torch.testing.assert_close(actual_audio, expected_audio, rtol=0.0, atol=0.0)
@@ -911,7 +977,7 @@ def test_denoise_executor_owns_progress_and_interrupt():
     torch.testing.assert_close(state.audio, torch.tensor(11.0))
 
 
-def test_ltx2_distilled_two_stage_executes_declarative_phase_plan():
+def test_ltx25_distilled_two_stage_executes_custom_phase_schedules():
     request_inputs = LTXRequestInputs(
         prompt="prompt",
         negative_prompt="",
@@ -951,7 +1017,8 @@ def test_ltx2_distilled_two_stage_executes_declarative_phase_plan():
             context = prompt_context_sentinel
             assert phase_recipe.name == "generate_lowres"
             assert (inputs.height, inputs.width) == (32, 32)
-            assert inputs.num_inference_steps == 8
+            assert inputs.num_inference_steps == 2
+            assert kwargs["sigmas"] == stage_1_sigmas
             assert kwargs["noise_scale"] == 1.0
             video = torch.ones(1, 128, 1, 1, 1)
             audio = torch.full((1, 8, 1, 2), 2.0)
@@ -964,7 +1031,9 @@ def test_ltx2_distilled_two_stage_executes_declarative_phase_plan():
             torch.testing.assert_close(inputs.audio_latents, torch.full((1, 8, 1, 2), 5.0))
             assert inputs.audio_latents_normalized
             assert inputs.guidance_scale == 1.0
-            assert inputs.num_inference_steps == 3
+            assert inputs.num_inference_steps == 2
+            assert kwargs["sigmas"] == stage_2_sigmas
+            assert kwargs["noise_scale"] == stage_2_sigmas[0]
             assert inputs.decode_timestep == 0.0
             assert inputs.decode_noise_scale is None
             context = prompt_context
@@ -988,8 +1057,11 @@ def test_ltx2_distilled_two_stage_executes_declarative_phase_plan():
             return latents.repeat_interleave(2, dim=-2).repeat_interleave(2, dim=-1)
 
     prompt_context_sentinel = prompt_context
+    stage_1_sigmas = [1.0, 0.5, 0.0]
+    stage_2_sigmas = [0.8, 0.2, 0.0]
     pipeline = object.__new__(LTX2DistilledPipeline)
     torch.nn.Module.__init__(pipeline)
+    pipeline.pipeline_recipe = LTX25_DISTILLED_TWO_STAGE_RECIPE
     pipeline.device = torch.device("cpu")
     pipeline.vae_spatial_compression_ratio = 32
     pipeline.vae_temporal_compression_ratio = 8
@@ -999,7 +1071,12 @@ def test_ltx2_distilled_two_stage_executes_declarative_phase_plan():
     object.__setattr__(pipeline, "decode_phase", decode_phase)
 
     source_image = object()
-    output = pipeline.forward(SimpleNamespace(sampling_params_list=[], prompts=[]), image=source_image)
+    output = pipeline.forward(
+        SimpleNamespace(sampling_params_list=[], prompts=[]),
+        image=source_image,
+        stage_1_sigmas=stage_1_sigmas,
+        stage_2_sigmas=stage_2_sigmas,
+    )
 
     assert len(phase_calls) == 2
     assert phase_calls[1][2] is prompt_context_sentinel
@@ -1198,6 +1275,7 @@ def test_ltx25_one_stage_recipe_accepts_custom_sigmas():
     [
         ({"sigmas": [1.0, 0.0]}, {}, "fixed phase sigma schedules"),
         ({}, {"sigmas": [1.0, 0.0]}, "fixed phase sigma schedules"),
+        ({"stage_1_sigmas": [1.0, 0.0]}, {}, "per-stage sigma schedules"),
         ({"latents": torch.empty(1)}, {}, "request-provided video or audio latents"),
         ({}, {"latents": torch.empty(1)}, "request-provided video or audio latents"),
         ({"audio_latents": torch.empty(1)}, {}, "request-provided video or audio latents"),
@@ -1215,6 +1293,7 @@ def test_ltx25_one_stage_recipe_accepts_custom_sigmas():
     ids=(
         "direct-sigmas",
         "request-sigmas",
+        "direct-stage-sigmas",
         "direct-video-latents",
         "request-video-latents",
         "direct-audio-latents",
@@ -1534,6 +1613,28 @@ class TestLTXRequestParsing:
 
         assert _make_ltx_request_pipe(LTX2Pipeline)._resolve_request_sigmas(req, None) == sigmas
 
+    def test_request_resolves_per_stage_sigmas_from_extra_args(self):
+        from vllm_omni.diffusion.request import OmniDiffusionRequest
+        from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
+        from vllm_omni.inputs.data import OmniDiffusionSamplingParams
+
+        stage_1_sigmas = [1.0, 0.4, 0.0]
+        req = DiffusionRequestBatch(
+            [
+                OmniDiffusionRequest(
+                    prompt="prompt",
+                    sampling_params=OmniDiffusionSamplingParams(extra_args={"stage_1_sigmas": stage_1_sigmas}),
+                    request_id="ltx-custom-phase-sigmas",
+                )
+            ]
+        )
+
+        resolved = _make_ltx_request_pipe(LTX2DistilledPipeline)._resolve_request_phase_sigmas(
+            req, [1.0, 0.0], [0.8, 0.0]
+        )
+
+        assert resolved == (stage_1_sigmas, [0.8, 0.0])
+
     @pytest.mark.parametrize("value", [-1, 52, 1.5, True])
     def test_request_rejects_invalid_image_crf(self, value):
         from vllm_omni.diffusion.request import OmniDiffusionRequest
@@ -1644,6 +1745,68 @@ class TestLTXRequestParsing:
 
 
 class TestLTXForwardStages:
+    def test_gemma_tokenization_matches_official_bos_and_left_padding(self):
+        pipe = _make_ltx_request_pipe(LTX2Pipeline)
+
+        class FakeTokenizer:
+            bos_token_id = 2
+            eos_token_id = 1
+            eos_token = "<eos>"
+            pad_token_id = 0
+            pad_token = "<pad>"
+            padding_side = "right"
+
+            def __init__(self):
+                self.calls = []
+
+            def __call__(self, text, **kwargs):
+                self.calls.append((text, kwargs))
+                ids = [7, 8, 9, self.eos_token_id] if text == "long" else [6, self.eos_token_id]
+                return SimpleNamespace(input_ids=ids)
+
+            def pad(self, encoded, *, padding, max_length, return_tensors, return_attention_mask):
+                assert padding == "max_length"
+                assert return_tensors == "pt"
+                assert return_attention_mask is True
+                rows = []
+                masks = []
+                for ids in encoded["input_ids"]:
+                    pad = max_length - len(ids)
+                    rows.append([self.pad_token_id] * pad + ids)
+                    masks.append([0] * pad + [1] * len(ids))
+                return SimpleNamespace(input_ids=torch.tensor(rows), attention_mask=torch.tensor(masks))
+
+        class FakeTextEncoder(torch.nn.Module):
+            dtype = torch.float32
+
+            def __init__(self):
+                super().__init__()
+                self.seen_input_ids = None
+                self.seen_attention_mask = None
+
+            def forward(self, *, input_ids, attention_mask, output_hidden_states):
+                assert output_hidden_states is True
+                self.seen_input_ids = input_ids.clone()
+                self.seen_attention_mask = attention_mask.clone()
+                return SimpleNamespace(hidden_states=(input_ids.unsqueeze(-1).float(),))
+
+        tokenizer = FakeTokenizer()
+        text_encoder = FakeTextEncoder()
+        object.__setattr__(pipe, "tokenizer", tokenizer)
+        object.__setattr__(pipe, "text_encoder", text_encoder)
+
+        pipe._get_gemma_prompt_embeds(
+            [" long ", "short"],
+            max_sequence_length=4,
+            device=torch.device("cpu"),
+            dtype=torch.float32,
+        )
+
+        torch.testing.assert_close(text_encoder.seen_input_ids, torch.tensor([[2, 7, 8, 9], [0, 2, 6, 1]]))
+        torch.testing.assert_close(text_encoder.seen_attention_mask, torch.tensor([[1, 1, 1, 1], [0, 1, 1, 1]]))
+        assert tokenizer.padding_side == "left"
+        assert [call[0] for call in tokenizer.calls] == ["long", "short"]
+
     def test_encode_prompt_batches_positive_and_negative_gemma_inputs(self):
         pipe = _make_ltx_request_pipe(LTX2Pipeline)
         calls = []
@@ -1764,6 +1927,7 @@ class TestLTXForwardStages:
         assert seen["request_inputs"].output_type == "latent"
         assert seen["kwargs"] == {
             "request_sigmas": request_sigmas,
+            "request_phase_sigmas": None,
             "image": None,
         }
 

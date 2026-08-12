@@ -461,26 +461,40 @@ def test_i2v_video_generation_resizes_input_to_requested_dimensions(test_client,
     assert input_image.size == (96, 64)
 
 
-def test_ltx_i2v_preserves_source_geometry_for_pipeline_crf_resize():
+@pytest.mark.parametrize(
+    ("model_class_name", "model_version", "expected_size"),
+    [
+        ("LTX2Pipeline", "2.5", (48, 32)),
+        ("LTX2Pipeline", "2.3", (96, 64)),
+        ("LTX2FullPipeline", "2.5", (48, 32)),
+    ],
+)
+def test_ltx_i2v_resize_policy_is_version_conditional(
+    tmp_path,
+    model_class_name,
+    model_version,
+    expected_size,
+):
+    (tmp_path / "model_index.json").write_text(json.dumps({"model_version": model_version}))
     engine = FakeAsyncOmni()
-    engine.model_class_name = "LTX2Pipeline"
+    engine.model_class_name = model_class_name
     handler = OmniOpenAIServingVideo.for_diffusion(
         diffusion_engine=engine,
-        model_name="Lightricks/LTX-2.5-Diffusers",
+        model_name=str(tmp_path),
     )
     image = Image.new("RGB", (48, 32))
 
     asyncio.run(
         handler._run_and_extract(
             VideoGenerationRequest(prompt="A bear playing with yarn.", width=96, height=64),
-            "ltx-crf-before-resize",
+            "ltx-versioned-resize",
             reference_image=ReferenceImage(image),
         )
     )
 
     input_image = engine.captured_prompt["multi_modal_data"]["image"]
     assert isinstance(input_image, Image.Image)
-    assert input_image.size == (48, 32)
+    assert input_image.size == expected_size
 
 
 def test_i2v_extra_params_dimensions_preserve_input_image_geometry(test_client, mocker: MockerFixture):

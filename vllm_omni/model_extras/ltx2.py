@@ -22,6 +22,8 @@ LTX_EXTRA_BODY_PARAMS = frozenset(
         "video_stg_blocks",
         "audio_stg_blocks",
         "sigmas",
+        "stage_1_sigmas",
+        "stage_2_sigmas",
         "image_crf",
     }
 )

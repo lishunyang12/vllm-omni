@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-"""E2E accuracy guards against pinned LTX and Diffusers references.
+"""E2E accuracy guards against pinned official Lightricks LTX references.
 
 The LTX-2/2.3 comparison runs both runtimes through PyTorch SDPA and uses
 ``max_batch_size=4`` in the official reference to match Omni's fused guidance
 batch. Video and audio guidance use the official non-HQ one-stage defaults;
 only the generation shape and step count are reduced for CI runtime.
-LTX-2.5 uses the official Diffusers distilled one-stage recipe unchanged.
+LTX-2.5 compares the official raw split-artifact ``DistilledPipeline`` with
+Omni's matching fixed-schedule two-stage pipeline.
 """
 
 from __future__ import annotations
@@ -32,13 +33,21 @@ from tests.helpers.mark import hardware_test
 
 OFFICIAL_REPOSITORY = "https://github.com/Lightricks/LTX-2.git"
 OFFICIAL_REVISION = "9377758131b1ffde4b7f766804590a6617bf2ab9"
-DIFFUSERS_REPOSITORY = "https://github.com/huggingface/diffusers.git"
-DIFFUSERS_REVISION = "7564fb016dabda0c943416190fc92398c50b1b20"
-LTX25_MODEL_ID = "Lightricks/LTX-2.5-Diffusers"
-LTX25_MODEL_REVISION = "a6de4b5354f078db24d9cf4778c14846788aea3d"
-# Version selected by this revision's uv.lock. Keep it out of Omni's runtime and dev dependencies.
+LTX25_OFFICIAL_REVISION = "2362161611a61154d342e02724fb8fe58efd455d"
+LTX25_OMNI_MODEL_ID = "Lightricks/LTX-2.5-Diffusers"
+LTX25_OMNI_MODEL_REVISION = "a6de4b5354f078db24d9cf4778c14846788aea3d"
+LTX25_OFFICIAL_MODEL_ID = "Lightricks/LTX-2.5"
+LTX25_OFFICIAL_MODEL_REVISION = "8a4ff96f581e72bedc1b44367581c49d544a05f1"
+LTX25_OFFICIAL_FILES = {
+    "transformer": "diffusion_models/ltx-2.5-22b-distilled-transformer-bf16.safetensors",
+    "text_encoder": "text_encoders/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
+    "video_vae": "vae/ltx-2.5-video-vae-conv-bf16.safetensors",
+    "audio_vae": "vae/ltx-2.5-audio-vae-bf16.safetensors",
+    "spatial_upsampler": "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+}
+# Version selected by the pinned official source's uv.lock. Keep it isolated
+# from Omni's runtime and development dependencies.
 OFFICIAL_OPENIMAGEIO_VERSION = "3.1.11.0"
-LTX25_DISTILLED_SIGMAS = [1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875]
 PROMPT = (
     "A space shuttle launches vertically above a desert launch pad. Bright exhaust flames and a dense white "
     "plume billow beneath it while the camera remains fixed."
@@ -66,8 +75,8 @@ VIDEO_PSNR_MEAN_THRESHOLD = 30.0
 AUDIO_RELATIVE_L2_THRESHOLD = 0.2
 AUDIO_COSINE_THRESHOLD = 0.95
 
-# Regression floors calibrated against the checked LTX-2.5 Diffusers/Omni
-# one-stage SDPA run. The metrics artifact preserves the exact observed values.
+# Broad decoded-output floors for the pinned official/Omni two-stage SDPA
+# comparison. The metrics artifact preserves the exact observed values.
 LTX25_VIDEO_SSIM_MEAN_THRESHOLD = 0.80
 LTX25_VIDEO_PSNR_MEAN_THRESHOLD = 18.0
 LTX25_AUDIO_RELATIVE_L2_THRESHOLD = 1.2
@@ -191,20 +200,20 @@ def _official_source(artifact_root: Path) -> tuple[Path, str]:
     return root, revision
 
 
-def _diffusers_source(artifact_root: Path) -> tuple[Path, str]:
-    repository = os.environ.get("VLLM_TEST_LTX_DIFFUSERS_REPOSITORY", DIFFUSERS_REPOSITORY)
-    revision = os.environ.get("VLLM_TEST_LTX_DIFFUSERS_REVISION", DIFFUSERS_REVISION)
-    configured_root = os.environ.get("VLLM_TEST_LTX_DIFFUSERS_ROOT")
-    root = Path(configured_root) if configured_root else artifact_root / f"diffusers-source-{revision[:12]}"
+def _ltx25_official_source(artifact_root: Path) -> tuple[Path, str]:
+    repository = os.environ.get("VLLM_TEST_LTX25_OFFICIAL_REPOSITORY", OFFICIAL_REPOSITORY)
+    revision = os.environ.get("VLLM_TEST_LTX25_OFFICIAL_REVISION", LTX25_OFFICIAL_REVISION)
+    configured_root = os.environ.get("VLLM_TEST_LTX25_OFFICIAL_ROOT")
+    root = Path(configured_root) if configured_root else artifact_root / f"official-source-{revision[:12]}"
     actual_revision = _git_revision(root) if root.exists() else None
     if actual_revision != revision and configured_root:
-        raise AssertionError(f"Diffusers source revision mismatch: {actual_revision} != {revision}")
+        raise AssertionError(f"Official LTX-2.5 source revision mismatch: {actual_revision} != {revision}")
     if actual_revision != revision:
         if root.exists():
             shutil.rmtree(root)
         _clone_pinned_source(root, repository, revision)
         actual_revision = _git_revision(root)
-    assert actual_revision == revision, f"Diffusers source revision mismatch: {actual_revision} != {revision}"
+    assert actual_revision == revision, f"Official LTX-2.5 source revision mismatch: {actual_revision} != {revision}"
     return root, revision
 
 
@@ -254,17 +263,17 @@ def _resolve_model(case: LTXAccuracyCase) -> Path:
     )
 
 
-def _resolve_ltx25_model() -> tuple[Path, str, str | None]:
+def _resolve_ltx25_omni_model() -> tuple[Path, str, str | None]:
     configured_model = os.environ.get("VLLM_TEST_LTX25_MODEL")
     configured_revision = os.environ.get("VLLM_TEST_LTX25_MODEL_REVISION")
     if configured_model and Path(configured_model).exists():
         model = Path(configured_model).resolve()
         snapshot_revision = model.name if model.parent.name == "snapshots" else None
         return model, configured_model, configured_revision or snapshot_revision
-    model_id = configured_model or LTX25_MODEL_ID
+    model_id = configured_model or LTX25_OMNI_MODEL_ID
     revision = configured_revision
-    if revision is None and model_id == LTX25_MODEL_ID:
-        revision = LTX25_MODEL_REVISION
+    if revision is None and model_id == LTX25_OMNI_MODEL_ID:
+        revision = LTX25_OMNI_MODEL_REVISION
     model = Path(
         snapshot_download(
             repo_id=model_id,
@@ -286,6 +295,35 @@ def _resolve_ltx25_model() -> tuple[Path, str, str | None]:
     ).resolve()
     snapshot_revision = model.name if model.parent.name == "snapshots" else None
     return model, model_id, snapshot_revision or revision
+
+
+def _resolve_ltx25_official_artifacts() -> tuple[dict[str, Path], str, str | None]:
+    configured_model = os.environ.get("VLLM_TEST_LTX25_OFFICIAL_MODEL")
+    configured_revision = os.environ.get("VLLM_TEST_LTX25_OFFICIAL_MODEL_REVISION")
+    if configured_model and Path(configured_model).exists():
+        root = Path(configured_model).resolve()
+        model_source = configured_model
+        snapshot_revision = root.name if root.parent.name == "snapshots" else None
+        resolved_revision = configured_revision or snapshot_revision
+    else:
+        model_source = configured_model or LTX25_OFFICIAL_MODEL_ID
+        revision = configured_revision
+        if revision is None and model_source == LTX25_OFFICIAL_MODEL_ID:
+            revision = LTX25_OFFICIAL_MODEL_REVISION
+        root = Path(
+            snapshot_download(
+                repo_id=model_source,
+                revision=revision,
+                allow_patterns=list(LTX25_OFFICIAL_FILES.values()),
+            )
+        ).resolve()
+        snapshot_revision = root.name if root.parent.name == "snapshots" else None
+        resolved_revision = snapshot_revision or revision
+
+    artifacts = {name: root / relative_path for name, relative_path in LTX25_OFFICIAL_FILES.items()}
+    missing = [f"{name}: {path}" for name, path in artifacts.items() if not path.is_file()]
+    assert not missing, f"Official LTX-2.5 artifacts are missing: {', '.join(missing)}"
+    return artifacts, model_source, resolved_revision
 
 
 def _resolve_gemma_root(model: Path) -> Path:
@@ -364,22 +402,15 @@ def _request(case: LTXAccuracyCase, image: Path | None) -> dict[str, object]:
 def _ltx25_request() -> dict[str, object]:
     return {
         "prompt": LTX25_PROMPT,
-        "negative_prompt": NEGATIVE_PROMPT,
-        "width": 960,
-        "height": 544,
-        "num_frames": 121,
+        # Keep the nightly parity test small enough to run the pinned official
+        # pipeline and Omni sequentially on one H100. The public recipe covers
+        # the release-resolution 1920x1088x121 configuration.
+        "width": 1024,
+        "height": 576,
+        "num_frames": 25,
         "fps": 24,
         "num_inference_steps": 8,
         "seed": 42,
-        "sigmas": LTX25_DISTILLED_SIGMAS,
-        "video_cfg_scale": 1.0,
-        "audio_cfg_scale": 1.0,
-        "video_stg_scale": 0.0,
-        "audio_stg_scale": 0.0,
-        "video_modality_scale": 1.0,
-        "audio_modality_scale": 1.0,
-        "video_rescale_scale": 0.0,
-        "audio_rescale_scale": 0.0,
     }
 
 
@@ -531,12 +562,13 @@ def test_ltx_one_stage_matches_official(case: LTXAccuracyCase, accuracy_artifact
 @pytest.mark.benchmark
 @pytest.mark.diffusion
 @hardware_test(res={"cuda": "H100"}, num_cards=1)
-def test_ltx25_one_stage_matches_diffusers(accuracy_artifact_root: Path) -> None:
-    """Compare LTX-2.5 raw AV outputs with the pinned official Diffusers path."""
-    artifact_parent = accuracy_artifact_root / "ltx_diffusers"
-    output_root = reset_artifact_dir(artifact_parent / "ltx2_5")
-    diffusers_root, diffusers_revision = _diffusers_source(artifact_parent)
-    model, model_source, model_revision = _resolve_ltx25_model()
+def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path) -> None:
+    """Compare Omni's LTX-2.5 distilled output with the official split-artifact pipeline."""
+    artifact_parent = accuracy_artifact_root / "ltx_official"
+    output_root = reset_artifact_dir(artifact_parent / "ltx2_5_distilled")
+    official_root, official_revision = _ltx25_official_source(artifact_parent)
+    official_artifacts, official_model_source, official_model_revision = _resolve_ltx25_official_artifacts()
+    omni_model, omni_model_source, omni_model_revision = _resolve_ltx25_omni_model()
     request_path = output_root / "request.json"
     request_path.write_text(json.dumps(_ltx25_request(), indent=2) + "\n")
 
@@ -545,34 +577,40 @@ def test_ltx25_one_stage_matches_diffusers(accuracy_artifact_root: Path) -> None
         str(runner),
         "--request",
         str(request_path),
+        "--enable-layerwise-offload",
     ]
     env = os.environ.copy()
-    env["VLLM_TEST_LTX_DIFFUSERS_REVISION"] = diffusers_revision
+    env["VLLM_TEST_LTX_OFFICIAL_REVISION"] = official_revision
     env["PYTHONUNBUFFERED"] = "1"
     repository_root = Path(__file__).resolve().parents[4]
     existing_pythonpath = env.get("PYTHONPATH")
-    omni_pythonpath = str(repository_root)
-    if existing_pythonpath:
-        omni_pythonpath = f"{omni_pythonpath}{os.pathsep}{existing_pythonpath}"
-    omni_env = {**env, "PYTHONPATH": omni_pythonpath}
-    diffusers_env = {
-        **env,
-        "PYTHONPATH": f"{diffusers_root / 'src'}{os.pathsep}{omni_pythonpath}",
-    }
+    env["PYTHONPATH"] = (
+        str(repository_root) if not existing_pythonpath else f"{repository_root}{os.pathsep}{existing_pythonpath}"
+    )
 
-    diffusers_output = output_root / "diffusers"
+    official_output = output_root / "official"
     _run(
-        [sys.executable]
+        _official_runner_prefix()
         + runner_args
         + [
             "--backend",
-            "diffusers",
+            "official",
             "--output-dir",
-            str(diffusers_output),
-            "--model",
-            str(model),
+            str(official_output),
+            "--official-root",
+            str(official_root),
+            "--transformer-path",
+            str(official_artifacts["transformer"]),
+            "--text-encoder-path",
+            str(official_artifacts["text_encoder"]),
+            "--video-vae-path",
+            str(official_artifacts["video_vae"]),
+            "--audio-vae-path",
+            str(official_artifacts["audio_vae"]),
+            "--spatial-upsampler-path",
+            str(official_artifacts["spatial_upsampler"]),
         ],
-        env=diffusers_env,
+        env=env,
     )
 
     omni_output = output_root / "omni"
@@ -585,36 +623,37 @@ def test_ltx25_one_stage_matches_diffusers(accuracy_artifact_root: Path) -> None
             "--output-dir",
             str(omni_output),
             "--model",
-            str(model),
+            str(omni_model),
             "--model-class-name",
-            "LTX2Pipeline",
-            "--enable-layerwise-offload",
+            "LTX2DistilledPipeline",
         ],
-        env=omni_env,
+        env=env,
     )
 
-    diffusers_metadata = json.loads((diffusers_output / "metadata.json").read_text())
+    official_metadata = json.loads((official_output / "metadata.json").read_text())
     omni_metadata = json.loads((omni_output / "metadata.json").read_text())
-    assert diffusers_metadata["diffusers_revision"] == diffusers_revision
-    assert diffusers_metadata["attention_backend"] == ATTENTION_BACKEND
+    assert official_metadata["official_revision"] == official_revision
+    assert official_metadata["attention_backend"] == ATTENTION_BACKEND
     assert omni_metadata["attention_backend"] == ATTENTION_BACKEND
-    assert diffusers_metadata["audio_sample_rate"] == omni_metadata["audio_sample_rate"]
+    assert official_metadata["audio_sample_rate"] == omni_metadata["audio_sample_rate"]
     video_metrics = _video_metrics(
-        np.load(diffusers_output / "video.npy"),
+        np.load(official_output / "video.npy"),
         np.load(omni_output / "video.npy"),
     )
     audio_metrics = _audio_metrics(
-        np.load(diffusers_output / "audio.npy"),
+        np.load(official_output / "audio.npy"),
         np.load(omni_output / "audio.npy"),
     )
     result = {
-        "case": "ltx2_5",
+        "case": "ltx2_5_distilled",
         "task": "t2v",
         "attention_backend": ATTENTION_BACKEND,
-        "diffusers_revision": diffusers_revision,
-        "model": model_source,
-        "model_revision": model_revision,
-        "resolved_model_path": str(model),
+        "official_revision": official_revision,
+        "official_model": official_model_source,
+        "official_model_revision": official_model_revision,
+        "omni_model": omni_model_source,
+        "omni_model_revision": omni_model_revision,
+        "resolved_omni_model_path": str(omni_model),
         "video": video_metrics,
         "audio": audio_metrics,
     }

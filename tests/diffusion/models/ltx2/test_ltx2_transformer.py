@@ -13,43 +13,40 @@ from vllm_omni.diffusion.models.ltx2.ltx2_transformer import (
     LTX2VideoTransformerBlock,
     _make_rms_norm,
     apply_interleaved_rotary_emb,
+    apply_keyframes_absolute_embedding,
     apply_split_rotary_emb,
 )
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
 
 
-def test_ltx_interleaved_rope_matches_official_fp32_arithmetic():
+def test_ltx_interleaved_rope_matches_official_model_dtype_arithmetic():
     torch.manual_seed(0)
     x = torch.randn(2, 3, 8, dtype=torch.bfloat16)
-    cos = torch.randn(2, 3, 8, dtype=torch.float32)
-    sin = torch.randn(2, 3, 8, dtype=torch.float32)
+    cos = torch.randn(2, 3, 8, dtype=x.dtype)
+    sin = torch.randn(2, 3, 8, dtype=x.dtype)
     x_real, x_imag = x.unflatten(2, (4, 2)).unbind(-1)
     rotated = torch.stack([-x_imag, x_real], dim=-1).flatten(2)
-    expected = (x.float() * cos + rotated.float() * sin).to(x.dtype)
+    expected = x * cos + rotated * sin
 
     actual = apply_interleaved_rotary_emb(x, (cos, sin))
 
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
 
 
-def test_ltx_split_rope_matches_official_fp32_arithmetic():
+def test_ltx_split_rope_matches_official_model_dtype_arithmetic():
     torch.manual_seed(1)
     x = torch.randn(2, 3, 8, dtype=torch.bfloat16)
-    cos = torch.randn(2, 3, 4, dtype=torch.float32)
-    sin = torch.randn(2, 3, 4, dtype=torch.float32)
-    split_x = x.reshape(2, 3, 2, 4).float()
+    cos = torch.randn(2, 3, 4, dtype=x.dtype)
+    sin = torch.randn(2, 3, 4, dtype=x.dtype)
+    split_x = x.reshape(2, 3, 2, 4)
     first_x, second_x = split_x.chunk(2, dim=-2)
     cos_u = cos.unsqueeze(-2)
     sin_u = sin.unsqueeze(-2)
-    expected = (
-        torch.cat(
-            [first_x * cos_u - second_x * sin_u, second_x * cos_u + first_x * sin_u],
-            dim=-2,
-        )
-        .reshape_as(x)
-        .to(x.dtype)
-    )
+    expected = split_x * cos_u
+    expected[..., :1, :].addcmul_(-sin_u, second_x)
+    expected[..., 1:, :].addcmul_(sin_u, first_x)
+    expected = expected.reshape_as(x)
 
     actual = apply_split_rotary_emb(x, (cos, sin), head_dim=8)
 
@@ -168,6 +165,18 @@ def _build_tiny_ltx_transformer(monkeypatch, **overrides):
     return LTX2VideoTransformer3DModel(**kwargs)
 
 
+def test_ltx25_keyframe_absolute_embedding_matches_official():
+    hidden_states = torch.arange(32, dtype=torch.bfloat16).view(1, 4, 8)
+    keyframes_mask = torch.tensor([[[1.0], [1.0], [0.0], [0.0]]])
+    embedding = torch.linspace(-0.5, 0.5, 8, dtype=torch.bfloat16).view(1, 8)
+
+    actual = apply_keyframes_absolute_embedding(hidden_states, keyframes_mask, embedding)
+    expected = hidden_states + (keyframes_mask > 0).to(torch.bfloat16) * embedding
+
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    assert apply_keyframes_absolute_embedding(hidden_states, None, embedding) is hidden_states
+
+
 def test_ltx25_constructor_flags_and_native_weight_loader(monkeypatch):
     legacy_model = _build_tiny_ltx_transformer(monkeypatch)
 
@@ -204,19 +213,7 @@ def test_ltx25_constructor_flags_and_native_weight_loader(monkeypatch):
     torch.testing.assert_close(ltx25_model.keyframes_abs_pos_embedding, expected)
 
 
-@pytest.mark.parametrize(
-    ("use_cross_timestep", "expected_video_step", "expected_audio_step"),
-    [
-        (False, torch.tensor([0.0, 2.0]), torch.tensor([5.0])),
-        (True, torch.tensor([5.0]), torch.tensor([2.0])),
-    ],
-)
-def test_ltx25_cross_timestep_switches_both_cross_attention_modulations(
-    monkeypatch,
-    use_cross_timestep,
-    expected_video_step,
-    expected_audio_step,
-):
+def test_ltx_cross_attention_modulations_use_official_timesteps(monkeypatch):
     class CaptureAda(nn.Module):
         def __init__(self):
             super().__init__()
@@ -249,13 +246,12 @@ def test_ltx25_cross_timestep_switches_both_cross_attention_modulations(
         audio_sigma=torch.tensor([5.0]),
         video_coords=torch.zeros(1, 3, 2, 2),
         audio_coords=torch.zeros(1, 1, 1, 2),
-        use_cross_timestep=use_cross_timestep,
     )
 
-    torch.testing.assert_close(video_scale_shift.calls[0], expected_video_step)
-    torch.testing.assert_close(video_gate.calls[0], expected_video_step)
-    torch.testing.assert_close(audio_scale_shift.calls[0], expected_audio_step)
-    torch.testing.assert_close(audio_gate.calls[0], expected_audio_step)
+    torch.testing.assert_close(video_scale_shift.calls[0], torch.tensor([0.0, 2.0]))
+    torch.testing.assert_close(video_gate.calls[0], torch.tensor([5.0]))
+    torch.testing.assert_close(audio_scale_shift.calls[0], torch.tensor([5.0]))
+    torch.testing.assert_close(audio_gate.calls[0], torch.tensor([2.0]))
 
 
 def test_ltx25_static_prompt_table_is_used_without_prompt_adaln():

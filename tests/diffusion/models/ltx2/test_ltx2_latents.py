@@ -24,7 +24,24 @@ def _make_pipeline(pipeline_cls, sequence_parallel_size: int = 1, model_version:
     return pipeline
 
 
-def test_prepare_video_latents_samples_unpacked_then_packs_like_diffusers():
+def test_create_noised_state_matches_official_fp32_lerp():
+    latents = torch.linspace(-2, 2, 4096, dtype=torch.bfloat16).reshape(1, 32, 128)
+    expected_generator = torch.Generator().manual_seed(42)
+    noise = torch.randn(latents.shape, generator=expected_generator, dtype=latents.dtype)
+    expected = torch.lerp(latents.float(), noise.float(), torch.tensor(0.15, dtype=torch.bfloat16).float()).to(
+        latents.dtype
+    )
+
+    actual = latent_ops.create_noised_state(
+        latents,
+        torch.tensor(0.15, dtype=torch.bfloat16),
+        torch.Generator().manual_seed(42),
+    )
+
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+
+def test_prepare_video_latents_matches_official_packed_rng_layout():
     pipeline = _make_pipeline(LTX2Pipeline, model_version="2.5")
     pipeline.vae_spatial_compression_ratio = 8
     pipeline.vae_temporal_compression_ratio = 8
@@ -32,8 +49,7 @@ def test_prepare_video_latents_samples_unpacked_then_packs_like_diffusers():
     pipeline.transformer_temporal_patch_size = 1
 
     expected_generator = torch.Generator().manual_seed(42)
-    expected_unpacked = torch.randn((1, 4, 2, 8, 8), generator=expected_generator)
-    expected = latent_ops.pack_latents(expected_unpacked, 2, 1)
+    expected = torch.randn((1, 32, 16), generator=expected_generator)
     actual = pipeline.prepare_latents(
         batch_size=1,
         num_channels_latents=4,
@@ -46,14 +62,14 @@ def test_prepare_video_latents_samples_unpacked_then_packs_like_diffusers():
     )
 
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    assert actual.stride()[1:] == (1, actual.shape[1])
 
 
-def test_prepare_audio_latents_samples_unpacked_then_packs_like_diffusers():
+def test_prepare_audio_latents_matches_official_packed_rng_layout():
     pipeline = _make_pipeline(LTX2Pipeline, model_version="2.5")
 
     expected_generator = torch.Generator().manual_seed(42)
-    expected_unpacked = torch.randn((1, 2, 3, 16), generator=expected_generator)
-    expected = latent_ops.pack_audio_latents(expected_unpacked)
+    expected = torch.randn((1, 3, 32), generator=expected_generator)
     actual, original_num_frames, padded_num_frames = pipeline.prepare_audio_latents(
         batch_size=1,
         num_channels_latents=2,

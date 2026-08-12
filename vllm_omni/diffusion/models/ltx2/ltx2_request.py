@@ -58,6 +58,7 @@ def validate_pipeline_request(
     vae_temporal_compression_ratio: int,
     pipeline_name: str,
     request_sigmas: list[float] | None = None,
+    request_phase_sigmas: tuple[list[float] | None, ...] | None = None,
 ) -> None:
     """Validate the request capabilities declared by an execution recipe."""
     alignment = vae_spatial_compression_ratio * pipeline_recipe.max_spatial_downscale
@@ -83,8 +84,23 @@ def validate_pipeline_request(
     if request_sigmas is not None and len(request_sigmas) < 2:
         raise ValueError("A custom LTX sigma schedule must contain at least two values.")
 
+    has_phase_sigmas = request_phase_sigmas is not None and any(item is not None for item in request_phase_sigmas)
+    if request_sigmas is not None and has_phase_sigmas:
+        raise ValueError("Use either `sigmas` or per-stage sigma schedules, not both.")
+    if has_phase_sigmas and not pipeline_recipe.allow_request_phase_sigmas:
+        raise ValueError(f"{pipeline_name} does not accept per-stage sigma schedules.")
+    if request_phase_sigmas is not None and len(request_phase_sigmas) != len(pipeline_recipe.phases):
+        raise ValueError(
+            f"{pipeline_name} has {len(pipeline_recipe.phases)} phases but received "
+            f"{len(request_phase_sigmas)} per-stage sigma schedules."
+        )
+    for index, phase_sigmas in enumerate(request_phase_sigmas or ()):
+        if phase_sigmas is not None and len(phase_sigmas) < 2:
+            raise ValueError(f"`stage_{index + 1}_sigmas` must contain at least two values.")
+
     if (
         request_sigmas is None
+        and (request_phase_sigmas is None or request_phase_sigmas[0] is None)
         and pipeline_recipe.fixed_num_inference_steps
         and (request_inputs.num_inference_steps != pipeline_recipe.num_inference_steps)
     ):
@@ -269,6 +285,8 @@ class LTXRequestMixin:
         frame_rate: float | None = None,
         num_inference_steps: int | None = None,
         sigmas: list[float] | None = None,
+        stage_1_sigmas: list[float] | None = None,
+        stage_2_sigmas: list[float] | None = None,
         timesteps: list[int] | None = None,
         guidance_scale: float | None = None,
         guidance_rescale: float | None = None,
@@ -311,6 +329,8 @@ class LTXRequestMixin:
             frame_rate=frame_rate,
             num_inference_steps=num_inference_steps,
             sigmas=sigmas,
+            stage_1_sigmas=stage_1_sigmas,
+            stage_2_sigmas=stage_2_sigmas,
             guidance_scale=guidance_scale,
             num_videos_per_prompt=num_videos_per_prompt,
             generator=generator,
@@ -339,6 +359,21 @@ class LTXRequestMixin:
         if any(item != first for item in request_sigmas[1:]):
             raise ValueError("Batched LTX requests must use identical custom sigmas.")
         return first if first is not None else fallback
+
+    @staticmethod
+    def _resolve_request_phase_sigmas(
+        req: DiffusionRequestBatch,
+        stage_1_fallback: list[float] | None,
+        stage_2_fallback: list[float] | None,
+    ) -> tuple[list[float] | None, list[float] | None] | None:
+        resolved: list[list[float] | None] = []
+        for name, fallback in (("stage_1_sigmas", stage_1_fallback), ("stage_2_sigmas", stage_2_fallback)):
+            values = [_get_extra_arg(sampling, name) for sampling in req.sampling_params_list]
+            first = values[0] if values else None
+            if any(item != first for item in values[1:]):
+                raise ValueError(f"Batched LTX requests must use identical `{name}` values.")
+            resolved.append(first if first is not None else fallback)
+        return tuple(resolved) if any(item is not None for item in resolved) else None
 
     def check_inputs(
         self,

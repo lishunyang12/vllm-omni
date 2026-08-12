@@ -6,7 +6,6 @@
 import sys
 from types import SimpleNamespace
 
-import numpy as np
 import pytest
 import torch
 from PIL import Image
@@ -37,7 +36,7 @@ class TestLTXImageToVideoForwardStages:
 
         torch.testing.assert_close(actual, expected)
 
-    def test_ltx25_i2v_pil_preprocessing_directly_resizes_after_crf(self, monkeypatch):
+    def test_ltx25_i2v_pil_preprocessing_preserves_aspect_ratio_after_crf(self, monkeypatch):
         import vllm_omni.diffusion.models.ltx2.ltx2_conditioning as conditioning
 
         pixels = torch.zeros(4, 8, 3, dtype=torch.uint8)
@@ -46,11 +45,9 @@ class TestLTXImageToVideoForwardStages:
         monkeypatch.setattr(conditioning, "_apply_image_conditioning_crf", lambda image_array, _crf: image_array)
 
         actual = conditioning._preprocess_i2v_pil_images(image, height=4, width=4, crf=18)
-        resized = image.resize((4, 4), resample=Image.Resampling.BILINEAR)
-        expected = torch.from_numpy(np.asarray(resized).astype(np.float32) / 255.0)
-        expected = (2.0 * expected.permute(2, 0, 1).unsqueeze(0)) - 1.0
+        expected = pixels[:, 2:6].permute(2, 0, 1).unsqueeze(0).float() / 127.5 - 1.0
 
-        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+        torch.testing.assert_close(actual, expected)
 
     def test_ltx25_i2v_applies_crf18_before_resize(self, monkeypatch):
         import vllm_omni.diffusion.models.ltx2.ltx2_conditioning as conditioning
@@ -96,7 +93,7 @@ class TestLTXImageToVideoForwardStages:
         )
 
         assert captured_crfs == [18]
-        assert captured_prepare_kwargs[0]["dtype"] is torch.float32
+        assert captured_prepare_kwargs[0]["dtype"] is torch.bfloat16
         assert captured_prepare_kwargs[0]["image"].dtype is torch.bfloat16
 
     def test_ltx25_i2v_rejects_inputs_that_cannot_receive_crf18(self):
@@ -246,39 +243,6 @@ class TestLTXImageToVideoForwardStages:
         torch.testing.assert_close(kwargs["audio_timestep"], ts)
         torch.testing.assert_close(kwargs["sigma"], ts)
 
-    def test_ltx25_transformer_kwargs_enable_cross_timestep(self):
-        from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
-
-        pipe = object.__new__(LTX2Pipeline)
-        pipe.model_version = "2.5"
-        object.__setattr__(pipe, "_denoise_timestep_kwargs", lambda *_args, **_kwargs: {})
-        forward_ctx = SimpleNamespace(
-            latent_num_frames=2,
-            latent_height=1,
-            latent_width=1,
-            padded_audio_num_frames=1,
-            request_inputs=SimpleNamespace(frame_rate=24.0),
-            attention_kwargs=None,
-        )
-        denoise_ctx = SimpleNamespace(
-            video_coords=torch.zeros(1, 3, 2, 2),
-            audio_coords=torch.zeros(1, 1, 1, 2),
-        )
-
-        kwargs = pipe._build_transformer_kwargs(
-            forward_ctx,
-            denoise_ctx,
-            hidden_states=torch.zeros(1, 2, 4),
-            audio_hidden_states=torch.zeros(1, 1, 4),
-            encoder_hidden_states=torch.zeros(1, 1, 8),
-            audio_encoder_hidden_states=torch.zeros(1, 1, 8),
-            encoder_attention_mask=None,
-            audio_encoder_attention_mask=None,
-            ts=torch.tensor([1.0]),
-        )
-
-        assert kwargs["use_cross_timestep"] is True
-
 
 class TestLTXImageToVideoConditioning:
     def test_ltx23_i2v_supports_image_input(self):
@@ -350,9 +314,9 @@ class TestLTXImageToVideoConditioning:
 
     @pytest.mark.parametrize(
         ("model_version", "sampled_shape"),
-        [("2.3", (1, 3, 2)), ("2.5", (1, 2, 3, 1, 1))],
+        [("2.3", (1, 3, 2)), ("2.5", (1, 3, 2))],
     )
-    def test_i2v_5d_latents_noise_preserves_version_rng_layout(self, monkeypatch, model_version, sampled_shape):
+    def test_i2v_5d_latents_noise_uses_packed_rng_layout(self, monkeypatch, model_version, sampled_shape):
         import vllm_omni.diffusion.models.ltx2.ltx2_conditioning as ltx2_conditioning
         import vllm_omni.diffusion.models.ltx2.ltx2_latents as ltx2_latents
         from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
@@ -405,10 +369,11 @@ class TestLTXImageToVideoConditioning:
 
     @pytest.mark.parametrize(
         ("model_version", "sampled_shape"),
-        [("2.3", (1, 3, 2)), ("2.5", (1, 2, 3, 1, 1))],
+        [("2.3", (1, 3, 2)), ("2.5", (1, 3, 2))],
     )
-    def test_i2v_image_noise_preserves_version_rng_layout(self, monkeypatch, model_version, sampled_shape):
+    def test_i2v_image_noise_uses_packed_rng_layout(self, monkeypatch, model_version, sampled_shape):
         import vllm_omni.diffusion.models.ltx2.ltx2_conditioning as ltx2_conditioning
+        import vllm_omni.diffusion.models.ltx2.ltx2_latents as ltx2_latents
         from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
 
         pipe = object.__new__(LTX2Pipeline)
@@ -435,6 +400,7 @@ class TestLTXImageToVideoConditioning:
             return torch.ones(shape, device=device, dtype=dtype)
 
         monkeypatch.setattr(ltx2_conditioning, "randn_tensor", fake_randn_tensor)
+        monkeypatch.setattr(ltx2_latents, "randn_tensor", fake_randn_tensor)
 
         out, conditioning_mask = pipe.prepare_latents(
             image=torch.zeros(1, 3, 1, 1),
@@ -553,6 +519,99 @@ class TestLTXImageToVideoConditioning:
         )
         torch.testing.assert_close(audio, torch.tensor([[[-2.0]]]))
         assert pipeline.step_indices == [0, 1]
+
+    def test_ltx25_ancestral_adapter_matches_official_seeded_step_and_preserves_i2v_mask(self):
+        from vllm_omni.diffusion.models.ltx2.ltx2_denoise import LTXVideoAudioStepAdapter
+
+        device = torch.device("cpu")
+        sigmas = torch.tensor([1.0, 0.5, 0.0])
+        pipeline = SimpleNamespace(device=device, scheduler=SimpleNamespace(sigmas=sigmas))
+        mask = torch.tensor([[1.0, 0.0]])
+        adapter = LTXVideoAudioStepAdapter(
+            pipeline,
+            SimpleNamespace(sigmas=sigmas.clone()),
+            latent_num_frames=1,
+            latent_height=1,
+            latent_width=1,
+            image_conditioned=True,
+            sampler="euler_ancestral",
+            generator=torch.Generator(device=device).manual_seed(42),
+            conditioning_mask=mask,
+        )
+        video = torch.tensor([[[3.0], [2.0]]])
+        audio = torch.tensor([[[4.0]]])
+        video_velocity = torch.tensor([[[7.0], [0.25]]])
+        audio_velocity = torch.tensor([[[0.5]]])
+
+        reference_generator = torch.Generator(device=device).manual_seed(10042)
+        video_noise = torch.randn(video.shape, generator=reference_generator)
+        audio_noise = torch.randn(audio.shape, generator=reference_generator)
+
+        def official_step(sample, velocity, noise):
+            sigma = sigmas[0]
+            sigma_next = sigmas[1]
+            denoised = sample.float() - velocity.float() * sigma
+            sigma_down = sigma_next * (sigma_next / sigma)
+            ratio = sigma_down / sigma
+            deterministic = ratio * sample.float() + (1.0 - ratio) * denoised
+            alpha_next = 1.0 - sigma_next
+            alpha_down = 1.0 - sigma_down
+            coeff = (sigma_next**2 - sigma_down**2 * alpha_next**2 / alpha_down**2).sqrt()
+            return (alpha_next / alpha_down) * deterministic + noise * coeff
+
+        expected_video = official_step(video, video_velocity, video_noise)
+        expected_video[:, :1] = video[:, :1]
+        expected_audio = official_step(audio, audio_velocity, audio_noise)
+
+        ((actual_video, actual_audio),) = adapter.step(
+            (video_velocity, audio_velocity),
+            (sigmas[0], sigmas[0]),
+            (video, audio),
+        )
+        torch.testing.assert_close(actual_video, expected_video)
+        torch.testing.assert_close(actual_audio, expected_audio)
+
+        terminal_video_velocity = torch.full_like(actual_video, 0.125)
+        terminal_audio_velocity = torch.full_like(actual_audio, 0.25)
+        ((terminal_video, terminal_audio),) = adapter.step(
+            (terminal_video_velocity, terminal_audio_velocity),
+            (sigmas[1], sigmas[1]),
+            (actual_video, actual_audio),
+        )
+        expected_terminal_video = actual_video - terminal_video_velocity * sigmas[1]
+        expected_terminal_video[:, :1] = actual_video[:, :1]
+        expected_terminal_audio = actual_audio - terminal_audio_velocity * sigmas[1]
+        torch.testing.assert_close(terminal_video, expected_terminal_video)
+        torch.testing.assert_close(terminal_audio, expected_terminal_audio)
+
+    def test_ltx25_ancestral_quantizes_x0_to_model_dtype_before_fp32_step(self):
+        from vllm_omni.diffusion.models.ltx2.ltx2_denoise import _ancestral_euler_step_from_velocity
+
+        sample = torch.tensor([[[3.140625, -1.234375]]], dtype=torch.bfloat16)
+        velocity = torch.tensor([[[0.333984375, 2.71875]]], dtype=torch.bfloat16)
+        sigmas = torch.tensor([0.73, 0.41, 0.0], dtype=torch.float32)
+        generator = torch.Generator(device="cpu").manual_seed(10042)
+        reference_generator = torch.Generator(device="cpu").manual_seed(10042)
+
+        sigma, sigma_next = sigmas[:2]
+        denoised = (sample.float() - velocity.float() * sigma).to(sample.dtype).float()
+        sigma_down = sigma_next * (sigma_next / sigma)
+        sigma_down_ratio = sigma_down / sigma
+        expected = sigma_down_ratio * sample.float() + (1.0 - sigma_down_ratio) * denoised
+        alpha_next = 1.0 - sigma_next
+        alpha_down = 1.0 - sigma_down
+        coefficient = (sigma_next**2 - sigma_down**2 * alpha_next**2 / alpha_down**2).sqrt()
+        noise = torch.randn(
+            sample.shape,
+            generator=reference_generator,
+            dtype=sample.dtype,
+            device=sample.device,
+        )
+        expected = ((alpha_next / alpha_down) * expected + noise.float() * coefficient).to(sample.dtype)
+
+        actual = _ancestral_euler_step_from_velocity(sample, velocity, sigmas, 0, generator)
+
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
 
     def test_i2v_guidance_uses_zero_sigma_for_conditioned_tokens(self):
         from vllm_omni.diffusion.models.ltx2.ltx2_denoise import LTXDenoiseContext

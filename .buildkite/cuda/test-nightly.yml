@@ -487,17 +487,17 @@ steps:
           - pytest -s -v tests/e2e/accuracy/test_video_streaming_output_similarity.py -m full_model --run-level full_model
         mirror_hardwares: h100_2
 
-      - label: ":full_moon: Diffusion X2V · LTX-2.5 Diffusers Parity Test"
+      - label: ":full_moon: Diffusion X2V · LTX-2.5 Official Parity Test"
         timeout_in_minutes: 180
         commands:
           - |
             set +e
-            pytest -s -v tests/e2e/accuracy/ltx/test_ltx_official_similarity.py::test_ltx25_one_stage_matches_diffusers -m full_model --run-level full_model
+            pytest -s -v tests/e2e/accuracy/ltx/test_ltx_official_similarity.py::test_ltx25_distilled_two_stage_matches_official -m full_model --run-level full_model
             EXIT=$$?
-            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_diffusers/ltx2_5/*.json" || true
-            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_diffusers/ltx2_5/*/metadata.json" || true
-            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_diffusers/ltx2_5/*/frame_*.png" || true
-            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_diffusers/ltx2_5/*/output.mp4" || true
+            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_official/ltx2_5_distilled/*.json" || true
+            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_official/ltx2_5_distilled/*/metadata.json" || true
+            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_official/ltx2_5_distilled/*/frame_*.png" || true
+            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_official/ltx2_5_distilled/*/output.mp4" || true
             exit $$EXIT
         mirror_hardwares: h100_1
 

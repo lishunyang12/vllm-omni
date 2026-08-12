@@ -55,6 +55,18 @@ logger = init_logger(__name__)
 _RMSNORM_INIT_PARAMS = inspect.signature(RMSNorm.__init__).parameters
 
 
+def apply_keyframes_absolute_embedding(
+    hidden_states: torch.Tensor,
+    keyframes_mask: torch.Tensor | None,
+    embedding: torch.Tensor | None,
+) -> torch.Tensor:
+    """Add the official learned marker to first-frame/keyframe tokens."""
+    if keyframes_mask is None or embedding is None:
+        return hidden_states
+    mask = (keyframes_mask > 0).to(dtype=hidden_states.dtype)
+    return hidden_states + mask * embedding.to(device=hidden_states.device, dtype=hidden_states.dtype)
+
+
 def _make_rms_norm(hidden_size: int, *, eps: float, elementwise_affine: bool) -> nn.Module:
     """Bridge diffusers' RMSNorm API onto vLLM's `has_weight` variant."""
     if not elementwise_affine:
@@ -85,7 +97,7 @@ def apply_interleaved_rotary_emb(x: torch.Tensor, freqs: tuple[torch.Tensor, tor
     # Concrete pair count instead of -1 keeps SDPA shape static under torch.compile.
     x_real, x_imag = x.unflatten(2, (x.shape[2] // 2, 2)).unbind(-1)  # [B, S, C // 2]
     x_rotated = torch.stack([-x_imag, x_real], dim=-1).flatten(2)
-    return (x.float() * cos + x_rotated.float() * sin).to(x.dtype)
+    return x * cos + x_rotated * sin
 
 
 def apply_split_rotary_emb(
@@ -96,8 +108,6 @@ def apply_split_rotary_emb(
 ) -> torch.Tensor:
     # `head_dim` is plumbed in (not inferred via `-1`) so SDPA shape stays static under torch.compile.
     cos, sin = freqs
-
-    x_dtype = x.dtype
     needs_reshape = False
     if x.ndim != 4 and cos.ndim == 4:
         # cos is (#b, h, t, r) -> reshape x to (b, h, t, dim_per_head)
@@ -114,7 +124,7 @@ def apply_split_rotary_emb(
     r = last // 2
 
     # (..., 2, r)
-    split_x = x.reshape(*x.shape[:-1], 2, r).float()
+    split_x = x.reshape(*x.shape[:-1], 2, r)
     first_x = split_x[..., :1, :]  # (..., 1, r)
     second_x = split_x[..., 1:, :]  # (..., 1, r)
 
@@ -133,7 +143,6 @@ def apply_split_rotary_emb(
     if needs_reshape:
         out = out.swapaxes(1, 2).reshape(b, t, h * head_dim)
 
-    out = out.to(dtype=x_dtype)
     return out
 
 
@@ -1530,6 +1539,7 @@ class LTX2VideoTransformer3DModel(nn.Module):
                 # Shard video/audio latents across sequence
                 "hidden_states": SequenceParallelInput(split_dim=1, expected_dims=3, split_output=False),
                 "audio_hidden_states": SequenceParallelInput(split_dim=1, expected_dims=3, split_output=False),
+                "keyframes_mask": SequenceParallelInput(split_dim=1, expected_dims=3, split_output=False),
                 # Shard prompt embeds across sequence
                 "encoder_hidden_states": SequenceParallelInput(split_dim=1, expected_dims=3, split_output=False),
                 "audio_encoder_hidden_states": SequenceParallelInput(split_dim=1, expected_dims=3, split_output=False),
@@ -1849,6 +1859,7 @@ class LTX2VideoTransformer3DModel(nn.Module):
         audio_encoder_hidden_states: torch.Tensor,
         timestep: torch.LongTensor,
         audio_timestep: torch.LongTensor | None = None,
+        keyframes_mask: torch.Tensor | None = None,
         sigma: torch.Tensor | None = None,
         audio_sigma: torch.Tensor | None = None,
         encoder_attention_mask: torch.Tensor | None = None,
@@ -1860,7 +1871,6 @@ class LTX2VideoTransformer3DModel(nn.Module):
         audio_num_frames: int | None = None,
         video_coords: torch.Tensor | None = None,
         audio_coords: torch.Tensor | None = None,
-        use_cross_timestep: bool = False,
         attention_kwargs: dict[str, Any] | None = None,
         return_dict: bool = True,
         **kwargs,  # Accept extra diffusers kwargs (isolate_modalities, perturbation_mask, etc.)
@@ -1959,6 +1969,11 @@ class LTX2VideoTransformer3DModel(nn.Module):
 
         # 2. Patchify input projections
         hidden_states = self.proj_in(hidden_states)
+        hidden_states = apply_keyframes_absolute_embedding(
+            hidden_states,
+            keyframes_mask,
+            getattr(self, "keyframes_abs_pos_embedding", None),
+        )
         audio_hidden_states = self.audio_proj_in(audio_hidden_states)
 
         # 3. Prepare timestep embeddings and modulation parameters
@@ -1986,14 +2001,13 @@ class LTX2VideoTransformer3DModel(nn.Module):
         audio_embedded_timestep = audio_embedded_timestep.view(batch_size, -1, audio_embedded_timestep.size(-1))
 
         # 3.2. Prepare global modality cross attention modulation parameters
-        video_ca_timestep = audio_sigma.flatten() if use_cross_timestep else timestep.flatten()
         video_cross_attn_scale_shift, _ = self.av_cross_attn_video_scale_shift(
-            video_ca_timestep,
+            timestep.flatten(),
             batch_size=batch_size,
             hidden_dtype=hidden_states.dtype,
         )
         video_cross_attn_a2v_gate, _ = self.av_cross_attn_video_a2v_gate(
-            video_ca_timestep * timestep_cross_attn_gate_scale_factor,
+            audio_sigma.flatten() * timestep_cross_attn_gate_scale_factor,
             batch_size=batch_size,
             hidden_dtype=hidden_states.dtype,
         )
@@ -2002,14 +2016,13 @@ class LTX2VideoTransformer3DModel(nn.Module):
         )
         video_cross_attn_a2v_gate = video_cross_attn_a2v_gate.view(batch_size, -1, video_cross_attn_a2v_gate.shape[-1])
 
-        audio_ca_timestep = sigma.flatten() if use_cross_timestep else audio_timestep.flatten()
         audio_cross_attn_scale_shift, _ = self.av_cross_attn_audio_scale_shift(
-            audio_ca_timestep,
+            audio_timestep.flatten(),
             batch_size=batch_size,
             hidden_dtype=audio_hidden_states.dtype,
         )
         audio_cross_attn_v2a_gate, _ = self.av_cross_attn_audio_v2a_gate(
-            audio_ca_timestep * timestep_cross_attn_gate_scale_factor,
+            sigma.flatten() * timestep_cross_attn_gate_scale_factor,
             batch_size=batch_size,
             hidden_dtype=audio_hidden_states.dtype,
         )

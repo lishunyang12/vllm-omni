@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-"""Generate raw LTX video and audio outputs with Diffusers, official, or Omni."""
+"""Generate raw LTX video and audio outputs with the official or Omni runtime."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from PIL import Image
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--backend", choices=("diffusers", "official", "omni"), required=True)
+    parser.add_argument("--backend", choices=("official", "omni"), required=True)
     parser.add_argument("--request", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--model")
@@ -27,6 +27,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--official-root", type=Path)
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--gemma-root", type=Path)
+    parser.add_argument("--transformer-path", type=Path)
+    parser.add_argument("--text-encoder-path", type=Path)
+    parser.add_argument("--video-vae-path", type=Path)
+    parser.add_argument("--audio-vae-path", type=Path)
+    parser.add_argument("--spatial-upsampler-path", type=Path)
     parser.add_argument("--enable-layerwise-offload", action="store_true")
     return parser.parse_args()
 
@@ -124,24 +129,17 @@ def _configure_official_sdpa(pipeline: Any) -> None:
 
 @torch.inference_mode()
 def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
-    if args.official_root is None or args.checkpoint is None or args.gemma_root is None:
-        raise ValueError("Official backend requires --official-root, --checkpoint, and --gemma-root")
+    if args.official_root is None:
+        raise ValueError("Official backend requires --official-root")
     _insert_official_paths(args.official_root)
-    # vLLM disables cuDNN SDPA during import; mirror the worker's Gemma dispatch.
+    # vLLM disables cuDNN SDPA during import; mirror the worker's attention dispatch.
     torch.backends.cuda.enable_cudnn_sdp(False)
 
-    from ltx_core.components.guiders import MultiModalGuiderParams
-    from ltx_pipelines.ti2vid_one_stage import TI2VidOneStagePipeline
     from ltx_pipelines.utils.args import ImageConditioningInput
+    from ltx_pipelines.utils.model_paths import ModelPaths
     from ltx_pipelines.utils.types import OffloadMode
 
-    pipeline = TI2VidOneStagePipeline(
-        checkpoint_path=str(args.checkpoint),
-        gemma_root=str(args.gemma_root),
-        loras=(),
-        offload_mode=OffloadMode.CPU if args.enable_layerwise_offload else OffloadMode.NONE,
-    )
-    _configure_official_sdpa(pipeline)
+    offload_mode = OffloadMode.CPU if args.enable_layerwise_offload else OffloadMode.NONE
     image_path = request.get("image")
     images = (
         []
@@ -151,41 +149,97 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
                 path=str(image_path),
                 frame_idx=0,
                 strength=1.0,
-                # Both runtimes must receive the same source pixels. The
-                # official CLI's optional H.264 preprocessing is not part of
-                # the seeded model trajectory under test.
-                crf=0,
+                crf=request.get("image_crf", 0),
             )
         ]
     )
-    video, audio = pipeline(
-        prompt=request["prompt"],
-        negative_prompt=request["negative_prompt"],
-        seed=request["seed"],
-        height=request["height"],
-        width=request["width"],
-        num_frames=request["num_frames"],
-        frame_rate=request["fps"],
-        num_inference_steps=request["num_inference_steps"],
-        video_guider_params=MultiModalGuiderParams(
-            cfg_scale=request["video_cfg_scale"],
-            stg_scale=request["video_stg_scale"],
-            rescale_scale=request["video_rescale_scale"],
-            modality_scale=request["video_modality_scale"],
-            skip_step=0,
-            stg_blocks=request["video_stg_blocks"],
-        ),
-        audio_guider_params=MultiModalGuiderParams(
-            cfg_scale=request["audio_cfg_scale"],
-            stg_scale=request["audio_stg_scale"],
-            rescale_scale=request["audio_rescale_scale"],
-            modality_scale=request["audio_modality_scale"],
-            skip_step=0,
-            stg_blocks=request["audio_stg_blocks"],
-        ),
-        images=images,
-        max_batch_size=4,
-    )
+
+    if args.transformer_path is not None:
+        required = {
+            "--text-encoder-path": args.text_encoder_path,
+            "--video-vae-path": args.video_vae_path,
+            "--audio-vae-path": args.audio_vae_path,
+            "--spatial-upsampler-path": args.spatial_upsampler_path,
+        }
+        missing = [name for name, value in required.items() if value is None]
+        if missing:
+            raise ValueError(f"Official LTX-2.5 distilled backend is missing: {', '.join(missing)}")
+
+        from ltx_pipelines.distilled import DistilledPipeline
+
+        model_paths = ModelPaths.from_split(
+            transformer_path=str(args.transformer_path),
+            text_encoder_path=str(args.text_encoder_path),
+            video_vae_path=str(args.video_vae_path),
+            audio_vae_path=str(args.audio_vae_path),
+        )
+        pipeline = DistilledPipeline(
+            model_paths=model_paths,
+            spatial_upsampler_path=str(args.spatial_upsampler_path),
+            loras=(),
+            offload_mode=offload_mode,
+        )
+        _configure_official_sdpa(pipeline)
+        video, audio, _, _ = pipeline(
+            prompt=request["prompt"],
+            seed=request["seed"],
+            height=request["height"],
+            width=request["width"],
+            num_frames=request["num_frames"],
+            frame_rate=request["fps"],
+            images=images,
+        )
+        checkpoint_metadata = {
+            "transformer_path": str(args.transformer_path),
+            "video_vae_path": str(args.video_vae_path),
+            "pipeline": "DistilledPipeline",
+        }
+    else:
+        if args.checkpoint is None or args.gemma_root is None:
+            raise ValueError("Official monolith backend requires --checkpoint and --gemma-root")
+
+        from ltx_core.components.guiders import MultiModalGuiderParams
+        from ltx_pipelines.ti2vid_one_stage import TI2VidOneStagePipeline
+
+        pipeline = TI2VidOneStagePipeline(
+            model_paths=ModelPaths.from_monolith(str(args.checkpoint), str(args.gemma_root)),
+            loras=(),
+            offload_mode=offload_mode,
+        )
+        _configure_official_sdpa(pipeline)
+        video, audio, _ = pipeline(
+            prompt=request["prompt"],
+            negative_prompt=request["negative_prompt"],
+            seed=request["seed"],
+            height=request["height"],
+            width=request["width"],
+            num_frames=request["num_frames"],
+            frame_rate=request["fps"],
+            num_inference_steps=request["num_inference_steps"],
+            video_guider_params=MultiModalGuiderParams(
+                cfg_scale=request["video_cfg_scale"],
+                stg_scale=request["video_stg_scale"],
+                rescale_scale=request["video_rescale_scale"],
+                modality_scale=request["video_modality_scale"],
+                skip_step=0,
+                stg_blocks=request["video_stg_blocks"],
+            ),
+            audio_guider_params=MultiModalGuiderParams(
+                cfg_scale=request["audio_cfg_scale"],
+                stg_scale=request["audio_stg_scale"],
+                rescale_scale=request["audio_rescale_scale"],
+                modality_scale=request["audio_modality_scale"],
+                skip_step=0,
+                stg_blocks=request["audio_stg_blocks"],
+            ),
+            images=images,
+            max_batch_size=4,
+        )
+        checkpoint_metadata = {
+            "checkpoint": str(args.checkpoint),
+            "pipeline": "TI2VidOneStagePipeline",
+        }
+
     video_tensor = torch.cat([chunk.detach().cpu() for chunk in video], dim=0)
     _save_outputs(
         args.output_dir,
@@ -197,67 +251,7 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
             "backend": "official",
             "attention_backend": "torch_sdpa",
             "official_revision": os.environ.get("VLLM_TEST_LTX_OFFICIAL_REVISION"),
-            "checkpoint": str(args.checkpoint),
-        },
-    )
-
-
-@torch.inference_mode()
-def _run_diffusers(args: argparse.Namespace, request: dict[str, Any]) -> None:
-    """Run the pinned official Diffusers LTX-2.5 one-stage recipe."""
-    if args.model is None:
-        raise ValueError("Diffusers backend requires --model")
-    if "sigmas" not in request:
-        raise ValueError("Diffusers LTX-2.5 reference requires the distilled sigma schedule")
-
-    # Match Omni's TORCH_SDPA accuracy path rather than allowing cuDNN SDPA
-    # dispatch to introduce a second numerical variable.
-    torch.backends.cuda.enable_cudnn_sdp(False)
-
-    import diffusers
-    from diffusers import LTX2Pipeline
-
-    pipeline = LTX2Pipeline.from_pretrained(
-        args.model,
-        dtype=torch.bfloat16,
-        duration_head=None,
-    )
-    pipeline.enable_sequential_cpu_offload(device="cuda")
-    pipeline.vae.enable_tiling()
-    generator = torch.Generator("cuda").manual_seed(request["seed"])
-    video, audio = pipeline(
-        prompt=request["prompt"],
-        negative_prompt=request["negative_prompt"],
-        height=request["height"],
-        width=request["width"],
-        num_frames=request["num_frames"],
-        frame_rate=float(request["fps"]),
-        sigmas=request["sigmas"],
-        guidance_scale=request["video_cfg_scale"],
-        audio_guidance_scale=request["audio_cfg_scale"],
-        stg_scale=request["video_stg_scale"],
-        audio_stg_scale=request["audio_stg_scale"],
-        modality_scale=request["video_modality_scale"],
-        audio_modality_scale=request["audio_modality_scale"],
-        guidance_rescale=request["video_rescale_scale"],
-        audio_guidance_rescale=request["audio_rescale_scale"],
-        generator=generator,
-        output_type="np",
-        return_dict=False,
-    )
-    audio_tensor = torch.as_tensor(np.asarray(audio) if not isinstance(audio, torch.Tensor) else audio)
-    _save_outputs(
-        args.output_dir,
-        video=_canonical_video(video),
-        audio=audio_tensor,
-        audio_sample_rate=int(pipeline.vocoder.config.output_sampling_rate),
-        fps=float(request["fps"]),
-        metadata={
-            "backend": "diffusers",
-            "attention_backend": "torch_sdpa",
-            "diffusers_version": diffusers.__version__,
-            "diffusers_revision": os.environ.get("VLLM_TEST_LTX_DIFFUSERS_REVISION"),
-            "model": args.model,
+            **checkpoint_metadata,
         },
     )
 
@@ -364,14 +358,16 @@ def _run_omni(args: argparse.Namespace, request: dict[str, Any]) -> None:
             frame_rate=float(request["fps"]),
             output_type="np",
         )
-        guidance = {
+        extra_args = {
             key: value for key, value in request.items() if key.startswith("video_") or key.startswith("audio_")
         }
-        apply_declared_extra_args(sampling_params, get_extra_body_params(model_class_name), guidance)
-        prompt: dict[str, Any] = {
-            "prompt": request["prompt"],
-            "negative_prompt": request["negative_prompt"],
-        }
+        for key in ("sigmas", "image_crf"):
+            if key in request:
+                extra_args[key] = request[key]
+        apply_declared_extra_args(sampling_params, get_extra_body_params(model_class_name), extra_args)
+        prompt: dict[str, Any] = {"prompt": request["prompt"]}
+        if "negative_prompt" in request:
+            prompt["negative_prompt"] = request["negative_prompt"]
         image_path = request.get("image")
         if image_path is not None:
             with Image.open(str(image_path)) as source_image:
@@ -403,8 +399,6 @@ def main() -> None:
     request = json.loads(args.request.read_text())
     if args.backend == "official":
         _run_official(args, request)
-    elif args.backend == "diffusers":
-        _run_diffusers(args, request)
     else:
         _run_omni(args, request)
 

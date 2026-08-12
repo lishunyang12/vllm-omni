@@ -319,6 +319,10 @@ bundled offline CLI do not currently expose `sigmas`.
 - The distilled upsampler uses the configured pipeline dtype and participates
   in component discovery/device placement; it remains resident during denoise
   offload because it is used only at the phase boundary.
+- Cache-DiT now counts LTX's fused guidance batch as one Transformer call per
+  denoise step. Recalibrate residual thresholds from older LTX profiles because
+  profiles tuned with separate-CFG step accounting can make different cache
+  decisions.
 - The output audio sample rate comes from the loaded components and is not a
   request parameter.
 - For benchmarks, use `tests/dfx/perf/tests/test_ltx2_vllm_omni.json` with

@@ -168,6 +168,8 @@ class LTXRuntime(
         frame_rate: float | None = None,
         num_inference_steps: int | None = None,
         sigmas: list[float] | None = None,
+        stage_1_sigmas: list[float] | None = None,
+        stage_2_sigmas: list[float] | None = None,
         guidance_scale: float | None = None,
         num_videos_per_prompt: int | None = 1,
         generator: torch.Generator | list[torch.Generator] | None = None,
@@ -208,6 +210,7 @@ class LTXRuntime(
         )
         image = self._resolve_request_image(req, image, request_inputs)
         request_sigmas = self._resolve_request_sigmas(req, sigmas)
+        request_phase_sigmas = self._resolve_request_phase_sigmas(req, stage_1_sigmas, stage_2_sigmas)
         validate_pipeline_request(
             request_inputs,
             pipeline_recipe=self.pipeline_recipe,
@@ -215,8 +218,15 @@ class LTXRuntime(
             vae_temporal_compression_ratio=self.vae_temporal_compression_ratio,
             pipeline_name=self.__class__.__name__,
             request_sigmas=request_sigmas,
+            request_phase_sigmas=request_phase_sigmas,
         )
-        return self._run_recipe(req, request_inputs, request_sigmas=request_sigmas, image=image)
+        return self._run_recipe(
+            req,
+            request_inputs,
+            request_sigmas=request_sigmas,
+            request_phase_sigmas=request_phase_sigmas,
+            image=image,
+        )
 
     def _run_recipe(
         self,
@@ -224,28 +234,40 @@ class LTXRuntime(
         request_inputs: LTXRequestInputs,
         *,
         request_sigmas: list[float] | None,
+        request_phase_sigmas: tuple[list[float] | None, ...] | None = None,
         image: Any | None = None,
     ) -> DiffusionOutput | list[DiffusionOutput]:
         """Execute one- and multi-phase recipes through the same control flow."""
         phase_results: list[LTXPhaseResult] = []
         prompt_context = None
 
-        for phase_recipe in self.pipeline_recipe.phases:
+        for phase_index, phase_recipe in enumerate(self.pipeline_recipe.phases):
+            override_sigmas = None if request_phase_sigmas is None else request_phase_sigmas[phase_index]
+            phase_sigmas = (
+                override_sigmas
+                if override_sigmas is not None
+                else (
+                    request_sigmas
+                    if request_sigmas is not None
+                    else (list(phase_recipe.sigmas) if phase_recipe.sigmas is not None else None)
+                )
+            )
             self._enter_phase(phase_recipe)
             phase_inputs = self._build_phase_inputs(
                 request_inputs,
                 phase_recipe,
                 phase_results[-1] if phase_results else None,
             )
+            if phase_sigmas is not None:
+                phase_inputs = replace(phase_inputs, num_inference_steps=len(phase_sigmas) - 1)
+            noise_scale = phase_recipe.noise_scale
+            if override_sigmas is not None and phase_recipe.input_transform == "spatial_upsample":
+                noise_scale = float(override_sigmas[0])
             phase_result = self.run_phase(
                 req,
                 phase_inputs,
-                noise_scale=phase_recipe.noise_scale,
-                sigmas=(
-                    request_sigmas
-                    if request_sigmas is not None
-                    else (list(phase_recipe.sigmas) if phase_recipe.sigmas is not None else None)
-                ),
+                noise_scale=noise_scale,
+                sigmas=phase_sigmas,
                 timesteps=None,
                 attention_kwargs=None,
                 phase_recipe=phase_recipe,
@@ -521,11 +543,7 @@ class LTXRuntime(
             width=request_inputs.width,
             num_frames=request_inputs.num_frames,
             noise_scale=noise_scale,
-            dtype=(
-                torch.float32
-                if getattr(self, "model_version", "2") == "2.5"
-                else prompt_context.positive_connector_prompt_embeds.dtype
-            ),
+            dtype=prompt_context.positive_connector_prompt_embeds.dtype,
             device=device,
             generator=request_inputs.generator,
             latents=request_inputs.latents,
@@ -574,11 +592,7 @@ class LTXRuntime(
             audio_latent_length=audio_num_frames,
             num_mel_bins=num_mel_bins,
             noise_scale=noise_scale,
-            dtype=(
-                torch.float32
-                if getattr(self, "model_version", "2") == "2.5"
-                else prompt_context.positive_connector_audio_prompt_embeds.dtype
-            ),
+            dtype=prompt_context.positive_connector_audio_prompt_embeds.dtype,
             device=device,
             generator=request_inputs.generator,
             latents=request_inputs.audio_latents,
@@ -630,7 +644,7 @@ class LTXRuntime(
             ts,
             video_token_count,
             audio_token_count,
-            expand_for_sequence_parallel=sp_size > 1,
+            expand_for_sequence_parallel=sp_size > 1 or getattr(self, "model_version", "2") == "2.5",
         )
 
     def _video_guidance_model_sigma(
@@ -686,6 +700,9 @@ class LTXRuntime(
             state,
             forward_ctx,
             denoise_ctx,
+            preserve_positive_velocity=(
+                getattr(forward_ctx.video_audio_step_adapter, "_sampler", "euler") == "euler_ancestral"
+            ),
         )
 
     def _denoise_step(
