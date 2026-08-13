@@ -15,7 +15,10 @@ from PIL import Image
 from vllm.engine.protocol import EngineClient
 from vllm.logger import init_logger
 
-from vllm_omni.diffusion.model_metadata import get_diffusion_model_metadata
+from vllm_omni.diffusion.model_metadata import (
+    get_diffusion_model_metadata,
+    preserves_reference_image_size,
+)
 from vllm_omni.entrypoints.async_omni import AsyncOmni
 from vllm_omni.entrypoints.openai.protocol.videos import (
     VideoAction,
@@ -106,27 +109,14 @@ class OmniOpenAIServingVideo:
         get_od_config = getattr(self._engine_client, "get_diffusion_od_config", None)
         od_config = get_od_config() if callable(get_od_config) else getattr(self._engine_client, "od_config", None)
         model_class_name = None if od_config is None else getattr(od_config, "model_class_name", None)
-        metadata = get_diffusion_model_metadata(model_class_name)
-        if not metadata.preserves_reference_image_size:
-            return False
-        versioned_ltx_entries = {
-            "LTX2Pipeline",
-            "LTX2TwoStagePipeline",
-            "LTX2DistilledPipeline",
-        }
-        if model_class_name not in versioned_ltx_entries:
-            return True
-
-        # These entries are shared by LTX-2/2.3/2.5. Only 2.5 requires
-        # CRF-18 before resize; preserve the released 2/2.3 server contract.
         model = getattr(od_config, "model", None) if od_config is not None else None
         model = model or self.model_name
-        if model is None:
-            return False
-        from vllm_omni.diffusion.models.ltx2.ltx2_components import detect_ltx_model_version
-
         revision = getattr(od_config, "revision", None) if od_config is not None else None
-        return detect_ltx_model_version(str(model), revision=revision) == "2.5"
+        return preserves_reference_image_size(
+            model_class_name,
+            model=None if model is None else str(model),
+            revision=revision,
+        )
 
     @property
     def supports_mixed_reference_inputs(self) -> bool:

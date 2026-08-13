@@ -329,6 +329,15 @@ def detect_ltx_model_version(model: str, revision: str | None = None) -> str:
     return "2"
 
 
+def preserves_reference_image_size(
+    *,
+    model: str | None,
+    revision: str | None = None,
+) -> bool:
+    """Preserve source geometry only for the LTX-2.5 CRF-18 I2V path."""
+    return model is not None and detect_ltx_model_version(model, revision=revision) == "2.5"
+
+
 class _LTXConnectorAttnProcessor:
     """Preserve official connector math around Omni attention dispatch."""
 

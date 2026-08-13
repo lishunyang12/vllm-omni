@@ -19,7 +19,7 @@ from vllm_omni.config.yaml_util import create_config, load_yaml_config, merge_co
 from vllm_omni.diffusion.utils.hf_utils import (
     _looks_like_dreamzero,
     get_diffusion_model_index,
-    is_ltx25_raw_checkpoint,
+    is_diffusion_model,
 )
 from vllm_omni.entrypoints.stage_utils import _to_dict
 from vllm_omni.inputs.data import OmniSamplingParams
@@ -285,11 +285,6 @@ def resolve_model_config_path(model: str) -> str | None:
     Raises:
         ValueError: If model_type cannot be determined
     """
-    # Official LTX-2.5 uses a split-artifact repository with no root config.
-    # Returning None lets the caller construct the standard pure-diffusion stage.
-    if is_ltx25_raw_checkpoint(model):
-        return None
-
     # Try to get config from standard transformers format first
     try:
         hf_config = get_config(model, trust_remote_code=True)
@@ -324,6 +319,8 @@ def resolve_model_config_path(model: str) -> str | None:
             # YAML filenames before giving up.
             model_type = _try_resolve_omni_model_type(model)
             if model_type is None:
+                if is_diffusion_model(model):
+                    return None
                 raise ValueError(
                     f"Could not determine model_type for model: {model}. "
                     "Model is not in standard transformers or Diffusers format. "

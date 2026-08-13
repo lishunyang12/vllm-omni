@@ -6,12 +6,20 @@
 ## Summary
 
 - Vendor: Lightricks
-- Supported checkpoint:
+- Model:
   [`Lightricks/LTX-2.5`](https://huggingface.co/Lightricks/LTX-2.5)
-- Tasks: Full one-stage T2V/I2V, distilled two-stage T2V/I2V, and Full
+- Task: Full one-stage T2V/I2V, distilled two-stage T2V/I2V, and Full
   two-stage T2V/I2V
-- Modes: offline inference and OpenAI-compatible `/v1/videos` HTTP serving
+- Mode: offline inference and OpenAI-compatible `/v1/videos` HTTP serving
 - Maintainer: Community
+
+## When to use this recipe
+
+Use this recipe when generating synchronized video and audio from text or a
+single first-frame image with the official LTX-2.5 split checkpoint. Choose
+one-stage Full for lower-resolution direct generation, distilled two-stage for
+the default fast high-resolution path, or Full two-stage for the official
+guided high-resolution path and LoRA450 refinement.
 
 vLLM-Omni loads the official split safetensors repository directly. Pipeline
 class selects the topology; `--task-type` selects the trained weight profile.
@@ -44,7 +52,61 @@ upsampled.
 - [Text-to-video offline example](../../examples/offline_inference/text_to_video/text_to_video.py)
 - [Image-to-video offline example](../../examples/offline_inference/image_to_video/image_to_video.py)
 
-## Prerequisites
+## Hardware Support
+
+## GPU
+
+### 1x NVIDIA B300 275040 MiB
+
+#### Environment
+
+- OS: Linux 6.8.0-90-generic
+- Python: 3.12.3
+- NVIDIA driver: 610.43.02
+- vLLM: 0.27.0
+- vLLM-Omni: 0.27.0.dev106 (PR #6070 validation branch)
+
+#### Command
+
+The following Full one-stage command is the B300 parity configuration. Replace
+the prompt as needed; keep seed and dimensions fixed when comparing outputs:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 \
+python examples/offline_inference/text_to_video/text_to_video.py \
+  --model Lightricks/LTX-2.5 \
+  --model-class-name LTX2Pipeline \
+  --prompt "A cinematic tracking shot follows a red fox through a snowy forest at dawn, with synchronized footsteps, wind, and distant birdsong." \
+  --height 544 \
+  --width 960 \
+  --num-frames 481 \
+  --num-inference-steps 30 \
+  --frame-rate 24 \
+  --fps 24 \
+  --seed 42 \
+  --enforce-eager \
+  --output ltx25-full-one-stage.mp4
+```
+
+#### Verification
+
+```bash
+ffprobe -v error \
+  -show_entries stream=codec_type,width,height,r_frame_rate \
+  -of default=noprint_wrappers=1 ltx25-full-one-stage.mp4
+```
+
+The command must finish without an exception and report both video and audio
+streams. The video stream should be 960x544 at 24 fps.
+
+#### Notes
+
+- This is the reference qualification platform for the commands below.
+- `--enforce-eager` is used for official numerical-parity runs.
+- Peak-memory and acceleration claims are intentionally omitted until their
+  raw-checkpoint qualification matrices are complete.
+
+## Installing vLLM-Omni
 
 The repository is gated. Accept its Hugging Face license and authenticate
 before downloading it:
@@ -75,7 +137,7 @@ than guessing from a wildcard. Two-stage execution also resolves the x2
 spatial latent upsampler. Full two-stage additionally resolves the official
 Distilled LoRA450 for its second phase.
 
-## Offline inference
+## Text-to-video and image-to-video generation
 
 The generic offline examples implement the contract above. Dimensions passed
 to a two-stage pipeline are final output dimensions; its first phase derives
@@ -238,7 +300,7 @@ For I2V, add exactly one image to the same request:
 Distilled execution is positive-only and rejects negative prompts rather than
 silently ignoring them. Full execution uses the official guided path.
 
-## Request parameters and constraints
+## Key parameters and constraints
 
 | Parameter | Full one-stage | Distilled two-stage | Full two-stage |
 |---|---:|---:|---:|
