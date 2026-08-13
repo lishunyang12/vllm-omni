@@ -23,6 +23,17 @@ def _make_pipeline(pipeline_cls, sequence_parallel_size: int = 1):
     return pipeline
 
 
+def test_create_noised_state_matches_official_float32_lerp(monkeypatch):
+    latents = torch.tensor([1.125, -0.875], dtype=torch.bfloat16)
+    noise = torch.tensor([-0.3125, 0.5625], dtype=torch.bfloat16)
+    monkeypatch.setattr(latent_ops, "randn_tensor", lambda *args, **kwargs: noise)
+
+    actual = latent_ops.create_noised_state(latents, torch.tensor(0.37), generator=None)
+    expected = torch.lerp(latents.float(), noise.float(), torch.tensor(0.37)).to(torch.bfloat16)
+
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+
 def test_prepare_video_latents_matches_official_values_and_token_major_layout():
     pipeline = _make_pipeline(LTX2Pipeline)
     pipeline.vae_spatial_compression_ratio = 8
@@ -177,6 +188,15 @@ def test_prepare_audio_latents_accepts_already_padded_4d_latents_for_sp():
     packed = latent_ops.pack_audio_latents(latents)
     torch.testing.assert_close(padded[:, :10], packed[:, :10])
     torch.testing.assert_close(padded[:, 10:], torch.zeros_like(padded[:, 10:]))
+
+
+def test_clear_audio_padding_keeps_padding_outside_sampler_state():
+    latents = torch.arange(24, dtype=torch.float32).view(1, 6, 4)
+
+    actual = latent_ops.clear_audio_padding(latents, 4)
+
+    torch.testing.assert_close(actual[:, :4], latents[:, :4])
+    torch.testing.assert_close(actual[:, 4:], torch.zeros_like(actual[:, 4:]))
 
 
 def test_resolve_audio_latent_length_preserves_legacy_4d_shape_inference():
