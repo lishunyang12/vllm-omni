@@ -172,7 +172,7 @@ The following tables show which models support each feature:
 > **LTX-2.5 qualification note:** Cache-DiT, strict Ulysses SP, TP, Full-only
 > CFG parallel, and VAE patch parallel are not release-qualified. Cache-DiT,
 > TP, and Ulysses can execute in limited configurations but did not pass the
-> fixed-seed quality gate. See the [LTX-2.5 recipe](../../recipes/LTX/LTX-2.5.md)
+> fixed-seed quality gate. See the [LTX-2.5 recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/LTX/LTX-2.5.md)
 > for the tested matrix and constraints.
 
 **Frame Interpolation Support**
