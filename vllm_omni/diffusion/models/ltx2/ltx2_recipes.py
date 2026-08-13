@@ -131,6 +131,7 @@ LTX25_FULL_RECIPE = LTXPipelineRecipe(
         LTXPhaseRecipe(
             name="generate",
             guidance=_official_guidance(28),
+            noise_scale=1.0,
         ),
     ),
 )

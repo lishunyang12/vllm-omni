@@ -396,6 +396,7 @@ def test_ltx25_full_recipe_matches_official_sft_defaults():
         stg_blocks=(28,),
     )
     assert phase.sigmas is None
+    assert phase.noise_scale == 1.0
     assert phase.use_official_sigma_schedule
     assert LTX25_FULL_COMPONENT_PROFILE.transformer_subfolder == "transformer_full"
     assert LTX25_FULL_COMPONENT_PROFILE.scheduler_use_dynamic_shifting
