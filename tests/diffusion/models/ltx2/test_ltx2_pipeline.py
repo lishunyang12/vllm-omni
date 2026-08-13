@@ -20,7 +20,6 @@ from vllm_omni.diffusion.models.ltx2.ltx2_components import (
     LTX23_COMPONENT_PROFILE,
     LTX25_DISTILLED_COMPONENT_PROFILE,
     LTX25_FULL_COMPONENT_PROFILE,
-    LTX25_FULL_TWO_STAGE_COMPONENT_PROFILE,
     _install_connector_attention,
     detect_ltx_model_version,
     resolve_ltx_checkpoint_variant,
@@ -50,7 +49,6 @@ from vllm_omni.diffusion.models.ltx2.ltx2_recipes import (
     LTX23_ONE_STAGE_RECIPE,
     LTX25_DISTILLED_TWO_STAGE_RECIPE,
     LTX25_FULL_RECIPE,
-    LTX25_FULL_TWO_STAGE_RECIPE,
     LTX_DEFAULT_NEGATIVE_PROMPT,
     LTX_DISTILLED_SIGMAS,
     LTX_POSITIVE_ONLY_RECIPE,
@@ -221,7 +219,7 @@ def test_ltx_converted_component_loading_propagates_revision(monkeypatch):
     revision = "pinned-revision"
     calls = {"components": []}
     profile = replace(
-        LTX25_FULL_TWO_STAGE_COMPONENT_PROFILE,
+        LTX25_DISTILLED_COMPONENT_PROFILE,
         text_encoder_cls=object,
         video_vae_cls=object,
         vocoder_cls=object,
@@ -236,7 +234,6 @@ def test_ltx_converted_component_loading_propagates_revision(monkeypatch):
         quantization_config=None,
     )
 
-    monkeypatch.setattr(ltx2_components, "is_ltx25_raw_checkpoint", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(ltx2_components, "get_local_device", lambda: torch.device("cpu"))
     monkeypatch.setattr(ltx2_components, "_install_connector_attention", lambda _connectors: None)
     monkeypatch.setattr(ltx2_components, "_place_aux_components", lambda _pipeline: None)
@@ -459,7 +456,8 @@ def test_ltx_checkpoint_variant_is_independent_from_topology():
     assert resolve_ltx_checkpoint_variant("one_stage", "2.5", "full") == "full"
     assert resolve_ltx_checkpoint_variant("one_stage", "2.5", "dev") == "full"
     assert resolve_ltx_checkpoint_variant("two_stage", "2.5", "distilled") == "distilled"
-    assert resolve_ltx_checkpoint_variant("two_stage", "2.5", "full") == "full"
+    with pytest.raises(ValueError, match="not supported by this pipeline"):
+        resolve_ltx_checkpoint_variant("two_stage", "2.5", "full")
 
     with pytest.raises(ValueError, match="does not define a distilled one-stage"):
         resolve_ltx_checkpoint_variant("one_stage", "2.5", "distilled")
@@ -470,50 +468,6 @@ def test_ltx_checkpoint_variant_is_independent_from_topology():
             "distilled",
             compatibility_override="full",
         )
-
-
-def test_ltx25_checkpoint_selects_full_two_stage_profile(tmp_path, monkeypatch):
-    from vllm_omni.diffusion.models.ltx2 import ltx2_runtime
-
-    (tmp_path / "model_index.json").write_text(
-        json.dumps({"text_encoder": ["transformers", "Gemma4UnifiedForConditionalGeneration"]})
-    )
-
-    def stub_components(pipe, od_config):
-        pipe.od_config = od_config
-        pipe.vae_spatial_compression_ratio = 32
-
-    monkeypatch.setattr(ltx2_runtime, "initialize_pipeline_components", stub_components)
-    monkeypatch.setattr(LTXRuntime, "setup_diffusion_pipeline_profiler", lambda *_args, **_kwargs: None)
-
-    pipe = LTX2TwoStagePipeline(
-        od_config=SimpleNamespace(
-            model=str(tmp_path),
-            task_type="full",
-            enable_diffusion_pipeline_profiler=False,
-        )
-    )
-
-    assert pipe.checkpoint_variant == "full"
-    assert pipe.component_profile is LTX25_FULL_TWO_STAGE_COMPONENT_PROFILE
-    assert pipe.pipeline_recipe is LTX25_FULL_TWO_STAGE_RECIPE
-
-
-def test_ltx25_full_two_stage_recipe_matches_official_handoff():
-    stage1, stage2 = LTX25_FULL_TWO_STAGE_RECIPE.phases
-
-    assert (LTX25_FULL_TWO_STAGE_RECIPE.height, LTX25_FULL_TWO_STAGE_RECIPE.width) == (1088, 1920)
-    assert LTX25_FULL_TWO_STAGE_RECIPE.num_inference_steps == 30
-    assert stage1.spatial_downscale == 2
-    assert stage1.guidance.do_cfg
-    assert stage1.sigmas is None
-    assert stage1.use_official_sigma_schedule
-    assert stage2.guidance == LTXGuidanceSpec.positive_only()
-    assert stage2.sigmas == (0.909375, 0.725, 0.421875, 0.0)
-    assert stage2.input_transform == "spatial_upsample"
-    assert stage2.resident_adapter == "distilled_lora_450"
-    assert LTX25_FULL_TWO_STAGE_RECIPE.video_output_phase == 1
-    assert LTX25_FULL_TWO_STAGE_RECIPE.audio_output_phase == 0
 
 
 def test_ltx25_distilled_two_stage_recipe_matches_model_card_resolution():
@@ -549,7 +503,6 @@ def test_ltx_one_stage_recipes_declare_cache_dit_supported(recipe):
     [
         LTX2_DISTILLED_TWO_STAGE_RECIPE,
         LTX25_DISTILLED_TWO_STAGE_RECIPE,
-        LTX25_FULL_TWO_STAGE_RECIPE,
     ],
 )
 def test_ltx_multistage_recipes_declare_cache_dit_unsupported(recipe):

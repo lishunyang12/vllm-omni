@@ -174,7 +174,6 @@ class LTXRuntime(
             self.reports_stage_durations = True
         super().__init__()
         self._guidance_plan = LTXGuidancePlan.build(self.pipeline_recipe.request_guidance)
-        self._phase_adapter_controller = None
         initialize_pipeline_components(self, od_config)
         self.setup_diffusion_pipeline_profiler(
             enable_diffusion_pipeline_profiler=self.od_config.enable_diffusion_pipeline_profiler
@@ -264,53 +263,43 @@ class LTXRuntime(
         image: Any | None = None,
     ) -> DiffusionOutput | list[DiffusionOutput]:
         """Execute one- and multi-phase recipes through the same control flow."""
-        required_adapters = {
-            phase.resident_adapter for phase in self.pipeline_recipe.phases if phase.resident_adapter is not None
-        }
-        if required_adapters and self._phase_adapter_controller is None:
-            raise RuntimeError(
-                f"LTX recipe requires resident adapters {sorted(required_adapters)}, but they were not loaded."
-            )
         phase_results: list[LTXPhaseResult] = []
         prompt_context = None
-        try:
-            for phase_index, phase_recipe in enumerate(self.pipeline_recipe.phases):
-                override_sigmas = None if request_phase_sigmas is None else request_phase_sigmas[phase_index]
-                phase_sigmas = (
-                    override_sigmas
-                    if override_sigmas is not None
-                    else (
-                        request_sigmas
-                        if request_sigmas is not None
-                        else (list(phase_recipe.sigmas) if phase_recipe.sigmas is not None else None)
-                    )
+        for phase_index, phase_recipe in enumerate(self.pipeline_recipe.phases):
+            override_sigmas = None if request_phase_sigmas is None else request_phase_sigmas[phase_index]
+            phase_sigmas = (
+                override_sigmas
+                if override_sigmas is not None
+                else (
+                    request_sigmas
+                    if request_sigmas is not None
+                    else (list(phase_recipe.sigmas) if phase_recipe.sigmas is not None else None)
                 )
-                self._enter_phase(phase_recipe)
-                phase_inputs = self._build_phase_inputs(
-                    request_inputs,
-                    phase_recipe,
-                    phase_results[-1] if phase_results else None,
-                )
-                if phase_sigmas is not None:
-                    phase_inputs = replace(phase_inputs, num_inference_steps=len(phase_sigmas) - 1)
-                noise_scale = phase_recipe.noise_scale
-                if override_sigmas is not None and phase_recipe.input_transform == "spatial_upsample":
-                    noise_scale = float(override_sigmas[0])
-                phase_result = self.run_phase(
-                    req,
-                    phase_inputs,
-                    noise_scale=noise_scale,
-                    sigmas=phase_sigmas,
-                    timesteps=None,
-                    attention_kwargs=None,
-                    phase_recipe=phase_recipe,
-                    image=image,
-                    prompt_context=prompt_context,
-                )
-                phase_results.append(phase_result)
-                prompt_context = phase_result.forward_context.prompt_context
-        finally:
-            self._deactivate_phase_adapters()
+            )
+            self._enter_phase(phase_recipe)
+            phase_inputs = self._build_phase_inputs(
+                request_inputs,
+                phase_recipe,
+                phase_results[-1] if phase_results else None,
+            )
+            if phase_sigmas is not None:
+                phase_inputs = replace(phase_inputs, num_inference_steps=len(phase_sigmas) - 1)
+            noise_scale = phase_recipe.noise_scale
+            if override_sigmas is not None and phase_recipe.input_transform == "spatial_upsample":
+                noise_scale = float(override_sigmas[0])
+            phase_result = self.run_phase(
+                req,
+                phase_inputs,
+                noise_scale=noise_scale,
+                sigmas=phase_sigmas,
+                timesteps=None,
+                attention_kwargs=None,
+                phase_recipe=phase_recipe,
+                image=image,
+                prompt_context=prompt_context,
+            )
+            phase_results.append(phase_result)
+            prompt_context = phase_result.forward_context.prompt_context
 
         final_context = phase_results[-1].forward_context
         output_phase = LTXPhaseResult(
@@ -321,21 +310,9 @@ class LTXRuntime(
         return self.decode_phase(output_phase)
 
     def _enter_phase(self, phase: LTXPhaseRecipe) -> None:
-        """Activate guidance and any resident adapter for this denoise phase."""
+        """Activate the guidance plan for this denoise phase."""
         self._active_phase_name = phase.name
         self._guidance_plan = LTXGuidancePlan.build(phase.guidance)
-        self._deactivate_phase_adapters()
-        if phase.resident_adapter is not None:
-            assert self._phase_adapter_controller is not None
-            self._phase_adapter_controller(phase.resident_adapter, True)
-
-    def set_phase_adapter_controller(self, controller) -> None:
-        self._phase_adapter_controller = controller
-
-    def _deactivate_phase_adapters(self) -> None:
-        controller = getattr(self, "_phase_adapter_controller", None)
-        if controller is not None:
-            controller(None, False)
 
     def prepare_latents(
         self,

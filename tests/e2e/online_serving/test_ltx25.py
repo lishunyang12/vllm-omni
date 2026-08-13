@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-"""Online serving smoke for the official LTX-2.5 split checkpoint."""
+"""Online serving smoke for the LTX-2.5 Diffusers checkpoint."""
 
 import os
 
@@ -13,8 +13,8 @@ from tests.helpers.runtime import OmniServer, OmniServerParams
 
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
-DEFAULT_MODEL = "Lightricks/LTX-2.5"
-DEFAULT_REVISION = "ce298b1259d61ce6c87e05154b9ad339b16f32a0"
+DEFAULT_MODEL = "Lightricks/LTX-2.5-Diffusers"
+DEFAULT_REVISION = "a6de4b5354f078db24d9cf4778c14846788aea3d"
 MODEL = os.getenv("VLLM_TEST_LTX25_MODEL", DEFAULT_MODEL)
 MODEL_REVISION = os.getenv("VLLM_TEST_LTX25_MODEL_REVISION", DEFAULT_REVISION if MODEL == DEFAULT_MODEL else "")
 PROMPT = "A red fox walks through a snowy forest while the camera remains fixed."
@@ -30,6 +30,8 @@ def _cases():
                 model=MODEL,
                 server_args=[
                     *(["--revision", MODEL_REVISION] if MODEL_REVISION else []),
+                    "--model-class-name",
+                    "LTX2TwoStagePipeline",
                     "--enforce-eager",
                     "--enable-layerwise-offload",
                     "--diffusion-attention-backend",

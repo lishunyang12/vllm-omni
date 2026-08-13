@@ -279,6 +279,7 @@ def prefetch_subfolders(
         local_files_only: When ``True``, skip the prefetch entirely.
             When ``None`` (default), auto-detect: skip if *model* is a
             local directory, run otherwise.
+        revision: Optional Hub revision shared with component loaders.
         include_root_metadata: When True, also pull ``*.json`` at the repo
             root so ``model_index.json`` / ``config.json`` resolution during
             ``from_pretrained`` also hits a warm cache.

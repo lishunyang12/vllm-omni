@@ -550,16 +550,10 @@ def resolve_model_class_name(
     """
     from vllm.transformers_utils.config import get_hf_file_to_dict
 
-    from vllm_omni.diffusion.utils.hf_utils import (
-        get_diffusion_model_index,
-        is_ltx25_raw_checkpoint,
-    )
+    from vllm_omni.diffusion.utils.hf_utils import get_diffusion_model_index
 
     if not model:
         return None
-    if is_ltx25_raw_checkpoint(model, revision=revision):
-        return "LTX2TwoStagePipeline"
-
     is_lance_subfolder = os.path.basename(str(model).rstrip("/")) in {"Lance_3B", "Lance_3B_Video"}
 
     # Diffusers models: read _class_name from the pipeline index.
@@ -1189,10 +1183,7 @@ class OmniDiffusionConfig:
         """
         from vllm.transformers_utils.config import get_hf_file_to_dict
 
-        from vllm_omni.diffusion.utils.hf_utils import (
-            get_diffusion_model_index,
-            is_ltx25_raw_checkpoint,
-        )
+        from vllm_omni.diffusion.utils.hf_utils import get_diffusion_model_index
 
         # Default model_class_name for diffusers adapter
         if self.model_class_name is None and self.diffusion_load_format == "diffusers":
@@ -1246,12 +1237,6 @@ class OmniDiffusionConfig:
             else:
                 cfg = get_hf_file_to_dict("config.json", self.model, revision=self.revision)
                 if cfg is None:
-                    if is_ltx25_raw_checkpoint(self.model, revision=self.revision):
-                        if self.model_class_name is None:
-                            self.model_class_name = "LTX2TwoStagePipeline"
-                        self.set_tf_model_config(TransformerConfig())
-                        self.update_multimodal_support()
-                        return
                     # Lance ships its top-level config.json one directory above
                     # the per-checkpoint subfolders (``Lance_3B/`` or
                     # ``Lance_3B_Video/``).  Try to recover that case before

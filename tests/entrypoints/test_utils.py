@@ -290,19 +290,6 @@ class TestFilterDataclassKwargs:
 class TestResolveModelConfigPath:
     """Test suite for resolve_model_config_path function with diffusers format models."""
 
-    def test_unindexed_diffusion_checkpoint_uses_default_stage(self, mocker: MockerFixture):
-        diffusion_predicate = mocker.patch(
-            "vllm_omni.entrypoints.utils.is_diffusion_model",
-            return_value=True,
-        )
-        mocker.patch("vllm_omni.entrypoints.utils.get_config", side_effect=ValueError)
-        mocker.patch("vllm_omni.entrypoints.utils.get_diffusion_model_index", return_value=None)
-        mocker.patch("vllm_omni.entrypoints.utils.file_or_path_exists", return_value=False)
-        mocker.patch("vllm_omni.entrypoints.utils._try_resolve_omni_model_type", return_value=None)
-
-        assert resolve_model_config_path("org/custom-split-diffusion") is None
-        diffusion_predicate.assert_called_once_with("org/custom-split-diffusion")
-
     def test_glm_image_diffusers_format_resolution(self, mocker: MockerFixture):
         """Test GlmImagePipeline diffusers class resolves to glm_image config."""
         mocker.patch(

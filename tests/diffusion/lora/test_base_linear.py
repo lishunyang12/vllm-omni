@@ -112,8 +112,7 @@ def test_diffusion_base_linear_reset_lora_disables_fast_path(monkeypatch):
     layer.lora_a_stacked = (a,)
     layer.lora_b_stacked = (b,)
     layer.output_slices = (out_dim,)
-    layer._diffusion_lora_active_slices = [(True,)]
-    layer._diffusion_lora_loaded_slices = [(True,)]
+    layer._diffusion_lora_active_slices = (True,)
 
     x = torch.tensor([[1.0, 2.0]])
     out_active = layer.apply(x)
@@ -122,7 +121,7 @@ def test_diffusion_base_linear_reset_lora_disables_fast_path(monkeypatch):
     monkeypatch.setattr(BaseLinearLayerWithLoRA, "reset_lora", lambda self, index: None)
     layer.reset_lora(0)
 
-    assert layer._diffusion_lora_active_slices == [(False,)]
+    assert layer._diffusion_lora_active_slices == (False,)
     out_inactive = layer.apply(x)
     assert torch.allclose(out_inactive, x)
 
@@ -165,7 +164,7 @@ def test_diffusion_base_linear_apply_respects_inactive_slices():
     layer.lora_a_stacked = (a0, a1)
     layer.lora_b_stacked = (b0, b1)
     layer.output_slices = out_slices
-    layer._diffusion_lora_active_slices = [(True, False)]
+    layer._diffusion_lora_active_slices = (True, False)
 
     x = torch.tensor([[1.0, 2.0, 3.0]])
     out = layer.apply(x)
@@ -173,23 +172,3 @@ def test_diffusion_base_linear_apply_respects_inactive_slices():
     # Only the first slice should be adapted.
     expected = torch.tensor([[2.0, 4.0, 3.0]])
     assert torch.allclose(out, expected)
-
-
-def test_diffusion_base_linear_adds_two_active_slots():
-    layer = DiffusionBaseLinearLayerWithLoRA.__new__(DiffusionBaseLinearLayerWithLoRA)
-    layer.tp_size = 1
-    layer.lora_config = _DummyLoRAConfig()
-    layer.base_layer = type("Base", (), {})()
-    layer.base_layer.quant_method = _DummyQuantMethod(torch.eye(2))
-
-    layer.lora_a_stacked = (torch.tensor([[[[1.0, 0.0]]], [[[0.0, 1.0]]]]),)
-    layer.lora_b_stacked = (torch.tensor([[[[1.0], [0.0]]], [[[0.0], [2.0]]]]),)
-    layer.output_slices = (2,)
-    layer._diffusion_lora_loaded_slices = [(True,), (True,)]
-    layer._diffusion_lora_active_slices = [(True,), (True,)]
-
-    x = torch.tensor([[3.0, 4.0]])
-    torch.testing.assert_close(layer.apply(x), torch.tensor([[6.0, 12.0]]))
-
-    layer.set_lora_active(1, False)
-    torch.testing.assert_close(layer.apply(x), torch.tensor([[6.0, 4.0]]))

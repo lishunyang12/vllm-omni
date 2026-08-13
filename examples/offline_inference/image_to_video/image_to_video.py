@@ -57,7 +57,6 @@ import PIL.Image
 import torch
 
 from vllm_omni.diffusion.data import DiffusionParallelConfig, resolve_model_class_name
-from vllm_omni.diffusion.models.ltx2.ltx2_components import detect_ltx_model_version
 from vllm_omni.diffusion.utils.param_utils import apply_declared_extra_args
 from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
@@ -120,12 +119,6 @@ def parse_args() -> argparse.Namespace:
         "--model-class-name",
         default=None,
         help="Override model class name (LTX checkpoints default to LTX2Pipeline).",
-    )
-    parser.add_argument(
-        "--task-type",
-        choices=["full", "distilled"],
-        default=None,
-        help="Select model-defined checkpoint weights (for LTX-2.5: full or distilled).",
     )
     parser.add_argument(
         "--deploy-config",
@@ -391,6 +384,8 @@ def _detect_ltx_checkpoint_version(model: str, model_class_name: str | None = No
     model_class_name = model_class_name or resolve_model_class_name(model)
     if "ltx2" not in (model_class_name or "").lower():
         return None
+    from vllm_omni.diffusion.models.ltx2.ltx2_components import detect_ltx_model_version
+
     return detect_ltx_model_version(model)
 
 
@@ -409,16 +404,12 @@ def _is_ltx2_two_stage_pipeline(model_class_name: str | None) -> bool:
 def _ltx25_i2v_defaults(
     ltx_version: str | None,
     model_class_name: str | None,
-    task_type: str | None = None,
 ) -> tuple[int, None, int, int, None, int, int] | None:
     """Return LTX-2.5 I2V defaults for canonical and compatibility entries."""
     if ltx_version != "2.5":
         return None
     if _is_ltx2_two_stage_pipeline(model_class_name):
-        if task_type is None:
-            task_type = "distilled"
-        steps = 30 if task_type == "full" else 8
-        return (24, None, 121, steps, None, 1088 * 1920, 64)
+        return (24, None, 121, 8, None, 1088 * 1920, 64)
     return (24, None, 121, 30, None, 544 * 960, 32)
 
 
@@ -431,7 +422,7 @@ def main():
     ltx_version = _detect_ltx_checkpoint_version(args.model, model_class_name)
     is_ltx25 = ltx_version == "2.5"
     is_ltx2_two_stage = _is_ltx2_two_stage_pipeline(model_class_name)
-    ltx25_defaults = _ltx25_i2v_defaults(ltx_version, model_class_name, args.task_type)
+    ltx25_defaults = _ltx25_i2v_defaults(ltx_version, model_class_name)
     is_ltx2_distilled = is_ltx2_two_stage
     is_ltx23 = ltx_version == "2.3"
     is_ltx2 = ltx_version is not None
@@ -582,7 +573,6 @@ def main():
         parallel_config=parallel_config,
         enforce_eager=args.enforce_eager,
         model_class_name=model_class_name,
-        task_type=args.task_type,
         cache_backend=args.cache_backend,
         cache_config=cache_config,
         enable_diffusion_pipeline_profiler=args.enable_diffusion_pipeline_profiler,

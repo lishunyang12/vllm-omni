@@ -33,6 +33,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--audio-vae-path", type=Path)
     parser.add_argument("--spatial-upsampler-path", type=Path)
     parser.add_argument("--connector-model", type=Path)
+    parser.add_argument(
+        "--official-pipeline",
+        choices=("distilled_two_stage", "full_one_stage"),
+        default="distilled_two_stage",
+    )
     parser.add_argument("--enable-layerwise-offload", action="store_true")
     return parser.parse_args()
 
@@ -186,13 +191,12 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
             "--text-encoder-path": args.text_encoder_path,
             "--video-vae-path": args.video_vae_path,
             "--audio-vae-path": args.audio_vae_path,
-            "--spatial-upsampler-path": args.spatial_upsampler_path,
         }
+        if args.official_pipeline == "distilled_two_stage":
+            required["--spatial-upsampler-path"] = args.spatial_upsampler_path
         missing = [name for name, value in required.items() if value is None]
         if missing:
-            raise ValueError(f"Official LTX-2.5 distilled backend is missing: {', '.join(missing)}")
-
-        from ltx_pipelines.distilled import DistilledPipeline
+            raise ValueError(f"Official LTX-2.5 split backend is missing: {', '.join(missing)}")
 
         model_paths = ModelPaths.from_split(
             transformer_path=str(args.transformer_path),
@@ -200,29 +204,76 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
             video_vae_path=str(args.video_vae_path),
             audio_vae_path=str(args.audio_vae_path),
         )
-        pipeline = DistilledPipeline(
-            model_paths=model_paths,
-            spatial_upsampler_path=str(args.spatial_upsampler_path),
-            loras=(),
-            offload_mode=offload_mode,
-        )
-        if args.connector_model is not None:
-            _use_diffusers_connector_weights(pipeline.prompt_encoder, args.connector_model)
-        _configure_official_sdpa(pipeline)
-        video, audio, _, _ = pipeline(
-            prompt=request["prompt"],
-            seed=request["seed"],
-            height=request["height"],
-            width=request["width"],
-            num_frames=request["num_frames"],
-            frame_rate=request["fps"],
-            images=images,
-        )
+        if args.official_pipeline == "distilled_two_stage":
+            from ltx_pipelines.distilled import DistilledPipeline
+
+            pipeline = DistilledPipeline(
+                model_paths=model_paths,
+                spatial_upsampler_path=str(args.spatial_upsampler_path),
+                loras=(),
+                offload_mode=offload_mode,
+            )
+            if args.connector_model is not None:
+                _use_diffusers_connector_weights(pipeline.prompt_encoder, args.connector_model)
+            _configure_official_sdpa(pipeline)
+            video, audio, _, _ = pipeline(
+                prompt=request["prompt"],
+                seed=request["seed"],
+                height=request["height"],
+                width=request["width"],
+                num_frames=request["num_frames"],
+                frame_rate=request["fps"],
+                images=images,
+            )
+            pipeline_name = "DistilledPipeline"
+        else:
+            from ltx_core.components.guiders import MultiModalGuiderParams
+            from ltx_pipelines.ti2vid_one_stage import TI2VidOneStagePipeline
+
+            pipeline = TI2VidOneStagePipeline(
+                model_paths=model_paths,
+                loras=(),
+                offload_mode=offload_mode,
+            )
+            if args.connector_model is not None:
+                _use_diffusers_connector_weights(pipeline.prompt_encoder, args.connector_model)
+            _configure_official_sdpa(pipeline)
+            request_sigmas = request.get("sigmas")
+            video, audio, _ = pipeline(
+                prompt=request["prompt"],
+                negative_prompt=request["negative_prompt"],
+                seed=request["seed"],
+                height=request["height"],
+                width=request["width"],
+                num_frames=request["num_frames"],
+                frame_rate=request["fps"],
+                num_inference_steps=request["num_inference_steps"],
+                video_guider_params=MultiModalGuiderParams(
+                    cfg_scale=request["video_cfg_scale"],
+                    stg_scale=request["video_stg_scale"],
+                    rescale_scale=request["video_rescale_scale"],
+                    modality_scale=request["video_modality_scale"],
+                    skip_step=0,
+                    stg_blocks=request["video_stg_blocks"],
+                ),
+                audio_guider_params=MultiModalGuiderParams(
+                    cfg_scale=request["audio_cfg_scale"],
+                    stg_scale=request["audio_stg_scale"],
+                    rescale_scale=request["audio_rescale_scale"],
+                    modality_scale=request["audio_modality_scale"],
+                    skip_step=0,
+                    stg_blocks=request["audio_stg_blocks"],
+                ),
+                images=images,
+                max_batch_size=4,
+                sigmas=None if request_sigmas is None else torch.tensor(request_sigmas, dtype=torch.float32),
+            )
+            pipeline_name = "TI2VidOneStagePipeline"
         checkpoint_metadata = {
             "transformer_path": str(args.transformer_path),
             "video_vae_path": str(args.video_vae_path),
             "connector_model": None if args.connector_model is None else str(args.connector_model),
-            "pipeline": "DistilledPipeline",
+            "pipeline": pipeline_name,
         }
     else:
         if args.checkpoint is None or args.gemma_root is None:
@@ -281,6 +332,8 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
             "backend": "official",
             "attention_backend": "torch_sdpa",
             "official_revision": os.environ.get("VLLM_TEST_LTX_OFFICIAL_REVISION"),
+            "seed": request["seed"],
+            "sigmas": request.get("sigmas"),
             **checkpoint_metadata,
         },
     )
@@ -417,6 +470,8 @@ def _run_omni(args: argparse.Namespace, request: dict[str, Any]) -> None:
             metadata={
                 "backend": "omni",
                 "attention_backend": "torch_sdpa",
+                "seed": request["seed"],
+                "sigmas": request.get("sigmas"),
                 "model": args.model,
                 "model_class_name": model_class_name,
             },

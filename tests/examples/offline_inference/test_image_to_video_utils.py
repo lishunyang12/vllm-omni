@@ -71,15 +71,3 @@ def test_ltx25_i2v_one_stage_defaults_remain_low_resolution():
     assert not _is_ltx2_two_stage_pipeline("LTX2Pipeline")
     assert _ltx25_i2v_defaults("2.5", "LTX2Pipeline") == (24, None, 121, 30, None, 544 * 960, 32)
     assert _ltx25_i2v_defaults("2.3", "LTX2Pipeline") is None
-
-
-def test_ltx25_i2v_two_stage_full_uses_full_schedule():
-    assert _ltx25_i2v_defaults("2.5", "LTX2TwoStagePipeline", "full") == (
-        24,
-        None,
-        121,
-        30,
-        None,
-        1088 * 1920,
-        64,
-    )

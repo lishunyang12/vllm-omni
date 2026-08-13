@@ -19,14 +19,7 @@ from diffusers.pipelines.ltx2.latent_upsampler import LTX2LatentUpsamplerModel
 from diffusers.pipelines.ltx2.vocoder import LTX2Vocoder
 from diffusers.video_processor import VideoProcessor
 from huggingface_hub import hf_hub_download
-from tokenizers import Tokenizer
-from transformers import (
-    CONFIG_MAPPING,
-    AutoModelForImageTextToText,
-    AutoTokenizer,
-    Gemma3ForConditionalGeneration,
-    PreTrainedTokenizerFast,
-)
+from transformers import AutoModelForImageTextToText, AutoTokenizer, Gemma3ForConditionalGeneration
 
 from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
 from vllm_omni.diffusion.attention.layer import Attention as OmniAttention
@@ -35,18 +28,10 @@ from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 from vllm_omni.diffusion.model_loader.hub_prefetch import from_pretrained_with_prefetch, prefetch_subfolders
 from vllm_omni.diffusion.offloader.module_collector import ModuleDiscovery
-from vllm_omni.diffusion.utils.hf_utils import is_ltx25_raw_checkpoint
 
 if TYPE_CHECKING:
     from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
 
-from .ltx2_raw_checkpoint import (
-    LTX2RawCheckpointLayout,
-    convert_ltx2_scheduler_config,
-    inspect_ltx2_raw_checkpoint,
-    load_ltx2_embedded_gemma_assets,
-    materialize_ltx2_raw_checkpoint,
-)
 from .ltx2_transformer import (
     LTX2VideoTransformer3DModel,
     apply_interleaved_rotary_emb,
@@ -139,22 +124,6 @@ LTX25_FULL_COMPONENT_PROFILE = LTXComponentProfile(
 )
 
 
-LTX25_FULL_TWO_STAGE_COMPONENT_PROFILE = LTXComponentProfile(
-    name="ltx2_5_full_two_stage",
-    dit_modules=("transformer",),
-    encoder_modules=("text_encoder", "connectors"),
-    vae_modules=("vae", "audio_vae"),
-    resident_modules=("vocoder", "latent_upsampler"),
-    video_vae_cls=DistributedAutoencoderKLLTX2Video,
-    vocoder_cls=LTX2VocoderWithBWE or LTX2Vocoder,
-    vocoder_fallback_cls=LTX2Vocoder,
-    text_encoder_cls=_LTX25_TEXT_ENCODER_CLS,
-    transformer_subfolder="transformer_full",
-    scheduler_use_dynamic_shifting=True,
-    scheduler_shift_terminal=0.1,
-)
-
-
 LTX2_DISTILLED_COMPONENT_PROFILE = LTXComponentProfile(
     name="ltx2_distilled",
     dit_modules=("transformer",),
@@ -183,7 +152,6 @@ _COMPONENT_PROFILES: dict[tuple[str, str, LTXCheckpointVariant], LTXComponentPro
     ("one_stage", "2.5", "full"): LTX25_FULL_COMPONENT_PROFILE,
     ("two_stage", "2", "distilled"): LTX2_DISTILLED_COMPONENT_PROFILE,
     ("two_stage", "2.5", "distilled"): LTX25_DISTILLED_COMPONENT_PROFILE,
-    ("two_stage", "2.5", "full"): LTX25_FULL_TWO_STAGE_COMPONENT_PROFILE,
     ("dmd2", "2", "distilled"): LTX2_COMPONENT_PROFILE,
     ("dmd2", "2.3", "distilled"): LTX23_COMPONENT_PROFILE,
 }
@@ -230,8 +198,8 @@ def resolve_ltx_checkpoint_variant(
             "Official LTX does not define a distilled one-stage pipeline. Use "
             "LTX2TwoStagePipeline with task_type='distilled', or select task_type='full' for LTX2Pipeline."
         )
-    if model_version != "2.5" and pipeline_kind == "two_stage" and variant == "full":
-        raise ValueError("Full guided two-stage execution is currently supported for LTX-2.5 checkpoints only.")
+    if pipeline_kind == "two_stage" and variant == "full":
+        raise ValueError("Full guided two-stage LTX execution is not supported by this pipeline.")
     return variant
 
 
@@ -276,9 +244,6 @@ def detect_ltx_model_version(model: str, revision: str | None = None) -> str:
     expose LTX-2.5 through the Gemma4 Unified text encoder and LTX-2.3 through
     the BWE vocoder. Unknown conversions retain the official LTX-2 fallback.
     """
-    if is_ltx25_raw_checkpoint(model, revision=revision):
-        return "2.5"
-
     model_index = _load_ltx_metadata_json(model, "model_index.json", revision)
     model_version = str(model_index.get("model_version", ""))
     if model_version.startswith("2.5"):
@@ -428,13 +393,6 @@ def _install_connector_attention(connectors: LTX2TextConnectors) -> None:
 
 def _detect_vocoder_output_sample_rate(model: str, revision: str | None = None) -> int | None:
     """Read the generated waveform sample rate from the vocoder config."""
-    # The official split LTX-2.5 checkpoint embeds the vocoder config in the
-    # safetensors header instead of publishing ``vocoder/config.json``. Its
-    # BWE vocoder has a fixed 48 kHz output rate; avoid downloading the large
-    # weight file merely to inspect that header during post-processing setup.
-    if is_ltx25_raw_checkpoint(model, revision=revision):
-        return 48_000
-
     vocoder_config_path = os.path.join(model, "vocoder", "config.json")
     if not os.path.exists(vocoder_config_path):
         try:
@@ -504,118 +462,6 @@ def _place_aux_components(pipeline: Any) -> None:
         module.to(pipeline.device)
 
 
-def _raw_component_source(
-    layout: LTX2RawCheckpointLayout,
-    path: os.PathLike[str],
-    revision: str | None,
-) -> DiffusersPipelineLoader.ComponentSource:
-    relative_path = os.path.relpath(path, layout.root)
-    return DiffusersPipelineLoader.ComponentSource(
-        model_or_path=str(layout.root),
-        subfolder=os.path.dirname(relative_path),
-        revision=revision,
-        prefix="",
-        fall_back_to_pt=False,
-        allow_patterns_overrides=[os.path.basename(relative_path)],
-    )
-
-
-def _build_ltx2_raw_weight_sources(
-    layout: LTX2RawCheckpointLayout,
-    revision: str | None,
-    *,
-    include_latent_upsampler: bool,
-) -> list[DiffusersPipelineLoader.ComponentSource]:
-    paths = [layout.transformer, layout.text_encoder, layout.audio_vae, layout.video_vae]
-    if include_latent_upsampler:
-        if layout.latent_upsampler is None:
-            raise ValueError("LTX-2.5 two-stage execution requires the latent upsampler weights.")
-        paths.append(layout.latent_upsampler)
-    return [_raw_component_source(layout, path, revision) for path in paths]
-
-
-def _build_ltx2_raw_tokenizer(assets: dict[str, bytes]) -> PreTrainedTokenizerFast:
-    tokenizer_config = json.loads(assets.get("tokenizer_config.json", b"{}"))
-    tokenizer = PreTrainedTokenizerFast(
-        tokenizer_object=Tokenizer.from_buffer(assets["tokenizer.json"]),
-        **tokenizer_config,
-    )
-    if chat_template := assets.get("chat_template.jinja"):
-        tokenizer.chat_template = chat_template.decode("utf-8")
-    return tokenizer
-
-
-def _initialize_raw_pipeline_components(pipeline: Any, od_config: Any, dtype: torch.dtype) -> None:
-    """Construct components for the official split BF16 checkpoint.
-
-    Only the official ConvVAE tensor layout is mapped today. The separate
-    DiffVAE decoder requires QKV splitting and gated-convolution folding and is
-    rejected instead of being advertised as a working raw-checkpoint path.
-    """
-
-    decoder_type = getattr(od_config, "ltx2_video_decoder_type", "conv")
-    if decoder_type != "conv":
-        raise ValueError(
-            "Official raw LTX-2.5 checkpoints currently support only the ConvVAE decoder; "
-            "DiffVAE tensor mapping is not implemented."
-        )
-    if pipeline.component_profile.text_encoder_cls is None:
-        raise ImportError("LTX-2.5 requires Gemma4UnifiedForConditionalGeneration. Install transformers>=5.10.1,<5.15.")
-    if LTX2VocoderWithBWE is None:
-        raise ImportError("Official LTX-2.5 audio decoding requires diffusers with LTX2VocoderWithBWE support.")
-
-    revision = getattr(od_config, "revision", None)
-    require_upsampler = "latent_upsampler" in pipeline.component_profile.resident_modules
-    layout = materialize_ltx2_raw_checkpoint(
-        od_config.model,
-        checkpoint_variant=pipeline.checkpoint_variant,
-        video_decoder_type="conv",
-        require_latent_upsampler=require_upsampler,
-        revision=revision,
-    )
-    metadata = inspect_ltx2_raw_checkpoint(layout)
-    if metadata.model_version is not None and not metadata.model_version.startswith("2.5"):
-        raise ValueError(f"Expected LTX-2.5 raw components, found model_version={metadata.model_version!r}.")
-
-    pipeline._ltx2_raw_checkpoint = True
-    pipeline._ltx2_raw_checkpoint_layout = layout
-    pipeline.weights_sources = _build_ltx2_raw_weight_sources(
-        layout, revision, include_latent_upsampler=require_upsampler
-    )
-    pipeline.tokenizer = _build_ltx2_raw_tokenizer(load_ltx2_embedded_gemma_assets(layout.text_encoder))
-
-    model_type = metadata.gemma.get("model_type")
-    if not isinstance(model_type, str) or model_type not in CONFIG_MAPPING:
-        raise ValueError(f"Unsupported embedded LTX-2.5 text encoder model_type: {model_type!r}.")
-    gemma_config = CONFIG_MAPPING[model_type].from_dict(metadata.gemma)
-    with torch.device("cpu"):
-        pipeline.text_encoder = pipeline.component_profile.text_encoder_cls.from_config(gemma_config, dtype=dtype)
-
-    pipeline.connectors = LTX2TextConnectors.from_config(metadata.connectors)
-    _install_connector_attention(pipeline.connectors)
-    pipeline.vae = DistributedAutoencoderKLLTX2Video.from_config(metadata.video_vae)
-    pipeline.vae.init_distributed()
-    pipeline.audio_vae = AutoencoderKLLTX2Audio.from_config(metadata.audio_vae)
-    pipeline.vocoder = LTX2VocoderWithBWE.from_config(metadata.vocoder)
-
-    if require_upsampler:
-        if metadata.latent_upsampler is None:
-            raise ValueError("Official LTX-2.5 two-stage execution requires latent upsampler metadata.")
-        with torch.device("cpu"):
-            pipeline.latent_upsampler = LTX2LatentUpsamplerModel.from_config(metadata.latent_upsampler)
-
-    quant_config = getattr(od_config, "quantization_config", None)
-    pipeline.transformer = create_transformer_from_config(metadata.transformer, quant_config=quant_config)
-    _place_aux_components(pipeline)
-    pipeline.scheduler = FlowMatchEulerDiscreteScheduler.from_config(convert_ltx2_scheduler_config(metadata.scheduler))
-    if pipeline.component_profile.scheduler_use_dynamic_shifting:
-        pipeline.scheduler = FlowMatchEulerDiscreteScheduler.from_config(
-            pipeline.scheduler.config,
-            use_dynamic_shifting=True,
-            shift_terminal=pipeline.component_profile.scheduler_shift_terminal,
-        )
-
-
 def initialize_pipeline_components(pipeline: Any, od_config: Any) -> None:
     """Build the common LTX component graph selected by ``component_profile``."""
     profile: LTXComponentProfile = pipeline.component_profile
@@ -624,10 +470,6 @@ def initialize_pipeline_components(pipeline: Any, od_config: Any) -> None:
     dtype = getattr(od_config, "dtype", torch.bfloat16)
     model = od_config.model
     revision = getattr(od_config, "revision", None)
-    if is_ltx25_raw_checkpoint(model, revision=revision):
-        _initialize_raw_pipeline_components(pipeline, od_config, dtype)
-        _finalize_pipeline_components(pipeline)
-        return
     local_files_only = os.path.exists(model)
 
     pipeline.weights_sources = [

@@ -492,12 +492,13 @@ steps:
         commands:
           - |
             set +e
-            pytest -s -v tests/e2e/accuracy/ltx/test_ltx_official_similarity.py::test_ltx25_distilled_two_stage_matches_official -m full_model --run-level full_model
-            EXIT=$$?
-            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_official/ltx2_5_distilled/*.json" || true
-            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_official/ltx2_5_distilled/*/metadata.json" || true
-            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_official/ltx2_5_distilled/*/frame_*.png" || true
-            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_official/ltx2_5_distilled/*/output.mp4" || true
+            EXIT=0
+            pytest -s -v tests/e2e/accuracy/ltx/test_ltx_official_similarity.py::test_ltx25_distilled_two_stage_matches_official -m full_model --run-level full_model || EXIT=$$?
+            pytest -s -v tests/e2e/accuracy/ltx/test_ltx_official_similarity.py::test_ltx25_full_one_stage_matches_official -m full_model --run-level full_model || EXIT=$$?
+            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_official/ltx2_5_*/*.json" || true
+            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_official/ltx2_5_*/*/metadata.json" || true
+            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_official/ltx2_5_*/*/frame_*.png" || true
+            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/ltx_official/ltx2_5_*/*/output.mp4" || true
             exit $$EXIT
         mirror_hardwares: h100_1
 

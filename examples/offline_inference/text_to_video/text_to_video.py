@@ -11,7 +11,6 @@ import numpy as np
 import torch
 
 from vllm_omni.diffusion.data import DiffusionParallelConfig, resolve_model_class_name
-from vllm_omni.diffusion.models.ltx2.ltx2_components import detect_ltx_model_version
 from vllm_omni.diffusion.utils.param_utils import apply_declared_extra_args
 from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
@@ -124,14 +123,6 @@ _MODEL_PRESETS = {
         "fps": 24,
         "output": "ltx25_two_stage_distilled_output.mp4",
     },
-    "ltx25_two_stage_full": {
-        "height": 1088,
-        "width": 1920,
-        "num_frames": 121,
-        "num_inference_steps": 30,
-        "fps": 24,
-        "output": "ltx25_two_stage_full_output.mp4",
-    },
     "ltx25_full": {
         "height": 544,
         "width": 960,
@@ -149,31 +140,13 @@ _LTX2_TWO_STAGE_PIPELINE_NAMES = frozenset(
         "ltx2distilledpipeline",
     }
 )
-_LTX2_TASK_TYPE_COMPATIBILITY_ALIASES = {
-    "ltx2fullpipeline": "full",
-    "ltx2distilledpipeline": "distilled",
-}
 
 
 def _is_ltx2_two_stage_pipeline(model_class_name: str | None) -> bool:
     return (model_class_name or "").lower() in _LTX2_TWO_STAGE_PIPELINE_NAMES
 
 
-def _resolve_ltx25_task_type(model_class_name: str | None, task_type: str | None) -> str:
-    if task_type is not None:
-        return task_type
-    class_lower = (model_class_name or "").lower()
-    compatibility_task_type = _LTX2_TASK_TYPE_COMPATIBILITY_ALIASES.get(class_lower)
-    if compatibility_task_type is not None:
-        return compatibility_task_type
-    return "distilled" if _is_ltx2_two_stage_pipeline(model_class_name) else "full"
-
-
-def _detect_preset(
-    model: str,
-    model_class_name: str | None = None,
-    task_type: str | None = None,
-) -> dict:
+def _detect_preset(model: str, model_class_name: str | None = None) -> dict:
     model_lower = model.lower()
     model_class_name = model_class_name or resolve_model_class_name(model)
     class_lower = (model_class_name or "").lower()
@@ -181,12 +154,13 @@ def _detect_preset(
     if "lingbot" in model_lower or "lingbotvideo" in class_lower:
         return _MODEL_PRESETS["lingbot"]
     if "ltx" in class_lower or "ltx" in model_lower:
+        from vllm_omni.diffusion.models.ltx2.ltx2_components import detect_ltx_model_version
+
         ltx_version = detect_ltx_model_version(model) if "ltx2" in class_lower else None
         is_ltx25 = ltx_version == "2.5"
         if is_ltx25:
             if is_ltx_two_stage:
-                resolved_task_type = _resolve_ltx25_task_type(model_class_name, task_type)
-                return _MODEL_PRESETS[f"ltx25_two_stage_{resolved_task_type}"]
+                return _MODEL_PRESETS["ltx25_two_stage_distilled"]
             return _MODEL_PRESETS["ltx25_full"]
         if is_ltx_two_stage or "distilled" in model_lower:
             return _MODEL_PRESETS["ltx2_distilled"]
@@ -272,12 +246,6 @@ def parse_args() -> argparse.Namespace:
         "--model-class-name",
         default=None,
         help="Override model class name (e.g., LTX2Pipeline).",
-    )
-    parser.add_argument(
-        "--task-type",
-        choices=["full", "distilled"],
-        default=None,
-        help="Select model-defined checkpoint weights (for LTX-2.5: full or distilled).",
     )
     parser.add_argument(
         "--deploy-config",
@@ -509,7 +477,7 @@ def main():
     args = parse_args()
     model_class_name = args.model_class_name
 
-    preset = _detect_preset(args.model, model_class_name, args.task_type)
+    preset = _detect_preset(args.model, model_class_name)
     for key, default_val in preset.items():
         if getattr(args, key.replace("-", "_"), None) is None:
             setattr(args, key.replace("-", "_"), default_val)
@@ -554,7 +522,6 @@ def main():
         parallel_config=parallel_config,
         enforce_eager=args.enforce_eager,
         model_class_name=model_class_name,
-        task_type=args.task_type,
         cache_backend=args.cache_backend,
         cache_config=cache_config,
         enable_diffusion_pipeline_profiler=args.enable_diffusion_pipeline_profiler,
@@ -628,7 +595,6 @@ def main():
         "ltx23",
         "ltx25_full",
         "ltx25_two_stage_distilled",
-        "ltx25_two_stage_full",
     )
     if negative_prompt is None and all(preset is not _MODEL_PRESETS[name] for name in promptless_presets):
         # Preserve the historical empty-prompt behavior for non-LTX examples.

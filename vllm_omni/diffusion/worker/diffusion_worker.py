@@ -50,7 +50,6 @@ from vllm_omni.diffusion.distributed.parallel_state import (
 from vllm_omni.diffusion.forward_context import set_forward_context
 from vllm_omni.diffusion.ipc import DIFFUSION_RPC_RESULT_ENVELOPE, pack_diffusion_output_shm
 from vllm_omni.diffusion.lora.manager import DiffusionLoRAManager, LoRABackend
-from vllm_omni.diffusion.lora.raw_loader import resolve_ltx25_distilled_lora
 from vllm_omni.diffusion.registry import get_diffusion_ir_op_priority_func
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.sched.interface import DiffusionSchedulerOutput, KVPrefetchJob
@@ -393,42 +392,19 @@ class DiffusionWorker:
         lora_path = self.od_config.lora_path
         if isinstance(lora_path, list) and len(lora_path) == 1:
             lora_path = lora_path[0]
-        pipeline = self.model_runner.pipeline
-        resident_adapters = {
-            phase.resident_adapter
-            for phase in getattr(getattr(pipeline, "pipeline_recipe", None), "phases", ())
-            if getattr(phase, "resident_adapter", None) is not None
-        }
 
         lora_backend = self.od_config.lora_backend
-        if resident_adapters and lora_backend != LoRABackend.PEFT:
-            raise ValueError("LTX resident phase adapters require lora_backend=peft.")
         if lora_backend == LoRABackend.PEFT:
             self.lora_manager = DiffusionLoRAManager(
-                pipeline=pipeline,
+                pipeline=self.model_runner.pipeline,
                 device=self.device,
                 dtype=self.od_config.dtype,
                 max_cached_adapters=self.od_config.max_cpu_loras,
-                max_lora_slots=2 if resident_adapters else 1,
                 lora_path=lora_path,
                 lora_scale=self.od_config.lora_scale,
             )
-            if resident_adapters:
-                if resident_adapters != {"distilled_lora_450"}:
-                    raise ValueError(f"Unsupported resident diffusion adapters: {sorted(resident_adapters)}")
-                resident_path = resolve_ltx25_distilled_lora(
-                    str(self.od_config.model), revision=getattr(self.od_config, "revision", None)
-                )
-                self.lora_manager.load_resident_ltx_adapter("distilled_lora_450", resident_path, slot=1, scale=1.0)
-
-                def _set_phase_adapter(name: str | None, active: bool) -> None:
-                    if name is None:
-                        self.lora_manager.deactivate_resident_adapters()
-                    else:
-                        self.lora_manager.set_resident_adapter_active(name, active)
-
-                pipeline.set_phase_adapter_controller(_set_phase_adapter)
         elif lora_backend == LoRABackend.DISTILL:
+            pipeline = self.model_runner.pipeline
             if hasattr(pipeline, "load_lora_weights"):
                 if self.od_config.lora_scale > 1.0:
                     logger.warning("lora_scale > 1.0 may not take any effect when using distilled LoRA backend.")

@@ -40,7 +40,6 @@ class LTXPhaseRecipe:
     allow_guidance_override: bool = True
     use_official_sigma_schedule: bool = True
     sampler: Literal["euler", "euler_ancestral"] = "euler"
-    resident_adapter: Literal["distilled_lora_450"] | None = None
 
     def __post_init__(self) -> None:
         if self.spatial_downscale < 1:
@@ -217,46 +216,12 @@ LTX25_DISTILLED_TWO_STAGE_RECIPE = LTXPipelineRecipe(
 )
 
 
-LTX25_FULL_TWO_STAGE_RECIPE = LTXPipelineRecipe(
-    # Official TI2VidTwoStagesPipeline: guided Dev/Full generation at half
-    # resolution, then positive-only full-resolution refinement with the
-    # distilled LoRA 450 active. Official output keeps Stage-1 audio.
-    height=1088,
-    width=1920,
-    num_inference_steps=30,
-    phases=(
-        LTXPhaseRecipe(
-            name="generate_lowres",
-            guidance=_official_guidance(28),
-            spatial_downscale=2,
-            noise_scale=1.0,
-        ),
-        LTXPhaseRecipe(
-            name="refine_distilled_lora",
-            guidance=LTXGuidanceSpec.positive_only(),
-            sigmas=LTX_STAGE_2_DISTILLED_SIGMAS,
-            noise_scale=LTX_STAGE_2_DISTILLED_SIGMAS[0],
-            input_transform="spatial_upsample",
-            allow_guidance_override=False,
-            use_official_sigma_schedule=False,
-            resident_adapter="distilled_lora_450",
-        ),
-    ),
-    video_output_phase=1,
-    audio_output_phase=0,
-    allow_request_sigmas=False,
-    allow_request_phase_sigmas=True,
-    allow_request_latents=False,
-)
-
-
 _PIPELINE_RECIPES: dict[tuple[str, str, str], LTXPipelineRecipe] = {
     ("one_stage", "2", "full"): LTX2_ONE_STAGE_RECIPE,
     ("one_stage", "2.3", "full"): LTX23_ONE_STAGE_RECIPE,
     ("one_stage", "2.5", "full"): LTX25_FULL_RECIPE,
     ("two_stage", "2", "distilled"): LTX2_DISTILLED_TWO_STAGE_RECIPE,
     ("two_stage", "2.5", "distilled"): LTX25_DISTILLED_TWO_STAGE_RECIPE,
-    ("two_stage", "2.5", "full"): LTX25_FULL_TWO_STAGE_RECIPE,
     ("dmd2", "2", "distilled"): LTX_POSITIVE_ONLY_RECIPE,
     ("dmd2", "2.3", "distilled"): LTX_POSITIVE_ONLY_RECIPE,
 }
