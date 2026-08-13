@@ -99,11 +99,12 @@ def _insert_official_paths(official_root: Path) -> None:
 
 
 def _configure_official_sdpa(pipeline: Any) -> None:
-    """Use PyTorch SDPA for official connector and denoiser attention."""
+    """Pin official connector and denoiser attention to PyTorch SDPA MATH."""
     from ltx_core.loader.attention_ops import set_attention_module_op
     from ltx_core.model.transformer.attention import PytorchAttention
+    from torch.nn.attention import SDPBackend
 
-    attention = PytorchAttention()
+    attention = PytorchAttention(priority=[SDPBackend.MATH])
     module_op = set_attention_module_op(
         attention=attention,
         masked_attention=attention,
@@ -170,8 +171,6 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
     if args.official_root is None:
         raise ValueError("Official backend requires --official-root")
     _insert_official_paths(args.official_root)
-    # vLLM disables cuDNN SDPA during import; mirror the worker's attention dispatch.
-    torch.backends.cuda.enable_cudnn_sdp(False)
 
     from ltx_pipelines.utils.args import ImageConditioningInput
     from ltx_pipelines.utils.model_paths import ModelPaths
@@ -390,7 +389,7 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
         fps=float(request["fps"]),
         metadata={
             "backend": "official",
-            "attention_backend": "torch_sdpa",
+            "attention_backend": "torch_sdpa_math",
             "official_revision": os.environ.get("VLLM_TEST_LTX_OFFICIAL_REVISION"),
             "seed": request["seed"],
             "sigmas": request.get("sigmas"),
@@ -473,7 +472,7 @@ def _run_omni(args: argparse.Namespace, request: dict[str, Any]) -> None:
     if args.model is None or args.model_class_name is None:
         raise ValueError("Omni backend requires --model and --model-class-name")
 
-    attention_config = {"default": {"backend": "TORCH_SDPA"}}
+    attention_config = {"default": {"backend": "TORCH_SDPA", "sdpa_backends": ["MATH"]}}
 
     from vllm_omni.diffusion.data import DiffusionParallelConfig
     from vllm_omni.diffusion.utils.param_utils import apply_declared_extra_args
@@ -534,7 +533,7 @@ def _run_omni(args: argparse.Namespace, request: dict[str, Any]) -> None:
             fps=float(request["fps"]),
             metadata={
                 "backend": "omni",
-                "attention_backend": "torch_sdpa",
+                "attention_backend": "torch_sdpa_math",
                 "seed": request["seed"],
                 "sigmas": request.get("sigmas"),
                 "model": args.model,

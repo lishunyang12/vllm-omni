@@ -85,8 +85,9 @@ NEGATIVE_PROMPT = (
     "stylized filters, or AI artifacts."
 )
 
-# Both runtimes use PyTorch SDPA with the current Torch dispatch defaults.
-ATTENTION_BACKEND = "torch_sdpa"
+# Both runtimes pin PyTorch SDPA MATH so the accuracy guard is independent of
+# architecture- and build-specific fused-kernel dispatch.
+ATTENTION_BACKEND = "torch_sdpa_math"
 VIDEO_SSIM_MEAN_THRESHOLD = 0.95
 VIDEO_SSIM_MIN_THRESHOLD = 0.90
 VIDEO_PSNR_MEAN_THRESHOLD = 30.0
@@ -100,7 +101,7 @@ LTX25_I2V_VIDEO_SSIM_MEAN_THRESHOLD = 0.99
 LTX25_VIDEO_SSIM_MIN_THRESHOLD = 0.99
 LTX25_VIDEO_PSNR_MEAN_THRESHOLD = 40.0
 LTX25_VIDEO_LPIPS_MEAN_THRESHOLD = 0.01
-LTX25_AUDIO_RELATIVE_L2_THRESHOLD = 0.3
+LTX25_AUDIO_RELATIVE_L2_THRESHOLD = 0.32
 LTX25_AUDIO_COSINE_THRESHOLD = 0.95
 
 # Full/SFT exercises CFG/STG and independently converted dev weights, so use

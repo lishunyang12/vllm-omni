@@ -52,6 +52,23 @@ class TestAttentionSpec:
         with pytest.raises(ValueError, match="only supported by the TRTLLM_ATTN"):
             AttentionSpec(backend="TORCH_SDPA", skip_softmax={"target_sparsity": 0.5})
 
+    def test_sdpa_backends_normalized_and_serialized(self):
+        spec = AttentionSpec(backend="TORCH_SDPA", sdpa_backends="math")
+        assert spec.sdpa_backends == ["MATH"]
+        assert spec.backend_kwargs() == {"sdpa_backends": ["MATH"]}
+
+    @pytest.mark.parametrize(
+        "spec, match",
+        [
+            ({"backend": "FLASH_ATTN", "sdpa_backends": ["MATH"]}, "only supported by the TORCH_SDPA"),
+            ({"backend": "TORCH_SDPA", "sdpa_backends": []}, "must contain at least one"),
+            ({"backend": "TORCH_SDPA", "sdpa_backends": ["NOT_A_KERNEL"]}, "Unsupported sdpa_backends"),
+        ],
+    )
+    def test_sdpa_backends_validation_rejects(self, spec, match):
+        with pytest.raises(ValueError, match=match):
+            AttentionSpec(**spec)
+
     def test_quant_serialized_with_defaults_and_overrides(self):
         assert AttentionSpec(backend="TRTLLM_ATTN", quant={"dtype_qk": "fp8_e4m3"}).backend_kwargs()["quant"] == {
             "dtype_qk": "fp8_e4m3",
