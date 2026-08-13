@@ -12,6 +12,25 @@ DIFFUSION_MODEL_INDEX_FILES = (
     "modular_model_index.json",
 )
 
+_LTX25_OFFICIAL_REPO_ID = "lightricks/ltx-2.5"
+_LTX25_RAW_MARKERS = (
+    "diffusion_models/ltx-2.5-22b-distilled-transformer-bf16.safetensors",
+    "text_encoders/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
+)
+
+
+def is_ltx25_raw_checkpoint(model_name: str | None, *, revision: str | None = None) -> bool:
+    """Return whether a model uses the official LTX-2.5 split layout."""
+    if not model_name:
+        return False
+    normalized = str(model_name).rstrip("/")
+    del revision  # Remote revisions are enforced when the selected files are materialized.
+    if normalized.lower() == _LTX25_OFFICIAL_REPO_ID:
+        return True
+    return os.path.isdir(normalized) and all(
+        os.path.isfile(os.path.join(normalized, marker)) for marker in _LTX25_RAW_MARKERS
+    )
+
 
 def get_diffusion_model_index(
     model_name: str,
@@ -80,6 +99,10 @@ def is_diffusion_model(model_name: str) -> bool:
     2. Check using vllm's get_hf_file_to_dict utility
     3. Try the standard diffusers approach (may fail due to import issues)
     """
+    if is_ltx25_raw_checkpoint(model_name):
+        logger.debug("Detected official LTX-2.5 split checkpoint")
+        return True
+
     # Strategy 1: Check local file system first (fastest, avoids import issues)
     if os.path.isdir(model_name):
         for filename in DIFFUSION_MODEL_INDEX_FILES:

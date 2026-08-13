@@ -9,6 +9,7 @@ from typing import Literal
 from .ltx2_guidance import LTXGuidanceSpec, LTXModalityGuidance
 
 LTX_DEFAULT_NEGATIVE_PROMPT = (
+    "has_subtitles, has_blurbox, transition from black, transition to black, speech_ending_short, "
     "blurry, out of focus, overexposed, underexposed, low contrast, washed out colors, excessive noise, "
     "grainy texture, poor lighting, flickering, motion blur, distorted proportions, unnatural skin tones, "
     "deformed facial features, asymmetrical face, missing facial features, extra limbs, disfigured hands, "
@@ -39,6 +40,7 @@ class LTXPhaseRecipe:
     allow_guidance_override: bool = True
     use_official_sigma_schedule: bool = True
     sampler: Literal["euler", "euler_ancestral"] = "euler"
+    resident_adapter: Literal["distilled_lora_450"] | None = None
 
     def __post_init__(self) -> None:
         if self.spatial_downscale < 1:
@@ -119,25 +121,6 @@ LTX23_ONE_STAGE_RECIPE = LTXPipelineRecipe(
     supports_cache_dit=True,
     num_inference_steps=30,
     phases=(LTXPhaseRecipe(name="generate", guidance=_official_guidance(28)),),
-)
-LTX25_ONE_STAGE_RECIPE = LTXPipelineRecipe(
-    supports_cache_dit=True,
-    height=544,
-    width=960,
-    num_inference_steps=len(LTX_DISTILLED_SIGMAS) - 1,
-    phases=(
-        LTXPhaseRecipe(
-            name="generate",
-            guidance=LTXGuidanceSpec.positive_only(),
-            sigmas=LTX_DISTILLED_SIGMAS,
-            allow_guidance_override=False,
-            use_official_sigma_schedule=False,
-        ),
-    ),
-    negative_prompt="",
-    allow_request_sigmas=True,
-    allow_negative_prompt=False,
-    fixed_num_inference_steps=True,
 )
 LTX25_FULL_RECIPE = LTXPipelineRecipe(
     supports_cache_dit=True,
@@ -233,21 +216,61 @@ LTX25_DISTILLED_TWO_STAGE_RECIPE = LTXPipelineRecipe(
 )
 
 
-_PIPELINE_RECIPES: dict[tuple[str, str], LTXPipelineRecipe] = {
-    ("one_stage", "2"): LTX2_ONE_STAGE_RECIPE,
-    ("one_stage", "2.3"): LTX23_ONE_STAGE_RECIPE,
-    ("one_stage", "2.5"): LTX25_ONE_STAGE_RECIPE,
-    ("full", "2.5"): LTX25_FULL_RECIPE,
-    ("distilled_two_stage", "2"): LTX2_DISTILLED_TWO_STAGE_RECIPE,
-    ("distilled_two_stage", "2.5"): LTX25_DISTILLED_TWO_STAGE_RECIPE,
-    ("dmd2", "2"): LTX_POSITIVE_ONLY_RECIPE,
-    ("dmd2", "2.3"): LTX_POSITIVE_ONLY_RECIPE,
+LTX25_FULL_TWO_STAGE_RECIPE = LTXPipelineRecipe(
+    # Official TI2VidTwoStagesPipeline: guided Dev/Full generation at half
+    # resolution, then positive-only full-resolution refinement with the
+    # distilled LoRA 450 active. Official output keeps Stage-1 audio.
+    height=1088,
+    width=1920,
+    num_inference_steps=30,
+    phases=(
+        LTXPhaseRecipe(
+            name="generate_lowres",
+            guidance=_official_guidance(28),
+            spatial_downscale=2,
+            noise_scale=1.0,
+        ),
+        LTXPhaseRecipe(
+            name="refine_distilled_lora",
+            guidance=LTXGuidanceSpec.positive_only(),
+            sigmas=LTX_STAGE_2_DISTILLED_SIGMAS,
+            noise_scale=LTX_STAGE_2_DISTILLED_SIGMAS[0],
+            input_transform="spatial_upsample",
+            allow_guidance_override=False,
+            use_official_sigma_schedule=False,
+            resident_adapter="distilled_lora_450",
+        ),
+    ),
+    video_output_phase=1,
+    audio_output_phase=0,
+    allow_request_sigmas=False,
+    allow_request_phase_sigmas=True,
+    allow_request_latents=False,
+)
+
+
+_PIPELINE_RECIPES: dict[tuple[str, str, str], LTXPipelineRecipe] = {
+    ("one_stage", "2", "full"): LTX2_ONE_STAGE_RECIPE,
+    ("one_stage", "2.3", "full"): LTX23_ONE_STAGE_RECIPE,
+    ("one_stage", "2.5", "full"): LTX25_FULL_RECIPE,
+    ("two_stage", "2", "distilled"): LTX2_DISTILLED_TWO_STAGE_RECIPE,
+    ("two_stage", "2.5", "distilled"): LTX25_DISTILLED_TWO_STAGE_RECIPE,
+    ("two_stage", "2.5", "full"): LTX25_FULL_TWO_STAGE_RECIPE,
+    ("dmd2", "2", "distilled"): LTX_POSITIVE_ONLY_RECIPE,
+    ("dmd2", "2.3", "distilled"): LTX_POSITIVE_ONLY_RECIPE,
 }
 
 
-def resolve_ltx_pipeline_recipe(pipeline_kind: str, model_version: str) -> LTXPipelineRecipe:
+def resolve_ltx_pipeline_recipe(
+    pipeline_kind: str,
+    model_version: str,
+    checkpoint_variant: str,
+) -> LTXPipelineRecipe:
     """Resolve execution independently from component loading."""
     try:
-        return _PIPELINE_RECIPES[(pipeline_kind, model_version)]
+        return _PIPELINE_RECIPES[(pipeline_kind, model_version, checkpoint_variant)]
     except KeyError as exc:
-        raise ValueError(f"Unsupported LTX pipeline kind/version: {pipeline_kind!r}/{model_version!r}.") from exc
+        raise ValueError(
+            "Unsupported LTX pipeline topology/version/checkpoint variant: "
+            f"{pipeline_kind!r}/{model_version!r}/{checkpoint_variant!r}."
+        ) from exc

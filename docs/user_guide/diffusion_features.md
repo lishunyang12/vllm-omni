@@ -158,7 +158,7 @@ The following tables show which models support each feature:
 | **Wan2.1-VACE**              |     ❌     |     ✅      |           ✅           |       ✅        |         ✅         |         ❌         |   ✅    |             ✅             |      ✅ (decode)      |       ❌        |        ❌         |
 | **LTX-2**                    |     ❌     |     ✅      |           ✅           |       ✅        |         ✅         |         ❌         |   ✅    |             ✅             |      ✅ (decode)      |       ❌        |        ❌         |
 | **LTX-2.3**                  |     ❌     |     ✅      |           ✅           |       ✅        |         ✅         |         ❌         |   ✅    |             ✅             |      ✅ (decode)      |       ❌        |        ❌         |
-| **LTX-2.5**                  |     ❌     |     ❓      |  ❓ (Ulysses only)     |  ❓ (Full only) |         ❓         |         ❌         |   ✅    |             ✅             |          ❓           |       ❌        |        ❌         |
+| **LTX-2.5**                  |     ❌     |     ❓      |  ❓ (Ulysses only)     |  ❓ (Full only) |         ❓         |         ❌         |   ❓    |             ❓             |          ❓           |       ❓        |        ❌         |
 | **Helios**                   |     ❌     |     ✅      |           ✅           |       ✅        |         ✅         |         ❌         |   ✅    |             ✅             |          ❌           |       ❌        |        ✅*        |
 | **HunyuanVideo-1.5 T2V I2V** |     ❌     |     ✅      |           ✅           |       ✅        |         ✅         |         ❌         |   ✅    |             ✅             |  ✅ (encode/decode)   |       ✅        |        ❌         |
 | **DreamID-Omni**             |     ❌     |     ❌      |           ❌           |       ✅        |         ❌         |         ❌         |   ✅    |             ✅             |          ❌           |       ❌        |        ❌         |
@@ -169,11 +169,12 @@ The following tables show which models support each feature:
 > **Step execution note:** Helios supports single-request step execution only;
 > use `max_num_seqs=1`.
 
-> **LTX-2.5 qualification note:** Cache-DiT, strict Ulysses SP, TP, Full-only
-> CFG parallel, and VAE patch parallel are not release-qualified. Cache-DiT,
-> TP, and Ulysses can execute in limited configurations but did not pass the
-> fixed-seed quality gate. See the [LTX-2.5 recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/LTX/LTX-2.5.md)
-> for the tested matrix and constraints.
+> **LTX-2.5 qualification note:** the official raw split-checkpoint path is
+> documented, but its acceleration matrix is not yet release-qualified.
+> Diffusers-layout measurements are not carried over. Treat every ❓ entry as
+> unverified and not recommended until raw-checkpoint validation is recorded.
+> See the [LTX-2.5 recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/LTX/LTX-2.5.md)
+> for the pipeline and checkpoint-selection contract.
 
 **Frame Interpolation Support**
 

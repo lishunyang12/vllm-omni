@@ -38,9 +38,9 @@ class LTX2Pipeline(LTXI2VConditioningMixin, LTXRuntime):
 
 
 class LTX2FullPipeline(LTX2Pipeline):
-    """LTX-2.5 Full/SFT T2V and first-frame I2V entry."""
+    """Compatibility alias for one-stage LTX with Full/Dev weights."""
 
-    pipeline_kind = "full"
+    checkpoint_variant_override = "full"
     component_profile = LTX25_FULL_COMPONENT_PROFILE
     pipeline_recipe = LTX25_FULL_RECIPE
 

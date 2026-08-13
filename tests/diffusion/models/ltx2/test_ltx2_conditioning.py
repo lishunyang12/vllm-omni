@@ -221,7 +221,7 @@ class TestLTXImageToVideoForwardStages:
         with pytest.raises(ValueError, match="cannot mix text-to-video and image-to-video"):
             pipe._resolve_request_image(mixed_req, None, request_inputs)
 
-    def test_denoise_timestep_kwargs_masks_video_only(self):
+    def test_denoise_timestep_kwargs_masks_video_and_keeps_audio_per_token(self):
         from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
 
         pipe = object.__new__(LTX2Pipeline)
@@ -240,7 +240,7 @@ class TestLTXImageToVideoForwardStages:
         )
 
         torch.testing.assert_close(kwargs["timestep"], torch.tensor([[0.0, 2.0], [4.0, 0.0]]))
-        torch.testing.assert_close(kwargs["audio_timestep"], ts)
+        torch.testing.assert_close(kwargs["audio_timestep"], ts[:, None])
         torch.testing.assert_close(kwargs["sigma"], ts)
 
 

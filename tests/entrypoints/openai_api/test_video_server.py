@@ -500,6 +500,33 @@ def test_ltx_i2v_resize_policy_is_version_conditional(
     assert input_image.size == expected_size
 
 
+def test_ltx_i2v_resize_policy_threads_revision(monkeypatch):
+    engine = FakeAsyncOmni()
+    engine.model_class_name = "LTX2Pipeline"
+    engine.get_diffusion_od_config = lambda: SimpleNamespace(
+        model="org/model",
+        model_class_name="LTX2Pipeline",
+        revision="pinned-revision",
+    )
+    captured = {}
+
+    def fake_detect(model, revision=None):
+        captured.update(model=model, revision=revision)
+        return "2.5"
+
+    monkeypatch.setattr(
+        "vllm_omni.diffusion.models.ltx2.ltx2_components.detect_ltx_model_version",
+        fake_detect,
+    )
+    handler = OmniOpenAIServingVideo.for_diffusion(
+        diffusion_engine=engine,
+        model_name="fallback/model",
+    )
+
+    assert handler.preserves_reference_image_size
+    assert captured == {"model": "org/model", "revision": "pinned-revision"}
+
+
 def test_i2v_extra_params_dimensions_preserve_input_image_geometry(test_client, mocker: MockerFixture):
     image_bytes = _make_test_image_bytes((48, 48))
     mocker.patch(

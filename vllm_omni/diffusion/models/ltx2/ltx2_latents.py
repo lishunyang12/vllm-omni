@@ -144,6 +144,16 @@ def unpad_audio_latents(latents: torch.Tensor, num_frames: int) -> torch.Tensor:
     return latents[:, :num_frames]
 
 
+def clear_audio_padding(latents: torch.Tensor, num_frames: int) -> torch.Tensor:
+    """Keep SP-only audio padding outside the logical sampler state."""
+    if not 0 < num_frames <= latents.shape[1]:
+        raise ValueError(f"Audio frame count must be in [1, {latents.shape[1]}], got {num_frames}.")
+    if num_frames == latents.shape[1]:
+        return latents
+    padding = latents.new_zeros(latents.shape[0], latents.shape[1] - num_frames, latents.shape[2])
+    return torch.cat([latents[:, :num_frames], padding], dim=1)
+
+
 def get_sp_padded_audio_latent_length(audio_latent_length: int, sp_size: int) -> int:
     if sp_size > 1:
         audio_latent_length += (sp_size - (audio_latent_length % sp_size)) % sp_size
@@ -194,9 +204,7 @@ def prepare_video_latents(
         if latents.ndim != 3:
             raise ValueError(f"Provided `latents` has shape {latents.shape}, expected [batch, seq, features].")
         latents = create_noised_state(latents, noise_scale, generator).to(device=device, dtype=dtype)
-        if getattr(pipeline, "model_version", "2") == "2.5":
-            latents = official_video_token_layout(latents)
-        return latents
+        return official_video_token_layout(latents)
 
     num_frames, height, width = resolve_video_latent_shape(
         height,
@@ -218,9 +226,7 @@ def prepare_video_latents(
             f" size of {batch_size}. Make sure the batch size matches the length of the generators."
         )
     latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
-    if getattr(pipeline, "model_version", "2") == "2.5":
-        latents = official_video_token_layout(latents)
-    return latents
+    return official_video_token_layout(latents)
 
 
 def prepare_audio_latents(

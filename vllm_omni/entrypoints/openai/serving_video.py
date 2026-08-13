@@ -125,7 +125,8 @@ class OmniOpenAIServingVideo:
             return False
         from vllm_omni.diffusion.models.ltx2.ltx2_components import detect_ltx_model_version
 
-        return detect_ltx_model_version(str(model)) == "2.5"
+        revision = getattr(od_config, "revision", None) if od_config is not None else None
+        return detect_ltx_model_version(str(model), revision=revision) == "2.5"
 
     @property
     def supports_mixed_reference_inputs(self) -> bool:

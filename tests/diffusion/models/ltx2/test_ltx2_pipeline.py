@@ -13,16 +13,17 @@ import pytest
 import torch
 
 from vllm_omni.diffusion.data import DiffusionOutput
-from vllm_omni.diffusion.models.ltx2 import ltx2_components, ltx2_latents
+from vllm_omni.diffusion.models.ltx2 import ltx2_components, ltx2_latents, ltx2_runtime
 from vllm_omni.diffusion.models.ltx2.ltx2_components import (
     LTX2_COMPONENT_PROFILE,
     LTX2_DISTILLED_COMPONENT_PROFILE,
     LTX23_COMPONENT_PROFILE,
-    LTX25_COMPONENT_PROFILE,
     LTX25_DISTILLED_COMPONENT_PROFILE,
     LTX25_FULL_COMPONENT_PROFILE,
+    LTX25_FULL_TWO_STAGE_COMPONENT_PROFILE,
     _install_connector_attention,
     detect_ltx_model_version,
+    resolve_ltx_checkpoint_variant,
 )
 from vllm_omni.diffusion.models.ltx2.ltx2_conditioning import LTXI2VConditioningMixin
 from vllm_omni.diffusion.models.ltx2.ltx2_denoise import (
@@ -49,7 +50,7 @@ from vllm_omni.diffusion.models.ltx2.ltx2_recipes import (
     LTX23_ONE_STAGE_RECIPE,
     LTX25_DISTILLED_TWO_STAGE_RECIPE,
     LTX25_FULL_RECIPE,
-    LTX25_ONE_STAGE_RECIPE,
+    LTX25_FULL_TWO_STAGE_RECIPE,
     LTX_DEFAULT_NEGATIVE_PROMPT,
     LTX_DISTILLED_SIGMAS,
     LTX_POSITIVE_ONLY_RECIPE,
@@ -70,9 +71,10 @@ from vllm_omni.diffusion.models.ltx2.pipeline_ltx2_two_stage import (
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
 
 
-def test_ltx25_timestep_adaln_expands_per_token_like_official():
+@pytest.mark.parametrize("model_version", ["2", "2.3", "2.5"])
+def test_ltx_timestep_adaln_expands_per_token_like_official_without_sp(model_version):
     pipe = object.__new__(LTX2Pipeline)
-    pipe.model_version = "2.5"
+    pipe.model_version = model_version
     pipe.od_config = SimpleNamespace(parallel_config=SimpleNamespace(sequence_parallel_size=1))
     ts = torch.tensor([750.0, 500.0])
 
@@ -89,6 +91,41 @@ def test_ltx25_timestep_adaln_expands_per_token_like_official():
     torch.testing.assert_close(kwargs["audio_timestep"], ts[:, None].expand(-1, 3))
     assert kwargs["sigma"] is ts
     assert kwargs["audio_sigma"] is ts
+
+
+def test_ltx_ancestral_step_clears_sp_audio_padding_after_scheduler_update(monkeypatch):
+    state = LTXAVState(
+        video=torch.zeros(1, 2, 2),
+        audio=torch.zeros(1, 4, 2),
+    )
+    forward_ctx = SimpleNamespace(
+        original_audio_num_frames=3,
+        video_audio_step_adapter=SimpleNamespace(_sampler="euler_ancestral"),
+    )
+    denoise_ctx = SimpleNamespace(latents=None, audio_latents=None)
+    pipe = SimpleNamespace(
+        _predict_noise_for_step=lambda *_args: (torch.zeros_like(state.video), torch.zeros_like(state.audio))
+    )
+
+    def fake_step(_pipeline, actual_forward_ctx, _denoise_ctx, *_args):
+        assert actual_forward_ctx.video_audio_step_adapter._sampler == "euler_ancestral"
+        updated_audio = torch.ones_like(state.audio)
+        updated_audio[:, 3:] = 99.0
+        return torch.ones_like(state.video), updated_audio
+
+    monkeypatch.setattr(ltx2_runtime, "step_denoised_latents", fake_step)
+
+    actual = LTXRuntime._denoise_step(
+        pipe,
+        0,
+        torch.tensor(1.0),
+        state,
+        forward_ctx,
+        denoise_ctx,
+    )
+
+    torch.testing.assert_close(actual.audio[:, :3], torch.ones_like(actual.audio[:, :3]))
+    torch.testing.assert_close(actual.audio[:, 3:], torch.zeros_like(actual.audio[:, 3:]))
 
 
 def test_ltx25_first_causal_latent_frame_is_marked_for_keyframe_embedding():
@@ -160,14 +197,12 @@ def test_ltx_public_entries_share_runtime_and_keep_recipe_boundaries():
     assert LTX2TwoStagePipeline.component_profile is LTX2_DISTILLED_COMPONENT_PROFILE
     assert LTX2_COMPONENT_PROFILE.video_vae_cls is DistributedAutoencoderKLLTX2Video
     assert LTX23_COMPONENT_PROFILE.video_vae_cls is DistributedAutoencoderKLLTX2Video
-    assert LTX25_COMPONENT_PROFILE.video_vae_cls is DistributedAutoencoderKLLTX2Video
-    assert LTX25_COMPONENT_PROFILE.text_encoder_cls is ltx2_components.AutoModelForImageTextToText
     assert LTX25_FULL_COMPONENT_PROFILE.text_encoder_cls is ltx2_components.AutoModelForImageTextToText
     assert LTX25_DISTILLED_COMPONENT_PROFILE.text_encoder_cls is ltx2_components.AutoModelForImageTextToText
 
 
 def test_ltx25_missing_gemma4_recommends_supported_transformers_range(monkeypatch):
-    pipe = SimpleNamespace(component_profile=replace(LTX25_COMPONENT_PROFILE, text_encoder_cls=None))
+    pipe = SimpleNamespace(component_profile=replace(LTX25_FULL_COMPONENT_PROFILE, text_encoder_cls=None))
     od_config = SimpleNamespace(model="Lightricks/LTX-2.5-Diffusers", dtype=torch.bfloat16)
 
     monkeypatch.setattr(ltx2_components, "get_local_device", lambda: torch.device("cpu"))
@@ -180,6 +215,92 @@ def test_ltx25_missing_gemma4_recommends_supported_transformers_range(monkeypatc
     assert str(exc_info.value) == (
         "LTX-2.5 requires Gemma4UnifiedForConditionalGeneration. Install transformers>=5.10.1,<5.15."
     )
+
+
+def test_ltx_converted_component_loading_propagates_revision(monkeypatch):
+    revision = "pinned-revision"
+    calls = {"components": []}
+    profile = replace(
+        LTX25_FULL_TWO_STAGE_COMPONENT_PROFILE,
+        text_encoder_cls=object,
+        video_vae_cls=object,
+        vocoder_cls=object,
+        vocoder_fallback_cls=None,
+        scheduler_use_dynamic_shifting=False,
+    )
+    pipeline = SimpleNamespace(component_profile=profile)
+    od_config = SimpleNamespace(
+        model="org/converted-ltx25",
+        revision=revision,
+        dtype=torch.bfloat16,
+        quantization_config=None,
+    )
+
+    monkeypatch.setattr(ltx2_components, "is_ltx25_raw_checkpoint", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(ltx2_components, "get_local_device", lambda: torch.device("cpu"))
+    monkeypatch.setattr(ltx2_components, "_install_connector_attention", lambda _connectors: None)
+    monkeypatch.setattr(ltx2_components, "_place_aux_components", lambda _pipeline: None)
+
+    def fake_prefetch(model, subfolders, **kwargs):
+        calls["prefetch"] = (model, tuple(subfolders), kwargs)
+
+    def fake_tokenizer(*args, **kwargs):
+        calls["tokenizer"] = (args, kwargs)
+        return SimpleNamespace(model_max_length=1024)
+
+    def fake_component(component_cls, model, subfolder, **kwargs):
+        calls["components"].append((component_cls, model, subfolder, kwargs))
+        if subfolder == "vae":
+            return SimpleNamespace(spatial_compression_ratio=32, temporal_compression_ratio=8)
+        if subfolder == "audio_vae":
+            return SimpleNamespace(
+                mel_compression_ratio=4,
+                temporal_compression_ratio=4,
+                config=SimpleNamespace(sample_rate=16_000, mel_hop_length=160),
+            )
+        return object()
+
+    def fake_transformer_config(model, subfolder, local_files_only, *, revision):
+        calls["transformer_config"] = (model, subfolder, local_files_only, revision)
+        return {"component": "transformer"}
+
+    monkeypatch.setattr(ltx2_components, "prefetch_subfolders", fake_prefetch)
+    monkeypatch.setattr(ltx2_components.AutoTokenizer, "from_pretrained", fake_tokenizer)
+    monkeypatch.setattr(ltx2_components, "_load_component", fake_component)
+    monkeypatch.setattr(ltx2_components, "load_transformer_config", fake_transformer_config)
+    monkeypatch.setattr(
+        ltx2_components,
+        "create_transformer_from_config",
+        lambda *_args, **_kwargs: SimpleNamespace(config=SimpleNamespace(patch_size=1, patch_size_t=1)),
+    )
+
+    def fake_scheduler(*args, **kwargs):
+        calls["scheduler"] = (args, kwargs)
+        return object()
+
+    monkeypatch.setattr(ltx2_components.FlowMatchEulerDiscreteScheduler, "from_pretrained", fake_scheduler)
+
+    ltx2_components.initialize_pipeline_components(pipeline, od_config)
+
+    assert pipeline.weights_sources[0].revision == revision
+    assert calls["prefetch"][2]["revision"] == revision
+    assert calls["tokenizer"][1]["revision"] == revision
+    assert {call[2] for call in calls["components"]} == {
+        "text_encoder",
+        "connectors",
+        "vae",
+        "audio_vae",
+        "vocoder",
+        "latent_upsampler",
+    }
+    assert all(call[3]["revision"] == revision for call in calls["components"])
+    assert calls["transformer_config"] == (
+        od_config.model,
+        profile.transformer_subfolder,
+        False,
+        revision,
+    )
+    assert calls["scheduler"][1]["revision"] == revision
 
 
 def test_ltx_checkpoint_version_detection_uses_metadata(tmp_path):
@@ -206,7 +327,7 @@ def test_ltx_checkpoint_explicit_version_precedes_structural_heuristics(tmp_path
     assert detect_ltx_model_version(str(tmp_path)) == "2.3"
 
 
-def test_ltx25_checkpoint_selects_distilled_one_stage_profile(tmp_path, monkeypatch):
+def test_ltx25_checkpoint_selects_full_one_stage_profile(tmp_path, monkeypatch):
     from vllm_omni.diffusion.models.ltx2 import ltx2_runtime
 
     (tmp_path / "model_index.json").write_text(
@@ -223,28 +344,11 @@ def test_ltx25_checkpoint_selects_distilled_one_stage_profile(tmp_path, monkeypa
     pipe = LTX2Pipeline(od_config=SimpleNamespace(model=str(tmp_path), enable_diffusion_pipeline_profiler=False))
 
     assert pipe.model_version == "2.5"
-    assert pipe.component_profile is LTX25_COMPONENT_PROFILE
-    assert pipe.pipeline_recipe is LTX25_ONE_STAGE_RECIPE
+    assert pipe.checkpoint_variant == "full"
+    assert pipe.component_profile is LTX25_FULL_COMPONENT_PROFILE
+    assert pipe.pipeline_recipe is LTX25_FULL_RECIPE
     assert pipe.preserve_sp_padded_audio_duration
     assert pipe.reports_stage_durations
-
-
-def test_ltx25_one_stage_recipe_matches_official_distilled_defaults():
-    (phase,) = LTX25_ONE_STAGE_RECIPE.phases
-
-    assert (LTX25_ONE_STAGE_RECIPE.height, LTX25_ONE_STAGE_RECIPE.width) == (544, 960)
-    assert LTX25_ONE_STAGE_RECIPE.num_frames == 121
-    assert LTX25_ONE_STAGE_RECIPE.frame_rate == 24.0
-
-    assert LTX25_ONE_STAGE_RECIPE.num_inference_steps == 8
-    assert phase.guidance == LTXGuidanceSpec.positive_only()
-    assert phase.sigmas == LTX_DISTILLED_SIGMAS
-    assert not phase.allow_guidance_override
-    assert not phase.use_official_sigma_schedule
-    assert LTX25_ONE_STAGE_RECIPE.allow_request_sigmas
-    assert LTX25_ONE_STAGE_RECIPE.negative_prompt == ""
-    assert not LTX25_ONE_STAGE_RECIPE.allow_negative_prompt
-    assert LTX25_ONE_STAGE_RECIPE.fixed_num_inference_steps
 
 
 def test_ltx25_full_checkpoint_selects_sft_profile_and_recipe(tmp_path, monkeypatch):
@@ -338,11 +442,77 @@ def test_ltx25_checkpoint_selects_distilled_two_stage_profile(tmp_path, monkeypa
     monkeypatch.setattr(LTXRuntime, "setup_diffusion_pipeline_profiler", lambda *_args, **_kwargs: None)
 
     pipe = LTX2TwoStagePipeline(
-        od_config=SimpleNamespace(model=str(tmp_path), enable_diffusion_pipeline_profiler=False)
+        od_config=SimpleNamespace(
+            model=str(tmp_path),
+            task_type="distilled",
+            enable_diffusion_pipeline_profiler=False,
+        )
     )
 
+    assert pipe.checkpoint_variant == "distilled"
     assert pipe.component_profile is LTX25_DISTILLED_COMPONENT_PROFILE
     assert pipe.pipeline_recipe is LTX25_DISTILLED_TWO_STAGE_RECIPE
+
+
+def test_ltx_checkpoint_variant_is_independent_from_topology():
+    assert resolve_ltx_checkpoint_variant("one_stage", "2.5", "full") == "full"
+    assert resolve_ltx_checkpoint_variant("one_stage", "2.5", "dev") == "full"
+    assert resolve_ltx_checkpoint_variant("two_stage", "2.5", "distilled") == "distilled"
+    assert resolve_ltx_checkpoint_variant("two_stage", "2.5", "full") == "full"
+
+    with pytest.raises(ValueError, match="does not define a distilled one-stage"):
+        resolve_ltx_checkpoint_variant("one_stage", "2.5", "distilled")
+    with pytest.raises(ValueError, match="compatibility entry requires 'full'"):
+        resolve_ltx_checkpoint_variant(
+            "one_stage",
+            "2.5",
+            "distilled",
+            compatibility_override="full",
+        )
+
+
+def test_ltx25_checkpoint_selects_full_two_stage_profile(tmp_path, monkeypatch):
+    from vllm_omni.diffusion.models.ltx2 import ltx2_runtime
+
+    (tmp_path / "model_index.json").write_text(
+        json.dumps({"text_encoder": ["transformers", "Gemma4UnifiedForConditionalGeneration"]})
+    )
+
+    def stub_components(pipe, od_config):
+        pipe.od_config = od_config
+        pipe.vae_spatial_compression_ratio = 32
+
+    monkeypatch.setattr(ltx2_runtime, "initialize_pipeline_components", stub_components)
+    monkeypatch.setattr(LTXRuntime, "setup_diffusion_pipeline_profiler", lambda *_args, **_kwargs: None)
+
+    pipe = LTX2TwoStagePipeline(
+        od_config=SimpleNamespace(
+            model=str(tmp_path),
+            task_type="full",
+            enable_diffusion_pipeline_profiler=False,
+        )
+    )
+
+    assert pipe.checkpoint_variant == "full"
+    assert pipe.component_profile is LTX25_FULL_TWO_STAGE_COMPONENT_PROFILE
+    assert pipe.pipeline_recipe is LTX25_FULL_TWO_STAGE_RECIPE
+
+
+def test_ltx25_full_two_stage_recipe_matches_official_handoff():
+    stage1, stage2 = LTX25_FULL_TWO_STAGE_RECIPE.phases
+
+    assert (LTX25_FULL_TWO_STAGE_RECIPE.height, LTX25_FULL_TWO_STAGE_RECIPE.width) == (1088, 1920)
+    assert LTX25_FULL_TWO_STAGE_RECIPE.num_inference_steps == 30
+    assert stage1.spatial_downscale == 2
+    assert stage1.guidance.do_cfg
+    assert stage1.sigmas is None
+    assert stage1.use_official_sigma_schedule
+    assert stage2.guidance == LTXGuidanceSpec.positive_only()
+    assert stage2.sigmas == (0.909375, 0.725, 0.421875, 0.0)
+    assert stage2.input_transform == "spatial_upsample"
+    assert stage2.resident_adapter == "distilled_lora_450"
+    assert LTX25_FULL_TWO_STAGE_RECIPE.video_output_phase == 1
+    assert LTX25_FULL_TWO_STAGE_RECIPE.audio_output_phase == 0
 
 
 def test_ltx25_distilled_two_stage_recipe_matches_model_card_resolution():
@@ -365,7 +535,6 @@ def test_ltx25_distilled_two_stage_recipe_matches_model_card_resolution():
     [
         LTX2_ONE_STAGE_RECIPE,
         LTX23_ONE_STAGE_RECIPE,
-        LTX25_ONE_STAGE_RECIPE,
         LTX25_FULL_RECIPE,
         LTX_POSITIVE_ONLY_RECIPE,
     ],
@@ -379,6 +548,7 @@ def test_ltx_one_stage_recipes_declare_cache_dit_supported(recipe):
     [
         LTX2_DISTILLED_TWO_STAGE_RECIPE,
         LTX25_DISTILLED_TWO_STAGE_RECIPE,
+        LTX25_FULL_TWO_STAGE_RECIPE,
     ],
 )
 def test_ltx_multistage_recipes_declare_cache_dit_unsupported(recipe):
@@ -1329,64 +1499,6 @@ def test_ltx_two_stage_recipe_rejects_sigmas():
             pipeline_name="LTX2TwoStagePipeline",
             request_sigmas=[1.0, 0.0],
         )
-
-
-def test_ltx25_one_stage_recipe_accepts_custom_sigmas():
-    request = LTXRequestInputs(
-        prompt="prompt",
-        negative_prompt="",
-        height=64,
-        width=64,
-        num_frames=1,
-        frame_rate=24.0,
-        num_inference_steps=3,
-        guidance=LTXGuidanceSpec.positive_only(),
-        num_videos_per_prompt=1,
-        generator=None,
-        latents=None,
-        audio_latents=None,
-        prompt_embeds=None,
-        negative_prompt_embeds=None,
-        prompt_attention_mask=None,
-        negative_prompt_attention_mask=None,
-        decode_timestep=0.0,
-        decode_noise_scale=None,
-        output_type="np",
-        max_sequence_length=16,
-    )
-
-    with pytest.raises(ValueError, match="at least two"):
-        validate_pipeline_request(
-            request,
-            pipeline_recipe=LTX25_ONE_STAGE_RECIPE,
-            vae_spatial_compression_ratio=32,
-            vae_temporal_compression_ratio=8,
-            pipeline_name="LTX2Pipeline",
-            request_sigmas=[],
-        )
-
-    validate_pipeline_request(
-        request,
-        pipeline_recipe=LTX25_ONE_STAGE_RECIPE,
-        vae_spatial_compression_ratio=32,
-        vae_temporal_compression_ratio=8,
-        pipeline_name="LTX2Pipeline",
-        request_sigmas=[1.0, 0.5, 0.0],
-    )
-
-    for rejected_request in (
-        replace(request, negative_prompt="negative"),
-        replace(request, negative_prompt_embeds=torch.empty(1)),
-    ):
-        with pytest.raises(ValueError, match="negative conditioning"):
-            validate_pipeline_request(
-                rejected_request,
-                pipeline_recipe=LTX25_ONE_STAGE_RECIPE,
-                vae_spatial_compression_ratio=32,
-                vae_temporal_compression_ratio=8,
-                pipeline_name="LTX2Pipeline",
-                request_sigmas=[1.0, 0.5, 0.0],
-            )
 
 
 @pytest.mark.parametrize(

@@ -24,6 +24,7 @@ from vllm.lora.utils import (
 from vllm.model_executor.layers.linear import MergedColumnParallelLinear, QKVParallelLinear
 
 from vllm_omni.config.lora import LoRAConfig
+from vllm_omni.diffusion.lora.raw_loader import load_ltx_native_lora
 from vllm_omni.diffusion.lora.utils import (
     _expand_expected_modules_for_packed_layers,
     _match_target_modules,
@@ -56,6 +57,7 @@ class DiffusionLoRAManager:
         dtype: torch.dtype,
         max_cached_adapters: int = 1,
         lora_path: str | None = None,
+        max_lora_slots: int = 1,
         lora_scale: float = 1.0,
     ):
         """
@@ -69,6 +71,9 @@ class DiffusionLoRAManager:
         self.pipeline = pipeline
         self.device = device
         self.dtype = dtype
+        if max_lora_slots < 1:
+            raise ValueError("max_lora_slots must be at least 1")
+        self.max_lora_slots = max_lora_slots
 
         # Cache supported/expected module suffixes once, before any layer
         # replacement happens. After LoRA layers are injected, the original
@@ -87,6 +92,8 @@ class DiffusionLoRAManager:
         self._registered_adapters: dict[int, LoRAModel] = {}  # adapter_id -> LoRAModel
         self._active_adapter_id: int | None = None
         self._adapter_scales: dict[int, float] = {}  # adapter_id -> external scale
+        self._resident_adapters: dict[int, tuple[str, int, LoRAModel, float, bool]] = {}
+        self._resident_adapter_slots: dict[str, int] = {}
 
         # LRU cache tracking (adapter_id -> last_used_time)
         self._adapter_access_order: OrderedDict[int, float] = OrderedDict()
@@ -366,8 +373,8 @@ class DiffusionLoRAManager:
         # dummy lora config
         lora_config = LoRAConfig(
             max_lora_rank=self._max_lora_rank,
-            max_loras=1,
-            max_cpu_loras=self.max_cached_adapters,
+            max_loras=self.max_lora_slots,
+            max_cpu_loras=max(self.max_cached_adapters, self.max_lora_slots),
             lora_dtype=self.dtype,
             fully_sharded_loras=False,
         )
@@ -432,7 +439,7 @@ class DiffusionLoRAManager:
             for module_name, full_module_name, module, packed_modules_list in pending_replacements:
                 lora_layer = from_layer_diffusion(
                     layer=module,
-                    max_loras=1,
+                    max_loras=self.max_lora_slots,
                     lora_config=lora_config,
                     packed_modules_list=packed_modules_list,
                     model_config=None,
@@ -463,26 +470,30 @@ class DiffusionLoRAManager:
 
         lora_config = LoRAConfig(
             max_lora_rank=self._max_lora_rank,
-            max_loras=1,
-            max_cpu_loras=self.max_cached_adapters,
+            max_loras=self.max_lora_slots,
+            max_cpu_loras=max(self.max_cached_adapters, self.max_lora_slots),
             lora_dtype=self.dtype,
             fully_sharded_loras=False,
         )
 
         # Recreate per-layer buffers with the new maximum rank.
         for lora_layer in self._lora_modules.values():
-            lora_layer.create_lora_weights(max_loras=1, lora_config=lora_config, model_config=None)
+            lora_layer.create_lora_weights(max_loras=self.max_lora_slots, lora_config=lora_config, model_config=None)
 
-        # Re-apply active adapter if needed (buffers were reset).
+        # Re-apply adapters after buffer recreation.
         if self._active_adapter_id is not None:
             active_id = self._active_adapter_id
             active_scale = self._adapter_scales[active_id]
             self._active_adapter_id = None
             self._activate_adapter(active_id, active_scale)
+        for slot, (name, adapter_id, _model, scale, active) in self._resident_adapters.items():
+            self._activate_adapter(adapter_id, scale, slot=slot, resident=True)
+            self.set_resident_adapter_active(name, active)
 
     @classmethod
     def _get_smallest_valid_max_rank(cls, min_rank: int) -> int:
         """Given a LoRA rank, get the smallest max rank that can support it."""
+
         if min_rank <= 0:
             raise ValueError(f"Invalid LoRA rank: {min_rank}")
 
@@ -523,13 +534,14 @@ class DiffusionLoRAManager:
         matches_scale = self._adapter_scales.get(adapter_id) == rounded_scale
         return is_active and matches_scale
 
-    def _activate_adapter(self, adapter_id: int, scale: float) -> None:
-        if self._is_active_at_scale(adapter_id, scale):
+    def _activate_adapter(self, adapter_id: int, scale: float, *, slot: int = 0, resident: bool = False) -> None:
+        if not resident and self._is_active_at_scale(adapter_id, scale):
             logger.debug("Adapter %d already active at scale %.3f skipping", adapter_id, scale)
             return
 
         logger.info("Activating adapter: id=%d", adapter_id)
-        lora_model = self._registered_adapters[adapter_id]
+        lora_model = self._resident_adapters[slot][2] if resident else self._registered_adapters[adapter_id]
+        activated_layers = 0
 
         # activate weights in each LoRA layer
         for full_module_name, lora_layer in self._lora_modules.items():
@@ -541,7 +553,7 @@ class DiffusionLoRAManager:
                     prefix, _, packed_suffix = full_module_name.rpartition(".")
                     sub_suffixes = self._get_packed_sublayer_suffixes(packed_suffix, n_slices)
                     if sub_suffixes is None:
-                        lora_layer.reset_lora(0)
+                        lora_layer.reset_lora(slot)
                         continue
 
                     sub_loras: list[LoRALayerWeights | None] = []
@@ -557,7 +569,7 @@ class DiffusionLoRAManager:
                         sub_loras.append(sub_lora if isinstance(sub_lora, LoRALayerWeights) else None)
 
                     if not any_found:
-                        lora_layer.reset_lora(0)
+                        lora_layer.reset_lora(slot)
                         continue
 
                     lora_a_list: list[torch.Tensor | None] = []
@@ -570,7 +582,8 @@ class DiffusionLoRAManager:
                         lora_a_list.append(sub_lora.lora_a)
                         lora_b_list.append(sub_lora.lora_b * scale)
 
-                    lora_layer.set_lora(index=0, lora_a=lora_a_list, lora_b=lora_b_list)
+                    lora_layer.set_lora(index=slot, lora_a=lora_a_list, lora_b=lora_b_list)
+                    activated_layers += 1
                     logger.debug(
                         "Activated packed LoRA for %s via submodules=%s (scale=%.2f)",
                         full_module_name,
@@ -578,7 +591,7 @@ class DiffusionLoRAManager:
                         scale,
                     )
                 else:
-                    lora_layer.reset_lora(0)
+                    lora_layer.reset_lora(slot)
                 continue
 
             # Packed LoRA weights already provide per-slice tensors.
@@ -588,7 +601,8 @@ class DiffusionLoRAManager:
                     None if b is None else b * scale  # type: ignore[operator]
                     for b in lora_weights.lora_b
                 ]
-                lora_layer.set_lora(index=0, lora_a=lora_a_list, lora_b=lora_b_list)
+                lora_layer.set_lora(index=slot, lora_a=lora_a_list, lora_b=lora_b_list)
+                activated_layers += 1
                 logger.debug(
                     "Activated packed LoRA for %s (scale=%.2f)",
                     full_module_name,
@@ -601,7 +615,7 @@ class DiffusionLoRAManager:
             if n_slices > 1:
                 output_slices = getattr(lora_layer, "output_slices", None)
                 if output_slices is None:
-                    lora_layer.reset_lora(0)
+                    lora_layer.reset_lora(slot)
                     continue
 
                 total = sum(output_slices)
@@ -612,13 +626,14 @@ class DiffusionLoRAManager:
                         lora_weights.lora_b.shape[0],
                         total,
                     )
-                    lora_layer.reset_lora(0)
+                    lora_layer.reset_lora(slot)
                     continue
 
                 b_splits = list(torch.split(lora_weights.lora_b, list(output_slices), dim=0))
                 lora_a_list = [lora_weights.lora_a] * n_slices
                 lora_b_list = [b * scale for b in b_splits]
-                lora_layer.set_lora(index=0, lora_a=lora_a_list, lora_b=lora_b_list)
+                lora_layer.set_lora(index=slot, lora_a=lora_a_list, lora_b=lora_b_list)
+                activated_layers += 1
                 logger.debug(
                     "Activated fused LoRA for packed layer %s (scale=%.2f)",
                     full_module_name,
@@ -627,7 +642,8 @@ class DiffusionLoRAManager:
                 continue
 
             scaled_lora_b = lora_weights.lora_b * scale
-            lora_layer.set_lora(index=0, lora_a=lora_weights.lora_a, lora_b=scaled_lora_b)
+            lora_layer.set_lora(index=slot, lora_a=lora_weights.lora_a, lora_b=scaled_lora_b)
+            activated_layers += 1
             logger.debug(
                 "Activated LoRA for %s: lora_a shape=%s, lora_b shape=%s, scale=%.2f",
                 full_module_name,
@@ -636,8 +652,13 @@ class DiffusionLoRAManager:
                 scale,
             )
 
-        self._active_adapter_id = adapter_id
-        self._update_adapter_scale(adapter_id, scale)
+        if resident and activated_layers == 0:
+            raise RuntimeError(
+                f"Resident LTX LoRA adapter {self._resident_adapters[slot][0]!r} matched zero transformer layers."
+            )
+        if not resident:
+            self._active_adapter_id = adapter_id
+            self._update_adapter_scale(adapter_id, scale)
 
     def _deactivate_all_adapters(self) -> None:
         if self._active_adapter_id is None:
@@ -739,3 +760,42 @@ class DiffusionLoRAManager:
         self._adapter_access_order.move_to_end(adapter_id)
         logger.info("Pinned adapter id=%d (won't be evicted)", adapter_id)
         return True
+
+    def load_resident_ltx_adapter(
+        self,
+        name: str,
+        path: str,
+        *,
+        slot: int = 1,
+        scale: float = 1.0,
+    ) -> None:
+        """Load one official raw LTX adapter into a non-request resident slot."""
+        if slot <= 0 or slot >= self.max_lora_slots:
+            raise ValueError(f"Resident LoRA slot {slot} is outside [1, {self.max_lora_slots}).")
+        if name in self._resident_adapter_slots:
+            raise ValueError(f"Resident LoRA adapter {name!r} is already loaded.")
+        adapter_id = stable_lora_int_id(path)
+        model, helper = load_ltx_native_lora(path, lora_model_id=adapter_id, dtype=self.dtype)
+        self._replace_layers_with_lora(helper)
+        self._resident_adapters[slot] = (name, adapter_id, model, scale, False)
+        self._resident_adapter_slots[name] = slot
+        self._activate_adapter(adapter_id, scale, slot=slot, resident=True)
+        self.set_resident_adapter_active(name, False)
+
+    def set_resident_adapter_active(self, name: str, active: bool) -> None:
+        """Toggle a resident slot on every wrapped layer without clearing weights."""
+        try:
+            slot = self._resident_adapter_slots[name]
+        except KeyError as exc:
+            raise RuntimeError(f"Required resident LoRA adapter {name!r} is not loaded.") from exc
+        resident_name, adapter_id, model, scale, _current = self._resident_adapters[slot]
+        for layer in self._lora_modules.values():
+            toggle = getattr(layer, "set_lora_active", None)
+            if toggle is None:
+                raise RuntimeError(f"LoRA layer {type(layer).__name__} cannot toggle a resident slot safely.")
+            toggle(slot, active)
+        self._resident_adapters[slot] = (resident_name, adapter_id, model, scale, active)
+
+    def deactivate_resident_adapters(self) -> None:
+        for name in tuple(self._resident_adapter_slots):
+            self.set_resident_adapter_active(name, False)

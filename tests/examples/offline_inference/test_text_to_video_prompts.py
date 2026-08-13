@@ -54,6 +54,31 @@ def test_detect_preset_is_scoped_to_model_family(
     assert _detect_preset(model, model_class_name) is _MODEL_PRESETS[preset_name]
 
 
+@pytest.mark.parametrize(
+    ("model_class_name", "task_type", "preset_name"),
+    [
+        ("LTX2Pipeline", None, "ltx25_full"),
+        ("LTX2Pipeline", "full", "ltx25_full"),
+        ("LTX2TwoStagePipeline", None, "ltx25_two_stage_distilled"),
+        ("LTX2TwoStagePipeline", "distilled", "ltx25_two_stage_distilled"),
+        ("LTX2TwoStagePipeline", "full", "ltx25_two_stage_full"),
+        ("LTX2FullPipeline", None, "ltx25_full"),
+        ("LTX2DistilledPipeline", None, "ltx25_two_stage_distilled"),
+    ],
+)
+def test_ltx25_preset_uses_topology_and_task_type(
+    tmp_path,
+    model_class_name: str,
+    task_type: str | None,
+    preset_name: str,
+) -> None:
+    (tmp_path / "model_index.json").write_text(
+        '{"text_encoder": ["transformers", "Gemma4UnifiedForConditionalGeneration"]}'
+    )
+
+    assert _detect_preset(str(tmp_path), model_class_name, task_type) is _MODEL_PRESETS[preset_name]
+
+
 def test_lingbot_preset_matches_lingbot_defaults() -> None:
     assert _MODEL_PRESETS["lingbot"] == {
         "model_class_name": "LingBotVideoPipeline",

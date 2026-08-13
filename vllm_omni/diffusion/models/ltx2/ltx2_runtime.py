@@ -28,9 +28,11 @@ from vllm_omni.platforms import current_omni_platform
 
 from . import ltx2_latents as latent_ops
 from .ltx2_components import (
+    LTXCheckpointVariant,
     LTXComponentProfile,
     detect_ltx_model_version,
     initialize_pipeline_components,
+    resolve_ltx_checkpoint_variant,
     resolve_ltx_component_profile,
 )
 from .ltx2_conditioning import LTXPromptContext, LTXTextConditioningMixin
@@ -124,6 +126,7 @@ class LTXRuntime(
     """Shared Omni runtime for recipe-driven LTX denoise phases."""
 
     pipeline_kind: ClassVar[str] = "one_stage"
+    checkpoint_variant_override: ClassVar[LTXCheckpointVariant | None] = None
     component_profile: ClassVar[LTXComponentProfile]
     pipeline_recipe: ClassVar[LTXPipelineRecipe]
     guidance_executor: ClassVar[LTXGuidanceExecutor] = LTX_GUIDANCE_EXECUTOR
@@ -143,9 +146,19 @@ class LTXRuntime(
                 f"{self.__class__.__name__} does not support ulysses_mode='advanced_uaa'. "
                 "Use the default ulysses_mode='strict' for LTX sequence parallelism."
             )
-        self.model_version = detect_ltx_model_version(od_config.model)
-        self.component_profile = resolve_ltx_component_profile(self.pipeline_kind, self.model_version)
-        self.pipeline_recipe = resolve_ltx_pipeline_recipe(self.pipeline_kind, self.model_version)
+        self.model_version = detect_ltx_model_version(od_config.model, revision=getattr(od_config, "revision", None))
+        self.checkpoint_variant = resolve_ltx_checkpoint_variant(
+            self.pipeline_kind,
+            self.model_version,
+            getattr(od_config, "task_type", None),
+            compatibility_override=self.checkpoint_variant_override,
+        )
+        self.component_profile = resolve_ltx_component_profile(
+            self.pipeline_kind, self.model_version, self.checkpoint_variant
+        )
+        self.pipeline_recipe = resolve_ltx_pipeline_recipe(
+            self.pipeline_kind, self.model_version, self.checkpoint_variant
+        )
         if getattr(od_config, "cache_backend", "none") == "cache_dit" and not self.pipeline_recipe.supports_cache_dit:
             raise ValueError(
                 f"{self.__class__.__name__} does not support cache_backend='cache_dit'. "
@@ -161,6 +174,7 @@ class LTXRuntime(
             self.reports_stage_durations = True
         super().__init__()
         self._guidance_plan = LTXGuidancePlan.build(self.pipeline_recipe.request_guidance)
+        self._phase_adapter_controller = None
         initialize_pipeline_components(self, od_config)
         self.setup_diffusion_pipeline_profiler(
             enable_diffusion_pipeline_profiler=self.od_config.enable_diffusion_pipeline_profiler
@@ -250,44 +264,53 @@ class LTXRuntime(
         image: Any | None = None,
     ) -> DiffusionOutput | list[DiffusionOutput]:
         """Execute one- and multi-phase recipes through the same control flow."""
+        required_adapters = {
+            phase.resident_adapter for phase in self.pipeline_recipe.phases if phase.resident_adapter is not None
+        }
+        if required_adapters and self._phase_adapter_controller is None:
+            raise RuntimeError(
+                f"LTX recipe requires resident adapters {sorted(required_adapters)}, but they were not loaded."
+            )
         phase_results: list[LTXPhaseResult] = []
         prompt_context = None
-
-        for phase_index, phase_recipe in enumerate(self.pipeline_recipe.phases):
-            override_sigmas = None if request_phase_sigmas is None else request_phase_sigmas[phase_index]
-            phase_sigmas = (
-                override_sigmas
-                if override_sigmas is not None
-                else (
-                    request_sigmas
-                    if request_sigmas is not None
-                    else (list(phase_recipe.sigmas) if phase_recipe.sigmas is not None else None)
+        try:
+            for phase_index, phase_recipe in enumerate(self.pipeline_recipe.phases):
+                override_sigmas = None if request_phase_sigmas is None else request_phase_sigmas[phase_index]
+                phase_sigmas = (
+                    override_sigmas
+                    if override_sigmas is not None
+                    else (
+                        request_sigmas
+                        if request_sigmas is not None
+                        else (list(phase_recipe.sigmas) if phase_recipe.sigmas is not None else None)
+                    )
                 )
-            )
-            self._enter_phase(phase_recipe)
-            phase_inputs = self._build_phase_inputs(
-                request_inputs,
-                phase_recipe,
-                phase_results[-1] if phase_results else None,
-            )
-            if phase_sigmas is not None:
-                phase_inputs = replace(phase_inputs, num_inference_steps=len(phase_sigmas) - 1)
-            noise_scale = phase_recipe.noise_scale
-            if override_sigmas is not None and phase_recipe.input_transform == "spatial_upsample":
-                noise_scale = float(override_sigmas[0])
-            phase_result = self.run_phase(
-                req,
-                phase_inputs,
-                noise_scale=noise_scale,
-                sigmas=phase_sigmas,
-                timesteps=None,
-                attention_kwargs=None,
-                phase_recipe=phase_recipe,
-                image=image,
-                prompt_context=prompt_context,
-            )
-            phase_results.append(phase_result)
-            prompt_context = phase_result.forward_context.prompt_context
+                self._enter_phase(phase_recipe)
+                phase_inputs = self._build_phase_inputs(
+                    request_inputs,
+                    phase_recipe,
+                    phase_results[-1] if phase_results else None,
+                )
+                if phase_sigmas is not None:
+                    phase_inputs = replace(phase_inputs, num_inference_steps=len(phase_sigmas) - 1)
+                noise_scale = phase_recipe.noise_scale
+                if override_sigmas is not None and phase_recipe.input_transform == "spatial_upsample":
+                    noise_scale = float(override_sigmas[0])
+                phase_result = self.run_phase(
+                    req,
+                    phase_inputs,
+                    noise_scale=noise_scale,
+                    sigmas=phase_sigmas,
+                    timesteps=None,
+                    attention_kwargs=None,
+                    phase_recipe=phase_recipe,
+                    image=image,
+                    prompt_context=prompt_context,
+                )
+                phase_results.append(phase_result)
+                prompt_context = phase_result.forward_context.prompt_context
+        finally:
+            self._deactivate_phase_adapters()
 
         final_context = phase_results[-1].forward_context
         output_phase = LTXPhaseResult(
@@ -298,8 +321,21 @@ class LTXRuntime(
         return self.decode_phase(output_phase)
 
     def _enter_phase(self, phase: LTXPhaseRecipe) -> None:
-        """Hook for a future phase-weight strategy."""
+        """Activate guidance and any resident adapter for this denoise phase."""
         self._active_phase_name = phase.name
+        self._guidance_plan = LTXGuidancePlan.build(phase.guidance)
+        self._deactivate_phase_adapters()
+        if phase.resident_adapter is not None:
+            assert self._phase_adapter_controller is not None
+            self._phase_adapter_controller(phase.resident_adapter, True)
+
+    def set_phase_adapter_controller(self, controller) -> None:
+        self._phase_adapter_controller = controller
+
+    def _deactivate_phase_adapters(self) -> None:
+        controller = getattr(self, "_phase_adapter_controller", None)
+        if controller is not None:
+            controller(None, False)
 
     def prepare_latents(
         self,
@@ -650,13 +686,11 @@ class LTXRuntime(
         audio_token_count: int,
     ) -> dict[str, torch.Tensor]:
         del forward_ctx, denoise_ctx
-        parallel_config = getattr(getattr(self, "od_config", None), "parallel_config", None)
-        sp_size = int(getattr(parallel_config, "sequence_parallel_size", 1) or 1)
         return self.guidance_executor.timestep_kwargs(
             ts,
             video_token_count,
             audio_token_count,
-            expand_for_sequence_parallel=sp_size > 1 or getattr(self, "model_version", "2") == "2.5",
+            expand_for_sequence_parallel=True,
         )
 
     def _video_guidance_model_sigma(
@@ -742,6 +776,7 @@ class LTXRuntime(
             noise_pred_audio,
             timestep,
         )
+        audio = latent_ops.clear_audio_padding(audio, forward_ctx.original_audio_num_frames)
         return latent_ops.LTXAVState(video=video, audio=audio)
 
     def _unpack_and_denormalize_stage(

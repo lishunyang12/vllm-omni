@@ -14,9 +14,9 @@ from .pipeline_ltx2 import LTX2Pipeline
 
 
 class LTX2TwoStagePipeline(LTX2Pipeline):
-    """Unified LTX distilled two-stage T2V/I2V entry."""
+    """Unified LTX two-stage T2V/I2V entry; weights are selected separately."""
 
-    pipeline_kind = "distilled_two_stage"
+    pipeline_kind = "two_stage"
     component_profile = LTX2_DISTILLED_COMPONENT_PROFILE
     pipeline_recipe = LTX2_DISTILLED_TWO_STAGE_RECIPE
     supports_request_batch = False
@@ -29,3 +29,5 @@ class LTX2TwoStagePipeline(LTX2Pipeline):
 
 class LTX2DistilledPipeline(LTX2TwoStagePipeline):
     """Backward-compatible name for :class:`LTX2TwoStagePipeline`."""
+
+    checkpoint_variant_override = "distilled"

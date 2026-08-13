@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-"""Online serving smoke for the canonical LTX-2.5 Diffusers checkpoint."""
+"""Online serving smoke for the official LTX-2.5 split checkpoint."""
 
 import os
 
@@ -13,8 +13,8 @@ from tests.helpers.runtime import OmniServer, OmniServerParams
 
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
-DEFAULT_MODEL = "Lightricks/LTX-2.5-Diffusers"
-DEFAULT_REVISION = "a6de4b5354f078db24d9cf4778c14846788aea3d"
+DEFAULT_MODEL = "Lightricks/LTX-2.5"
+DEFAULT_REVISION = "ce298b1259d61ce6c87e05154b9ad339b16f32a0"
 MODEL = os.getenv("VLLM_TEST_LTX25_MODEL", DEFAULT_MODEL)
 MODEL_REVISION = os.getenv("VLLM_TEST_LTX25_MODEL_REVISION", DEFAULT_REVISION if MODEL == DEFAULT_MODEL else "")
 PROMPT = "A red fox walks through a snowy forest while the camera remains fixed."
@@ -28,11 +28,7 @@ def _cases():
         pytest.param(
             OmniServerParams(
                 model=MODEL,
-                # Pin the runtime class explicitly so --revision applies to both
-                # metadata and weights instead of consulting model HEAD first.
                 server_args=[
-                    "--model-class-name",
-                    "LTX2Pipeline",
                     *(["--revision", MODEL_REVISION] if MODEL_REVISION else []),
                     "--enforce-eager",
                     "--enable-layerwise-offload",
@@ -40,7 +36,7 @@ def _cases():
                     "CUDNN_ATTN",
                 ],
             ),
-            id="one_stage_pinned_sync",
+            id="default_distilled_two_stage_pinned_sync",
             marks=SINGLE_CARD_MARKS,
         )
     ]
@@ -48,7 +44,7 @@ def _cases():
 
 @pytest.mark.parametrize("omni_server", _cases(), indirect=True)
 def test_ltx25_sync_video(omni_server: OmniServer) -> None:
-    """Serve the pinned one-stage pipeline and return an MP4 from ``/v1/videos/sync``."""
+    """Serve the default distilled two-stage pipeline and return an MP4."""
     response = requests.post(
         f"http://{omni_server.host}:{omni_server.port}/v1/videos/sync",
         data={

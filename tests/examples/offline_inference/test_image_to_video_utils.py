@@ -55,9 +55,9 @@ def test_ltx25_local_checkpoint_uses_metadata_driven_example_defaults(tmp_path):
         "height": 544,
         "width": 960,
         "num_frames": 121,
-        "num_inference_steps": 8,
+        "num_inference_steps": 30,
         "fps": 24,
-        "output": "ltx25_output.mp4",
+        "output": "ltx25_full_output.mp4",
     }
 
 
@@ -69,5 +69,17 @@ def test_ltx25_i2v_two_stage_defaults_accept_canonical_and_compatibility_names(m
 
 def test_ltx25_i2v_one_stage_defaults_remain_low_resolution():
     assert not _is_ltx2_two_stage_pipeline("LTX2Pipeline")
-    assert _ltx25_i2v_defaults("2.5", "LTX2Pipeline") == (24, None, 121, 8, None, 544 * 960, 32)
+    assert _ltx25_i2v_defaults("2.5", "LTX2Pipeline") == (24, None, 121, 30, None, 544 * 960, 32)
     assert _ltx25_i2v_defaults("2.3", "LTX2Pipeline") is None
+
+
+def test_ltx25_i2v_two_stage_full_uses_full_schedule():
+    assert _ltx25_i2v_defaults("2.5", "LTX2TwoStagePipeline", "full") == (
+        24,
+        None,
+        121,
+        30,
+        None,
+        1088 * 1920,
+        64,
+    )

@@ -37,12 +37,16 @@ class DiffusionBaseLinearLayerWithLoRA(BaseLinearLayerWithLoRA):
         base_layer = modules.get("base_layer") or object.__getattribute__(self, "__dict__").get("base_layer")
         object.__setattr__(self, "_diffusion_base_layer_ref", base_layer)
         n_slices = getattr(self, "n_slices", 1)
-        self._diffusion_lora_active_slices = (False,) * int(n_slices)
+        empty_slices = (False,) * int(n_slices)
+        self._diffusion_lora_loaded_slices = [empty_slices for _ in range(max_loras)]
+        self._diffusion_lora_active_slices = [empty_slices for _ in range(max_loras)]
 
     def reset_lora(self, index: int):
         super().reset_lora(index)
         n_slices = getattr(self, "n_slices", 1)
-        self._diffusion_lora_active_slices = (False,) * int(n_slices)
+        empty_slices = (False,) * int(n_slices)
+        self._diffusion_lora_loaded_slices[index] = empty_slices
+        self._diffusion_lora_active_slices[index] = empty_slices
 
     def set_lora(
         self,
@@ -61,10 +65,17 @@ class DiffusionBaseLinearLayerWithLoRA(BaseLinearLayerWithLoRA):
                 active_slices.append(a_i is not None and b_i is not None)
             if len(active_slices) < n_slices:
                 active_slices.extend([False] * (n_slices - len(active_slices)))
-            self._diffusion_lora_active_slices = tuple(active_slices)
+            loaded_slices = tuple(active_slices)
         else:
             # Single-slice layer.
-            self._diffusion_lora_active_slices = (True,)
+            loaded_slices = (True,)
+        self._diffusion_lora_loaded_slices[index] = loaded_slices
+        self._diffusion_lora_active_slices[index] = loaded_slices
+
+    def set_lora_active(self, index: int, active: bool) -> None:
+        """Toggle a populated LoRA slot without clearing its resident tensors."""
+        loaded_slices = self._diffusion_lora_loaded_slices[index]
+        self._diffusion_lora_active_slices[index] = loaded_slices if active else (False,) * len(loaded_slices)
 
     def apply(self, x: torch.Tensor, bias: torch.Tensor | None = None) -> torch.Tensor:
         """
@@ -81,8 +92,8 @@ class DiffusionBaseLinearLayerWithLoRA(BaseLinearLayerWithLoRA):
         if not self.lora_a_stacked or not self.lora_b_stacked:
             return output
         # Fast path: if no LoRA is active for this layer, skip matmuls.
-        active_slices = getattr(self, "_diffusion_lora_active_slices", None)
-        if active_slices is not None and not any(active_slices):
+        active_slots = getattr(self, "_diffusion_lora_active_slices", None)
+        if active_slots is not None and not any(any(slices) for slices in active_slots):
             return output
 
         # In fully-sharded LoRA mode, vLLM uses an all-gather between shrink and
@@ -113,22 +124,26 @@ class DiffusionBaseLinearLayerWithLoRA(BaseLinearLayerWithLoRA):
 
         offset = 0
         for slice_idx, slice_size in enumerate(output_slices):
-            if active_slices is not None and slice_idx < len(active_slices) and not active_slices[slice_idx]:
-                offset += slice_size
-                continue
+            for slot_idx in range(self.lora_a_stacked[slice_idx].shape[0]):
+                if (
+                    active_slots is not None
+                    and slot_idx < len(active_slots)
+                    and slice_idx < len(active_slots[slot_idx])
+                    and not active_slots[slot_idx][slice_idx]
+                ):
+                    continue
 
-            A = self.lora_a_stacked[slice_idx][0, 0, :, :]  # (rank, in_dim)
-            B = self.lora_b_stacked[slice_idx][0, 0, :, :]  # (out_dim, rank)
+                A = self.lora_a_stacked[slice_idx][slot_idx, 0, :, :]  # (rank, in_dim)
+                B = self.lora_b_stacked[slice_idx][slot_idx, 0, :, :]  # (out_dim, rank)
 
-            if A.numel() == 0 or B.numel() == 0:
-                offset += slice_size
-                continue
+                if A.numel() == 0 or B.numel() == 0:
+                    continue
 
-            # LoRA shrink & expand as in add_lora_linear():
-            #   buffer = (x @ A.T)
-            #   y += buffer @ B.T
-            delta = (x_flat @ A.t()) @ B.t()
-            y_flat[:, offset : offset + slice_size] = y_flat[:, offset : offset + slice_size] + delta
+                # LoRA shrink & expand as in add_lora_linear():
+                #   buffer = (x @ A.T)
+                #   y += buffer @ B.T
+                delta = (x_flat @ A.t()) @ B.t()
+                y_flat[:, offset : offset + slice_size] = y_flat[:, offset : offset + slice_size] + delta
             offset += slice_size
 
         return y_flat.view(original_shape)

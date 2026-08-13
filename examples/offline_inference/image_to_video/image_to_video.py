@@ -122,6 +122,12 @@ def parse_args() -> argparse.Namespace:
         help="Override model class name (LTX checkpoints default to LTX2Pipeline).",
     )
     parser.add_argument(
+        "--task-type",
+        choices=["full", "distilled"],
+        default=None,
+        help="Select model-defined checkpoint weights (for LTX-2.5: full or distilled).",
+    )
+    parser.add_argument(
         "--deploy-config",
         default=None,
         help="Optional deploy config YAML to use for pipeline-backed runs.",
@@ -403,13 +409,17 @@ def _is_ltx2_two_stage_pipeline(model_class_name: str | None) -> bool:
 def _ltx25_i2v_defaults(
     ltx_version: str | None,
     model_class_name: str | None,
+    task_type: str | None = None,
 ) -> tuple[int, None, int, int, None, int, int] | None:
     """Return LTX-2.5 I2V defaults for canonical and compatibility entries."""
     if ltx_version != "2.5":
         return None
     if _is_ltx2_two_stage_pipeline(model_class_name):
-        return (24, None, 121, 8, None, 1088 * 1920, 64)
-    return (24, None, 121, 8, None, 544 * 960, 32)
+        if task_type is None:
+            task_type = "distilled"
+        steps = 30 if task_type == "full" else 8
+        return (24, None, 121, steps, None, 1088 * 1920, 64)
+    return (24, None, 121, 30, None, 544 * 960, 32)
 
 
 def main():
@@ -421,8 +431,8 @@ def main():
     ltx_version = _detect_ltx_checkpoint_version(args.model, model_class_name)
     is_ltx25 = ltx_version == "2.5"
     is_ltx2_two_stage = _is_ltx2_two_stage_pipeline(model_class_name)
-    ltx25_defaults = _ltx25_i2v_defaults(ltx_version, model_class_name)
-    is_ltx2_distilled = is_ltx2_two_stage or "distilled" in model_name
+    ltx25_defaults = _ltx25_i2v_defaults(ltx_version, model_class_name, args.task_type)
+    is_ltx2_distilled = is_ltx2_two_stage
     is_ltx23 = ltx_version == "2.3"
     is_ltx2 = ltx_version is not None
     is_cosmos = "cosmos" in model_name or (model_class_name is not None and "cosmos" in model_class_name.lower())
@@ -572,6 +582,7 @@ def main():
         parallel_config=parallel_config,
         enforce_eager=args.enforce_eager,
         model_class_name=model_class_name,
+        task_type=args.task_type,
         cache_backend=args.cache_backend,
         cache_config=cache_config,
         enable_diffusion_pipeline_profiler=args.enable_diffusion_pipeline_profiler,

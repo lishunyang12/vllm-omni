@@ -538,7 +538,11 @@ class DiffusionCacheConfig:
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}'")
 
 
-def resolve_model_class_name(model: str | None, diffusion_load_format: str = "default") -> str | None:
+def resolve_model_class_name(
+    model: str | None,
+    diffusion_load_format: str = "default",
+    revision: str | None = None,
+) -> str | None:
     """Resolve the diffusion pipeline class name from the model config.
 
     Read-only counterpart of ``OmniDiffusionConfig.enrich_config``, safe to call
@@ -546,15 +550,20 @@ def resolve_model_class_name(model: str | None, diffusion_load_format: str = "de
     """
     from vllm.transformers_utils.config import get_hf_file_to_dict
 
-    from vllm_omni.diffusion.utils.hf_utils import get_diffusion_model_index
+    from vllm_omni.diffusion.utils.hf_utils import (
+        get_diffusion_model_index,
+        is_ltx25_raw_checkpoint,
+    )
 
     if not model:
         return None
+    if is_ltx25_raw_checkpoint(model, revision=revision):
+        return "LTX2TwoStagePipeline"
 
     is_lance_subfolder = os.path.basename(str(model).rstrip("/")) in {"Lance_3B", "Lance_3B_Video"}
 
     # Diffusers models: read _class_name from the pipeline index.
-    model_index = get_diffusion_model_index(model)
+    model_index = get_diffusion_model_index(model, revision=revision)
     if model_index is not None:
         return model_index.get("_class_name")
     if diffusion_load_format == "diffusers":
@@ -562,7 +571,7 @@ def resolve_model_class_name(model: str | None, diffusion_load_format: str = "de
 
     # Other models: map model_type / architecture from config.json.
     try:
-        cfg = get_hf_file_to_dict("config.json", model) or {}
+        cfg = get_hf_file_to_dict("config.json", model, revision=revision) or {}
     except Exception:
         cfg = {}
     model_type = cfg.get("model_type")
@@ -1180,7 +1189,10 @@ class OmniDiffusionConfig:
         """
         from vllm.transformers_utils.config import get_hf_file_to_dict
 
-        from vllm_omni.diffusion.utils.hf_utils import get_diffusion_model_index
+        from vllm_omni.diffusion.utils.hf_utils import (
+            get_diffusion_model_index,
+            is_ltx25_raw_checkpoint,
+        )
 
         # Default model_class_name for diffusers adapter
         if self.model_class_name is None and self.diffusion_load_format == "diffusers":
@@ -1210,9 +1222,9 @@ class OmniDiffusionConfig:
                             exc,
                         )
                 else:
-                    tf_config_dict = get_hf_file_to_dict("transformer/config.json", self.model)
+                    tf_config_dict = get_hf_file_to_dict("transformer/config.json", self.model, revision=self.revision)
                     if tf_config_dict is None:
-                        tf_config_dict = get_hf_file_to_dict("unet/config.json", self.model)
+                        tf_config_dict = get_hf_file_to_dict("unet/config.json", self.model, revision=self.revision)
                     if tf_config_dict is not None:
                         self.set_tf_model_config(TransformerConfig.from_dict(tf_config_dict))
                     else:
@@ -1232,8 +1244,14 @@ class OmniDiffusionConfig:
                     "that require additional inputs."
                 )
             else:
-                cfg = get_hf_file_to_dict("config.json", self.model)
+                cfg = get_hf_file_to_dict("config.json", self.model, revision=self.revision)
                 if cfg is None:
+                    if is_ltx25_raw_checkpoint(self.model, revision=self.revision):
+                        if self.model_class_name is None:
+                            self.model_class_name = "LTX2TwoStagePipeline"
+                        self.set_tf_model_config(TransformerConfig())
+                        self.update_multimodal_support()
+                        return
                     # Lance ships its top-level config.json one directory above
                     # the per-checkpoint subfolders (``Lance_3B/`` or
                     # ``Lance_3B_Video/``).  Try to recover that case before

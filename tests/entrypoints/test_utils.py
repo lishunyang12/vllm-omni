@@ -290,6 +290,17 @@ class TestFilterDataclassKwargs:
 class TestResolveModelConfigPath:
     """Test suite for resolve_model_config_path function with diffusers format models."""
 
+    def test_ltx25_raw_checkpoint_uses_default_diffusion_stage(self, mocker: MockerFixture):
+        raw_predicate = mocker.patch(
+            "vllm_omni.entrypoints.utils.is_ltx25_raw_checkpoint",
+            return_value=True,
+        )
+        get_config_mock = mocker.patch("vllm_omni.entrypoints.utils.get_config")
+
+        assert resolve_model_config_path("Lightricks/LTX-2.5") is None
+        raw_predicate.assert_called_once_with("Lightricks/LTX-2.5")
+        get_config_mock.assert_not_called()
+
     def test_glm_image_diffusers_format_resolution(self, mocker: MockerFixture):
         """Test GlmImagePipeline diffusers class resolves to glm_image config."""
         mocker.patch(
