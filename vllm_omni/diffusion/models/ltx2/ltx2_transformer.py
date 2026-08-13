@@ -506,8 +506,8 @@ class LTX2AudioVideoAttnProcessor:
             is_self_attention=is_self_attention,
         )
 
-        query = attn.norm_q(query)
-        key = attn.norm_k(key)
+        query = attn.norm_q(query).to(dtype=value.dtype)
+        key = attn.norm_k(key).to(dtype=value.dtype)
 
         if query_rotary_emb is not None:
             query_rotary_emb = self._slice_rope_for_tp(query_rotary_emb, attn)
@@ -525,6 +525,10 @@ class LTX2AudioVideoAttnProcessor:
                     key_rotary_emb if key_rotary_emb is not None else query_rotary_emb,
                     head_dim=attn.head_dim,
                 )
+
+        # Keep FP32 RoPE computation while satisfying attention dtype contracts.
+        query = query.to(dtype=value.dtype)
+        key = key.to(dtype=value.dtype)
 
         query = query.unflatten(2, (attn.heads, attn.head_dim))
         key = key.unflatten(2, (attn.heads, attn.head_dim))

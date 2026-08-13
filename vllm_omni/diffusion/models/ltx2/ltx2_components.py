@@ -270,9 +270,13 @@ class _LTXConnectorAttnProcessor:
         encoder_hidden_states = encoder_hidden_states if encoder_hidden_states is not None else hidden_states
         gate_logits = attn.to_gate_logits(hidden_states) if attn.to_gate_logits is not None else None
 
-        query = attn.norm_q(attn.to_q(hidden_states))
-        key = attn.norm_k(attn.to_k(encoder_hidden_states))
+        query = attn.to_q(hidden_states)
+        key = attn.to_k(encoder_hidden_states)
         value = attn.to_v(encoder_hidden_states)
+        # Offload hooks may execute affine-free Q/K norms in FP32. Restore the
+        # projection dtype before attention, matching the fully resident path.
+        query = attn.norm_q(query).to(dtype=value.dtype)
+        key = attn.norm_k(key).to(dtype=value.dtype)
 
         if query_rotary_emb is not None:
             key_rotary_emb = key_rotary_emb if key_rotary_emb is not None else query_rotary_emb
@@ -284,6 +288,11 @@ class _LTXConnectorAttnProcessor:
                 key = apply_split_rotary_emb(key, key_rotary_emb, head_dim=attn.head_dim)
             else:
                 raise ValueError(f"Unsupported LTX connector RoPE type: {attn.rope_type}")
+
+        # RoPE is intentionally evaluated in FP32 for LTX-2.5 accuracy; cast
+        # Q/K back to the projection dtype before dispatching attention.
+        query = query.to(dtype=value.dtype)
+        key = key.to(dtype=value.dtype)
 
         batch_size, _, inner_dim = query.shape
         head_dim = inner_dim // attn.heads

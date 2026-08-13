@@ -850,12 +850,16 @@ def test_ltx_connector_attention_dispatches_through_omni_kernel(has_learned_regi
             calls.append((query, key, value, metadata))
             return query
 
+    class UpcastingNorm(torch.nn.Module):
+        def forward(self, tensor):
+            return tensor.float()
+
     attention = SimpleNamespace(
         heads=2,
         head_dim=4,
         inner_kv_dim=8,
-        norm_q=torch.nn.Identity(),
-        norm_k=torch.nn.Identity(),
+        norm_q=UpcastingNorm(),
+        norm_k=UpcastingNorm(),
         to_q=torch.nn.Identity(),
         to_k=torch.nn.Identity(),
         to_v=torch.nn.Identity(),
@@ -864,17 +868,23 @@ def test_ltx_connector_attention_dispatches_through_omni_kernel(has_learned_regi
         rope_type="split",
         omni_attention=OmniAttention(),
     )
-    hidden_states = torch.randn(2, 3, 8)
+    hidden_states = torch.randn(2, 3, 8, dtype=torch.bfloat16)
     additive_mask = torch.zeros(2, 1, 3, 3)
+    rotary = (
+        torch.ones(2, 2, 3, 2, dtype=torch.float32),
+        torch.zeros(2, 2, 3, 2, dtype=torch.float32),
+    )
 
     output = ltx2_components._LTXConnectorAttnProcessor(has_learned_registers=has_learned_registers)(
         attention,
         hidden_states,
         attention_mask=additive_mask,
+        query_rotary_emb=rotary,
     )
 
     query, key, value, metadata = calls[0]
     assert query.shape == key.shape == value.shape == (2, 3, 2, 4)
+    assert query.dtype == key.dtype == value.dtype == torch.bfloat16
     if has_learned_registers:
         assert metadata is None
     else:

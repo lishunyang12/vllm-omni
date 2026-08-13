@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 from torch import nn
@@ -68,6 +70,48 @@ def test_ltx_rms_norm_affine_weight_remains_parameter():
     assert isinstance(dict(norm.named_parameters())["weight"], nn.Parameter)
     assert "weight" not in dict(norm.named_buffers())
     assert "weight" in norm.state_dict()
+
+
+def test_ltx_attention_restores_projection_dtype_after_upcasting_qk_norms():
+    calls = []
+
+    class UpcastingNorm(nn.Module):
+        def forward(self, tensor):
+            return tensor.float()
+
+    class RecordingAttention:
+        def __call__(self, query, key, value, metadata):
+            calls.append((query, key, value, metadata))
+            return query
+
+    attention = SimpleNamespace(
+        heads=2,
+        head_dim=4,
+        to_qkv=None,
+        to_q=nn.Identity(),
+        to_k=nn.Identity(),
+        to_v=nn.Identity(),
+        norm_q=UpcastingNorm(),
+        norm_k=UpcastingNorm(),
+        to_gate_logits=None,
+        attn=RecordingAttention(),
+        to_out=(nn.Identity(), nn.Identity()),
+        rope_type="split",
+    )
+    hidden_states = torch.randn(2, 3, 8, dtype=torch.bfloat16)
+    rotary = (
+        torch.ones(2, 2, 3, 2, dtype=torch.float32),
+        torch.zeros(2, 2, 3, 2, dtype=torch.float32),
+    )
+
+    processor = ltx2_transformer.LTX2AudioVideoAttnProcessor()
+    processor._slice_rope_for_tp = lambda rope, _: rope
+    output = processor(attention, hidden_states, query_rotary_emb=rotary)
+
+    query, key, value, metadata = calls[0]
+    assert query.dtype == key.dtype == value.dtype == torch.bfloat16
+    assert metadata is None
+    torch.testing.assert_close(output, hidden_states)
 
 
 def test_ltx_transformer_has_fused_cfg_cache_dit_config():
