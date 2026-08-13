@@ -2,8 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 from dataclasses import dataclass
-from importlib import import_module
-from typing import Any
 
 
 @dataclass(frozen=True)
@@ -13,8 +11,6 @@ class DiffusionModelMetadata:
     supports_multimodal_inputs: bool = False
     max_multimodal_image_inputs: int | None = None
     supports_mixed_reference_inputs: bool = False
-    preserves_reference_image_size: bool = False
-    reference_image_size_resolver: str | None = None
     attention_mask_free: bool = False
 
 
@@ -56,24 +52,6 @@ _DIFFUSION_MODEL_METADATA: dict[str, DiffusionModelMetadata] = {
         max_multimodal_image_inputs=9,
         supports_mixed_reference_inputs=True,
     ),
-    "LTX2Pipeline": DiffusionModelMetadata(
-        preserves_reference_image_size=True,
-        reference_image_size_resolver=(
-            "vllm_omni.diffusion.models.ltx2.ltx2_components:preserves_reference_image_size"
-        ),
-    ),
-    "LTX2TwoStagePipeline": DiffusionModelMetadata(
-        preserves_reference_image_size=True,
-        reference_image_size_resolver=(
-            "vllm_omni.diffusion.models.ltx2.ltx2_components:preserves_reference_image_size"
-        ),
-    ),
-    "LTX2DistilledPipeline": DiffusionModelMetadata(
-        preserves_reference_image_size=True,
-        reference_image_size_resolver=(
-            "vllm_omni.diffusion.models.ltx2.ltx2_components:preserves_reference_image_size"
-        ),
-    ),
     "WanPipeline": DiffusionModelMetadata(attention_mask_free=True),
     "WanImageToVideoPipeline": DiffusionModelMetadata(attention_mask_free=True),
     "WanVACEPipeline": DiffusionModelMetadata(attention_mask_free=True),
@@ -104,21 +82,3 @@ def get_diffusion_model_metadata(model_class_name: str | None) -> DiffusionModel
         # that is not a regression, it just means no capability override.
         return _DIFFUSION_MODEL_METADATA.get(pipeline_cls_name, DiffusionModelMetadata())
     return DiffusionModelMetadata()
-
-
-def preserves_reference_image_size(
-    model_class_name: str | None,
-    *,
-    model: str | None,
-    revision: str | None = None,
-) -> bool:
-    """Resolve whether a pipeline owns reference-image resizing."""
-    metadata = get_diffusion_model_metadata(model_class_name)
-    if not metadata.preserves_reference_image_size:
-        return False
-    resolver_path = metadata.reference_image_size_resolver
-    if resolver_path is None:
-        return True
-    module_name, resolver_name = resolver_path.split(":", maxsplit=1)
-    resolver: Any = getattr(import_module(module_name), resolver_name)
-    return bool(resolver(model=model, revision=revision))

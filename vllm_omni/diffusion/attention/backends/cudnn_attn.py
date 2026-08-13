@@ -111,7 +111,7 @@ class CuDNNAttentionImpl(AttentionImpl):
         #
         # Fall back to the default SDPA dispatcher if cuDNN rejects the shape,
         # e.g. under torch.compile where Dynamo sees a symbolic head_dim and
-        # cuDNN's kernel selection fails (observed in LTX-2 audio attention).
+        # cuDNN's kernel selection fails for some symbolic attention shapes.
         # The unpinned dispatcher then picks EFFICIENT/MATH instead of raising.
         try:
             with sdpa_kernel([SDPBackend.CUDNN_ATTENTION]):

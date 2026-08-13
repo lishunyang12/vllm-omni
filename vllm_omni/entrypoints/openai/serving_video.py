@@ -7,6 +7,7 @@ import copy
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import cached_property
 from http import HTTPStatus
 from typing import Any, cast
 
@@ -15,10 +16,7 @@ from PIL import Image
 from vllm.engine.protocol import EngineClient
 from vllm.logger import init_logger
 
-from vllm_omni.diffusion.model_metadata import (
-    get_diffusion_model_metadata,
-    preserves_reference_image_size,
-)
+from vllm_omni.diffusion.model_metadata import get_diffusion_model_metadata
 from vllm_omni.entrypoints.async_omni import AsyncOmni
 from vllm_omni.entrypoints.openai.protocol.videos import (
     VideoAction,
@@ -33,6 +31,7 @@ from vllm_omni.entrypoints.openai.stage_params import (
 from vllm_omni.entrypoints.openai.utils import get_stage_type, parse_lora_request
 from vllm_omni.entrypoints.openai.video_api_utils import _encode_video_bytes, encode_video_base64
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniTextPrompt
+from vllm_omni.model_extras import should_preserve_reference_image_size
 from vllm_omni.outputs.output_metadata import (
     DiffusionMetadataMapping,
     DiffusionMultimodalOutput,
@@ -103,7 +102,7 @@ class OmniOpenAIServingVideo:
         if self._stage_configs is None and stage_configs is not None:
             self._stage_configs = stage_configs
 
-    @property
+    @cached_property
     def preserves_reference_image_size(self) -> bool:
         """Return whether the active pipeline owns reference-image resizing."""
         get_od_config = getattr(self._engine_client, "get_diffusion_od_config", None)
@@ -112,7 +111,7 @@ class OmniOpenAIServingVideo:
         model = getattr(od_config, "model", None) if od_config is not None else None
         model = model or self.model_name
         revision = getattr(od_config, "revision", None) if od_config is not None else None
-        return preserves_reference_image_size(
+        return should_preserve_reference_image_size(
             model_class_name,
             model=None if model is None else str(model),
             revision=revision,

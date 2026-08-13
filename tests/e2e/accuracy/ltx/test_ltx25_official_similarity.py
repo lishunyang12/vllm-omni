@@ -63,6 +63,9 @@ PROMPT = (
     "plume billow beneath it while the camera remains fixed."
 )
 LTX25_PROMPT = "A cinematic shot of a red fox walking through a snowy forest at dawn, the camera tracking alongside."
+LTX25_I2V_IMAGE_REPO = "huggingface/documentation-images"
+LTX25_I2V_IMAGE_FILENAME = "diffusers/svd/rocket.png"
+LTX25_I2V_IMAGE_REVISION = "645d8364f0c7a101180b364811b5a11a362e4010"
 NEGATIVE_PROMPT = (
     "blurry, out of focus, overexposed, underexposed, low contrast, washed out colors, excessive noise, "
     "grainy texture, poor lighting, flickering, motion blur, distorted proportions, unnatural skin tones, "
@@ -88,8 +91,10 @@ AUDIO_COSINE_THRESHOLD = 0.95
 # Decoded-output gates for the pinned official/Omni two-stage SDPA comparison.
 # The metrics artifact preserves the exact observed values.
 LTX25_VIDEO_SSIM_MEAN_THRESHOLD = 0.995
+LTX25_I2V_VIDEO_SSIM_MEAN_THRESHOLD = 0.99
 LTX25_VIDEO_SSIM_MIN_THRESHOLD = 0.99
 LTX25_VIDEO_PSNR_MEAN_THRESHOLD = 40.0
+LTX25_VIDEO_LPIPS_MEAN_THRESHOLD = 0.01
 LTX25_AUDIO_RELATIVE_L2_THRESHOLD = 0.3
 LTX25_AUDIO_COSINE_THRESHOLD = 0.95
 
@@ -453,8 +458,24 @@ def _request(case: LTXAccuracyCase, image: Path | None) -> dict[str, object]:
     return request
 
 
-def _ltx25_request() -> dict[str, object]:
-    return {
+def _resolve_ltx25_image() -> Path:
+    configured_image = os.environ.get("VLLM_TEST_LTX25_I2V_IMAGE")
+    if configured_image:
+        image = Path(configured_image)
+        assert image.is_file(), f"LTX-2.5 I2V conditioning image not found: {image}"
+        return image
+    return Path(
+        hf_hub_download(
+            repo_id=LTX25_I2V_IMAGE_REPO,
+            repo_type="dataset",
+            filename=LTX25_I2V_IMAGE_FILENAME,
+            revision=LTX25_I2V_IMAGE_REVISION,
+        )
+    )
+
+
+def _ltx25_request(image: Path | None = None) -> dict[str, object]:
+    request: dict[str, object] = {
         "prompt": LTX25_PROMPT,
         # Keep the nightly parity test small enough to run the pinned official
         # pipeline and Omni sequentially on one H100. The public recipe covers
@@ -466,6 +487,9 @@ def _ltx25_request() -> dict[str, object]:
         "num_inference_steps": 8,
         "seed": 42,
     }
+    if image is not None:
+        request.update(image=str(image.resolve()), image_crf=18)
+    return request
 
 
 def _ltx25_full_sigmas(num_inference_steps: int) -> list[float]:
@@ -487,9 +511,9 @@ def _ltx25_full_sigmas(num_inference_steps: int) -> list[float]:
     return [float(sigma) for sigma in sigmas]
 
 
-def _ltx25_full_request() -> dict[str, object]:
+def _ltx25_full_request(image: Path | None = None) -> dict[str, object]:
     num_inference_steps = 30
-    return {
+    request: dict[str, object] = {
         "prompt": LTX25_PROMPT,
         "negative_prompt": NEGATIVE_PROMPT,
         # Full guidance expands to a four-way batch. Keep the decoded output
@@ -512,6 +536,9 @@ def _ltx25_full_request() -> dict[str, object]:
         "audio_stg_blocks": [28],
         "sigmas": _ltx25_full_sigmas(num_inference_steps),
     }
+    if image is not None:
+        request.update(image=str(image.resolve()), image_crf=18)
+    return request
 
 
 def test_ltx25_full_request_pins_official_schedule() -> None:
@@ -526,7 +553,16 @@ def test_ltx25_full_request_pins_official_schedule() -> None:
     assert all(sigmas[index] > sigmas[index + 1] for index in range(len(sigmas) - 1))
 
 
+def test_ltx25_i2v_requests_pin_official_crf() -> None:
+    image = Path("conditioning.png")
+    for request in (_ltx25_request(image), _ltx25_full_request(image)):
+        assert request["image"] == str(image.resolve())
+        assert request["image_crf"] == 18
+
+
 def _video_metrics(reference: np.ndarray, prediction: np.ndarray) -> dict[str, float]:
+    from benchmarks.diffusion.quantization_quality import compute_lpips_video
+
     assert reference.shape == prediction.shape
     assert reference.ndim == 4 and reference.shape[-1] == 3
     ssim_scores: list[float] = []
@@ -541,6 +577,7 @@ def _video_metrics(reference: np.ndarray, prediction: np.ndarray) -> dict[str, f
         "ssim_mean": float(np.mean(ssim_scores)),
         "ssim_min": float(np.min(ssim_scores)),
         "psnr_mean_db": float(np.mean(psnr_scores)),
+        "lpips_alex_mean": compute_lpips_video(reference, prediction),
         "max_abs": float(difference.max()),
         "mean_abs": float(difference.mean()),
     }
@@ -572,15 +609,17 @@ def _audio_metrics(reference: np.ndarray, prediction: np.ndarray) -> dict[str, f
 @pytest.mark.benchmark
 @pytest.mark.diffusion
 @hardware_test(res={"cuda": "H100"}, num_cards=1)
-def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path) -> None:
+@pytest.mark.parametrize("task", ["t2v", "i2v"])
+def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path, task: str) -> None:
     """Compare Omni with the official runtime using the same checkpoint connector weights."""
     artifact_parent = accuracy_artifact_root / "ltx_official"
-    output_root = reset_artifact_dir(artifact_parent / "ltx2_5_distilled")
+    output_root = reset_artifact_dir(artifact_parent / f"ltx2_5_distilled_{task}")
     official_root, official_revision = _ltx25_official_source(artifact_parent)
     official_artifacts, official_model_source, official_model_revision = _resolve_ltx25_official_artifacts()
     omni_model, omni_model_source, omni_model_revision = _resolve_ltx25_omni_model()
+    image = _resolve_ltx25_image() if task == "i2v" else None
     request_path = output_root / "request.json"
-    request_path.write_text(json.dumps(_ltx25_request(), indent=2) + "\n")
+    request_path.write_text(json.dumps(_ltx25_request(image), indent=2) + "\n")
 
     runner = Path(__file__).with_name("run_ltx25_reference.py")
     runner_args = [
@@ -659,7 +698,7 @@ def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path
     )
     result = {
         "case": "ltx2_5_distilled",
-        "task": "t2v",
+        "task": task,
         "attention_backend": ATTENTION_BACKEND,
         "official_revision": official_revision,
         "official_model": official_model_source,
@@ -675,9 +714,11 @@ def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path
     (output_root / "metrics.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))
 
-    assert video_metrics["ssim_mean"] >= LTX25_VIDEO_SSIM_MEAN_THRESHOLD
+    ssim_mean_threshold = LTX25_VIDEO_SSIM_MEAN_THRESHOLD if task == "t2v" else LTX25_I2V_VIDEO_SSIM_MEAN_THRESHOLD
+    assert video_metrics["ssim_mean"] >= ssim_mean_threshold
     assert video_metrics["ssim_min"] >= LTX25_VIDEO_SSIM_MIN_THRESHOLD
     assert video_metrics["psnr_mean_db"] >= LTX25_VIDEO_PSNR_MEAN_THRESHOLD
+    assert video_metrics["lpips_alex_mean"] <= LTX25_VIDEO_LPIPS_MEAN_THRESHOLD
     assert audio_metrics["cosine_similarity"] >= LTX25_AUDIO_COSINE_THRESHOLD
     assert audio_metrics["relative_l2"] <= LTX25_AUDIO_RELATIVE_L2_THRESHOLD
 
@@ -686,10 +727,11 @@ def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path
 @pytest.mark.benchmark
 @pytest.mark.diffusion
 @hardware_test(res={"cuda": "H100"}, num_cards=1)
-def test_ltx25_full_one_stage_matches_official(accuracy_artifact_root: Path) -> None:
+@pytest.mark.parametrize("task", ["t2v", "i2v"])
+def test_ltx25_full_one_stage_matches_official(accuracy_artifact_root: Path, task: str) -> None:
     """Compare raw official Full/SFT weights with Omni's converted Full pipeline."""
     artifact_parent = accuracy_artifact_root / "ltx_official"
-    output_root = reset_artifact_dir(artifact_parent / "ltx2_5_full")
+    output_root = reset_artifact_dir(artifact_parent / f"ltx2_5_full_{task}")
     official_root, official_revision = _ltx25_official_source(artifact_parent)
     official_artifacts, official_model_source, official_model_revision = _resolve_ltx25_official_artifacts(
         checkpoint_variant="full"
@@ -697,8 +739,9 @@ def test_ltx25_full_one_stage_matches_official(accuracy_artifact_root: Path) -> 
     omni_model, omni_model_source, omni_model_revision = _resolve_ltx25_omni_model(
         transformer_subfolder="transformer_full"
     )
+    image = _resolve_ltx25_image() if task == "i2v" else None
     request_path = output_root / "request.json"
-    request_path.write_text(json.dumps(_ltx25_full_request(), indent=2) + "\n")
+    request_path.write_text(json.dumps(_ltx25_full_request(image), indent=2) + "\n")
 
     runner = Path(__file__).with_name("run_ltx25_reference.py")
     runner_args = [
@@ -781,7 +824,7 @@ def test_ltx25_full_one_stage_matches_official(accuracy_artifact_root: Path) -> 
     )
     result = {
         "case": "ltx2_5_full",
-        "task": "t2v",
+        "task": task,
         "attention_backend": ATTENTION_BACKEND,
         "official_revision": official_revision,
         "official_model": official_model_source,
@@ -800,5 +843,6 @@ def test_ltx25_full_one_stage_matches_official(accuracy_artifact_root: Path) -> 
     assert video_metrics["ssim_mean"] >= LTX25_FULL_VIDEO_SSIM_MEAN_THRESHOLD
     assert video_metrics["ssim_min"] >= LTX25_FULL_VIDEO_SSIM_MIN_THRESHOLD
     assert video_metrics["psnr_mean_db"] >= LTX25_FULL_VIDEO_PSNR_MEAN_THRESHOLD
+    assert video_metrics["lpips_alex_mean"] <= LTX25_VIDEO_LPIPS_MEAN_THRESHOLD
     assert audio_metrics["relative_l2"] <= LTX25_FULL_AUDIO_RELATIVE_L2_THRESHOLD
     assert audio_metrics["cosine_similarity"] >= LTX25_FULL_AUDIO_COSINE_THRESHOLD

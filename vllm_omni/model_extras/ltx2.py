@@ -29,3 +29,14 @@ LTX_EXTRA_BODY_PARAMS = frozenset(
 )
 
 LTX_EXTRA_OUTPUT_PARAMS = frozenset()
+
+
+def ltx_preserves_reference_image_size(*, model: str | None, revision: str | None = None) -> bool:
+    """Keep source geometry until LTX-2.5 applies conditioning compression."""
+    if model is None:
+        return False
+    from vllm_omni.diffusion.models.ltx2.ltx2_components import (
+        preserves_reference_image_size as ltx_preserves_reference_image_size,
+    )
+
+    return ltx_preserves_reference_image_size(model=model, revision=revision)

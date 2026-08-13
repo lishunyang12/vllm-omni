@@ -56,7 +56,7 @@ import numpy as np
 import PIL.Image
 import torch
 
-from vllm_omni.diffusion.data import DiffusionParallelConfig, resolve_model_class_name
+from vllm_omni.diffusion.data import DiffusionParallelConfig
 from vllm_omni.diffusion.utils.param_utils import apply_declared_extra_args
 from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
@@ -68,6 +68,7 @@ from vllm_omni.model_extras import (
 from vllm_omni.model_extras import (
     get_extra_body_params,
     get_model_class_name,
+    should_preserve_reference_image_size,
 )
 from vllm_omni.outputs import OmniRequestOutput
 from vllm_omni.platforms import current_omni_platform
@@ -368,64 +369,15 @@ def calculate_dimensions(
     return height, width
 
 
-def prepare_primary_image(
-    image: PIL.Image.Image,
-    width: int,
-    height: int,
-    defer_resize_to_pipeline: bool = False,
-) -> PIL.Image.Image:
-    """Prepare the primary I2V image without changing model-specific ordering."""
-    if defer_resize_to_pipeline:
-        return image
-    return image.resize((width, height), PIL.Image.Resampling.LANCZOS)
-
-
-def _detect_ltx_checkpoint_version(model: str, model_class_name: str | None = None) -> str | None:
-    model_class_name = model_class_name or resolve_model_class_name(model)
-    if "ltx2" not in (model_class_name or "").lower():
-        return None
-    from vllm_omni.diffusion.models.ltx2.ltx2_components import detect_ltx_model_version
-
-    return detect_ltx_model_version(model)
-
-
-_LTX2_TWO_STAGE_PIPELINE_NAMES = frozenset(
-    {
-        "ltx2twostagepipeline",
-        "ltx2distilledpipeline",
-    }
-)
-
-
-def _is_ltx2_two_stage_pipeline(model_class_name: str | None) -> bool:
-    return (model_class_name or "").lower() in _LTX2_TWO_STAGE_PIPELINE_NAMES
-
-
-def _ltx25_i2v_defaults(
-    ltx_version: str | None,
-    model_class_name: str | None,
-) -> tuple[int, None, int, int, None, int, int] | None:
-    """Return LTX-2.5 I2V defaults for canonical and compatibility entries."""
-    if ltx_version != "2.5":
-        return None
-    if _is_ltx2_two_stage_pipeline(model_class_name):
-        return (24, None, 121, 8, None, 1088 * 1920, 64)
-    return (24, None, 121, 30, None, 544 * 960, 32)
-
-
 def main():
     args = parse_args()
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(args.seed)
     model_name = str(args.model).lower() if args.model is not None else ""
-    model_class_name = args.model_class_name or resolve_model_class_name(args.model)
+    model_class_name = args.model_class_name
     model_class_name_lower = (model_class_name or "").lower()
-    ltx_version = _detect_ltx_checkpoint_version(args.model, model_class_name)
-    is_ltx25 = ltx_version == "2.5"
-    is_ltx2_two_stage = _is_ltx2_two_stage_pipeline(model_class_name)
-    ltx25_defaults = _ltx25_i2v_defaults(ltx_version, model_class_name)
-    is_ltx2_distilled = is_ltx2_two_stage
-    is_ltx23 = ltx_version == "2.3"
-    is_ltx2 = ltx_version is not None
+    is_ltx2_distilled = "distilled" in model_class_name_lower or "distilled" in model_name
+    is_ltx23 = "ltx23" in model_class_name_lower or "ltx-2.3" in model_name
+    is_ltx2 = is_ltx2_distilled or is_ltx23 or "ltx2" in model_class_name_lower or "ltx-2" in model_name
     is_cosmos = "cosmos" in model_name or (model_class_name is not None and "cosmos" in model_class_name.lower())
     is_cosmos_edge = is_cosmos and ("edge" in model_name or "edge" in model_class_name_lower)
 
@@ -463,8 +415,6 @@ def main():
             1280 * 720,
             16,
         )
-    elif ltx25_defaults is not None:
-        d_fps, d_guidance, d_num_frames, d_steps, d_flow_shift, d_max_area, d_mod = ltx25_defaults
     elif is_ltx2_distilled:
         d_fps, d_guidance, d_num_frames, d_steps, d_flow_shift, d_max_area, d_mod = (
             24,
@@ -505,9 +455,13 @@ def main():
 
     media_inputs: dict[str, Any] = {}
     if image is not None:
-        # LTX-2.5 must apply its CRF 18 round-trip before pipeline-side
-        # bilinear resizing, so preserve the original primary image here.
-        media_inputs["image"] = prepare_primary_image(image, width, height, defer_resize_to_pipeline=is_ltx25)
+        preserve_image_size = should_preserve_reference_image_size(
+            model_class_name,
+            model=args.model,
+        )
+        media_inputs["image"] = (
+            image if preserve_image_size else image.resize((width, height), PIL.Image.Resampling.LANCZOS)
+        )
     if last_image is not None:
         media_inputs["last_image"] = last_image.resize((width, height), PIL.Image.Resampling.LANCZOS)
     if mask_image is not None:

@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from vllm_omni.diffusion.data import DiffusionParallelConfig, resolve_model_class_name
+from vllm_omni.diffusion.data import DiffusionParallelConfig
 from vllm_omni.diffusion.utils.param_utils import apply_declared_extra_args
 from vllm_omni.entrypoints.omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
@@ -115,56 +115,18 @@ _MODEL_PRESETS = {
         "fps": 24,
         "output": "ltx23_output.mp4",
     },
-    "ltx25_two_stage_distilled": {
-        "height": 1088,
-        "width": 1920,
-        "num_frames": 121,
-        "num_inference_steps": 8,
-        "fps": 24,
-        "output": "ltx25_two_stage_distilled_output.mp4",
-    },
-    "ltx25_full": {
-        "height": 544,
-        "width": 960,
-        "num_frames": 121,
-        "num_inference_steps": 30,
-        "fps": 24,
-        "output": "ltx25_full_output.mp4",
-    },
 }
-
-
-_LTX2_TWO_STAGE_PIPELINE_NAMES = frozenset(
-    {
-        "ltx2twostagepipeline",
-        "ltx2distilledpipeline",
-    }
-)
-
-
-def _is_ltx2_two_stage_pipeline(model_class_name: str | None) -> bool:
-    return (model_class_name or "").lower() in _LTX2_TWO_STAGE_PIPELINE_NAMES
 
 
 def _detect_preset(model: str, model_class_name: str | None = None) -> dict:
     model_lower = model.lower()
-    model_class_name = model_class_name or resolve_model_class_name(model)
     class_lower = (model_class_name or "").lower()
-    is_ltx_two_stage = _is_ltx2_two_stage_pipeline(model_class_name)
     if "lingbot" in model_lower or "lingbotvideo" in class_lower:
         return _MODEL_PRESETS["lingbot"]
     if "ltx" in class_lower or "ltx" in model_lower:
-        from vllm_omni.diffusion.models.ltx2.ltx2_components import detect_ltx_model_version
-
-        ltx_version = detect_ltx_model_version(model) if "ltx2" in class_lower else None
-        is_ltx25 = ltx_version == "2.5"
-        if is_ltx25:
-            if is_ltx_two_stage:
-                return _MODEL_PRESETS["ltx25_two_stage_distilled"]
-            return _MODEL_PRESETS["ltx25_full"]
-        if is_ltx_two_stage or "distilled" in model_lower:
+        if "distilled" in class_lower or "distilled" in model_lower:
             return _MODEL_PRESETS["ltx2_distilled"]
-        if ltx_version == "2.3" or "ltx23" in class_lower or "ltx-2.3" in model_lower or "ltx_2.3" in model_lower:
+        if "ltx23" in class_lower or "ltx-2.3" in model_lower or "ltx_2.3" in model_lower:
             return _MODEL_PRESETS["ltx23"]
         return _MODEL_PRESETS["ltx2"]
     if "vace" in model_lower or "vace" in class_lower:
@@ -589,14 +551,7 @@ def main():
         )
 
     negative_prompt = args.negative_prompt
-    promptless_presets = (
-        "lingbot",
-        "ltx2",
-        "ltx23",
-        "ltx25_full",
-        "ltx25_two_stage_distilled",
-    )
-    if negative_prompt is None and all(preset is not _MODEL_PRESETS[name] for name in promptless_presets):
+    if negative_prompt is None and all(preset is not _MODEL_PRESETS[name] for name in ("lingbot", "ltx2", "ltx23")):
         # Preserve the historical empty-prompt behavior for non-LTX examples.
         negative_prompt = ""
     prompt_dict = build_text_to_video_prompt(args.prompt, negative_prompt)

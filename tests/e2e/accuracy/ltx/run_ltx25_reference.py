@@ -181,7 +181,7 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
                 path=str(image_path),
                 frame_idx=0,
                 strength=1.0,
-                crf=request.get("image_crf", 0),
+                crf=request.get("image_crf", 18),
             )
         ]
     )

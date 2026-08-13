@@ -461,68 +461,49 @@ def test_i2v_video_generation_resizes_input_to_requested_dimensions(test_client,
     assert input_image.size == (96, 64)
 
 
-@pytest.mark.parametrize(
-    ("model_class_name", "model_version", "expected_size"),
-    [
-        ("LTX2Pipeline", "2.5", (48, 32)),
-        ("LTX2Pipeline", "2.3", (96, 64)),
-        ("LTX2TwoStagePipeline", "2.5", (48, 32)),
-        ("LTX2TwoStagePipeline", "2", (96, 64)),
-    ],
-)
-def test_ltx_i2v_resize_policy_is_version_conditional(
-    tmp_path,
-    model_class_name,
-    model_version,
-    expected_size,
-):
-    (tmp_path / "model_index.json").write_text(json.dumps({"model_version": model_version}))
+def test_i2v_resize_policy_can_defer_to_pipeline(monkeypatch):
     engine = FakeAsyncOmni()
-    engine.model_class_name = model_class_name
+    engine.get_diffusion_od_config = lambda: SimpleNamespace(
+        model="org/model",
+        model_class_name="ExamplePipeline",
+        revision="pinned-revision",
+    )
+    captured = {}
+
+    def fake_policy(model_class_name, *, model, revision=None):
+        captured.update(
+            model_class_name=model_class_name,
+            model=model,
+            revision=revision,
+        )
+        return True
+
+    monkeypatch.setattr(
+        "vllm_omni.entrypoints.openai.serving_video.should_preserve_reference_image_size",
+        fake_policy,
+    )
     handler = OmniOpenAIServingVideo.for_diffusion(
         diffusion_engine=engine,
-        model_name=str(tmp_path),
+        model_name="fallback/model",
     )
     image = Image.new("RGB", (48, 32))
 
     asyncio.run(
         handler._run_and_extract(
             VideoGenerationRequest(prompt="A bear playing with yarn.", width=96, height=64),
-            "ltx-versioned-resize",
+            "pipeline-owned-resize",
             reference_image=ReferenceImage(image),
         )
     )
 
     input_image = engine.captured_prompt["multi_modal_data"]["image"]
     assert isinstance(input_image, Image.Image)
-    assert input_image.size == expected_size
-
-
-def test_ltx_i2v_resize_policy_threads_revision(monkeypatch):
-    engine = FakeAsyncOmni()
-    engine.model_class_name = "LTX2Pipeline"
-    engine.get_diffusion_od_config = lambda: SimpleNamespace(
-        model="org/model",
-        model_class_name="LTX2Pipeline",
-        revision="pinned-revision",
-    )
-    captured = {}
-
-    def fake_detect(model, revision=None):
-        captured.update(model=model, revision=revision)
-        return "2.5"
-
-    monkeypatch.setattr(
-        "vllm_omni.diffusion.models.ltx2.ltx2_components.detect_ltx_model_version",
-        fake_detect,
-    )
-    handler = OmniOpenAIServingVideo.for_diffusion(
-        diffusion_engine=engine,
-        model_name="fallback/model",
-    )
-
-    assert handler.preserves_reference_image_size
-    assert captured == {"model": "org/model", "revision": "pinned-revision"}
+    assert input_image.size == (48, 32)
+    assert captured == {
+        "model_class_name": "ExamplePipeline",
+        "model": "org/model",
+        "revision": "pinned-revision",
+    }
 
 
 def test_i2v_extra_params_dimensions_preserve_input_image_geometry(test_client, mocker: MockerFixture):

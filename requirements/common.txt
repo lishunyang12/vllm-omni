@@ -1,7 +1,7 @@
 # Common dependencies for all platforms
-# transformers: LTX-2.5 requires Gemma4UnifiedForConditionalGeneration, which
-# is unavailable in 5.8/5.9; 5.10.0 is yanked, and 5.15 has a known Gemma4
-# construction regression. transformers 5.9 also changed
+# transformers: required unified multimodal model classes are unavailable
+# before 5.10.1; 5.10.0 is yanked, and 5.15 has a known construction
+# regression. transformers 5.9 also changed
 # _adjust_missing_and_unexpected_keys from
 # list+list to set|set, breaking models that declare
 # _keys_to_ignore_on_load_unexpected as a list (e.g. OpenMOSS-Team/MOSS-TTS-Nano)

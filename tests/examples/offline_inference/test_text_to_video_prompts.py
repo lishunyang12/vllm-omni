@@ -40,7 +40,6 @@ def test_text_to_video_builds_canonical_prompt(
         ("robbyant/lingbot-video-dense-1.3b", None, "lingbot"),
         ("/models/custom-checkpoint", "LingBotVideoPipeline", "lingbot"),
         ("Lightricks/LTX-2", "LTX2DistilledPipeline", "ltx2_distilled"),
-        ("Lightricks/LTX-2", "LTX2TwoStagePipeline", "ltx2_distilled"),
         ("BestWishYsh/Helios-Distilled", None, "helios"),
         ("/models/cosmos-edge", "Cosmos3EdgeVFMTransformer", "cosmos3_edge"),
         ("/models/vace", "WanVACEPipeline", "vace"),
@@ -52,26 +51,6 @@ def test_detect_preset_is_scoped_to_model_family(
     preset_name: str,
 ) -> None:
     assert _detect_preset(model, model_class_name) is _MODEL_PRESETS[preset_name]
-
-
-@pytest.mark.parametrize(
-    ("model_class_name", "preset_name"),
-    [
-        ("LTX2Pipeline", "ltx25_full"),
-        ("LTX2TwoStagePipeline", "ltx25_two_stage_distilled"),
-        ("LTX2DistilledPipeline", "ltx25_two_stage_distilled"),
-    ],
-)
-def test_ltx25_preset_uses_pipeline_topology(
-    tmp_path,
-    model_class_name: str,
-    preset_name: str,
-) -> None:
-    (tmp_path / "model_index.json").write_text(
-        '{"text_encoder": ["transformers", "Gemma4UnifiedForConditionalGeneration"]}'
-    )
-
-    assert _detect_preset(str(tmp_path), model_class_name) is _MODEL_PRESETS[preset_name]
 
 
 def test_lingbot_preset_matches_lingbot_defaults() -> None:
