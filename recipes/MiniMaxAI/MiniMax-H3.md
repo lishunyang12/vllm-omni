@@ -377,52 +377,20 @@ Add this option to an existing H3 server command:
 --quantization fp8
 ```
 
-#### Single 96 GB GPU, no-offload validation
+#### Single 96 GB GPU, no-offload capacity check
 
 Use the FL2VA-only partition for this capacity test. Loading the combined
 service would also load the Ref2VA DiT and would test a different memory
-budget. The command below intentionally contains none of
+budget. A no-offload capacity check should contain none of
 `--enable-cpu-offload`, `--enable-layerwise-offload`, or
 `--enable-distributed-layerwise-offload`. VAE tiling changes decode placement
 but does not offload model weights to the CPU.
-
-Before starting, reserve GPU 0 for this process. From the vLLM-Omni checkout,
-start the server in the first terminal:
-
-```bash
-MODEL_ROOT=/path/to/MiniMax-H3 \
-GPU_ID=0 \
-PORT=8091 \
-RUN_DIR=$PWD/h3_single_gpu_fp8_no_offload \
-bash examples/online_serving/minimax_h3/run_server_single_gpu_fp8_no_offload.sh
-```
-
-The server script records the exact GPU capacity and current commit, starts a
-200 ms whole-device memory sampler before model initialization, and writes the
-server log into `RUN_DIR`. It intentionally passes no CPU, layerwise, or
-distributed-layerwise offload option.
-
-After the server health check succeeds, run the fixed five-second T2VA request
-from a second terminal in the same checkout:
-
-```bash
-BASE_URL=http://127.0.0.1:8091 \
-RUN_DIR=$PWD/h3_single_gpu_fp8_no_offload \
-bash examples/online_serving/minimax_h3/run_curl_t2va_5s.sh
-```
-
-The request script records client wall time and requires H.264 video plus
-32 kHz stereo AAC audio. After it succeeds, stop the server with Ctrl-C. The
-server's exit handler stops the sampler and writes `memory_summary.txt` with
-the card's reported total, whole-lifecycle peak, and remaining headroom.
 
 The run passes the capacity check when the server initializes, the request
 finishes without CUDA OOM or Xid errors, `peak_used_mib` remains below the
 card's reported `memory_total_mib`, and `ffprobe` reports H.264 video plus
 32 kHz stereo AAC audio. Report the measured headroom rather than assuming
-that every nominal 96 GB SKU exposes the same MiB total. Retain the complete
-run directory: `server.log` contains the worker-reported peak and the encode,
-diffuse, and decode timings.
+that every nominal 96 GB SKU exposes the same MiB total.
 
 As a capacity proxy only, the same five-second case on one B300 measured a
 92,946 MiB whole-device first-request peak and a 92,146 MiB worker peak. Its
