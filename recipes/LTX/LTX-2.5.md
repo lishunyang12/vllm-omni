@@ -141,6 +141,27 @@ To override either distilled phase, pass `--extra-body` with
 `stage_1_sigmas` and/or `stage_2_sigmas`; an omitted phase keeps its official
 schedule. Stage 2 re-noise uses the first value of its effective schedule.
 
+### Two-stage distilled first-frame I2V
+
+```bash
+python examples/offline_inference/image_to_video/image_to_video.py \
+  --model Lightricks/LTX-2.5-Diffusers \
+  --model-class-name LTX2TwoStagePipeline \
+  --image /absolute/path/to/first-frame.png \
+  --prompt "The red fox walks forward while the camera tracks alongside." \
+  --height 1088 \
+  --width 1920 \
+  --num-frames 121 \
+  --num-inference-steps 8 \
+  --frame-rate 24 \
+  --fps 24 \
+  --enforce-eager \
+  --output ltx25-two-stage-i2v.mp4
+```
+
+This path uses the same CRF-18 first-frame conditioning and official 8+3
+two-stage schedule as the qualified T2V path.
+
 ## Online serving
 
 The release-qualified B300 path uses cuDNN attention explicitly:
@@ -261,8 +282,8 @@ All decoded outputs included synchronized 48 kHz stereo audio. Extended
   Distilled two-stage accepts independent `stage_1_sigmas` and `stage_2_sigmas` lists.
 - Set `num_frames` explicitly for online requests because the generic video
   API default is one frame.
-- First-frame I2V is implemented for both canonical pipelines. Distilled
-  two-stage I2V and multi-frame conditioning are not yet release-qualified.
+- First-frame I2V is release-qualified for both canonical pipelines.
+  Multi-frame conditioning is not yet release-qualified.
 - LTX sequence parallelism supports only strict Ulysses. `advanced_uaa` is
   rejected because its mask redistribution does not preserve LTX cross-modal
   key-padding semantics.
