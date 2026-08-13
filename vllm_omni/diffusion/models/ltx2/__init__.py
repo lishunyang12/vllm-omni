@@ -8,7 +8,6 @@ from vllm_omni.diffusion.models.ltx2.ltx2_components import (
 )
 from vllm_omni.diffusion.models.ltx2.ltx2_transformer import LTX2VideoTransformer3DModel
 from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import (
-    LTX2FullPipeline,
     LTX2I2VDMD2Pipeline,
     LTX2Pipeline,
     LTX2T2VDMD2Pipeline,
@@ -20,7 +19,6 @@ from vllm_omni.diffusion.models.ltx2.pipeline_ltx2_two_stage import (
 
 __all__ = [
     "LTX2Pipeline",
-    "LTX2FullPipeline",
     "LTX2T2VDMD2Pipeline",
     "LTX2I2VDMD2Pipeline",
     "LTX2TwoStagePipeline",

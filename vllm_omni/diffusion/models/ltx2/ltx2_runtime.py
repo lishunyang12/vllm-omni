@@ -28,11 +28,9 @@ from vllm_omni.platforms import current_omni_platform
 
 from . import ltx2_latents as latent_ops
 from .ltx2_components import (
-    LTXCheckpointVariant,
     LTXComponentProfile,
     detect_ltx_model_version,
     initialize_pipeline_components,
-    resolve_ltx_checkpoint_variant,
     resolve_ltx_component_profile,
 )
 from .ltx2_conditioning import LTXPromptContext, LTXTextConditioningMixin
@@ -49,6 +47,7 @@ from .ltx2_guidance import (
     LTXGuidanceExecutor,
     LTXGuidancePlan,
 )
+from .ltx2_phase_adapter import LTXPhaseAdapterRuntime, build_ltx_phase_adapter
 from .ltx2_recipes import (
     LTXPhaseRecipe,
     LTXPipelineRecipe,
@@ -126,7 +125,6 @@ class LTXRuntime(
     """Shared Omni runtime for recipe-driven LTX denoise phases."""
 
     pipeline_kind: ClassVar[str] = "one_stage"
-    checkpoint_variant_override: ClassVar[LTXCheckpointVariant | None] = None
     component_profile: ClassVar[LTXComponentProfile]
     pipeline_recipe: ClassVar[LTXPipelineRecipe]
     guidance_executor: ClassVar[LTXGuidanceExecutor] = LTX_GUIDANCE_EXECUTOR
@@ -147,18 +145,8 @@ class LTXRuntime(
                 "Use the default ulysses_mode='strict' for LTX sequence parallelism."
             )
         self.model_version = detect_ltx_model_version(od_config.model, revision=getattr(od_config, "revision", None))
-        self.checkpoint_variant = resolve_ltx_checkpoint_variant(
-            self.pipeline_kind,
-            self.model_version,
-            getattr(od_config, "task_type", None),
-            compatibility_override=self.checkpoint_variant_override,
-        )
-        self.component_profile = resolve_ltx_component_profile(
-            self.pipeline_kind, self.model_version, self.checkpoint_variant
-        )
-        self.pipeline_recipe = resolve_ltx_pipeline_recipe(
-            self.pipeline_kind, self.model_version, self.checkpoint_variant
-        )
+        self.component_profile = resolve_ltx_component_profile(self.pipeline_kind, self.model_version)
+        self.pipeline_recipe = resolve_ltx_pipeline_recipe(self.pipeline_kind, self.model_version)
         if getattr(od_config, "cache_backend", "none") == "cache_dit" and not self.pipeline_recipe.supports_cache_dit:
             raise ValueError(
                 f"{self.__class__.__name__} does not support cache_backend='cache_dit'. "
@@ -175,6 +163,7 @@ class LTXRuntime(
         super().__init__()
         self._guidance_plan = LTXGuidancePlan.build(self.pipeline_recipe.request_guidance)
         initialize_pipeline_components(self, od_config)
+        self._phase_adapter: LTXPhaseAdapterRuntime | None = build_ltx_phase_adapter(self)
         self.setup_diffusion_pipeline_profiler(
             enable_diffusion_pipeline_profiler=self.od_config.enable_diffusion_pipeline_profiler
         )
@@ -234,6 +223,8 @@ class LTXRuntime(
             image_crf=image_crf,
         )
         image = self._resolve_request_image(req, image, request_inputs)
+        if image is not None and not self.support_image_input:
+            raise ValueError(f"{self.__class__.__name__} does not support `image` input.")
         request_sigmas = self._resolve_request_sigmas(req, sigmas)
         request_phase_sigmas = self._resolve_request_phase_sigmas(req, stage_1_sigmas, stage_2_sigmas)
         validate_pipeline_request(
@@ -245,6 +236,13 @@ class LTXRuntime(
             request_sigmas=request_sigmas,
             request_phase_sigmas=request_phase_sigmas,
         )
+        phase_adapter = getattr(self, "_phase_adapter", None)
+        if phase_adapter is not None and any(
+            getattr(sampling, "lora_request", None) is not None for sampling in req.sampling_params_list
+        ):
+            raise ValueError(
+                f"{self.__class__.__name__} cannot compose a request LoRA with its internal phase adapter."
+            )
         return self._run_recipe(
             req,
             request_inputs,
@@ -310,9 +308,21 @@ class LTXRuntime(
         return self.decode_phase(output_phase)
 
     def _enter_phase(self, phase: LTXPhaseRecipe) -> None:
-        """Activate the guidance plan for this denoise phase."""
         self._active_phase_name = phase.name
         self._guidance_plan = LTXGuidancePlan.build(phase.guidance)
+        phase_adapter = getattr(self, "_phase_adapter", None)
+        if phase_adapter is None:
+            if phase.adapter_slot is not None:
+                raise RuntimeError(f"LTX phase {phase.name!r} requires adapter slot {phase.adapter_slot!r}.")
+            return
+        phase_adapter.activate(phase.adapter_slot)
+
+    def eval(self):
+        result = super().eval()
+        phase_adapter = getattr(self, "_phase_adapter", None)
+        if phase_adapter is not None:
+            phase_adapter.finalize()
+        return result
 
     def prepare_latents(
         self,

@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-"""Online serving smoke for the LTX-2.5 Diffusers checkpoint."""
+"""Online serving smokes for both canonical LTX-2.5 pipelines."""
 
 import os
 
 import pytest
-import requests
 
 from tests.helpers.mark import hardware_marks
-from tests.helpers.runtime import OmniServer, OmniServerParams
+from tests.helpers.media import generate_synthetic_image
+from tests.helpers.runtime import OmniServer, OmniServerParams, OpenAIClientHandler
 
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
@@ -23,46 +23,54 @@ pytestmark = [pytest.mark.diffusion, pytest.mark.full_model]
 SINGLE_CARD_MARKS = hardware_marks(res={"cuda": "H100"})
 
 
+def _server(model_class_name: str) -> OmniServerParams:
+    return OmniServerParams(
+        model=MODEL,
+        server_args=[
+            *(["--revision", MODEL_REVISION] if MODEL_REVISION else []),
+            "--model-class-name",
+            model_class_name,
+            "--enforce-eager",
+            "--enable-layerwise-offload",
+            "--diffusion-attention-backend",
+            "CUDNN_ATTN",
+        ],
+    )
+
+
 def _cases():
     return [
-        pytest.param(
-            OmniServerParams(
-                model=MODEL,
-                server_args=[
-                    *(["--revision", MODEL_REVISION] if MODEL_REVISION else []),
-                    "--model-class-name",
-                    "LTX2TwoStagePipeline",
-                    "--enforce-eager",
-                    "--enable-layerwise-offload",
-                    "--diffusion-attention-backend",
-                    "CUDNN_ATTN",
-                ],
-            ),
-            id="default_distilled_two_stage_pinned_sync",
-            marks=SINGLE_CARD_MARKS,
-        )
+        pytest.param(_server("LTX2Pipeline"), 30, id="full_one_stage", marks=SINGLE_CARD_MARKS),
+        pytest.param(_server("LTX2TwoStagePipeline"), 8, id="distilled_two_stage", marks=SINGLE_CARD_MARKS),
     ]
 
 
-@pytest.mark.parametrize("omni_server", _cases(), indirect=True)
-def test_ltx25_sync_video(omni_server: OmniServer) -> None:
-    """Serve the default distilled two-stage pipeline and return an MP4."""
-    response = requests.post(
-        f"http://{omni_server.host}:{omni_server.port}/v1/videos/sync",
-        data={
-            "model": omni_server.model,
-            "prompt": PROMPT,
-            "height": "128",
-            "width": "128",
-            "num_frames": "9",
-            "fps": "24",
-            # LTX-2.5 defaults to the official eight-step schedule.
-            "num_inference_steps": "8",
-            "seed": "42",
-        },
-        timeout=1800,
-    )
+@pytest.mark.parametrize(("omni_server", "num_inference_steps"), _cases(), indirect=["omni_server"])
+def test_ltx25_pipeline_entries(
+    omni_server: OmniServer,
+    num_inference_steps: int,
+    openai_client: OpenAIClientHandler,
+    subtests,
+) -> None:
+    """Generate T2V and first-frame I2V through the synchronous video API."""
+    for task in ("t2v", "i2v"):
+        with subtests.test(task=task):
+            request_config = {
+                "model": omni_server.model,
+                "form_data": {
+                    "model": omni_server.model,
+                    "prompt": PROMPT,
+                    "height": 128,
+                    "width": 128,
+                    "num_frames": 9,
+                    "fps": 24,
+                    "num_inference_steps": num_inference_steps,
+                    "seed": 42,
+                },
+            }
+            if task == "i2v":
+                request_config["image_reference"] = (
+                    f"data:image/jpeg;base64,{generate_synthetic_image(512, 512)['base64']}"
+                )
 
-    response.raise_for_status()
-    assert response.headers["content-type"].startswith("video/mp4")
-    assert b"ftyp" in response.content[:32]
+            openai_client.send_video_diffusion_request(request_config)

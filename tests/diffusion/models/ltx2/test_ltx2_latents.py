@@ -9,10 +9,9 @@ from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
 
 
-def _make_pipeline(pipeline_cls, sequence_parallel_size: int = 1, model_version: str = "2"):
+def _make_pipeline(pipeline_cls, sequence_parallel_size: int = 1):
     pipeline = object.__new__(pipeline_cls)
     torch.nn.Module.__init__(pipeline)
-    pipeline.model_version = model_version
     pipeline.audio_vae_temporal_compression_ratio = 4
     pipeline.audio_vae_mel_compression_ratio = 4
     pipeline.od_config = SimpleNamespace(parallel_config=SimpleNamespace(sequence_parallel_size=sequence_parallel_size))
@@ -24,26 +23,8 @@ def _make_pipeline(pipeline_cls, sequence_parallel_size: int = 1, model_version:
     return pipeline
 
 
-def test_create_noised_state_matches_official_fp32_lerp():
-    latents = torch.linspace(-2, 2, 4096, dtype=torch.bfloat16).reshape(1, 32, 128)
-    expected_generator = torch.Generator().manual_seed(42)
-    noise = torch.randn(latents.shape, generator=expected_generator, dtype=latents.dtype)
-    expected = torch.lerp(latents.float(), noise.float(), torch.tensor(0.15, dtype=torch.bfloat16).float()).to(
-        latents.dtype
-    )
-
-    actual = latent_ops.create_noised_state(
-        latents,
-        torch.tensor(0.15, dtype=torch.bfloat16),
-        torch.Generator().manual_seed(42),
-    )
-
-    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-
-
-@pytest.mark.parametrize("model_version", ["2", "2.3", "2.5"])
-def test_prepare_video_latents_matches_official_packed_rng_layout(model_version):
-    pipeline = _make_pipeline(LTX2Pipeline, model_version=model_version)
+def test_prepare_video_latents_matches_official_values_and_token_major_layout():
+    pipeline = _make_pipeline(LTX2Pipeline)
     pipeline.vae_spatial_compression_ratio = 8
     pipeline.vae_temporal_compression_ratio = 8
     pipeline.transformer_spatial_patch_size = 2
@@ -66,8 +47,8 @@ def test_prepare_video_latents_matches_official_packed_rng_layout(model_version)
     assert actual.stride()[1:] == (1, actual.shape[1])
 
 
-def test_prepare_audio_latents_matches_official_packed_rng_layout():
-    pipeline = _make_pipeline(LTX2Pipeline, model_version="2.5")
+def test_prepare_audio_latents_samples_directly_in_packed_token_space():
+    pipeline = _make_pipeline(LTX2Pipeline)
 
     expected_generator = torch.Generator().manual_seed(42)
     expected = torch.randn((1, 3, 32), generator=expected_generator)
@@ -84,25 +65,6 @@ def test_prepare_audio_latents_matches_official_packed_rng_layout():
     assert original_num_frames == 3
     assert padded_num_frames == 3
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-
-
-@pytest.mark.parametrize("model_version", ["2", "2.3", "2.5"])
-def test_prepare_supplied_video_latents_uses_official_token_major_layout(model_version):
-    pipeline = _make_pipeline(LTX2Pipeline, model_version=model_version)
-    supplied = torch.arange(512, dtype=torch.float32).reshape(1, 32, 16)
-    actual_video = pipeline.prepare_latents(
-        batch_size=1,
-        num_channels_latents=4,
-        height=64,
-        width=64,
-        num_frames=9,
-        dtype=torch.float32,
-        device=torch.device("cpu"),
-        latents=supplied,
-    )
-
-    torch.testing.assert_close(actual_video, supplied, rtol=0, atol=0)
-    assert actual_video.stride()[1:] == (1, actual_video.shape[1])
 
 
 def test_prepare_audio_latents_pads_generated_dummy_length_for_sp():
@@ -192,15 +154,6 @@ def test_unpad_audio_latents_restores_original_frames_before_unpack():
     torch.testing.assert_close(unpacked, expected)
 
 
-def test_clear_audio_padding_keeps_padding_outside_sampler_state():
-    updated = torch.tensor([[[1.0, 2.0], [3.0, 4.0], [99.0, -99.0]]])
-
-    actual = latent_ops.clear_audio_padding(updated, 2)
-
-    torch.testing.assert_close(actual[:, :2], updated[:, :2])
-    torch.testing.assert_close(actual[:, 2:], torch.zeros_like(actual[:, 2:]))
-
-
 def test_prepare_audio_latents_accepts_already_padded_4d_latents_for_sp():
     pipeline = _make_pipeline(LTX2Pipeline, sequence_parallel_size=4)
     pipeline.preserve_sp_padded_audio_duration = True
@@ -249,3 +202,47 @@ def test_prepare_audio_latents_rejects_incompatible_provided_length():
             device=torch.device("cpu"),
             latents=latents,
         )
+
+
+def test_create_noised_state_matches_official_fp32_lerp():
+    latents = torch.linspace(-2, 2, 4096, dtype=torch.bfloat16).reshape(1, 32, 128)
+    expected_generator = torch.Generator().manual_seed(42)
+    noise = torch.randn(latents.shape, generator=expected_generator, dtype=latents.dtype)
+    expected = torch.lerp(latents.float(), noise.float(), torch.tensor(0.15, dtype=torch.bfloat16).float()).to(
+        latents.dtype
+    )
+
+    actual = latent_ops.create_noised_state(
+        latents,
+        torch.tensor(0.15, dtype=torch.bfloat16),
+        torch.Generator().manual_seed(42),
+    )
+
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+
+def test_prepare_supplied_video_latents_uses_official_token_major_layout():
+    pipeline = _make_pipeline(LTX2Pipeline)
+    supplied = torch.arange(512, dtype=torch.float32).reshape(1, 32, 16)
+    actual_video = pipeline.prepare_latents(
+        batch_size=1,
+        num_channels_latents=4,
+        height=64,
+        width=64,
+        num_frames=9,
+        dtype=torch.float32,
+        device=torch.device("cpu"),
+        latents=supplied,
+    )
+
+    torch.testing.assert_close(actual_video, supplied, rtol=0, atol=0)
+    assert actual_video.stride()[1:] == (1, actual_video.shape[1])
+
+
+def test_clear_audio_padding_keeps_padding_outside_sampler_state():
+    updated = torch.tensor([[[1.0, 2.0], [3.0, 4.0], [99.0, -99.0]]])
+
+    actual = latent_ops.clear_audio_padding(updated, 2)
+
+    torch.testing.assert_close(actual[:, :2], updated[:, :2])
+    torch.testing.assert_close(actual[:, 2:], torch.zeros_like(actual[:, 2:]))

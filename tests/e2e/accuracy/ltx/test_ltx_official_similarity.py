@@ -1,29 +1,24 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-"""E2E accuracy guards against pinned official Lightricks LTX references.
+"""E2E accuracy guard against a pinned Lightricks LTX pipeline revision.
 
-The LTX-2/2.3 comparison runs both runtimes through PyTorch SDPA and uses
-``max_batch_size=4`` in the official reference to match Omni's fused guidance
-batch. Video and audio guidance use the official non-HQ one-stage defaults;
-only the generation shape and step count are reduced for CI runtime.
-LTX-2.5 runs the official split-artifact pipelines with connector weights from
-the same Diffusers checkpoint under test. The distilled case covers the fixed
-two-stage schedule; the Full/SFT case covers raw dev weights and an explicit
-shared one-stage schedule.
+The original reduced one-stage guards remain unchanged. Four complementary
+default-shape cases cover both model versions, both two-stage weight families,
+and T2V/I2V without expanding every combination into a duplicate golden.
 """
 
 from __future__ import annotations
 
 import json
-import math
 import os
 import shutil
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import pytest
@@ -36,33 +31,12 @@ from tests.helpers.mark import hardware_test
 
 OFFICIAL_REPOSITORY = "https://github.com/Lightricks/LTX-2.git"
 OFFICIAL_REVISION = "9377758131b1ffde4b7f766804590a6617bf2ab9"
-LTX25_OFFICIAL_REVISION = "7954dcb0d986bdc36ef272564a9789ade07fcc65"
-LTX25_OMNI_MODEL_ID = "Lightricks/LTX-2.5-Diffusers"
-LTX25_OMNI_MODEL_REVISION = "a6de4b5354f078db24d9cf4778c14846788aea3d"
-LTX25_OFFICIAL_MODEL_ID = "Lightricks/LTX-2.5"
-LTX25_OFFICIAL_MODEL_REVISION = "8a4ff96f581e72bedc1b44367581c49d544a05f1"
-LTX25_OFFICIAL_COMMON_FILES = {
-    "text_encoder": "text_encoders/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
-    "video_vae": "vae/ltx-2.5-video-vae-conv-bf16.safetensors",
-    "audio_vae": "vae/ltx-2.5-audio-vae-bf16.safetensors",
-}
-LTX25_OFFICIAL_VARIANT_FILES = {
-    "distilled": {
-        "transformer": "diffusion_models/ltx-2.5-22b-distilled-transformer-bf16.safetensors",
-        "spatial_upsampler": "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
-    },
-    "full": {
-        "transformer": "diffusion_models/ltx-2.5-22b-dev-transformer-bf16.safetensors",
-    },
-}
-# Version selected by the pinned official source's uv.lock. Keep it isolated
-# from Omni's runtime and development dependencies.
+# Version selected by this revision's uv.lock. Keep it out of Omni's runtime and dev dependencies.
 OFFICIAL_OPENIMAGEIO_VERSION = "3.1.11.0"
 PROMPT = (
     "A space shuttle launches vertically above a desert launch pad. Bright exhaust flames and a dense white "
     "plume billow beneath it while the camera remains fixed."
 )
-LTX25_PROMPT = "A cinematic shot of a red fox walking through a snowy forest at dawn, the camera tracking alongside."
 NEGATIVE_PROMPT = (
     "blurry, out of focus, overexposed, underexposed, low contrast, washed out colors, excessive noise, "
     "grainy texture, poor lighting, flickering, motion blur, distorted proportions, unnatural skin tones, "
@@ -79,109 +53,258 @@ NEGATIVE_PROMPT = (
 
 # Both runtimes use PyTorch SDPA with the current Torch dispatch defaults.
 ATTENTION_BACKEND = "torch_sdpa"
-VIDEO_SSIM_MEAN_THRESHOLD = 0.95
-VIDEO_SSIM_MIN_THRESHOLD = 0.90
-VIDEO_PSNR_MEAN_THRESHOLD = 30.0
-AUDIO_RELATIVE_L2_THRESHOLD = 0.2
-AUDIO_COSINE_THRESHOLD = 0.95
-
-# Decoded-output gates for the pinned official/Omni two-stage SDPA comparison.
-# The metrics artifact preserves the exact observed values.
-LTX25_VIDEO_SSIM_MEAN_THRESHOLD = 0.995
-LTX25_VIDEO_SSIM_MIN_THRESHOLD = 0.99
-LTX25_VIDEO_PSNR_MEAN_THRESHOLD = 40.0
-LTX25_AUDIO_RELATIVE_L2_THRESHOLD = 0.3
-LTX25_AUDIO_COSINE_THRESHOLD = 0.95
-
-# Full/SFT exercises CFG/STG and independently converted dev weights, so use
-# the established one-stage decoded-output gates rather than the tighter
-# distilled fixed-schedule gates.
-LTX25_FULL_VIDEO_SSIM_MEAN_THRESHOLD = VIDEO_SSIM_MEAN_THRESHOLD
-LTX25_FULL_VIDEO_SSIM_MIN_THRESHOLD = VIDEO_SSIM_MIN_THRESHOLD
-LTX25_FULL_VIDEO_PSNR_MEAN_THRESHOLD = VIDEO_PSNR_MEAN_THRESHOLD
-LTX25_FULL_AUDIO_RELATIVE_L2_THRESHOLD = 0.3
-LTX25_FULL_AUDIO_COSINE_THRESHOLD = AUDIO_COSINE_THRESHOLD
 
 
-def test_ltx_reference_runner_unwraps_flattened_pipeline_output() -> None:
-    from vllm_omni.outputs import OmniRequestOutput
+@dataclass(frozen=True)
+class LTXArtifact:
+    repo_id: str
+    filename: str
+    revision: str
+    env: str
+    repo_type: Literal["model", "dataset"] = "model"
 
-    from .run_ltx_reference import _unwrap_omni_output
 
-    frame = object()
-    audio = object()
-    output = OmniRequestOutput(
-        stage_id=0,
-        images=[frame],
-        _multimodal_output={"audio": audio, "audio_sample_rate": 48_000},
-    )
+@dataclass(frozen=True)
+class LTXAccuracyThresholds:
+    video_ssim_mean: float
+    video_ssim_min: float
+    video_psnr_mean_db: float
+    # Zero disables gating for waveform-sensitive audio that is not expected
+    # to align with the official output.
+    audio_relative_l2: float
+    audio_cosine_similarity: float
 
-    frames, actual_audio, sample_rate = _unwrap_omni_output(output)
 
-    assert frames is frame
-    assert actual_audio is audio
-    assert sample_rate == 48_000
+STRICT_THRESHOLDS = LTXAccuracyThresholds(
+    video_ssim_mean=0.95,
+    video_ssim_min=0.90,
+    video_psnr_mean_db=30.0,
+    audio_relative_l2=0.20,
+    audio_cosine_similarity=0.95,
+)
 
 
 @dataclass(frozen=True)
 class LTXAccuracyCase:
     name: str
+    pipeline_kind: Literal["one_stage", "distilled", "two_stage"]
     model_id: str
     model_revision: str
     model_env: str
     model_class_name: str
-    checkpoint_repo: str
-    checkpoint_filename: str
-    checkpoint_revision: str
-    checkpoint_env: str
-    stg_block: int
+    checkpoint: LTXArtifact
+    width: int
+    height: int
+    num_frames: int
+    num_inference_steps: int
+    seed: int
+    stg_block: int | None
+    thresholds: LTXAccuracyThresholds
     prompt: str = PROMPT
-    image_repo: str | None = None
-    image_filename: str | None = None
-    image_revision: str | None = None
+    gemma_model_id: str | None = None
+    gemma_model_revision: str | None = None
+    gemma_model_env: str | None = None
+    image: LTXArtifact | None = None
+    spatial_upsampler: LTXArtifact | None = None
+    distilled_lora: LTXArtifact | None = None
+    # Official uses block streaming; Omni uses layerwise offload. Both preserve
+    # bf16 arithmetic while keeping full-resolution two-stage cases on one H100.
+    enable_layerwise_offload: bool = False
 
 
-CASES = (
+LTX2_REVISION = "47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
+LTX23_REVISION = "4229404625088d21c4f112eb640fb04a0900ee25"
+LTX2_CHECKPOINT = LTXArtifact(
+    repo_id="Lightricks/LTX-2",
+    filename="ltx-2-19b-dev.safetensors",
+    revision=LTX2_REVISION,
+    env="VLLM_TEST_LTX2_OFFICIAL_CHECKPOINT",
+)
+LTX2_DISTILLED_CHECKPOINT = replace(
+    LTX2_CHECKPOINT,
+    filename="ltx-2-19b-distilled.safetensors",
+    env="VLLM_TEST_LTX2_DISTILLED_OFFICIAL_CHECKPOINT",
+)
+LTX2_UPSAMPLER = replace(
+    LTX2_CHECKPOINT,
+    filename="ltx-2-spatial-upscaler-x2-1.0.safetensors",
+    env="VLLM_TEST_LTX2_UPSAMPLER",
+)
+LTX2_DISTILLED_LORA = replace(
+    LTX2_CHECKPOINT,
+    filename="ltx-2-19b-distilled-lora-384.safetensors",
+    env="VLLM_TEST_LTX2_DISTILLED_LORA",
+)
+LTX23_CHECKPOINT = LTXArtifact(
+    repo_id="Lightricks/LTX-2.3",
+    filename="ltx-2.3-22b-dev.safetensors",
+    revision=LTX23_REVISION,
+    env="VLLM_TEST_LTX23_OFFICIAL_CHECKPOINT",
+)
+LTX23_DISTILLED_CHECKPOINT = replace(
+    LTX23_CHECKPOINT,
+    # The pinned Diffusers checkpoint contains the original merged distilled
+    # Transformer. Keep the reference Transformer on the same version; the
+    # spatial upsampler is versioned independently and remains on 1.1 below.
+    filename="ltx-2.3-22b-distilled.safetensors",
+    env="VLLM_TEST_LTX23_DISTILLED_OFFICIAL_CHECKPOINT",
+)
+LTX23_UPSAMPLER = replace(
+    LTX23_CHECKPOINT,
+    filename="ltx-2.3-spatial-upscaler-x2-1.1.safetensors",
+    env="VLLM_TEST_LTX23_UPSAMPLER",
+)
+LTX23_DISTILLED_LORA = replace(
+    LTX23_CHECKPOINT,
+    filename="ltx-2.3-22b-distilled-lora-384-1.1.safetensors",
+    env="VLLM_TEST_LTX23_DISTILLED_LORA",
+)
+I2V_IMAGE = LTXArtifact(
+    repo_id="huggingface/documentation-images",
+    filename="diffusers/svd/rocket.png",
+    revision="645d8364f0c7a101180b364811b5a11a362e4010",
+    env="VLLM_TEST_LTX_I2V_IMAGE",
+    repo_type="dataset",
+)
+
+
+LEGACY_CASES = (
     LTXAccuracyCase(
         name="ltx2",
+        pipeline_kind="one_stage",
         model_id="Lightricks/LTX-2",
-        model_revision="47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
+        model_revision=LTX2_REVISION,
         model_env="VLLM_TEST_LTX2_MODEL",
         model_class_name="LTX2Pipeline",
-        checkpoint_repo="Lightricks/LTX-2",
-        checkpoint_filename="ltx-2-19b-dev.safetensors",
-        checkpoint_revision="47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
-        checkpoint_env="VLLM_TEST_LTX2_OFFICIAL_CHECKPOINT",
+        checkpoint=LTX2_CHECKPOINT,
+        width=512,
+        height=384,
+        num_frames=25,
+        num_inference_steps=20,
+        seed=42,
         stg_block=29,
+        thresholds=STRICT_THRESHOLDS,
     ),
     LTXAccuracyCase(
         name="ltx2_3",
+        pipeline_kind="one_stage",
         model_id="diffusers/LTX-2.3-Diffusers",
         model_revision="8eee8edcf067e838b843f926ec4d4cc9b2be1aaf",
         model_env="VLLM_TEST_LTX23_MODEL",
         model_class_name="LTX2Pipeline",
-        checkpoint_repo="Lightricks/LTX-2.3",
-        checkpoint_filename="ltx-2.3-22b-dev.safetensors",
-        checkpoint_revision="4229404625088d21c4f112eb640fb04a0900ee25",
-        checkpoint_env="VLLM_TEST_LTX23_OFFICIAL_CHECKPOINT",
+        checkpoint=LTX23_CHECKPOINT,
+        width=512,
+        height=384,
+        num_frames=25,
+        num_inference_steps=20,
+        seed=42,
         stg_block=28,
+        thresholds=STRICT_THRESHOLDS,
     ),
     LTXAccuracyCase(
         name="ltx2_3_i2v",
+        pipeline_kind="one_stage",
         model_id="diffusers/LTX-2.3-Diffusers",
         model_revision="8eee8edcf067e838b843f926ec4d4cc9b2be1aaf",
         model_env="VLLM_TEST_LTX23_MODEL",
         model_class_name="LTX2Pipeline",
-        checkpoint_repo="Lightricks/LTX-2.3",
-        checkpoint_filename="ltx-2.3-22b-dev.safetensors",
-        checkpoint_revision="4229404625088d21c4f112eb640fb04a0900ee25",
-        checkpoint_env="VLLM_TEST_LTX23_OFFICIAL_CHECKPOINT",
+        checkpoint=LTX23_CHECKPOINT,
+        width=512,
+        height=384,
+        num_frames=25,
+        num_inference_steps=20,
+        seed=42,
         stg_block=28,
-        image_repo="huggingface/documentation-images",
-        image_filename="diffusers/svd/rocket.png",
-        image_revision="645d8364f0c7a101180b364811b5a11a362e4010",
+        thresholds=STRICT_THRESHOLDS,
+        image=I2V_IMAGE,
     ),
 )
+
+
+TWO_STAGE_CASES = (
+    LTXAccuracyCase(
+        name="ltx2_distilled_t2v",
+        pipeline_kind="distilled",
+        model_id="rootonchair/LTX-2-19b-distilled",
+        model_revision="388e2846f54aae51687498ffb6b27c7c2c9ce9e5",
+        model_env="VLLM_TEST_LTX2_DISTILLED_MODEL",
+        model_class_name="LTX2DistilledPipeline",
+        checkpoint=LTX2_DISTILLED_CHECKPOINT,
+        spatial_upsampler=LTX2_UPSAMPLER,
+        width=1536,
+        height=1024,
+        num_frames=121,
+        num_inference_steps=8,
+        seed=10,
+        stg_block=None,
+        gemma_model_id="Lightricks/LTX-2",
+        gemma_model_revision=LTX2_REVISION,
+        gemma_model_env="VLLM_TEST_LTX2_MODEL",
+        thresholds=STRICT_THRESHOLDS,
+    ),
+    LTXAccuracyCase(
+        name="ltx23_distilled_i2v",
+        pipeline_kind="distilled",
+        model_id="diffusers/LTX-2.3-Distilled-Diffusers",
+        model_revision="432e0d3c2d1769aaa4d295f9243f7062bf6b47ee",
+        model_env="VLLM_TEST_LTX23_DISTILLED_MODEL",
+        model_class_name="LTX2DistilledPipeline",
+        checkpoint=LTX23_DISTILLED_CHECKPOINT,
+        spatial_upsampler=LTX23_UPSAMPLER,
+        width=1536,
+        height=1024,
+        num_frames=121,
+        num_inference_steps=8,
+        seed=10,
+        stg_block=None,
+        gemma_model_id="diffusers/LTX-2.3-Diffusers",
+        gemma_model_revision="8eee8edcf067e838b843f926ec4d4cc9b2be1aaf",
+        gemma_model_env="VLLM_TEST_LTX23_MODEL",
+        thresholds=STRICT_THRESHOLDS,
+        image=I2V_IMAGE,
+    ),
+    LTXAccuracyCase(
+        name="ltx2_two_stage_layer_fused_t2v",
+        pipeline_kind="two_stage",
+        model_id="Lightricks/LTX-2",
+        model_revision=LTX2_REVISION,
+        model_env="VLLM_TEST_LTX2_MODEL",
+        model_class_name="LTX2TwoStagePipeline",
+        checkpoint=LTX2_CHECKPOINT,
+        spatial_upsampler=LTX2_UPSAMPLER,
+        distilled_lora=LTX2_DISTILLED_LORA,
+        width=1536,
+        height=1024,
+        num_frames=121,
+        num_inference_steps=40,
+        seed=10,
+        stg_block=29,
+        enable_layerwise_offload=True,
+        thresholds=STRICT_THRESHOLDS,
+    ),
+    LTXAccuracyCase(
+        name="ltx23_two_stage_layer_fused_i2v",
+        pipeline_kind="two_stage",
+        model_id="diffusers/LTX-2.3-Diffusers",
+        model_revision="8eee8edcf067e838b843f926ec4d4cc9b2be1aaf",
+        model_env="VLLM_TEST_LTX23_MODEL",
+        model_class_name="LTX2TwoStagePipeline",
+        checkpoint=LTX23_CHECKPOINT,
+        spatial_upsampler=LTX23_UPSAMPLER,
+        distilled_lora=LTX23_DISTILLED_LORA,
+        width=1536,
+        height=1024,
+        num_frames=121,
+        num_inference_steps=30,
+        seed=10,
+        stg_block=28,
+        enable_layerwise_offload=True,
+        thresholds=STRICT_THRESHOLDS,
+        image=I2V_IMAGE,
+    ),
+)
+
+CASES = (*LEGACY_CASES, *TWO_STAGE_CASES)
 
 
 def _run(command: list[str], *, env: dict[str, str], timeout: int = 1800) -> None:
@@ -190,8 +313,9 @@ def _run(command: list[str], *, env: dict[str, str], timeout: int = 1800) -> Non
     print(f"{' '.join(command[:3])} finished in {time.perf_counter() - start:.1f}s")
 
 
-def _clone_pinned_source(root: Path, repository: str, revision: str) -> None:
+def _clone_official_source(root: Path, revision: str) -> None:
     root.mkdir(parents=True)
+    repository = os.environ.get("VLLM_TEST_LTX_OFFICIAL_REPOSITORY", OFFICIAL_REPOSITORY)
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     subprocess.run(["git", "-C", str(root), "remote", "add", "origin", repository], check=True)
     last_error: subprocess.CalledProcessError | None = None
@@ -224,7 +348,6 @@ def _git_revision(root: Path) -> str | None:
 
 
 def _official_source(artifact_root: Path) -> tuple[Path, str]:
-    repository = os.environ.get("VLLM_TEST_LTX_OFFICIAL_REPOSITORY", OFFICIAL_REPOSITORY)
     revision = os.environ.get("VLLM_TEST_LTX_OFFICIAL_REVISION", OFFICIAL_REVISION)
     configured_root = os.environ.get("VLLM_TEST_LTX_OFFICIAL_ROOT")
     root = Path(configured_root) if configured_root else artifact_root / f"official-source-{revision[:12]}"
@@ -234,26 +357,9 @@ def _official_source(artifact_root: Path) -> tuple[Path, str]:
     if actual_revision != revision:
         if root.exists():
             shutil.rmtree(root)
-        _clone_pinned_source(root, repository, revision)
+        _clone_official_source(root, revision)
         actual_revision = _git_revision(root)
     assert actual_revision == revision, f"Official source revision mismatch: {actual_revision} != {revision}"
-    return root, revision
-
-
-def _ltx25_official_source(artifact_root: Path) -> tuple[Path, str]:
-    repository = os.environ.get("VLLM_TEST_LTX25_OFFICIAL_REPOSITORY", OFFICIAL_REPOSITORY)
-    revision = os.environ.get("VLLM_TEST_LTX25_OFFICIAL_REVISION", LTX25_OFFICIAL_REVISION)
-    configured_root = os.environ.get("VLLM_TEST_LTX25_OFFICIAL_ROOT")
-    root = Path(configured_root) if configured_root else artifact_root / f"official-source-{revision[:12]}"
-    actual_revision = _git_revision(root) if root.exists() else None
-    if actual_revision != revision and configured_root:
-        raise AssertionError(f"Official LTX-2.5 source revision mismatch: {actual_revision} != {revision}")
-    if actual_revision != revision:
-        if root.exists():
-            shutil.rmtree(root)
-        _clone_pinned_source(root, repository, revision)
-        actual_revision = _git_revision(root)
-    assert actual_revision == revision, f"Official LTX-2.5 source revision mismatch: {actual_revision} != {revision}"
     return root, revision
 
 
@@ -288,9 +394,8 @@ def _resolve_model(case: LTXAccuracyCase) -> Path:
             allow_patterns=[
                 "model_index.json",
                 "audio_vae/*",
-                "connectors/config.json",
-                "connectors/diffusion_pytorch_model.safetensors.index.json",
-                "connectors/diffusion_pytorch_model-*.safetensors",
+                "connectors/*",
+                "latent_upsampler/*",
                 "processor/*",
                 "scheduler/*",
                 "text_encoder/config.json",
@@ -305,244 +410,114 @@ def _resolve_model(case: LTXAccuracyCase) -> Path:
     )
 
 
-def _resolve_ltx25_omni_model(*, transformer_subfolder: str = "transformer") -> tuple[Path, str, str | None]:
-    if transformer_subfolder not in {"transformer", "transformer_full"}:
-        raise ValueError(f"Unsupported LTX-2.5 transformer subfolder: {transformer_subfolder!r}")
-    configured_model = os.environ.get("VLLM_TEST_LTX25_MODEL")
-    configured_revision = os.environ.get("VLLM_TEST_LTX25_MODEL_REVISION")
-    if configured_model and Path(configured_model).exists():
-        model = Path(configured_model).resolve()
-        snapshot_revision = model.name if model.parent.name == "snapshots" else None
-        assert (model / transformer_subfolder).is_dir(), f"LTX-2.5 component not found: {model / transformer_subfolder}"
-        return model, configured_model, configured_revision or snapshot_revision
-    model_id = configured_model or LTX25_OMNI_MODEL_ID
-    revision = configured_revision
-    if revision is None and model_id == LTX25_OMNI_MODEL_ID:
-        revision = LTX25_OMNI_MODEL_REVISION
-    model = Path(
-        snapshot_download(
-            repo_id=model_id,
-            revision=revision,
-            allow_patterns=[
-                "model_index.json",
-                "audio_vae/*",
-                "connectors/config.json",
-                "connectors/diffusion_pytorch_model.safetensors.index.json",
-                "connectors/diffusion_pytorch_model-*.safetensors",
-                "scheduler/*",
-                "text_encoder/config.json",
-                "text_encoder/generation_config.json",
-                "text_encoder/model*",
-                "tokenizer/*",
-                f"{transformer_subfolder}/*",
-                "vae/*",
-                "vocoder/*",
-            ],
-        )
-    ).resolve()
-    snapshot_revision = model.name if model.parent.name == "snapshots" else None
-    return model, model_id, snapshot_revision or revision
-
-
-def _resolve_ltx25_official_artifacts(
-    *, checkpoint_variant: str = "distilled"
-) -> tuple[dict[str, Path], str, str | None]:
-    try:
-        variant_files = LTX25_OFFICIAL_VARIANT_FILES[checkpoint_variant]
-    except KeyError as exc:
-        raise ValueError(f"Unsupported official LTX-2.5 checkpoint variant: {checkpoint_variant!r}") from exc
-    files = {**LTX25_OFFICIAL_COMMON_FILES, **variant_files}
-    configured_model = os.environ.get("VLLM_TEST_LTX25_OFFICIAL_MODEL")
-    configured_revision = os.environ.get("VLLM_TEST_LTX25_OFFICIAL_MODEL_REVISION")
-    if configured_model and Path(configured_model).exists():
-        root = Path(configured_model).resolve()
-        model_source = configured_model
-        snapshot_revision = root.name if root.parent.name == "snapshots" else None
-        resolved_revision = configured_revision or snapshot_revision
-    else:
-        model_source = configured_model or LTX25_OFFICIAL_MODEL_ID
-        revision = configured_revision
-        if revision is None and model_source == LTX25_OFFICIAL_MODEL_ID:
-            revision = LTX25_OFFICIAL_MODEL_REVISION
-        root = Path(
-            snapshot_download(
-                repo_id=model_source,
-                revision=revision,
-                allow_patterns=list(files.values()),
-            )
-        ).resolve()
-        snapshot_revision = root.name if root.parent.name == "snapshots" else None
-        resolved_revision = snapshot_revision or revision
-
-    artifacts = {name: root / relative_path for name, relative_path in files.items()}
-    missing = [f"{name}: {path}" for name, path in artifacts.items() if not path.is_file()]
-    assert not missing, f"Official LTX-2.5 artifacts are missing: {', '.join(missing)}"
-    return artifacts, model_source, resolved_revision
-
-
-def _resolve_gemma_root(model: Path) -> Path:
+def _resolve_gemma_root(case: LTXAccuracyCase, model: Path) -> Path:
     configured_root = os.environ.get("VLLM_TEST_LTX_GEMMA_ROOT")
     if configured_root:
         root = Path(configured_root)
         assert root.is_dir(), f"Gemma root not found: {root}"
         return root
+    if case.gemma_model_id is not None:
+        configured_model = os.environ.get(case.gemma_model_env or "")
+        if configured_model and Path(configured_model).is_dir():
+            return Path(configured_model)
+        return Path(
+            snapshot_download(
+                repo_id=case.gemma_model_id,
+                revision=case.gemma_model_revision,
+                allow_patterns=[
+                    "processor/*",
+                    "text_encoder/*",
+                    "tokenizer/*",
+                ],
+            )
+        )
     return model
 
 
-def _resolve_checkpoint(case: LTXAccuracyCase, model: Path) -> Path:
-    configured_checkpoint = os.environ.get(case.checkpoint_env)
-    if configured_checkpoint:
-        checkpoint = Path(configured_checkpoint)
-        assert checkpoint.is_file(), f"Official checkpoint not found: {checkpoint}"
-        return checkpoint
-    model_checkpoint = model / case.checkpoint_filename
-    if model_checkpoint.is_file():
-        return model_checkpoint
+def _resolve_artifact(artifact: LTXArtifact, model: Path | None = None) -> Path:
+    configured_path = os.environ.get(artifact.env)
+    if configured_path:
+        path = Path(configured_path)
+        assert path.is_file(), f"Configured LTX artifact not found: {path}"
+        return path
+    if model is not None:
+        model_path = model / artifact.filename
+        if model_path.is_file():
+            return model_path
     return Path(
         hf_hub_download(
-            repo_id=case.checkpoint_repo,
-            filename=case.checkpoint_filename,
-            revision=case.checkpoint_revision,
+            repo_id=artifact.repo_id,
+            repo_type=None if artifact.repo_type == "model" else artifact.repo_type,
+            filename=artifact.filename,
+            revision=artifact.revision,
         )
     )
 
 
 def _resolve_image(case: LTXAccuracyCase) -> Path | None:
-    if case.image_filename is None:
+    if case.image is None:
         return None
-    if case.image_repo is None or case.image_revision is None:
-        raise ValueError(f"Incomplete image source for LTX accuracy case {case.name!r}.")
-    configured_image = os.environ.get("VLLM_TEST_LTX_I2V_IMAGE")
-    if configured_image:
-        image = Path(configured_image)
-        assert image.is_file(), f"LTX I2V conditioning image not found: {image}"
-        return image
-    return Path(
-        hf_hub_download(
-            repo_id=case.image_repo,
-            repo_type="dataset",
-            filename=case.image_filename,
-            revision=case.image_revision,
-        )
-    )
+    return _resolve_artifact(case.image)
 
 
 def _request(case: LTXAccuracyCase, image: Path | None) -> dict[str, object]:
     request: dict[str, object] = {
+        "pipeline_kind": case.pipeline_kind,
         "prompt": case.prompt,
-        "negative_prompt": NEGATIVE_PROMPT,
-        "width": 512,
-        "height": 384,
-        "num_frames": 25,
+        "negative_prompt": "" if case.pipeline_kind == "distilled" else NEGATIVE_PROMPT,
+        "width": case.width,
+        "height": case.height,
+        "num_frames": case.num_frames,
         "fps": 24,
-        "num_inference_steps": 20,
-        "seed": 42,
-        "video_cfg_scale": 3.0,
-        "audio_cfg_scale": 7.0,
-        "video_stg_scale": 1.0,
-        "audio_stg_scale": 1.0,
-        "video_modality_scale": 3.0,
-        "audio_modality_scale": 3.0,
-        "video_rescale_scale": 0.7,
-        "audio_rescale_scale": 0.7,
-        "video_stg_blocks": [case.stg_block],
-        "audio_stg_blocks": [case.stg_block],
+        "num_inference_steps": case.num_inference_steps,
+        "seed": case.seed,
     }
+    if case.pipeline_kind != "distilled":
+        assert case.stg_block is not None
+        request.update(
+            video_cfg_scale=3.0,
+            audio_cfg_scale=7.0,
+            video_stg_scale=1.0,
+            audio_stg_scale=1.0,
+            video_modality_scale=3.0,
+            audio_modality_scale=3.0,
+            video_rescale_scale=0.7,
+            audio_rescale_scale=0.7,
+            video_stg_blocks=[case.stg_block],
+            audio_stg_blocks=[case.stg_block],
+        )
     if image is not None:
         request["image"] = str(image.resolve())
     return request
 
 
-def _ltx25_request() -> dict[str, object]:
-    return {
-        "prompt": LTX25_PROMPT,
-        # Keep the nightly parity test small enough to run the pinned official
-        # pipeline and Omni sequentially on one H100. The public recipe covers
-        # the release-resolution 1920x1088x121 configuration.
-        "width": 1024,
-        "height": 576,
-        "num_frames": 25,
-        "fps": 24,
-        "num_inference_steps": 8,
-        "seed": 42,
-    }
-
-
-def _ltx25_full_sigmas(num_inference_steps: int) -> list[float]:
-    """Materialize the official LTX-2.5 one-stage schedule in FP32."""
-    sigmas = torch.linspace(1.0, 0.0, num_inference_steps + 1)
-    base_anchor = 1024
-    max_anchor = 4096
-    base_shift = 0.95
-    max_shift = 2.05
-    slope = (max_shift - base_shift) / (max_anchor - base_anchor)
-    sigma_shift = max_anchor * slope + (base_shift - slope * base_anchor)
-    exp_shift = math.exp(sigma_shift)
-    sigmas = torch.where(sigmas != 0, exp_shift / (exp_shift + (1 / sigmas - 1)), 0)
-
-    non_zero = sigmas != 0
-    one_minus_sigmas = 1.0 - sigmas[non_zero]
-    scale = one_minus_sigmas[-1] / (1.0 - 0.1)
-    sigmas[non_zero] = 1.0 - one_minus_sigmas / scale
-    return [float(sigma) for sigma in sigmas]
-
-
-def _ltx25_full_request() -> dict[str, object]:
-    num_inference_steps = 30
-    return {
-        "prompt": LTX25_PROMPT,
-        "negative_prompt": NEGATIVE_PROMPT,
-        # Full guidance expands to a four-way batch. Keep the decoded output
-        # small enough for the pinned official and Omni runs to share one H100.
-        "width": 512,
-        "height": 384,
-        "num_frames": 25,
-        "fps": 24,
-        "num_inference_steps": num_inference_steps,
-        "seed": 42,
-        "video_cfg_scale": 3.0,
-        "audio_cfg_scale": 7.0,
-        "video_stg_scale": 1.0,
-        "audio_stg_scale": 1.0,
-        "video_modality_scale": 3.0,
-        "audio_modality_scale": 3.0,
-        "video_rescale_scale": 0.7,
-        "audio_rescale_scale": 0.7,
-        "video_stg_blocks": [28],
-        "audio_stg_blocks": [28],
-        "sigmas": _ltx25_full_sigmas(num_inference_steps),
-    }
-
-
-def test_ltx25_full_request_pins_official_schedule() -> None:
-    request = _ltx25_full_request()
-    sigmas = request["sigmas"]
-
-    assert isinstance(sigmas, list)
-    assert isinstance(request["num_inference_steps"], int)
-    assert len(sigmas) == request["num_inference_steps"] + 1
-    assert math.isclose(sigmas[0], 1.0, rel_tol=0.0, abs_tol=1e-6)
-    assert sigmas[-1] == 0.0
-    assert all(sigmas[index] > sigmas[index + 1] for index in range(len(sigmas) - 1))
-
-
 def _video_metrics(reference: np.ndarray, prediction: np.ndarray) -> dict[str, float]:
     assert reference.shape == prediction.shape
     assert reference.ndim == 4 and reference.shape[-1] == 3
+    device = torch.device("cpu")
+    ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
+    psnr = PeakSignalNoiseRatio(data_range=1.0).to(device)
     ssim_scores: list[float] = []
     psnr_scores: list[float] = []
-    for reference_frame, prediction_frame in zip(reference, prediction, strict=True):
-        reference_tensor = torch.from_numpy(reference_frame).permute(2, 0, 1).unsqueeze(0)
-        prediction_tensor = torch.from_numpy(prediction_frame).permute(2, 0, 1).unsqueeze(0)
-        ssim_scores.append(float(StructuralSimilarityIndexMeasure(data_range=1.0)(prediction_tensor, reference_tensor)))
-        psnr_scores.append(float(PeakSignalNoiseRatio(data_range=1.0)(prediction_tensor, reference_tensor)))
-    difference = np.abs(reference.astype(np.float64) - prediction.astype(np.float64))
+    max_abs = 0.0
+    absolute_error_sum = 0.0
+    with torch.inference_mode():
+        for reference_frame, prediction_frame in zip(reference, prediction, strict=True):
+            reference_tensor = torch.from_numpy(reference_frame).permute(2, 0, 1).unsqueeze(0).to(device)
+            prediction_tensor = torch.from_numpy(prediction_frame).permute(2, 0, 1).unsqueeze(0).to(device)
+            ssim_scores.append(float(ssim(prediction_tensor, reference_tensor)))
+            psnr_scores.append(float(psnr(prediction_tensor, reference_tensor)))
+            ssim.reset()
+            psnr.reset()
+            difference = np.abs(reference_frame.astype(np.float64) - prediction_frame.astype(np.float64))
+            max_abs = max(max_abs, float(difference.max()))
+            absolute_error_sum += float(difference.sum())
     return {
         "ssim_mean": float(np.mean(ssim_scores)),
         "ssim_min": float(np.min(ssim_scores)),
         "psnr_mean_db": float(np.mean(psnr_scores)),
-        "max_abs": float(difference.max()),
-        "mean_abs": float(difference.mean()),
+        "max_abs": max_abs,
+        "mean_abs": absolute_error_sum / reference.size,
     }
 
 
@@ -573,13 +548,19 @@ def _audio_metrics(reference: np.ndarray, prediction: np.ndarray) -> dict[str, f
 @pytest.mark.benchmark
 @pytest.mark.diffusion
 @hardware_test(res={"cuda": "H100"}, num_cards=1)
-def test_ltx_one_stage_matches_official(case: LTXAccuracyCase, accuracy_artifact_root: Path) -> None:
-    """Compare official and Omni raw AV outputs from the same E2E request."""
+def test_ltx_matches_official(case: LTXAccuracyCase, accuracy_artifact_root: Path) -> None:
+    """Compare official and Omni raw AV outputs from the same single-H100 request."""
+    configured_artifact_root = os.environ.get("VLLM_TEST_LTX_ARTIFACT_ROOT")
+    if configured_artifact_root:
+        accuracy_artifact_root = Path(configured_artifact_root)
+        accuracy_artifact_root.mkdir(parents=True, exist_ok=True)
     output_root = reset_artifact_dir(accuracy_artifact_root / "ltx_official" / case.name)
     official_root, official_revision = _official_source(accuracy_artifact_root / "ltx_official")
     model = _resolve_model(case)
-    gemma_root = _resolve_gemma_root(model)
-    checkpoint = _resolve_checkpoint(case, model)
+    gemma_root = _resolve_gemma_root(case, model)
+    checkpoint = _resolve_artifact(case.checkpoint, model)
+    spatial_upsampler = _resolve_artifact(case.spatial_upsampler, model) if case.spatial_upsampler is not None else None
+    distilled_lora = _resolve_artifact(case.distilled_lora, model) if case.distilled_lora is not None else None
     image = _resolve_image(case)
     request_path = output_root / "request.json"
     request_path.write_text(json.dumps(_request(case, image), indent=2) + "\n")
@@ -589,8 +570,13 @@ def test_ltx_one_stage_matches_official(case: LTXAccuracyCase, accuracy_artifact
         str(runner),
         "--request",
         str(request_path),
+        "--pipeline-kind",
+        case.pipeline_kind,
     ]
-    if os.environ.get("VLLM_TEST_LTX_ENABLE_LAYERWISE_OFFLOAD", "").lower() in {"1", "true", "yes", "on"}:
+    enable_layerwise_offload = case.enable_layerwise_offload or os.environ.get(
+        "VLLM_TEST_LTX_ENABLE_LAYERWISE_OFFLOAD", ""
+    ).lower() in {"1", "true", "yes", "on"}
+    if enable_layerwise_offload:
         runner_args.append("--enable-layerwise-offload")
     env = os.environ.copy()
     env["VLLM_TEST_LTX_OFFICIAL_REVISION"] = official_revision
@@ -602,10 +588,9 @@ def test_ltx_one_stage_matches_official(case: LTXAccuracyCase, accuracy_artifact
     )
 
     official_output = output_root / "official"
-    _run(
-        _official_runner_prefix()
-        + runner_args
-        + [
+    official_args = _official_runner_prefix() + runner_args
+    official_args.extend(
+        [
             "--backend",
             "official",
             "--output-dir",
@@ -616,12 +601,16 @@ def test_ltx_one_stage_matches_official(case: LTXAccuracyCase, accuracy_artifact
             str(checkpoint),
             "--gemma-root",
             str(gemma_root),
-        ],
-        env=env,
+        ]
     )
+    if spatial_upsampler is not None:
+        official_args.extend(["--spatial-upsampler", str(spatial_upsampler)])
+    if distilled_lora is not None:
+        official_args.extend(["--distilled-lora", str(distilled_lora)])
+    _run(official_args, env=env)
 
     omni_output = output_root / "omni"
-    _run(
+    omni_args = (
         [sys.executable]
         + runner_args
         + [
@@ -633,9 +622,9 @@ def test_ltx_one_stage_matches_official(case: LTXAccuracyCase, accuracy_artifact
             str(model),
             "--model-class-name",
             case.model_class_name,
-        ],
-        env=env,
+        ]
     )
+    _run(omni_args, env=env)
 
     official_metadata = json.loads((official_output / "metadata.json").read_text())
     omni_metadata = json.loads((omni_output / "metadata.json").read_text())
@@ -653,254 +642,27 @@ def test_ltx_one_stage_matches_official(case: LTXAccuracyCase, accuracy_artifact
     result = {
         "case": case.name,
         "task": "i2v" if image is not None else "t2v",
+        "pipeline_kind": case.pipeline_kind,
+        "model_class_name": case.model_class_name,
         "attention_backend": ATTENTION_BACKEND,
         "official_revision": official_revision,
         "model_revision": case.model_revision,
-        "checkpoint_revision": case.checkpoint_revision,
+        "checkpoint_revision": case.checkpoint.revision,
+        "spatial_upsampler_revision": (case.spatial_upsampler.revision if case.spatial_upsampler is not None else None),
+        "distilled_lora_revision": case.distilled_lora.revision if case.distilled_lora is not None else None,
+        "enable_layerwise_offload": enable_layerwise_offload,
+        "thresholds": asdict(case.thresholds),
+        "request": _request(case, image),
         "video": video_metrics,
         "audio": audio_metrics,
     }
     (output_root / "metrics.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))
 
-    assert video_metrics["ssim_mean"] >= VIDEO_SSIM_MEAN_THRESHOLD
-    assert video_metrics["ssim_min"] >= VIDEO_SSIM_MIN_THRESHOLD
-    assert video_metrics["psnr_mean_db"] >= VIDEO_PSNR_MEAN_THRESHOLD
-    assert audio_metrics["relative_l2"] <= AUDIO_RELATIVE_L2_THRESHOLD
-    assert audio_metrics["cosine_similarity"] >= AUDIO_COSINE_THRESHOLD
-
-
-@pytest.mark.full_model
-@pytest.mark.benchmark
-@pytest.mark.diffusion
-@hardware_test(res={"cuda": "H100"}, num_cards=1)
-def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path) -> None:
-    """Compare Omni with the official runtime using the same checkpoint connector weights."""
-    artifact_parent = accuracy_artifact_root / "ltx_official"
-    output_root = reset_artifact_dir(artifact_parent / "ltx2_5_distilled")
-    official_root, official_revision = _ltx25_official_source(artifact_parent)
-    official_artifacts, official_model_source, official_model_revision = _resolve_ltx25_official_artifacts()
-    omni_model, omni_model_source, omni_model_revision = _resolve_ltx25_omni_model()
-    request_path = output_root / "request.json"
-    request_path.write_text(json.dumps(_ltx25_request(), indent=2) + "\n")
-
-    runner = Path(__file__).with_name("run_ltx_reference.py")
-    runner_args = [
-        str(runner),
-        "--request",
-        str(request_path),
-        "--enable-layerwise-offload",
-    ]
-    env = os.environ.copy()
-    env["VLLM_TEST_LTX_OFFICIAL_REVISION"] = official_revision
-    env["PYTHONUNBUFFERED"] = "1"
-    repository_root = Path(__file__).resolve().parents[4]
-    existing_pythonpath = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = (
-        str(repository_root) if not existing_pythonpath else f"{repository_root}{os.pathsep}{existing_pythonpath}"
-    )
-
-    official_output = output_root / "official"
-    _run(
-        _official_runner_prefix()
-        + runner_args
-        + [
-            "--backend",
-            "official",
-            "--output-dir",
-            str(official_output),
-            "--official-root",
-            str(official_root),
-            "--transformer-path",
-            str(official_artifacts["transformer"]),
-            "--text-encoder-path",
-            str(official_artifacts["text_encoder"]),
-            "--video-vae-path",
-            str(official_artifacts["video_vae"]),
-            "--audio-vae-path",
-            str(official_artifacts["audio_vae"]),
-            "--spatial-upsampler-path",
-            str(official_artifacts["spatial_upsampler"]),
-            "--connector-model",
-            str(omni_model),
-        ],
-        env=env,
-    )
-
-    omni_output = output_root / "omni"
-    _run(
-        [sys.executable]
-        + runner_args
-        + [
-            "--backend",
-            "omni",
-            "--output-dir",
-            str(omni_output),
-            "--model",
-            str(omni_model),
-            "--model-class-name",
-            "LTX2TwoStagePipeline",
-        ],
-        env=env,
-    )
-
-    official_metadata = json.loads((official_output / "metadata.json").read_text())
-    omni_metadata = json.loads((omni_output / "metadata.json").read_text())
-    assert official_metadata["official_revision"] == official_revision
-    assert official_metadata["attention_backend"] == ATTENTION_BACKEND
-    assert official_metadata["connector_model"] == str(omni_model)
-    assert omni_metadata["attention_backend"] == ATTENTION_BACKEND
-    assert official_metadata["audio_sample_rate"] == omni_metadata["audio_sample_rate"]
-    video_metrics = _video_metrics(
-        np.load(official_output / "video.npy"),
-        np.load(omni_output / "video.npy"),
-    )
-    audio_metrics = _audio_metrics(
-        np.load(official_output / "audio.npy"),
-        np.load(omni_output / "audio.npy"),
-    )
-    result = {
-        "case": "ltx2_5_distilled",
-        "task": "t2v",
-        "attention_backend": ATTENTION_BACKEND,
-        "official_revision": official_revision,
-        "official_model": official_model_source,
-        "official_model_revision": official_model_revision,
-        "official_connector_model": omni_model_source,
-        "official_connector_revision": omni_model_revision,
-        "omni_model": omni_model_source,
-        "omni_model_revision": omni_model_revision,
-        "resolved_omni_model_path": str(omni_model),
-        "video": video_metrics,
-        "audio": audio_metrics,
-    }
-    (output_root / "metrics.json").write_text(json.dumps(result, indent=2) + "\n")
-    print(json.dumps(result, indent=2))
-
-    assert video_metrics["ssim_mean"] >= LTX25_VIDEO_SSIM_MEAN_THRESHOLD
-    assert video_metrics["ssim_min"] >= LTX25_VIDEO_SSIM_MIN_THRESHOLD
-    assert video_metrics["psnr_mean_db"] >= LTX25_VIDEO_PSNR_MEAN_THRESHOLD
-    assert audio_metrics["cosine_similarity"] >= LTX25_AUDIO_COSINE_THRESHOLD
-    assert audio_metrics["relative_l2"] <= LTX25_AUDIO_RELATIVE_L2_THRESHOLD
-
-
-@pytest.mark.full_model
-@pytest.mark.benchmark
-@pytest.mark.diffusion
-@hardware_test(res={"cuda": "H100"}, num_cards=1)
-def test_ltx25_full_one_stage_matches_official(accuracy_artifact_root: Path) -> None:
-    """Compare raw official Full/SFT weights with Omni's converted Full pipeline."""
-    artifact_parent = accuracy_artifact_root / "ltx_official"
-    output_root = reset_artifact_dir(artifact_parent / "ltx2_5_full")
-    official_root, official_revision = _ltx25_official_source(artifact_parent)
-    official_artifacts, official_model_source, official_model_revision = _resolve_ltx25_official_artifacts(
-        checkpoint_variant="full"
-    )
-    omni_model, omni_model_source, omni_model_revision = _resolve_ltx25_omni_model(
-        transformer_subfolder="transformer_full"
-    )
-    request_path = output_root / "request.json"
-    request_path.write_text(json.dumps(_ltx25_full_request(), indent=2) + "\n")
-
-    runner = Path(__file__).with_name("run_ltx_reference.py")
-    runner_args = [
-        str(runner),
-        "--request",
-        str(request_path),
-        "--enable-layerwise-offload",
-    ]
-    env = os.environ.copy()
-    env["VLLM_TEST_LTX_OFFICIAL_REVISION"] = official_revision
-    env["PYTHONUNBUFFERED"] = "1"
-    repository_root = Path(__file__).resolve().parents[4]
-    existing_pythonpath = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = (
-        str(repository_root) if not existing_pythonpath else f"{repository_root}{os.pathsep}{existing_pythonpath}"
-    )
-
-    official_output = output_root / "official"
-    _run(
-        _official_runner_prefix()
-        + runner_args
-        + [
-            "--backend",
-            "official",
-            "--output-dir",
-            str(official_output),
-            "--official-root",
-            str(official_root),
-            "--official-pipeline",
-            "full_one_stage",
-            "--transformer-path",
-            str(official_artifacts["transformer"]),
-            "--text-encoder-path",
-            str(official_artifacts["text_encoder"]),
-            "--video-vae-path",
-            str(official_artifacts["video_vae"]),
-            "--audio-vae-path",
-            str(official_artifacts["audio_vae"]),
-            "--connector-model",
-            str(omni_model),
-        ],
-        env=env,
-    )
-
-    omni_output = output_root / "omni"
-    _run(
-        [sys.executable]
-        + runner_args
-        + [
-            "--backend",
-            "omni",
-            "--output-dir",
-            str(omni_output),
-            "--model",
-            str(omni_model),
-            "--model-class-name",
-            "LTX2Pipeline",
-        ],
-        env=env,
-    )
-
-    official_metadata = json.loads((official_output / "metadata.json").read_text())
-    omni_metadata = json.loads((omni_output / "metadata.json").read_text())
-    assert official_metadata["official_revision"] == official_revision
-    assert official_metadata["pipeline"] == "TI2VidOneStagePipeline"
-    assert official_metadata["attention_backend"] == ATTENTION_BACKEND
-    assert official_metadata["connector_model"] == str(omni_model)
-    assert omni_metadata["model_class_name"] == "LTX2Pipeline"
-    assert omni_metadata["attention_backend"] == ATTENTION_BACKEND
-    assert official_metadata["seed"] == omni_metadata["seed"]
-    assert official_metadata["sigmas"] == omni_metadata["sigmas"]
-    assert official_metadata["audio_sample_rate"] == omni_metadata["audio_sample_rate"]
-    video_metrics = _video_metrics(
-        np.load(official_output / "video.npy"),
-        np.load(omni_output / "video.npy"),
-    )
-    audio_metrics = _audio_metrics(
-        np.load(official_output / "audio.npy"),
-        np.load(omni_output / "audio.npy"),
-    )
-    result = {
-        "case": "ltx2_5_full",
-        "task": "t2v",
-        "attention_backend": ATTENTION_BACKEND,
-        "official_revision": official_revision,
-        "official_model": official_model_source,
-        "official_model_revision": official_model_revision,
-        "official_connector_model": omni_model_source,
-        "official_connector_revision": omni_model_revision,
-        "omni_model": omni_model_source,
-        "omni_model_revision": omni_model_revision,
-        "resolved_omni_model_path": str(omni_model),
-        "video": video_metrics,
-        "audio": audio_metrics,
-    }
-    (output_root / "metrics.json").write_text(json.dumps(result, indent=2) + "\n")
-    print(json.dumps(result, indent=2))
-
-    assert video_metrics["ssim_mean"] >= LTX25_FULL_VIDEO_SSIM_MEAN_THRESHOLD
-    assert video_metrics["ssim_min"] >= LTX25_FULL_VIDEO_SSIM_MIN_THRESHOLD
-    assert video_metrics["psnr_mean_db"] >= LTX25_FULL_VIDEO_PSNR_MEAN_THRESHOLD
-    assert audio_metrics["relative_l2"] <= LTX25_FULL_AUDIO_RELATIVE_L2_THRESHOLD
-    assert audio_metrics["cosine_similarity"] >= LTX25_FULL_AUDIO_COSINE_THRESHOLD
+    assert video_metrics["ssim_mean"] >= case.thresholds.video_ssim_mean
+    assert video_metrics["ssim_min"] >= case.thresholds.video_ssim_min
+    assert video_metrics["psnr_mean_db"] >= case.thresholds.video_psnr_mean_db
+    if case.thresholds.audio_relative_l2 > 0:
+        assert audio_metrics["relative_l2"] <= case.thresholds.audio_relative_l2
+    if case.thresholds.audio_cosine_similarity > 0:
+        assert audio_metrics["cosine_similarity"] >= case.thresholds.audio_cosine_similarity

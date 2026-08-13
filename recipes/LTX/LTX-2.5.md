@@ -29,8 +29,8 @@ latent upsampler, and runs the official three-step refinement tail. Full
 one-stage uses the non-distilled `transformer_full/` weights and the official
 30-step schedule. Distilled two-stage uses the positive-only distilled
 `transformer/` weights and accepts independent `stage_1_sigmas` and
-`stage_2_sigmas` overrides. `LTX2FullPipeline` and `LTX2DistilledPipeline`
-remain compatibility aliases for the two canonical classes.
+`stage_2_sigmas` overrides. Pipeline topology and LTX-2.5 weights are selected
+by the two canonical classes; no request-level task or checkpoint flag is needed.
 
 ## When to use this recipe
 
@@ -42,7 +42,7 @@ distilled schedule and 1920x1088 output.
 ## References
 
 - [LTX-2.5-Diffusers checkpoint](https://huggingface.co/Lightricks/LTX-2.5-Diffusers)
-- [LTX-2.5 model and license](https://huggingface.co/Lightricks/LTX-2.5)
+- [LTX-2.5 upstream source/license artifacts (not a directly loadable `--model` checkpoint)](https://huggingface.co/Lightricks/LTX-2.5)
 - [Official LTX-2 implementation](https://github.com/Lightricks/LTX-2)
 - [Text-to-video offline example](../../examples/offline_inference/text_to_video/text_to_video.py)
 - [Image-to-video offline example](../../examples/offline_inference/image_to_video/image_to_video.py)
@@ -204,8 +204,8 @@ for one-stage/Full, or independent `stage_1_sigmas` and `stage_2_sigmas`
 for distilled two-stage.
 
 Restart the server with `LTX2TwoStagePipeline` to run the distilled two-stage
-path. The compatibility aliases `LTX2FullPipeline` and `LTX2DistilledPipeline`
-select the same Full one-stage and distilled two-stage paths, respectively.
+path. The canonical class selects the topology and matching weights from the same
+`Lightricks/LTX-2.5-Diffusers` checkpoint; no request flag is needed.
 
 ## B300 validation
 

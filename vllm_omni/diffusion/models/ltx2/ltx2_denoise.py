@@ -69,7 +69,7 @@ class LTXDenoiseContext:
 
 @dataclass
 class LTXPhaseResult:
-    """Denoised, unpacked AV latents and the context used to produce them."""
+    """Denoised AV latents and the context used to produce them."""
 
     forward_context: LTXForwardContext
     video: torch.Tensor
@@ -395,7 +395,8 @@ def prepare_rope_coords_stage(
     latents: torch.Tensor,
     audio_latents: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    video_coords = pipeline.transformer.rope.prepare_video_coords(
+    transformer = pipeline.transformer
+    video_coords = transformer.rope.prepare_video_coords(
         latents.shape[0],
         forward_ctx.latent_num_frames,
         forward_ctx.latent_height,
@@ -403,7 +404,7 @@ def prepare_rope_coords_stage(
         latents.device,
         fps=forward_ctx.request_inputs.frame_rate,
     )
-    audio_coords = pipeline.transformer.audio_rope.prepare_audio_coords(
+    audio_coords = transformer.audio_rope.prepare_audio_coords(
         audio_latents.shape[0],
         forward_ctx.padded_audio_num_frames,
         audio_latents.device,

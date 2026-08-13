@@ -468,8 +468,6 @@ def test_i2v_video_generation_resizes_input_to_requested_dimensions(test_client,
         ("LTX2Pipeline", "2.3", (96, 64)),
         ("LTX2TwoStagePipeline", "2.5", (48, 32)),
         ("LTX2TwoStagePipeline", "2", (96, 64)),
-        ("LTX2DistilledPipeline", "2.5", (48, 32)),
-        ("LTX2FullPipeline", "2.5", (48, 32)),
     ],
 )
 def test_ltx_i2v_resize_policy_is_version_conditional(

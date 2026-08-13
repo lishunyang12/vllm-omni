@@ -62,12 +62,6 @@ _DIFFUSION_MODEL_METADATA: dict[str, DiffusionModelMetadata] = {
             "vllm_omni.diffusion.models.ltx2.ltx2_components:preserves_reference_image_size"
         ),
     ),
-    "LTX2FullPipeline": DiffusionModelMetadata(
-        preserves_reference_image_size=True,
-        reference_image_size_resolver=(
-            "vllm_omni.diffusion.models.ltx2.ltx2_components:preserves_reference_image_size"
-        ),
-    ),
     "LTX2TwoStagePipeline": DiffusionModelMetadata(
         preserves_reference_image_size=True,
         reference_image_size_resolver=(

@@ -59,7 +59,6 @@ def test_detect_preset_is_scoped_to_model_family(
     [
         ("LTX2Pipeline", "ltx25_full"),
         ("LTX2TwoStagePipeline", "ltx25_two_stage_distilled"),
-        ("LTX2FullPipeline", "ltx25_full"),
         ("LTX2DistilledPipeline", "ltx25_two_stage_distilled"),
     ],
 )
