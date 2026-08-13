@@ -286,8 +286,9 @@ curl -sS --fail-with-body \
 ```
 
 Request-level overrides use multipart JSON: `image_crf` for I2V, `sigmas`
-for one-stage/Full, or independent `stage_1_sigmas` and `stage_2_sigmas`
-for distilled two-stage.
+for Full one-stage, or independent `stage_1_sigmas` and `stage_2_sigmas`
+for either two-stage path. Distilled one-stage uses its fixed eight-step
+schedule.
 
 Set `PIPELINE` to any class in the offline table and restart the server to
 change checkpoint type or topology. The class selects the matching weights from

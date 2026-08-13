@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-"""Online serving smokes for both canonical LTX-2.5 pipelines."""
+"""Online serving smokes for all four canonical LTX-2.5 pipelines."""
 
 import os
 

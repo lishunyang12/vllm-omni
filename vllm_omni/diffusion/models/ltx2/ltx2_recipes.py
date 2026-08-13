@@ -283,6 +283,7 @@ def _official_two_stage_recipe(one_stage_recipe: LTXPipelineRecipe) -> LTXPipeli
         # discards its audio result. Decode the full-context Stage-1 audio.
         audio_output_phase=0,
         allow_request_sigmas=False,
+        allow_request_phase_sigmas=True,
         allow_request_latents=False,
     )
 

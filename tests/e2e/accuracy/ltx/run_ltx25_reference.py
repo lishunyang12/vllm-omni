@@ -32,10 +32,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--video-vae-path", type=Path)
     parser.add_argument("--audio-vae-path", type=Path)
     parser.add_argument("--spatial-upsampler-path", type=Path)
+    parser.add_argument("--distilled-lora-path", type=Path)
     parser.add_argument("--connector-model", type=Path)
     parser.add_argument(
         "--official-pipeline",
-        choices=("distilled_two_stage", "full_one_stage"),
+        choices=("distilled_two_stage", "full_one_stage", "full_two_stage"),
         default="distilled_two_stage",
     )
     parser.add_argument("--enable-layerwise-offload", action="store_true")
@@ -107,10 +108,15 @@ def _configure_official_sdpa(pipeline: Any) -> None:
         attention=attention,
         masked_attention=attention,
     )
-    owners_and_attributes = (
-        (pipeline.stage, "_transformer_builder"),
+    transformer_owners = [
+        owner
+        for attribute in ("stage", "stage_1", "stage_2")
+        if (owner := getattr(pipeline, attribute, None)) is not None
+    ]
+    owners_and_attributes = [
+        *((owner, "_transformer_builder") for owner in transformer_owners),
         (pipeline.prompt_encoder, "_embeddings_processor_builder"),
-    )
+    ]
     for owner, attribute in owners_and_attributes:
         builder = getattr(owner, attribute)
         setattr(
@@ -192,8 +198,10 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
             "--video-vae-path": args.video_vae_path,
             "--audio-vae-path": args.audio_vae_path,
         }
-        if args.official_pipeline == "distilled_two_stage":
+        if args.official_pipeline in {"distilled_two_stage", "full_two_stage"}:
             required["--spatial-upsampler-path"] = args.spatial_upsampler_path
+        if args.official_pipeline == "full_two_stage":
+            required["--distilled-lora-path"] = args.distilled_lora_path
         missing = [name for name, value in required.items() if value is None]
         if missing:
             raise ValueError(f"Official LTX-2.5 split backend is missing: {', '.join(missing)}")
@@ -226,6 +234,58 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
                 images=images,
             )
             pipeline_name = "DistilledPipeline"
+        elif args.official_pipeline == "full_two_stage":
+            from ltx_core.components.guiders import MultiModalGuiderParams
+            from ltx_core.loader import LTXV_LORA_COMFY_RENAMING_MAP, LoraPathStrengthAndSDOps
+            from ltx_pipelines.ti2vid_two_stages import TI2VidTwoStagesPipeline
+
+            pipeline = TI2VidTwoStagesPipeline(
+                model_paths=model_paths,
+                distilled_lora=[
+                    LoraPathStrengthAndSDOps(
+                        path=str(args.distilled_lora_path),
+                        strength=1.0,
+                        sd_ops=LTXV_LORA_COMFY_RENAMING_MAP,
+                    )
+                ],
+                spatial_upsampler_path=str(args.spatial_upsampler_path),
+                loras=[],
+                offload_mode=offload_mode,
+            )
+            if args.connector_model is not None:
+                _use_diffusers_connector_weights(pipeline.prompt_encoder, args.connector_model)
+            _configure_official_sdpa(pipeline)
+            video, audio, _, _ = pipeline(
+                prompt=request["prompt"],
+                negative_prompt=request["negative_prompt"],
+                seed=request["seed"],
+                height=request["height"],
+                width=request["width"],
+                num_frames=request["num_frames"],
+                frame_rate=request["fps"],
+                num_inference_steps=request["num_inference_steps"],
+                video_guider_params=MultiModalGuiderParams(
+                    cfg_scale=request["video_cfg_scale"],
+                    stg_scale=request["video_stg_scale"],
+                    rescale_scale=request["video_rescale_scale"],
+                    modality_scale=request["video_modality_scale"],
+                    skip_step=0,
+                    stg_blocks=request["video_stg_blocks"],
+                ),
+                audio_guider_params=MultiModalGuiderParams(
+                    cfg_scale=request["audio_cfg_scale"],
+                    stg_scale=request["audio_stg_scale"],
+                    rescale_scale=request["audio_rescale_scale"],
+                    modality_scale=request["audio_modality_scale"],
+                    skip_step=0,
+                    stg_blocks=request["audio_stg_blocks"],
+                ),
+                images=images,
+                max_batch_size=4,
+                stage_1_sigmas=torch.tensor(request["stage_1_sigmas"], dtype=torch.float32),
+                stage_2_sigmas=torch.tensor(request["stage_2_sigmas"], dtype=torch.float32),
+            )
+            pipeline_name = "TI2VidTwoStagesPipeline"
         else:
             from ltx_core.components.guiders import MultiModalGuiderParams
             from ltx_pipelines.ti2vid_one_stage import TI2VidOneStagePipeline
@@ -334,6 +394,8 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
             "official_revision": os.environ.get("VLLM_TEST_LTX_OFFICIAL_REVISION"),
             "seed": request["seed"],
             "sigmas": request.get("sigmas"),
+            "stage_1_sigmas": request.get("stage_1_sigmas"),
+            "stage_2_sigmas": request.get("stage_2_sigmas"),
             **checkpoint_metadata,
         },
     )
@@ -417,7 +479,7 @@ def _run_omni(args: argparse.Namespace, request: dict[str, Any]) -> None:
     from vllm_omni.diffusion.utils.param_utils import apply_declared_extra_args
     from vllm_omni.entrypoints.omni import Omni
     from vllm_omni.inputs.data import OmniDiffusionSamplingParams
-    from vllm_omni.model_extras import get_extra_body_params, get_model_class_name
+    from vllm_omni.model_extras import get_extra_body_params
     from vllm_omni.platforms import current_omni_platform
 
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(request["seed"])
@@ -430,7 +492,10 @@ def _run_omni(args: argparse.Namespace, request: dict[str, Any]) -> None:
         parallel_config=DiffusionParallelConfig(),
     )
     try:
-        model_class_name = get_model_class_name(omni)
+        # The explicit public class argument selects the worker pipeline. The
+        # parent Omni proxy can only expose the checkpoint's base class, which
+        # is insufficient to distinguish LTX execution modes.
+        model_class_name = args.model_class_name
         sampling_params = OmniDiffusionSamplingParams(
             height=request["height"],
             width=request["width"],
@@ -445,7 +510,7 @@ def _run_omni(args: argparse.Namespace, request: dict[str, Any]) -> None:
         extra_args = {
             key: value for key, value in request.items() if key.startswith("video_") or key.startswith("audio_")
         }
-        for key in ("sigmas", "image_crf"):
+        for key in ("sigmas", "stage_1_sigmas", "stage_2_sigmas", "image_crf"):
             if key in request:
                 extra_args[key] = request[key]
         apply_declared_extra_args(sampling_params, get_extra_body_params(model_class_name), extra_args)
@@ -473,6 +538,8 @@ def _run_omni(args: argparse.Namespace, request: dict[str, Any]) -> None:
                 "seed": request["seed"],
                 "sigmas": request.get("sigmas"),
                 "model": args.model,
+                "stage_1_sigmas": request.get("stage_1_sigmas"),
+                "stage_2_sigmas": request.get("stage_2_sigmas"),
                 "model_class_name": model_class_name,
             },
         )

@@ -54,6 +54,11 @@ LTX25_OFFICIAL_VARIANT_FILES = {
     "full": {
         "transformer": "diffusion_models/ltx-2.5-22b-dev-transformer-bf16.safetensors",
     },
+    "full_two_stage": {
+        "transformer": "diffusion_models/ltx-2.5-22b-dev-transformer-bf16.safetensors",
+        "spatial_upsampler": "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+        "distilled_lora": "loras/ltx-2.5-22b-distilled-lora-450-bf16.safetensors",
+    },
 }
 # Version selected by the pinned official source's uv.lock. Keep it isolated
 # from Omni's runtime and development dependencies.
@@ -105,7 +110,10 @@ LTX25_FULL_VIDEO_SSIM_MEAN_THRESHOLD = VIDEO_SSIM_MEAN_THRESHOLD
 LTX25_FULL_VIDEO_SSIM_MIN_THRESHOLD = VIDEO_SSIM_MIN_THRESHOLD
 LTX25_FULL_VIDEO_PSNR_MEAN_THRESHOLD = VIDEO_PSNR_MEAN_THRESHOLD
 LTX25_FULL_AUDIO_RELATIVE_L2_THRESHOLD = 0.3
+LTX25_FULL_VIDEO_LPIPS_MEAN_THRESHOLD = 0.01
+LTX25_FULL_I2V_VIDEO_LPIPS_MEAN_THRESHOLD = 0.02
 LTX25_FULL_AUDIO_COSINE_THRESHOLD = AUDIO_COSINE_THRESHOLD
+LTX25_STAGE_2_SIGMAS = [0.909375, 0.725, 0.421875, 0.0]
 
 
 def test_ltx_reference_runner_unwraps_flattened_pipeline_output() -> None:
@@ -684,8 +692,10 @@ def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path
     official_metadata = json.loads((official_output / "metadata.json").read_text())
     omni_metadata = json.loads((omni_output / "metadata.json").read_text())
     assert official_metadata["official_revision"] == official_revision
+    assert official_metadata["pipeline"] == "DistilledPipeline"
     assert official_metadata["attention_backend"] == ATTENTION_BACKEND
     assert official_metadata["connector_model"] == str(omni_model)
+    assert omni_metadata["model_class_name"] == "LTX2DistilledTwoStagePipeline"
     assert omni_metadata["attention_backend"] == ATTENTION_BACKEND
     assert official_metadata["audio_sample_rate"] == omni_metadata["audio_sample_rate"]
     video_metrics = _video_metrics(
@@ -728,20 +738,29 @@ def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path
 @pytest.mark.diffusion
 @hardware_test(res={"cuda": "H100"}, num_cards=1)
 @pytest.mark.parametrize("task", ["t2v", "i2v"])
-def test_ltx25_full_one_stage_matches_official(accuracy_artifact_root: Path, task: str) -> None:
+@pytest.mark.parametrize("pipeline_mode", ["full_one_stage", "full_two_stage"])
+def test_ltx25_full_matches_official(accuracy_artifact_root: Path, task: str, pipeline_mode: str) -> None:
     """Compare raw official Full/SFT weights with Omni's converted Full pipeline."""
     artifact_parent = accuracy_artifact_root / "ltx_official"
-    output_root = reset_artifact_dir(artifact_parent / f"ltx2_5_full_{task}")
+    output_root = reset_artifact_dir(artifact_parent / f"ltx2_5_{pipeline_mode}_{task}")
+    model_class_name = {
+        "full_one_stage": "LTX2Pipeline",
+        "full_two_stage": "LTX2TwoStagePipeline",
+    }[pipeline_mode]
     official_root, official_revision = _ltx25_official_source(artifact_parent)
     official_artifacts, official_model_source, official_model_revision = _resolve_ltx25_official_artifacts(
-        checkpoint_variant="full"
+        checkpoint_variant="full" if pipeline_mode == "full_one_stage" else "full_two_stage"
     )
     omni_model, omni_model_source, omni_model_revision = _resolve_ltx25_omni_model(
         transformer_subfolder="transformer_full"
     )
     image = _resolve_ltx25_image() if task == "i2v" else None
+    request = _ltx25_full_request(image)
+    if pipeline_mode == "full_two_stage":
+        request["stage_1_sigmas"] = request.pop("sigmas")
+        request["stage_2_sigmas"] = LTX25_STAGE_2_SIGMAS
     request_path = output_root / "request.json"
-    request_path.write_text(json.dumps(_ltx25_full_request(image), indent=2) + "\n")
+    request_path.write_text(json.dumps(request, indent=2) + "\n")
 
     runner = Path(__file__).with_name("run_ltx25_reference.py")
     runner_args = [
@@ -760,6 +779,15 @@ def test_ltx25_full_one_stage_matches_official(accuracy_artifact_root: Path, tas
     )
 
     official_output = output_root / "official"
+    official_sidecar_args: list[str] = []
+    if pipeline_mode == "full_two_stage":
+        official_sidecar_args = [
+            "--spatial-upsampler-path",
+            str(official_artifacts["spatial_upsampler"]),
+            "--distilled-lora-path",
+            str(official_artifacts["distilled_lora"]),
+        ]
+
     _run(
         _official_runner_prefix()
         + runner_args
@@ -771,7 +799,7 @@ def test_ltx25_full_one_stage_matches_official(accuracy_artifact_root: Path, tas
             "--official-root",
             str(official_root),
             "--official-pipeline",
-            "full_one_stage",
+            pipeline_mode,
             "--transformer-path",
             str(official_artifacts["transformer"]),
             "--text-encoder-path",
@@ -782,7 +810,8 @@ def test_ltx25_full_one_stage_matches_official(accuracy_artifact_root: Path, tas
             str(official_artifacts["audio_vae"]),
             "--connector-model",
             str(omni_model),
-        ],
+        ]
+        + official_sidecar_args,
         env=env,
     )
 
@@ -798,7 +827,7 @@ def test_ltx25_full_one_stage_matches_official(accuracy_artifact_root: Path, tas
             "--model",
             str(omni_model),
             "--model-class-name",
-            "LTX2Pipeline",
+            model_class_name,
         ],
         env=env,
     )
@@ -806,13 +835,20 @@ def test_ltx25_full_one_stage_matches_official(accuracy_artifact_root: Path, tas
     official_metadata = json.loads((official_output / "metadata.json").read_text())
     omni_metadata = json.loads((omni_output / "metadata.json").read_text())
     assert official_metadata["official_revision"] == official_revision
-    assert official_metadata["pipeline"] == "TI2VidOneStagePipeline"
+    assert (
+        official_metadata["pipeline"]
+        == {
+            "full_one_stage": "TI2VidOneStagePipeline",
+            "full_two_stage": "TI2VidTwoStagesPipeline",
+        }[pipeline_mode]
+    )
     assert official_metadata["attention_backend"] == ATTENTION_BACKEND
     assert official_metadata["connector_model"] == str(omni_model)
-    assert omni_metadata["model_class_name"] == "LTX2Pipeline"
+    assert omni_metadata["model_class_name"] == model_class_name
     assert omni_metadata["attention_backend"] == ATTENTION_BACKEND
     assert official_metadata["seed"] == omni_metadata["seed"]
-    assert official_metadata["sigmas"] == omni_metadata["sigmas"]
+    for schedule_name in ("sigmas", "stage_1_sigmas", "stage_2_sigmas"):
+        assert official_metadata[schedule_name] == omni_metadata[schedule_name]
     assert official_metadata["audio_sample_rate"] == omni_metadata["audio_sample_rate"]
     video_metrics = _video_metrics(
         np.load(official_output / "video.npy"),
@@ -823,7 +859,7 @@ def test_ltx25_full_one_stage_matches_official(accuracy_artifact_root: Path, tas
         np.load(omni_output / "audio.npy"),
     )
     result = {
-        "case": "ltx2_5_full",
+        "case": f"ltx2_5_{pipeline_mode}",
         "task": task,
         "attention_backend": ATTENTION_BACKEND,
         "official_revision": official_revision,
@@ -843,6 +879,9 @@ def test_ltx25_full_one_stage_matches_official(accuracy_artifact_root: Path, tas
     assert video_metrics["ssim_mean"] >= LTX25_FULL_VIDEO_SSIM_MEAN_THRESHOLD
     assert video_metrics["ssim_min"] >= LTX25_FULL_VIDEO_SSIM_MIN_THRESHOLD
     assert video_metrics["psnr_mean_db"] >= LTX25_FULL_VIDEO_PSNR_MEAN_THRESHOLD
-    assert video_metrics["lpips_alex_mean"] <= LTX25_VIDEO_LPIPS_MEAN_THRESHOLD
+    lpips_threshold = (
+        LTX25_FULL_VIDEO_LPIPS_MEAN_THRESHOLD if task == "t2v" else LTX25_FULL_I2V_VIDEO_LPIPS_MEAN_THRESHOLD
+    )
     assert audio_metrics["relative_l2"] <= LTX25_FULL_AUDIO_RELATIVE_L2_THRESHOLD
+    assert video_metrics["lpips_alex_mean"] <= lpips_threshold
     assert audio_metrics["cosine_similarity"] >= LTX25_FULL_AUDIO_COSINE_THRESHOLD

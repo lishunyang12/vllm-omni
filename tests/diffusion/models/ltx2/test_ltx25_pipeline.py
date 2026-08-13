@@ -428,6 +428,7 @@ def test_ltx25_regular_two_stage_uses_full_transformer_then_distilled_lora():
     assert stage1.spatial_downscale == 2
     assert stage1.guidance == LTX25_FULL_RECIPE.request_guidance
     assert stage2.adapter_slot == "ltx_distilled"
+    assert LTX25_TWO_STAGE_RECIPE.allow_request_phase_sigmas
     assert LTX25_TWO_STAGE_COMPONENT_PROFILE.transformer_subfolder == "transformer_full"
     assert LTX25_TWO_STAGE_COMPONENT_PROFILE.distilled_lora_filename is not None
 
