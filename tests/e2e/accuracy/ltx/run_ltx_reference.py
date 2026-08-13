@@ -32,6 +32,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--video-vae-path", type=Path)
     parser.add_argument("--audio-vae-path", type=Path)
     parser.add_argument("--spatial-upsampler-path", type=Path)
+    parser.add_argument("--connector-model", type=Path)
     parser.add_argument("--enable-layerwise-offload", action="store_true")
     return parser.parse_args()
 
@@ -96,20 +97,7 @@ def _configure_official_sdpa(pipeline: Any) -> None:
     from ltx_core.loader.attention_ops import set_attention_module_op
     from ltx_core.model.transformer.attention import PytorchAttention
 
-    class AllValidSDPA(PytorchAttention):
-        def __call__(
-            self,
-            query: torch.Tensor,
-            key: torch.Tensor,
-            value: torch.Tensor,
-            heads: int,
-            mask: torch.Tensor | None = None,
-        ) -> torch.Tensor:
-            if mask is not None and torch.count_nonzero(mask).item():
-                raise ValueError("The LTX accuracy guard cannot discard a non-empty attention mask")
-            return super().__call__(query, key, value, heads, mask=None)
-
-    attention = AllValidSDPA()
+    attention = PytorchAttention()
     module_op = set_attention_module_op(
         attention=attention,
         masked_attention=attention,
@@ -125,6 +113,45 @@ def _configure_official_sdpa(pipeline: Any) -> None:
             attribute,
             builder.with_module_ops((*builder.module_ops, module_op)),
         )
+
+
+def _use_diffusers_connector_weights(prompt_encoder: Any, model: Path) -> None:
+    """Run official connector code with the checkpoint under test."""
+    from safetensors import safe_open
+
+    connector_root = model / "connectors"
+    shards = sorted(connector_root.glob("*.safetensors"))
+    if not shards:
+        raise ValueError(f"No connector safetensors found under {connector_root}")
+
+    original_build_embeddings_processor = prompt_encoder._build_embeddings_processor
+
+    def build_embeddings_processor():
+        processor = original_build_embeddings_processor()
+        parameters = dict(processor.named_parameters())
+        expected = {name for name in parameters if name.startswith(("video_connector.", "audio_connector."))}
+        loaded: set[str] = set()
+        with torch.no_grad():
+            for shard in shards:
+                with safe_open(str(shard), framework="pt", device="cpu") as weights:
+                    for source_name in weights.keys():
+                        if not source_name.startswith(("video_connector.", "audio_connector.")):
+                            continue
+                        target_name = (
+                            source_name.replace(".transformer_blocks.", ".transformer_1d_blocks.")
+                            .replace(".attn1.norm_q.", ".attn1.q_norm.")
+                            .replace(".attn1.norm_k.", ".attn1.k_norm.")
+                        )
+                        parameter = parameters[target_name]
+                        parameter.copy_(weights.get_tensor(source_name).to(parameter.device, parameter.dtype))
+                        loaded.add(target_name)
+        if loaded != expected:
+            missing = sorted(expected - loaded)
+            unexpected = sorted(loaded - expected)
+            raise ValueError(f"Connector weight mismatch: missing={missing}, unexpected={unexpected}")
+        return processor
+
+    prompt_encoder._build_embeddings_processor = build_embeddings_processor
 
 
 @torch.inference_mode()
@@ -179,6 +206,8 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
             loras=(),
             offload_mode=offload_mode,
         )
+        if args.connector_model is not None:
+            _use_diffusers_connector_weights(pipeline.prompt_encoder, args.connector_model)
         _configure_official_sdpa(pipeline)
         video, audio, _, _ = pipeline(
             prompt=request["prompt"],
@@ -192,6 +221,7 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
         checkpoint_metadata = {
             "transformer_path": str(args.transformer_path),
             "video_vae_path": str(args.video_vae_path),
+            "connector_model": None if args.connector_model is None else str(args.connector_model),
             "pipeline": "DistilledPipeline",
         }
     else:
@@ -266,8 +296,9 @@ def _unwrap_omni_output(output: Any) -> tuple[Any, Any, int]:
         multimodal_output = frames.multimodal_output or {}
         audio = multimodal_output.get("audio")
         audio_sample_rate = multimodal_output.get("audio_sample_rate")
-        if frames.is_pipeline_output and isinstance(frames.request_output, OmniRequestOutput):
-            frames = frames.request_output
+        nested_output = getattr(frames, "request_output", None)
+        if frames.is_pipeline_output and isinstance(nested_output, OmniRequestOutput):
+            frames = nested_output
             multimodal_output = frames.multimodal_output or {}
             audio = multimodal_output.get("audio", audio)
             audio_sample_rate = multimodal_output.get("audio_sample_rate", audio_sample_rate)

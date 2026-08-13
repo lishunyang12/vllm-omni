@@ -13,8 +13,8 @@ from .ltx2_recipes import LTX2_DISTILLED_TWO_STAGE_RECIPE
 from .pipeline_ltx2 import LTX2Pipeline
 
 
-class LTX2DistilledPipeline(LTX2Pipeline):
-    """Unified LTX-2 distilled two-stage T2V/I2V entry."""
+class LTX2TwoStagePipeline(LTX2Pipeline):
+    """Unified LTX distilled two-stage T2V/I2V entry."""
 
     pipeline_kind = "distilled_two_stage"
     component_profile = LTX2_DISTILLED_COMPONENT_PROFILE
@@ -25,3 +25,7 @@ class LTX2DistilledPipeline(LTX2Pipeline):
 
     def __init__(self, *, od_config: OmniDiffusionConfig, prefix: str = ""):
         super().__init__(od_config=od_config, prefix=prefix)
+
+
+class LTX2DistilledPipeline(LTX2TwoStagePipeline):
+    """Backward-compatible name for :class:`LTX2TwoStagePipeline`."""

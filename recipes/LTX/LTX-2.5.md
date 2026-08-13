@@ -8,7 +8,7 @@
 - Vendor: Lightricks
 - Supported checkpoint:
   [`Lightricks/LTX-2.5-Diffusers`](https://huggingface.co/Lightricks/LTX-2.5-Diffusers)
-- Tasks: one-stage T2V/I2V, two-stage distilled T2V, and Full/SFT one-stage T2V/I2V
+- Tasks: one-stage T2V/I2V, two-stage distilled T2V/I2V, and Full/SFT one-stage T2V/I2V
 - Modes: offline inference and OpenAI-compatible `/v1/videos` HTTP serving
 - Maintainer: Community
 
@@ -23,7 +23,7 @@ supports the following generation paths through three pipeline classes:
 |---|---|---:|---:|---|
 | One-stage T2V | `LTX2Pipeline` | 960x544, 121 frames at 24 FPS | 8 | `transformer/` |
 | First-frame I2V | `LTX2Pipeline` | 960x544, 121 frames at 24 FPS | 8 | `transformer/` |
-| Two-stage distilled T2V | `LTX2DistilledPipeline` | 1920x1088, 121 frames at 24 FPS | 8 + 3 | `transformer/` |
+| Two-stage distilled T2V/I2V | `LTX2TwoStagePipeline` | 1920x1088, 121 frames at 24 FPS | 8 + 3 | `transformer/` |
 | Full/SFT one-stage T2V/I2V | `LTX2FullPipeline` | 960x544, 121 frames at 24 FPS | 30 | `transformer_full/` |
 
 The two-stage pipeline first generates at 960x544, applies the model's x2
@@ -31,6 +31,11 @@ latent upsampler, and runs the official three-step refinement tail. One-stage
 requests default to the official eight-step sigma schedule and may override it
 with an explicit `sigmas` list. Distilled two-stage requests may override
 `stage_1_sigmas` and `stage_2_sigmas` independently.
+
+The public Lightricks distilled pipeline is the two-stage path. The positive-only
+one-stage path is a vLLM-Omni deployment extension that uses the distilled
+transformer without the spatial-upsample refinement phase; official comparison
+claims below therefore apply only to the two-stage path.
 
 ## When to use this recipe
 
@@ -125,7 +130,7 @@ when an application explicitly needs to bypass the conditioning round trip.
 ```bash
 python examples/offline_inference/text_to_video/text_to_video.py \
   --model Lightricks/LTX-2.5-Diffusers \
-  --model-class-name LTX2DistilledPipeline \
+  --model-class-name LTX2TwoStagePipeline \
   --prompt "A cinematic shot of a red fox walking through a snowy forest at dawn, the camera tracking alongside, snow crunching underfoot." \
   --height 1088 \
   --width 1920 \
@@ -239,7 +244,7 @@ Request-level overrides use multipart JSON: `image_crf` for I2V, `sigmas`
 for one-stage/Full, or independent `stage_1_sigmas` and `stage_2_sigmas`
 for distilled two-stage.
 
-Restart the server with `LTX2DistilledPipeline` or `LTX2FullPipeline` to run
+Restart the server with `LTX2TwoStagePipeline` or `LTX2FullPipeline` to run
 the corresponding two-stage or Full/SFT command. `LTX2FullPipeline` accepts
 the same first-frame multipart I2V request with 30 steps. Use the dimensions
 and step count from the pipeline table.
@@ -251,7 +256,11 @@ on one NVIDIA B300 with `CUDNN_ATTN`; the four recorded online modes returned HT
 The following are single-process cold-run diagnostics, not warmed throughput
 claims. Generation excludes MP4 encoding; end to end includes model loading.
 
-Correctness is guarded against a pinned official Lightricks implementation.
+The accuracy suite runs the official Lightricks implementation pinned to commit
+`7954dcb` with the raw official transformer/VAE artifacts and connector weights
+from the same `Lightricks/LTX-2.5-Diffusers` checkpoint used by vLLM-Omni. Its
+decoded-video SSIM/PSNR and audio relative-L2/cosine gates are output-level
+checks, not per-tensor parity.
 
 | Mode | Generation | End to end | Peak GPU memory |
 |---|---:|---:|---:|
@@ -275,11 +284,11 @@ All decoded outputs included synchronized 48 kHz stereo audio. Extended
 | Distributed layerwise offload DP2 | Capacity fallback | Output matched eager; primary-rank peak memory decreased by 43.3%, with lower performance. |
 | Whole-model CPU offload | Capacity fallback | Output matched eager; peak memory decreased by 35.3%, with lower performance. |
 | VAE slicing | Release-qualified | Output matched eager. |
-| VAE tiling | Release-qualified | Audio was bit-exact with eager; decoded-video mean SSIM was 0.9730 and mean PSNR was 36.72 dB; peak memory decreased by 5.6%. |
-| TP2 / Ulysses SP2 | Experimental | Both completed, but neither passed the fixed-seed quality gate. |
+| VAE tiling | Release-qualified | The tiled decode completed successfully and reduced peak memory; unlike slicing, tiling is not bit-exact with eager. |
+| TP2 / Ulysses SP2 | Experimental | Strict Ulysses completed, but neither TP2 nor SP2 passed the fixed-seed quality gate; `advanced_uaa` is rejected. |
 | Regional `torch.compile` | Experimental | Generation completed, but the first run was slower and did not pass the fixed-seed quality gate. |
 | FP8 | Experimental | Generation completed with 23.4% lower peak memory, but did not pass the quality gate. |
-| Cache-DiT | Experimental | Threshold 0.12 preserved eager output but recorded zero cache steps; threshold 0.15 exercised caching but failed the fixed-seed quality gate. |
+| Cache-DiT | Experimental | One-stage only: threshold 0.12 preserved eager output but recorded zero cache steps; threshold 0.15 exercised caching but failed the fixed-seed quality gate. Two-stage requests fail fast until phase-aware cache refresh is implemented. |
 | `TRTLLM_ATTN` | Unsupported | The current kernel rejects LTX-2.5's head dimension of 64. |
 | Ring SP2 | Unsupported | The tested path did not complete successfully. |
 | TeaCache | Unsupported | LTX-2.5 has no validated TeaCache residual extractor or coefficient profile. |
@@ -296,10 +305,15 @@ All decoded outputs included synchronized 48 kHz stereo audio. Extended
   accepts independent `stage_1_sigmas` and `stage_2_sigmas` lists.
 - Set `num_frames` explicitly for online requests because the generic video
   API default is one frame.
-- First-frame I2V is implemented for `LTX2Pipeline` and
-  `LTX2FullPipeline`; only `LTX2Pipeline` has the recorded B300 quality
-  result above. Distilled two-stage I2V and multi-frame conditioning are not
-  release-qualified.
+- First-frame I2V is implemented for `LTX2Pipeline`, `LTX2FullPipeline`,
+  and `LTX2TwoStagePipeline`; only `LTX2Pipeline` has the recorded B300 quality result above. Distilled two-stage I2V and
+  multi-frame conditioning are not release-qualified.
+- LTX sequence parallelism supports only strict Ulysses. `advanced_uaa` is
+  rejected because its mask redistribution does not preserve LTX cross-modal
+  key-padding semantics.
+- Cache-DiT is enabled only for one-stage recipes. Two-stage recipes change
+  phase and spatial resolution, so they reject Cache-DiT until cache state and
+  refresh policy become phase-aware.
 - `TRTLLM_ATTN` currently rejects the LTX-2.5 head dimension of 64. Use
   `CUDNN_ATTN` on B300.
 - DLO, CPU offload, and HSDP are memory-capacity fallbacks, not latency

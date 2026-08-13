@@ -206,6 +206,7 @@ _EXTRA_SPECS: dict[str, dict[str, Any]] = {
         for model_class_name in (
             "LTX2Pipeline",
             "LTX2FullPipeline",
+            "LTX2TwoStagePipeline",
             "LTX2DistilledPipeline",
         )
     },

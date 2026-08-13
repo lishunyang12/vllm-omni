@@ -55,6 +55,8 @@ _DIFFUSION_MODEL_METADATA: dict[str, DiffusionModelMetadata] = {
     ),
     "LTX2Pipeline": DiffusionModelMetadata(preserves_reference_image_size=True),
     "LTX2FullPipeline": DiffusionModelMetadata(preserves_reference_image_size=True),
+    "LTX2TwoStagePipeline": DiffusionModelMetadata(preserves_reference_image_size=True),
+    "LTX2DistilledPipeline": DiffusionModelMetadata(preserves_reference_image_size=True),
     "WanPipeline": DiffusionModelMetadata(attention_mask_free=True),
     "WanImageToVideoPipeline": DiffusionModelMetadata(attention_mask_free=True),
     "WanVACEPipeline": DiffusionModelMetadata(attention_mask_free=True),

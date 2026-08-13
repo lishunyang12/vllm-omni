@@ -147,18 +147,22 @@ def _detect_preset(model: str, model_class_name: str | None = None) -> dict:
     model_lower = model.lower()
     model_class_name = model_class_name or resolve_model_class_name(model)
     class_lower = (model_class_name or "").lower()
+    is_ltx_two_stage = class_lower in {
+        "ltx2twostagepipeline",
+        "ltx2distilledpipeline",
+    }
     if "lingbot" in model_lower or "lingbotvideo" in class_lower:
         return _MODEL_PRESETS["lingbot"]
     if "ltx" in class_lower or "ltx" in model_lower:
         ltx_version = detect_ltx_model_version(model) if "ltx2" in class_lower else None
         is_ltx25 = ltx_version == "2.5"
-        if is_ltx25 and "distilled" in class_lower:
+        if is_ltx25 and is_ltx_two_stage:
             return _MODEL_PRESETS["ltx25_distilled"]
         if is_ltx25 and "full" in class_lower:
             return _MODEL_PRESETS["ltx25_full"]
         if is_ltx25:
             return _MODEL_PRESETS["ltx25"]
-        if "distilled" in class_lower or "distilled" in model_lower:
+        if is_ltx_two_stage or "distilled" in model_lower:
             return _MODEL_PRESETS["ltx2_distilled"]
         if ltx_version == "2.3" or "ltx23" in class_lower or "ltx-2.3" in model_lower or "ltx_2.3" in model_lower:
             return _MODEL_PRESETS["ltx23"]

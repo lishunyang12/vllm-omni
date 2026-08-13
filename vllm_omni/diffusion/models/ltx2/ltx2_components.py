@@ -255,9 +255,6 @@ def detect_ltx_model_version(model: str) -> str:
 class _LTXConnectorAttnProcessor:
     """Preserve official connector math around Omni attention dispatch."""
 
-    def __init__(self, *, has_learned_registers: bool) -> None:
-        self.has_learned_registers = has_learned_registers
-
     def __call__(
         self,
         attn: Any,
@@ -279,7 +276,11 @@ class _LTXConnectorAttnProcessor:
         key = attn.norm_k(key).to(dtype=value.dtype)
 
         if query_rotary_emb is not None:
+            # Diffusers builds connector RoPE in FP32, while the official
+            # connector materializes it in the hidden-state dtype.
+            query_rotary_emb = tuple(component.to(value.dtype) for component in query_rotary_emb)
             key_rotary_emb = key_rotary_emb if key_rotary_emb is not None else query_rotary_emb
+            key_rotary_emb = tuple(component.to(value.dtype) for component in key_rotary_emb)
             if attn.rope_type == "interleaved":
                 query = apply_interleaved_rotary_emb(query, query_rotary_emb)
                 key = apply_interleaved_rotary_emb(key, key_rotary_emb)
@@ -289,8 +290,7 @@ class _LTXConnectorAttnProcessor:
             else:
                 raise ValueError(f"Unsupported LTX connector RoPE type: {attn.rope_type}")
 
-        # RoPE is intentionally evaluated in FP32 for LTX-2.5 accuracy; cast
-        # Q/K back to the projection dtype before dispatching attention.
+        # Keep Q/K in the projection dtype expected by the attention backend.
         query = query.to(dtype=value.dtype)
         key = key.to(dtype=value.dtype)
 
@@ -301,12 +301,10 @@ class _LTXConnectorAttnProcessor:
         key = key.view(batch_size, -1, kv_heads, head_dim)
         value = value.view(batch_size, -1, kv_heads, head_dim)
 
-        # The connector replaces padding tokens with learned registers before
-        # entering its blocks, so every key is valid and the old padding mask
-        # becomes an all-keep no-op.
-        if self.has_learned_registers:
-            attention_mask = None
-        elif attention_mask is not None and attn.omni_attention.attn_backend.get_name().upper() == "FLASH_ATTN":
+        # Official learned-register connectors keep the resulting all-zero
+        # additive mask and therefore use the masked SDPA path. Preserve that
+        # dispatch; Flash backends consume the equivalent 2D all-keep mask.
+        if attention_mask is not None and attn.omni_attention.attn_backend.get_name().upper() == "FLASH_ATTN":
             attention_mask = to_ltx_padding_mask(attention_mask)
         attn_metadata = AttentionMetadata(attn_mask=attention_mask) if attention_mask is not None else None
         hidden_states = attn.omni_attention(query, key, value, attn_metadata)
@@ -324,7 +322,6 @@ class _LTXConnectorAttnProcessor:
 def _install_connector_attention(connectors: LTX2TextConnectors) -> None:
     for connector_name in ("video_connector", "audio_connector"):
         connector = getattr(connectors, connector_name, None)
-        has_learned_registers = getattr(connector, "learnable_registers", None) is not None
         for block_index, block in enumerate(getattr(connector, "transformer_blocks", ())):
             attention = getattr(block, "attn1", None)
             if attention is not None:
@@ -340,7 +337,7 @@ def _install_connector_attention(connectors: LTX2TextConnectors) -> None:
                     skip_sequence_parallel=True,
                     disable_kv_quant=True,
                 )
-                attention.set_processor(_LTXConnectorAttnProcessor(has_learned_registers=has_learned_registers))
+                attention.set_processor(_LTXConnectorAttnProcessor())
 
 
 def _detect_vocoder_output_sample_rate(model: str) -> int | None:

@@ -4,7 +4,7 @@
 Expansion tests for LTX-2 two-stage pipelines.
 
 Coverage:
-- HSDP with LTX2DistilledPipeline (text-to-video and image-to-video)
+- HSDP with LTX2TwoStagePipeline (text-to-video and image-to-video)
 """
 
 import os
@@ -33,7 +33,7 @@ def _cases():
                 server_args=[
                     *HSDP_ARGS,
                     "--model-class-name",
-                    "LTX2DistilledPipeline",
+                    "LTX2TwoStagePipeline",
                 ],
             ),
             False,
@@ -49,7 +49,7 @@ def _cases():
                 server_args=[
                     *HSDP_ARGS,
                     "--model-class-name",
-                    "LTX2DistilledPipeline",
+                    "LTX2TwoStagePipeline",
                 ],
             ),
             True,

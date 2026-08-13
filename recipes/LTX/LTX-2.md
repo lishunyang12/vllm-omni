@@ -7,7 +7,7 @@
 | Model | Checkpoint | Task | `--model-class-name` | Batching |
 |---|---|---|---|---|
 | LTX-2 | `Lightricks/LTX-2` | One-stage T2V/I2V | `LTX2Pipeline` | Yes |
-| LTX-2 distilled | `rootonchair/LTX-2-19b-distilled` | Two-stage T2V/I2V | `LTX2DistilledPipeline` | No |
+| LTX-2 distilled | `rootonchair/LTX-2-19b-distilled` | Two-stage T2V/I2V | `LTX2TwoStagePipeline` | No |
 | LTX-2.3 | `diffusers/LTX-2.3-Diffusers` | One-stage T2V/I2V | `LTX2Pipeline` | Yes |
 
 `LTX2Pipeline` is the unified one-stage entry. Checkpoint metadata selects the
@@ -16,10 +16,12 @@ image selects I2V. Both one-stage repositories declare this class, so
 `--model-class-name` is optional. LTX-2.3 requires the Diffusers checkpoint;
 the raw `Lightricks/LTX-2.3` safetensors repository is not directly loadable.
 
-`LTX2DistilledPipeline` is the unified distilled entry: omit `image` for T2V
+`LTX2TwoStagePipeline` is the unified distilled entry: omit `image` for T2V
 or provide one initial image for I2V. As in the official LTX pipelines,
 distilled mode is selected explicitly rather than inferred from the checkpoint
-name or metadata; always pass `--model-class-name LTX2DistilledPipeline`.
+name or metadata; always pass `--model-class-name LTX2TwoStagePipeline`.
+`LTX2DistilledPipeline` remains accepted as a compatibility name, but new
+deployments should use the stage-based entry.
 
 ## API Migration
 
@@ -43,8 +45,8 @@ The consolidation also removes these registry names without aliases:
 | `LTX23Pipeline` | `LTX2Pipeline`; checkpoint metadata selects LTX-2.3 |
 | `LTX2ImageToVideoPipeline` | `LTX2Pipeline` with `image=` |
 | `LTX23ImageToVideoPipeline` | `LTX2Pipeline` with `image=`; checkpoint metadata selects LTX-2.3 |
-| `LTX2TwoStagesPipeline` | `LTX2DistilledPipeline` |
-| `LTX2ImageToVideoTwoStagesPipeline` | `LTX2DistilledPipeline` with `image=` |
+| `LTX2TwoStagesPipeline` | `LTX2TwoStagePipeline` |
+| `LTX2ImageToVideoTwoStagesPipeline` | `LTX2TwoStagePipeline` with `image=` |
 
 Passing any second positional argument now raises `TypeError`. These changes
 affect direct Python callers and explicit `--model-class-name` overrides;
@@ -99,7 +101,7 @@ Start the distilled checkpoint with its two-stage entry:
 
 ```bash
 vllm serve rootonchair/LTX-2-19b-distilled --omni \
-  --model-class-name LTX2DistilledPipeline --stage-init-timeout 600
+  --model-class-name LTX2TwoStagePipeline --stage-init-timeout 600
 ```
 
 The same server handles T2V and I2V. A T2V request using the selected recipe's
@@ -324,6 +326,12 @@ accepts `sigmas` through `extra_params`; bundled offline CLIs accept it through
   denoise step. Recalibrate residual thresholds from older LTX profiles because
   profiles tuned with separate-CFG step accounting can make different cache
   decisions.
+- Cache-DiT is supported by one-stage LTX recipes only. Two-stage recipes fail
+  fast because their phase and spatial-resolution transition requires an
+  explicit cache reset and refresh policy.
+- LTX sequence parallelism uses strict Ulysses. `advanced_uaa` is rejected
+  because it does not preserve the key-padding masks used by LTX audio and
+  cross-modal attention.
 - The output audio sample rate comes from the loaded components and is not a
   request parameter.
 - For benchmarks, use `tests/dfx/perf/tests/test_ltx2_vllm_omni.json` with

@@ -388,6 +388,30 @@ def _detect_ltx_checkpoint_version(model: str, model_class_name: str | None = No
     return detect_ltx_model_version(model)
 
 
+_LTX2_TWO_STAGE_PIPELINE_NAMES = frozenset(
+    {
+        "ltx2twostagepipeline",
+        "ltx2distilledpipeline",
+    }
+)
+
+
+def _is_ltx2_two_stage_pipeline(model_class_name: str | None) -> bool:
+    return (model_class_name or "").lower() in _LTX2_TWO_STAGE_PIPELINE_NAMES
+
+
+def _ltx25_i2v_defaults(
+    ltx_version: str | None,
+    model_class_name: str | None,
+) -> tuple[int, None, int, int, None, int, int] | None:
+    """Return LTX-2.5 I2V defaults for canonical and compatibility entries."""
+    if ltx_version != "2.5":
+        return None
+    if _is_ltx2_two_stage_pipeline(model_class_name):
+        return (24, None, 121, 8, None, 1088 * 1920, 64)
+    return (24, None, 121, 8, None, 544 * 960, 32)
+
+
 def main():
     args = parse_args()
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(args.seed)
@@ -396,7 +420,9 @@ def main():
     model_class_name_lower = (model_class_name or "").lower()
     ltx_version = _detect_ltx_checkpoint_version(args.model, model_class_name)
     is_ltx25 = ltx_version == "2.5"
-    is_ltx2_distilled = "distilled" in model_class_name_lower or "distilled" in model_name
+    is_ltx2_two_stage = _is_ltx2_two_stage_pipeline(model_class_name)
+    ltx25_defaults = _ltx25_i2v_defaults(ltx_version, model_class_name)
+    is_ltx2_distilled = is_ltx2_two_stage or "distilled" in model_name
     is_ltx23 = ltx_version == "2.3"
     is_ltx2 = ltx_version is not None
     is_cosmos = "cosmos" in model_name or (model_class_name is not None and "cosmos" in model_class_name.lower())
@@ -436,16 +462,8 @@ def main():
             1280 * 720,
             16,
         )
-    elif is_ltx25:
-        d_fps, d_guidance, d_num_frames, d_steps, d_flow_shift, d_max_area, d_mod = (
-            24,
-            None,
-            121,
-            8,
-            None,
-            544 * 960,
-            32,
-        )
+    elif ltx25_defaults is not None:
+        d_fps, d_guidance, d_num_frames, d_steps, d_flow_shift, d_max_area, d_mod = ltx25_defaults
     elif is_ltx2_distilled:
         d_fps, d_guidance, d_num_frames, d_steps, d_flow_shift, d_max_area, d_mod = (
             24,

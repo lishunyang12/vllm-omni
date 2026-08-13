@@ -153,6 +153,76 @@ def test_ltx_sp_plan_shards_video_and_audio_timesteps_together(rope_type):
     assert not audio_timestep.split_output
 
 
+def test_ltx_sp_keeps_cross_attention_key_padding_mask(monkeypatch):
+    processor_cls = ltx2_transformer.LTX2AudioVideoAttnProcessor
+    monkeypatch.setattr(processor_cls, "_is_sp_enabled", staticmethod(lambda: True))
+    processor = processor_cls()
+    hidden_states = torch.zeros(1, 3, 4)
+    encoder_hidden_states = torch.zeros(1, 4, 4)
+    key_padding_mask = torch.tensor([[True, True, True, False]])
+
+    actual = processor._prepare_attention_mask(
+        SimpleNamespace(),
+        hidden_states,
+        encoder_hidden_states,
+        key_padding_mask,
+        batch_size=1,
+        sequence_length=4,
+    )
+
+    torch.testing.assert_close(actual, key_padding_mask[:, None, None, :])
+
+
+def _fake_ltx_parallel_attention():
+    calls = []
+
+    class Backend:
+        @staticmethod
+        def get_name():
+            return "FLASH_ATTN"
+
+        @staticmethod
+        def supports_attention_mask():
+            return True
+
+    def run(name):
+        def forward(query, _key, _value, _metadata):
+            calls.append(name)
+            return torch.zeros_like(query)
+
+        return forward
+
+    layer = object.__new__(ltx2_transformer._LTX2ParallelAttention)
+    nn.Module.__init__(layer)
+    layer.attn_backend = Backend
+    layer.attention = SimpleNamespace(forward=run("native"))
+    layer.sdpa_fallback = SimpleNamespace(forward=run("sdpa"))
+    layer.backend_pref = "FLASH_ATTN"
+    return layer, calls
+
+
+@pytest.mark.parametrize(("query_length", "key_length"), [(4, 4), (3, 4)])
+def test_ltx_masked_attention_uses_sdpa(query_length, key_length):
+    layer, calls = _fake_ltx_parallel_attention()
+    query = torch.zeros(1, query_length, 2, 4, dtype=torch.bfloat16)
+    key = value = torch.zeros(1, key_length, 2, 4, dtype=torch.bfloat16)
+    key_padding_mask = torch.tensor([[True] * (key_length - 1) + [False]])
+    metadata = ltx2_transformer.AttentionMetadata(attn_mask=key_padding_mask[:, None, None, :])
+
+    layer._run_local_attention(query, key, value, metadata)
+
+    assert calls == ["sdpa"]
+
+
+def test_ltx_unmasked_attention_keeps_native_backend():
+    layer, calls = _fake_ltx_parallel_attention()
+    query = key = value = torch.zeros(1, 4, 2, 4, dtype=torch.bfloat16)
+
+    layer._run_local_attention(query, key, value, None)
+
+    assert calls == ["native"]
+
+
 def test_ltx25_feed_forward_bias_flag_controls_both_linears(monkeypatch):
     class FakeParallelLinear(nn.Linear):
         def __init__(self, dim_in, dim_out, *, bias=True, **kwargs):
@@ -268,7 +338,19 @@ def test_ltx_cross_attention_modulations_use_official_timesteps(monkeypatch):
             embedding = torch.zeros(timestep.numel(), 8, dtype=hidden_dtype)
             return embedding, embedding
 
+    class CaptureRope(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.output_dtypes = []
+
+        def forward(self, _coords, *, device, out_dtype=None):
+            self.output_dtypes.append(out_dtype)
+            empty = torch.empty(0, device=device, dtype=out_dtype)
+            return empty, empty
+
     model = _build_tiny_ltx_transformer(monkeypatch)
+    rope = CaptureRope()
+    model.rope = model.audio_rope = model.cross_attn_rope = model.cross_attn_audio_rope = rope
     model.prompt_modulation = False
     video_scale_shift = CaptureAda()
     video_gate = CaptureAda()
@@ -296,6 +378,8 @@ def test_ltx_cross_attention_modulations_use_official_timesteps(monkeypatch):
     torch.testing.assert_close(video_gate.calls[0], torch.tensor([5.0]))
     torch.testing.assert_close(audio_scale_shift.calls[0], torch.tensor([5.0]))
     torch.testing.assert_close(audio_gate.calls[0], torch.tensor([2.0]))
+    assert len(rope.output_dtypes) == 4
+    assert all(dtype is torch.float32 for dtype in rope.output_dtypes)
 
 
 def test_ltx25_static_prompt_table_is_used_without_prompt_adaln():
@@ -358,3 +442,41 @@ def test_ltx25_static_prompt_table_is_used_without_prompt_adaln():
 
     torch.testing.assert_close(block.attn2.encoder_hidden_states, torch.tensor([[[5.0, 7.0]]]))
     torch.testing.assert_close(block.audio_attn2.encoder_hidden_states, torch.tensor([[[3.0, 4.0]]]))
+
+
+def test_ltx_gated_attention_uses_tp_sharded_projection(monkeypatch):
+    column_calls = []
+
+    class FakeColumnParallelLinear(nn.Linear):
+        def __init__(self, input_size, output_size, *, bias=True, **kwargs):
+            column_calls.append((output_size, kwargs))
+            super().__init__(input_size, output_size, bias=bias)
+
+    class FakeRowParallelLinear(nn.Linear):
+        def __init__(self, input_size, output_size, *, bias=True, **_kwargs):
+            super().__init__(input_size, output_size, bias=bias)
+
+    class FakeParallelAttention(nn.Module):
+        def __init__(self, **_kwargs):
+            super().__init__()
+
+    monkeypatch.setattr(ltx2_transformer, "ColumnParallelLinear", FakeColumnParallelLinear)
+    monkeypatch.setattr(ltx2_transformer, "RowParallelLinear", FakeRowParallelLinear)
+    monkeypatch.setattr(ltx2_transformer, "_LTX2ParallelAttention", FakeParallelAttention)
+    monkeypatch.setattr(ltx2_transformer, "get_tensor_model_parallel_world_size", lambda: 2)
+
+    attention = ltx2_transformer.LTX2Attention(
+        query_dim=8,
+        heads=4,
+        kv_heads=4,
+        dim_head=2,
+        qk_norm="rms_norm",
+        apply_gated_attention=True,
+        pack_qkv=False,
+    )
+
+    gate_output_size, gate_kwargs = column_calls[-1]
+    assert gate_output_size == 4
+    assert gate_kwargs["gather_output"] is False
+    assert gate_kwargs["return_bias"] is False
+    assert attention.query_num_heads == 2

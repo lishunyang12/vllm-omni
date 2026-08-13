@@ -7,7 +7,8 @@ The LTX-2/2.3 comparison runs both runtimes through PyTorch SDPA and uses
 ``max_batch_size=4`` in the official reference to match Omni's fused guidance
 batch. Video and audio guidance use the official non-HQ one-stage defaults;
 only the generation shape and step count are reduced for CI runtime.
-LTX-2.5 compares the official raw split-artifact ``DistilledPipeline`` with
+LTX-2.5 runs the official split-artifact ``DistilledPipeline`` with connector
+weights from the same Diffusers checkpoint under test, then compares it with
 Omni's matching fixed-schedule two-stage pipeline.
 """
 
@@ -33,7 +34,7 @@ from tests.helpers.mark import hardware_test
 
 OFFICIAL_REPOSITORY = "https://github.com/Lightricks/LTX-2.git"
 OFFICIAL_REVISION = "9377758131b1ffde4b7f766804590a6617bf2ab9"
-LTX25_OFFICIAL_REVISION = "2362161611a61154d342e02724fb8fe58efd455d"
+LTX25_OFFICIAL_REVISION = "7954dcb0d986bdc36ef272564a9789ade07fcc65"
 LTX25_OMNI_MODEL_ID = "Lightricks/LTX-2.5-Diffusers"
 LTX25_OMNI_MODEL_REVISION = "a6de4b5354f078db24d9cf4778c14846788aea3d"
 LTX25_OFFICIAL_MODEL_ID = "Lightricks/LTX-2.5"
@@ -75,12 +76,33 @@ VIDEO_PSNR_MEAN_THRESHOLD = 30.0
 AUDIO_RELATIVE_L2_THRESHOLD = 0.2
 AUDIO_COSINE_THRESHOLD = 0.95
 
-# Broad decoded-output floors for the pinned official/Omni two-stage SDPA
-# comparison. The metrics artifact preserves the exact observed values.
-LTX25_VIDEO_SSIM_MEAN_THRESHOLD = 0.80
-LTX25_VIDEO_PSNR_MEAN_THRESHOLD = 18.0
-LTX25_AUDIO_RELATIVE_L2_THRESHOLD = 1.2
-LTX25_AUDIO_COSINE_THRESHOLD = 0.40
+# Decoded-output gates for the pinned official/Omni two-stage SDPA comparison.
+# The metrics artifact preserves the exact observed values.
+LTX25_VIDEO_SSIM_MEAN_THRESHOLD = 0.995
+LTX25_VIDEO_SSIM_MIN_THRESHOLD = 0.99
+LTX25_VIDEO_PSNR_MEAN_THRESHOLD = 40.0
+LTX25_AUDIO_RELATIVE_L2_THRESHOLD = 0.3
+LTX25_AUDIO_COSINE_THRESHOLD = 0.95
+
+
+def test_ltx_reference_runner_unwraps_flattened_pipeline_output() -> None:
+    from vllm_omni.outputs import OmniRequestOutput
+
+    from .run_ltx_reference import _unwrap_omni_output
+
+    frame = object()
+    audio = object()
+    output = OmniRequestOutput(
+        stage_id=0,
+        images=[frame],
+        _multimodal_output={"audio": audio, "audio_sample_rate": 48_000},
+    )
+
+    frames, actual_audio, sample_rate = _unwrap_omni_output(output)
+
+    assert frames is frame
+    assert actual_audio is audio
+    assert sample_rate == 48_000
 
 
 @dataclass(frozen=True)
@@ -563,7 +585,7 @@ def test_ltx_one_stage_matches_official(case: LTXAccuracyCase, accuracy_artifact
 @pytest.mark.diffusion
 @hardware_test(res={"cuda": "H100"}, num_cards=1)
 def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path) -> None:
-    """Compare Omni's LTX-2.5 distilled output with the official split-artifact pipeline."""
+    """Compare Omni with the official runtime using the same checkpoint connector weights."""
     artifact_parent = accuracy_artifact_root / "ltx_official"
     output_root = reset_artifact_dir(artifact_parent / "ltx2_5_distilled")
     official_root, official_revision = _ltx25_official_source(artifact_parent)
@@ -609,6 +631,8 @@ def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path
             str(official_artifacts["audio_vae"]),
             "--spatial-upsampler-path",
             str(official_artifacts["spatial_upsampler"]),
+            "--connector-model",
+            str(omni_model),
         ],
         env=env,
     )
@@ -625,7 +649,7 @@ def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path
             "--model",
             str(omni_model),
             "--model-class-name",
-            "LTX2DistilledPipeline",
+            "LTX2TwoStagePipeline",
         ],
         env=env,
     )
@@ -634,6 +658,7 @@ def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path
     omni_metadata = json.loads((omni_output / "metadata.json").read_text())
     assert official_metadata["official_revision"] == official_revision
     assert official_metadata["attention_backend"] == ATTENTION_BACKEND
+    assert official_metadata["connector_model"] == str(omni_model)
     assert omni_metadata["attention_backend"] == ATTENTION_BACKEND
     assert official_metadata["audio_sample_rate"] == omni_metadata["audio_sample_rate"]
     video_metrics = _video_metrics(
@@ -651,6 +676,8 @@ def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path
         "official_revision": official_revision,
         "official_model": official_model_source,
         "official_model_revision": official_model_revision,
+        "official_connector_model": omni_model_source,
+        "official_connector_revision": omni_model_revision,
         "omni_model": omni_model_source,
         "omni_model_revision": omni_model_revision,
         "resolved_omni_model_path": str(omni_model),
@@ -661,6 +688,7 @@ def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path
     print(json.dumps(result, indent=2))
 
     assert video_metrics["ssim_mean"] >= LTX25_VIDEO_SSIM_MEAN_THRESHOLD
+    assert video_metrics["ssim_min"] >= LTX25_VIDEO_SSIM_MIN_THRESHOLD
     assert video_metrics["psnr_mean_db"] >= LTX25_VIDEO_PSNR_MEAN_THRESHOLD
     assert audio_metrics["relative_l2"] <= LTX25_AUDIO_RELATIVE_L2_THRESHOLD
     assert audio_metrics["cosine_similarity"] >= LTX25_AUDIO_COSINE_THRESHOLD

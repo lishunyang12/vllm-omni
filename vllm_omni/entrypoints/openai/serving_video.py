@@ -109,12 +109,16 @@ class OmniOpenAIServingVideo:
         metadata = get_diffusion_model_metadata(model_class_name)
         if not metadata.preserves_reference_image_size:
             return False
-        if model_class_name != "LTX2Pipeline":
+        versioned_ltx_entries = {
+            "LTX2Pipeline",
+            "LTX2TwoStagePipeline",
+            "LTX2DistilledPipeline",
+        }
+        if model_class_name not in versioned_ltx_entries:
             return True
 
-        # LTX2Pipeline is shared by LTX-2, LTX-2.3, and LTX-2.5. Only 2.5
-        # requires CRF-18 before resize; preserve the released 2/2.3 server
-        # preprocessing contract without changing async engine plumbing.
+        # These entries are shared by LTX-2/2.3/2.5. Only 2.5 requires
+        # CRF-18 before resize; preserve the released 2/2.3 server contract.
         model = getattr(od_config, "model", None) if od_config is not None else None
         model = model or self.model_name
         if model is None:
