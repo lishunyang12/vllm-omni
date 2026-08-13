@@ -152,6 +152,18 @@ LTX25_DISTILLED_COMPONENT_PROFILE = LTXComponentProfile(
     checkpoint_kind="distilled",
 )
 
+LTX2_DISTILLED_ONE_STAGE_COMPONENT_PROFILE = replace(
+    LTX2_DISTILLED_COMPONENT_PROFILE,
+    name="ltx2_distilled_one_stage",
+    resident_modules=LTX2_COMPONENT_PROFILE.resident_modules,
+)
+
+LTX25_DISTILLED_ONE_STAGE_COMPONENT_PROFILE = replace(
+    LTX25_DISTILLED_COMPONENT_PROFILE,
+    name="ltx2_5_distilled_one_stage",
+    resident_modules=LTX25_FULL_COMPONENT_PROFILE.resident_modules,
+)
+
 
 LTX23_DISTILLED_COMPONENT_PROFILE = replace(
     LTX23_COMPONENT_PROFILE,
@@ -160,6 +172,12 @@ LTX23_DISTILLED_COMPONENT_PROFILE = replace(
     artifact_repo_id="Lightricks/LTX-2.3",
     latent_upsampler_filename="ltx-2.3-spatial-upscaler-x2-1.1.safetensors",
     checkpoint_kind="distilled",
+)
+
+LTX23_DISTILLED_ONE_STAGE_COMPONENT_PROFILE = replace(
+    LTX23_DISTILLED_COMPONENT_PROFILE,
+    name="ltx2_3_distilled_one_stage",
+    resident_modules=LTX23_COMPONENT_PROFILE.resident_modules,
 )
 
 LTX2_TWO_STAGE_COMPONENT_PROFILE = replace(
@@ -183,15 +201,28 @@ LTX23_TWO_STAGE_COMPONENT_PROFILE = replace(
 )
 
 
+LTX25_TWO_STAGE_COMPONENT_PROFILE = replace(
+    LTX25_FULL_COMPONENT_PROFILE,
+    name="ltx2_5_two_stage",
+    resident_modules=(*LTX25_FULL_COMPONENT_PROFILE.resident_modules, "latent_upsampler"),
+    artifact_repo_id="Lightricks/LTX-2.5",
+    latent_upsampler_filename=("latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors"),
+    distilled_lora_filename="loras/ltx-2.5-22b-distilled-lora-450-bf16.safetensors",
+)
+
 _COMPONENT_PROFILES: dict[tuple[str, str], LTXComponentProfile] = {
     ("one_stage", "2"): LTX2_COMPONENT_PROFILE,
     ("one_stage", "2.3"): LTX23_COMPONENT_PROFILE,
     ("one_stage", "2.5"): LTX25_FULL_COMPONENT_PROFILE,
     ("two_stage", "2"): LTX2_TWO_STAGE_COMPONENT_PROFILE,
     ("two_stage", "2.3"): LTX23_TWO_STAGE_COMPONENT_PROFILE,
-    ("two_stage", "2.5"): LTX25_DISTILLED_COMPONENT_PROFILE,
+    ("two_stage", "2.5"): LTX25_TWO_STAGE_COMPONENT_PROFILE,
+    ("distilled_one_stage", "2"): LTX2_DISTILLED_ONE_STAGE_COMPONENT_PROFILE,
+    ("distilled_one_stage", "2.3"): LTX23_DISTILLED_ONE_STAGE_COMPONENT_PROFILE,
+    ("distilled_one_stage", "2.5"): LTX25_DISTILLED_ONE_STAGE_COMPONENT_PROFILE,
     ("distilled_two_stage", "2"): LTX2_DISTILLED_COMPONENT_PROFILE,
     ("distilled_two_stage", "2.3"): LTX23_DISTILLED_COMPONENT_PROFILE,
+    ("distilled_two_stage", "2.5"): LTX25_DISTILLED_COMPONENT_PROFILE,
     ("dmd2", "2"): LTX2_COMPONENT_PROFILE,
     ("dmd2", "2.3"): LTX23_COMPONENT_PROFILE,
 }

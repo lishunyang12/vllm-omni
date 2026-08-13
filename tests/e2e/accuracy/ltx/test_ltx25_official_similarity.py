@@ -676,7 +676,7 @@ def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path
             "--model",
             str(omni_model),
             "--model-class-name",
-            "LTX2TwoStagePipeline",
+            "LTX2DistilledTwoStagePipeline",
         ],
         env=env,
     )

@@ -3,7 +3,7 @@
 
 """Declarative execution recipes for the LTX model family."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from .ltx2_guidance import LTXGuidanceSpec, LTXModalityGuidance
@@ -228,6 +228,30 @@ LTX25_DISTILLED_TWO_STAGE_RECIPE = LTXPipelineRecipe(
 LTX23_DISTILLED_TWO_STAGE_RECIPE = LTX2_DISTILLED_TWO_STAGE_RECIPE
 
 
+def _distilled_one_stage_recipe(two_stage_recipe: LTXPipelineRecipe) -> LTXPipelineRecipe:
+    """Run the merged-distilled checkpoint at its native Stage-1 resolution."""
+    generate_phase = replace(
+        two_stage_recipe.phases[0],
+        name="generate",
+        spatial_downscale=1,
+    )
+    return replace(
+        two_stage_recipe,
+        height=two_stage_recipe.height // 2,
+        width=two_stage_recipe.width // 2,
+        phases=(generate_phase,),
+        video_output_phase=0,
+        audio_output_phase=0,
+        allow_request_phase_sigmas=False,
+        supports_cache_dit=True,
+    )
+
+
+LTX2_DISTILLED_ONE_STAGE_RECIPE = _distilled_one_stage_recipe(LTX2_DISTILLED_TWO_STAGE_RECIPE)
+LTX23_DISTILLED_ONE_STAGE_RECIPE = _distilled_one_stage_recipe(LTX23_DISTILLED_TWO_STAGE_RECIPE)
+LTX25_DISTILLED_ONE_STAGE_RECIPE = _distilled_one_stage_recipe(LTX25_DISTILLED_TWO_STAGE_RECIPE)
+
+
 def _official_two_stage_recipe(one_stage_recipe: LTXPipelineRecipe) -> LTXPipelineRecipe:
     return LTXPipelineRecipe(
         height=one_stage_recipe.height * 2,
@@ -265,6 +289,7 @@ def _official_two_stage_recipe(one_stage_recipe: LTXPipelineRecipe) -> LTXPipeli
 
 LTX2_TWO_STAGE_RECIPE = _official_two_stage_recipe(LTX2_ONE_STAGE_RECIPE)
 LTX23_TWO_STAGE_RECIPE = _official_two_stage_recipe(LTX23_ONE_STAGE_RECIPE)
+LTX25_TWO_STAGE_RECIPE = _official_two_stage_recipe(LTX25_FULL_RECIPE)
 
 
 _PIPELINE_RECIPES: dict[tuple[str, str], LTXPipelineRecipe] = {
@@ -273,9 +298,13 @@ _PIPELINE_RECIPES: dict[tuple[str, str], LTXPipelineRecipe] = {
     ("one_stage", "2.5"): LTX25_FULL_RECIPE,
     ("two_stage", "2"): LTX2_TWO_STAGE_RECIPE,
     ("two_stage", "2.3"): LTX23_TWO_STAGE_RECIPE,
-    ("two_stage", "2.5"): LTX25_DISTILLED_TWO_STAGE_RECIPE,
+    ("two_stage", "2.5"): LTX25_TWO_STAGE_RECIPE,
+    ("distilled_one_stage", "2"): LTX2_DISTILLED_ONE_STAGE_RECIPE,
+    ("distilled_one_stage", "2.3"): LTX23_DISTILLED_ONE_STAGE_RECIPE,
+    ("distilled_one_stage", "2.5"): LTX25_DISTILLED_ONE_STAGE_RECIPE,
     ("distilled_two_stage", "2"): LTX2_DISTILLED_TWO_STAGE_RECIPE,
     ("distilled_two_stage", "2.3"): LTX23_DISTILLED_TWO_STAGE_RECIPE,
+    ("distilled_two_stage", "2.5"): LTX25_DISTILLED_TWO_STAGE_RECIPE,
     ("dmd2", "2"): LTX_POSITIVE_ONLY_RECIPE,
     ("dmd2", "2.3"): LTX_POSITIVE_ONLY_RECIPE,
 }

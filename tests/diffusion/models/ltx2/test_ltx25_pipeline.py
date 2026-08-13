@@ -14,8 +14,11 @@ from vllm_omni.diffusion.data import DiffusionOutput
 from vllm_omni.diffusion.models.ltx2 import ltx2_components, ltx2_latents, ltx2_runtime
 from vllm_omni.diffusion.models.ltx2.ltx2_components import (
     LTX25_DISTILLED_COMPONENT_PROFILE,
+    LTX25_DISTILLED_ONE_STAGE_COMPONENT_PROFILE,
     LTX25_FULL_COMPONENT_PROFILE,
+    LTX25_TWO_STAGE_COMPONENT_PROFILE,
     detect_ltx_model_version,
+    resolve_ltx_component_profile,
 )
 from vllm_omni.diffusion.models.ltx2.ltx2_denoise import (
     LTXPhaseResult,
@@ -34,17 +37,22 @@ from vllm_omni.diffusion.models.ltx2.ltx2_recipes import (
     LTX2_DISTILLED_TWO_STAGE_RECIPE,
     LTX2_ONE_STAGE_RECIPE,
     LTX23_ONE_STAGE_RECIPE,
+    LTX25_DISTILLED_ONE_STAGE_RECIPE,
     LTX25_DISTILLED_TWO_STAGE_RECIPE,
     LTX25_FULL_RECIPE,
+    LTX25_TWO_STAGE_RECIPE,
     LTX_DISTILLED_SIGMAS,
     LTX_POSITIVE_ONLY_RECIPE,
+    resolve_ltx_pipeline_recipe,
 )
 from vllm_omni.diffusion.models.ltx2.ltx2_request import LTXRequestInputs
 from vllm_omni.diffusion.models.ltx2.ltx2_runtime import LTXRuntime
 from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import (
+    LTX2DistilledOneStagePipeline,
     LTX2Pipeline,
 )
 from vllm_omni.diffusion.models.ltx2.pipeline_ltx2_two_stage import (
+    LTX2DistilledTwoStagePipeline,
     LTX2TwoStagePipeline,
 )
 
@@ -360,7 +368,7 @@ def test_ltx25_checkpoint_selects_distilled_two_stage_profile(tmp_path, monkeypa
     monkeypatch.setattr(ltx2_runtime, "initialize_pipeline_components", stub_components)
     monkeypatch.setattr(LTXRuntime, "setup_diffusion_pipeline_profiler", lambda *_args, **_kwargs: None)
 
-    pipe = LTX2TwoStagePipeline(
+    pipe = LTX2DistilledTwoStagePipeline(
         od_config=SimpleNamespace(
             model=str(tmp_path),
             enable_diffusion_pipeline_profiler=False,
@@ -369,6 +377,22 @@ def test_ltx25_checkpoint_selects_distilled_two_stage_profile(tmp_path, monkeypa
 
     assert pipe.component_profile is LTX25_DISTILLED_COMPONENT_PROFILE
     assert pipe.pipeline_recipe is LTX25_DISTILLED_TWO_STAGE_RECIPE
+
+
+def test_ltx25_four_public_pipeline_semantics_are_disjoint():
+    assert resolve_ltx_component_profile("one_stage", "2.5") is LTX25_FULL_COMPONENT_PROFILE
+    assert resolve_ltx_pipeline_recipe("one_stage", "2.5") is LTX25_FULL_RECIPE
+    assert resolve_ltx_component_profile("two_stage", "2.5") is LTX25_TWO_STAGE_COMPONENT_PROFILE
+    assert resolve_ltx_pipeline_recipe("two_stage", "2.5") is LTX25_TWO_STAGE_RECIPE
+    assert resolve_ltx_component_profile("distilled_one_stage", "2.5") is LTX25_DISTILLED_ONE_STAGE_COMPONENT_PROFILE
+    assert resolve_ltx_pipeline_recipe("distilled_one_stage", "2.5") is LTX25_DISTILLED_ONE_STAGE_RECIPE
+    assert resolve_ltx_component_profile("distilled_two_stage", "2.5") is LTX25_DISTILLED_COMPONENT_PROFILE
+    assert resolve_ltx_pipeline_recipe("distilled_two_stage", "2.5") is LTX25_DISTILLED_TWO_STAGE_RECIPE
+
+    assert LTX2Pipeline.pipeline_kind == "one_stage"
+    assert LTX2TwoStagePipeline.pipeline_kind == "two_stage"
+    assert LTX2DistilledOneStagePipeline.pipeline_kind == "distilled_one_stage"
+    assert LTX2DistilledTwoStagePipeline.pipeline_kind == "distilled_two_stage"
 
 
 def test_ltx25_distilled_two_stage_recipe_matches_model_card_resolution():
@@ -384,6 +408,28 @@ def test_ltx25_distilled_two_stage_recipe_matches_model_card_resolution():
 
     assert LTX25_DISTILLED_TWO_STAGE_RECIPE.negative_prompt == ""
     assert not LTX25_DISTILLED_TWO_STAGE_RECIPE.allow_negative_prompt
+
+
+def test_ltx25_distilled_one_stage_uses_native_low_resolution():
+    (phase,) = LTX25_DISTILLED_ONE_STAGE_RECIPE.phases
+
+    assert (LTX25_DISTILLED_ONE_STAGE_RECIPE.height, LTX25_DISTILLED_ONE_STAGE_RECIPE.width) == (544, 960)
+    assert phase.spatial_downscale == 1
+    assert phase.sigmas == LTX_DISTILLED_SIGMAS
+    assert phase.sampler == "euler_ancestral"
+    assert LTX25_DISTILLED_ONE_STAGE_RECIPE.supports_cache_dit
+
+
+def test_ltx25_regular_two_stage_uses_full_transformer_then_distilled_lora():
+    stage1, stage2 = LTX25_TWO_STAGE_RECIPE.phases
+
+    assert (LTX25_TWO_STAGE_RECIPE.height, LTX25_TWO_STAGE_RECIPE.width) == (1088, 1920)
+    assert LTX25_TWO_STAGE_RECIPE.num_inference_steps == 30
+    assert stage1.spatial_downscale == 2
+    assert stage1.guidance == LTX25_FULL_RECIPE.request_guidance
+    assert stage2.adapter_slot == "ltx_distilled"
+    assert LTX25_TWO_STAGE_COMPONENT_PROFILE.transformer_subfolder == "transformer_full"
+    assert LTX25_TWO_STAGE_COMPONENT_PROFILE.distilled_lora_filename is not None
 
 
 @pytest.mark.parametrize(

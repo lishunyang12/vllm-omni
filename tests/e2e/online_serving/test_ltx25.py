@@ -41,7 +41,9 @@ def _server(model_class_name: str) -> OmniServerParams:
 def _cases():
     return [
         pytest.param(_server("LTX2Pipeline"), 30, id="full_one_stage", marks=SINGLE_CARD_MARKS),
-        pytest.param(_server("LTX2TwoStagePipeline"), 8, id="distilled_two_stage", marks=SINGLE_CARD_MARKS),
+        pytest.param(_server("LTX2TwoStagePipeline"), 30, id="full_two_stage", marks=SINGLE_CARD_MARKS),
+        pytest.param(_server("LTX2DistilledOneStagePipeline"), 8, id="distilled_one_stage", marks=SINGLE_CARD_MARKS),
+        pytest.param(_server("LTX2DistilledTwoStagePipeline"), 8, id="distilled_two_stage", marks=SINGLE_CARD_MARKS),
     ]
 
 

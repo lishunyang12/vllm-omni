@@ -241,6 +241,8 @@ def test_ltx_extra_registry_declares_official_guidance_params() -> None:
     for pipeline_name in (
         "LTX2Pipeline",
         "LTX2TwoStagePipeline",
+        "LTX2DistilledOneStagePipeline",
+        "LTX2DistilledTwoStagePipeline",
         "LTX2DistilledPipeline",
     ):
         assert get_extra_body_params(pipeline_name) == expected
