@@ -421,6 +421,24 @@ class TestPinnedResidentLayerGroup:
 
         group.offload()
 
+    def test_load_preserves_noncontiguous_weight_stride(self, patched_offload_runtime):
+        block = nn.Module()
+        weight = torch.arange(6, dtype=torch.float32).reshape(2, 3).t()
+        expected = weight.detach().clone()
+        expected_stride = weight.stride()
+        block.weight = nn.Parameter(weight)
+        group = PinnedResidentLayerGroup(
+            [block],
+            device=torch.device("cpu"),
+            copy_stream=DummyStream(),
+            pin_memory=False,
+        )
+
+        group.load()
+        assert torch.equal(block.weight, expected)
+        assert block.weight.stride() == expected_stride
+        group.offload()
+
     def test_mmap_loader_attrs_survive_to_empty_parameter_replacement(self):
         module = nn.Linear(2, 2, bias=False)
 

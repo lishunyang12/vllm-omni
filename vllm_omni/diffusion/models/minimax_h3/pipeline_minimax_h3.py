@@ -20,6 +20,7 @@ import torch.nn as nn
 from PIL import Image
 from transformers import Qwen2TokenizerFast, Qwen3VLProcessor
 from vllm.logger import init_logger
+from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
 
 from vllm_omni.diffusion import envs
 from vllm_omni.diffusion.cache.cachedit import (
@@ -54,7 +55,12 @@ from vllm_omni.model_executor.model_loader.weight_utils import (
     download_weights_from_hf_specific,
 )
 from vllm_omni.platforms import current_omni_platform
-from vllm_omni.quantization import resolve_component_quant_config as _resolve_component_quant_config
+from vllm_omni.quantization import (
+    resolve_component_quant_config as _resolve_component_quant_config,
+)
+from vllm_omni.quantization.component_config import (
+    resolve_encoder_quant_config as _resolve_encoder_quant_config,
+)
 
 from .condition_noise import (
     minimax_h3_audio_cond_noise_aug_rows,
@@ -127,6 +133,13 @@ MINIMAX_H3_TASK_DOWNLOAD_PATTERNS = {
     "fl2va": ["FL2VA/**"],
     "ref2va": ["Ref2VA/**"],
 }
+
+
+def _resolve_minimax_h3_text_encoder_quant_config(
+    quant_config: QuantizationConfig | None,
+) -> QuantizationConfig | None:
+    resolved = _resolve_component_quant_config(quant_config, "text_encoder")
+    return _resolve_encoder_quant_config(resolved)
 
 
 def _minimax_h3_partition_for_task(
@@ -689,10 +702,7 @@ class MiniMaxH3Pipeline(
             device=self.device,
             load_model=load_text_encoder,
             encoder_group=self.text_encoder_group,
-            quant_config=_resolve_component_quant_config(
-                od_config.quantization_config,
-                "text_encoder",
-            ),
+            quant_config=_resolve_minimax_h3_text_encoder_quant_config(od_config.quantization_config),
         )
         if load_text_encoder:
             self.weights_sources.append(

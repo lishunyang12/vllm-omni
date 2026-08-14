@@ -622,7 +622,11 @@ class PinnedResidentLayerGroup:
                 for meta in metas:
                     set_tensor_storage(
                         targets[meta["name"]],
-                        gpu_buffer[meta["offset"] : meta["offset"] + meta["numel"]].view(meta["shape"]),
+                        torch.as_strided(
+                            gpu_buffer[meta["offset"] : meta["offset"] + meta["numel"]],
+                            size=meta["shape"],
+                            stride=meta["stride"],
+                        ),
                     )
 
         current_omni_platform.current_stream().wait_event(ready)
