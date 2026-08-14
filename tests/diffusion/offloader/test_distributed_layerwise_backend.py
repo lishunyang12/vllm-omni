@@ -911,7 +911,7 @@ def _hwr_backend():
     plan, carrier, lease = _fake_hwr_plan()
     backend = DistributedLayerwiseOffloadBackend(
         OffloadConfig(
-            strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+            strategy=OffloadStrategy.DISTRIBUTED_LAYERWISE,
             pin_cpu_memory=False,
             dp_size=1,
             dlo_use_allgather=False,
@@ -972,7 +972,7 @@ def test_hwr_registration_uses_transport_budget(
     plan, _, lease = _fake_hwr_plan()
     backend = DistributedLayerwiseOffloadBackend(
         OffloadConfig(
-            strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+            strategy=OffloadStrategy.DISTRIBUTED_LAYERWISE,
             pin_cpu_memory=True,
             dp_size=1,
             dlo_use_allgather=False,
@@ -1047,7 +1047,7 @@ def test_unregistration_precedes_lease_close_and_retries_failures(
 
     backend = DistributedLayerwiseOffloadBackend(
         OffloadConfig(
-            strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+            strategy=OffloadStrategy.DISTRIBUTED_LAYERWISE,
             pin_cpu_memory=True,
             dp_size=1,
             dlo_use_allgather=False,
@@ -1091,7 +1091,7 @@ def test_failed_unregistration_retains_lease_after_backend_is_dropped(
     dist_backend_module._ACTIVE_HWR_REGISTRATIONS.clear()
     backend = DistributedLayerwiseOffloadBackend(
         OffloadConfig(
-            strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+            strategy=OffloadStrategy.DISTRIBUTED_LAYERWISE,
             pin_cpu_memory=True,
             dp_size=1,
             dlo_use_allgather=False,
@@ -1181,7 +1181,7 @@ class TestMmapWeightLoading:
 
         backend = DistributedLayerwiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                strategy=OffloadStrategy.DISTRIBUTED_LAYERWISE,
                 pin_cpu_memory=False,
             ),
             torch.device("cpu"),
@@ -1249,7 +1249,7 @@ class TestMmapWeightLoading:
         assert result.plan is not None
         backend = DistributedLayerwiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                strategy=OffloadStrategy.DISTRIBUTED_LAYERWISE,
                 pin_cpu_memory=False,
                 dp_size=1,
                 dlo_use_allgather=True,
@@ -1293,7 +1293,7 @@ class TestMmapWeightLoading:
         plan, carrier, lease = _fake_hwr_plan("hwr-registration-fallback")
         backend = DistributedLayerwiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                strategy=OffloadStrategy.DISTRIBUTED_LAYERWISE,
                 pin_cpu_memory=True,
                 dp_size=1,
                 dlo_use_allgather=False,
@@ -1597,7 +1597,7 @@ class TestOffloadPlan:
         pipeline = Pipeline()
         backend = DistributedLayerwiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                strategy=OffloadStrategy.DISTRIBUTED_LAYERWISE,
                 pin_cpu_memory=False,
                 dlo_use_allgather=False,
                 dlo_resident_layers=2,
@@ -1993,7 +1993,7 @@ class TestMmapValidation:
 
         backend = DistributedLayerwiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                strategy=OffloadStrategy.DISTRIBUTED_LAYERWISE,
                 pin_cpu_memory=False,
             ),
             torch.device("cpu"),
@@ -2562,7 +2562,7 @@ class TestDistributedComponentSelection:
         pipeline = _DistributedComponentPipeline()
         backend = DistributedLayerwiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                strategy=OffloadStrategy.DISTRIBUTED_LAYERWISE,
                 pin_cpu_memory=False,
                 dlo_use_allgather=False,
                 components=frozenset({"all"}),
@@ -2595,7 +2595,7 @@ class TestDistributedComponentSelection:
         pipeline = _DistributedComponentPipeline()
         backend = DistributedLayerwiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                strategy=OffloadStrategy.DISTRIBUTED_LAYERWISE,
                 pin_cpu_memory=False,
                 dlo_use_allgather=False,
                 components=frozenset({"dit"}),
@@ -2617,7 +2617,7 @@ class TestDistributedComponentSelection:
         pipeline = _LegacyDistributedComponentPipeline()
         backend = DistributedLayerwiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                strategy=OffloadStrategy.DISTRIBUTED_LAYERWISE,
                 pin_cpu_memory=False,
                 dlo_use_allgather=False,
             ),
@@ -2639,7 +2639,7 @@ class TestDistributedComponentSelection:
         pipeline = _GenericDistributedEncoderPipeline()
         backend = DistributedLayerwiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                strategy=OffloadStrategy.DISTRIBUTED_LAYERWISE,
                 pin_cpu_memory=False,
                 dlo_use_allgather=False,
                 components=frozenset({"dit", "text_encoder"}),

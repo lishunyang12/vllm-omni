@@ -711,7 +711,7 @@ class OmniServeCommand(CLISubcommand):
         omni_config_group.add_argument(
             "--enable-layerwise-offload",
             action="store_true",
-            help="Enable layerwise (blockwise) offloading on DiT modules.",
+            help="Enable layerwise (blockwise) offloading.",
         )
         omni_config_group.add_argument(
             "--enable-distributed-layerwise-offload",
@@ -725,8 +725,8 @@ class OmniServeCommand(CLISubcommand):
             "--layerwise-offload-components",
             type=str,
             default=None,
-            help="Comma-separated components controlled by layerwise offload: "
-            "dit,text_encoder,image_encoder,vae,all,default. The default "
+            help="Comma-separated model components within the diffusion stage "
+            "controlled by layerwise offload: dit,text_encoder,image_encoder,vae,all,default. The default "
             "selector expands to text_encoder,image_encoder,vae; omitting "
             "this option preserves legacy dit-only behavior. Distributed "
             "layerwise offload requires dit or all.",

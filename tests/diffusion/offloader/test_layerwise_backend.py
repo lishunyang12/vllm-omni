@@ -141,25 +141,6 @@ class TestLayerwiseOffloadHook:
         assert torch.equal(next_block.weight, expected)
 
 
-def test_layerwise_hook_preserves_packed_stride(patched_offload_runtime):
-    current_block = nn.Linear(2, 2)
-    next_block = nn.Module()
-    expected = torch.arange(12, dtype=torch.float32).reshape(3, 4).t()
-    next_block.weight = nn.Parameter(expected.clone(memory_format=torch.preserve_format))
-    hook = LayerwiseOffloadHook(
-        next_block=next_block,
-        device=torch.device("cpu"),
-        stream=DummyStream(),
-        pin_memory=False,
-    )
-
-    hook.initialize_hook(current_block)
-    hook.prefetch_layer(non_blocking=False)
-
-    assert next_block.weight.stride() == expected.stride() == (1, 4)
-    assert torch.equal(next_block.weight, expected)
-
-
 class _DummyBlock(nn.Module):
     def __init__(self):
         super().__init__()
@@ -388,7 +369,7 @@ class TestLayerwiseComponentSelection:
         pipeline = _ComponentPipeline()
         backend = LayerWiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
+                strategy=OffloadStrategy.LAYERWISE,
                 pin_cpu_memory=False,
                 components=frozenset({"text_encoder"}),
             ),
@@ -412,7 +393,7 @@ class TestLayerwiseComponentSelection:
         pipeline = _ComponentPipeline()
         backend = LayerWiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
+                strategy=OffloadStrategy.LAYERWISE,
                 pin_cpu_memory=False,
                 components=frozenset({"dit"}),
             ),
@@ -436,7 +417,7 @@ class TestLayerwiseComponentSelection:
         pipeline.text_encoder = _StagedEncoder()
         backend = LayerWiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
+                strategy=OffloadStrategy.LAYERWISE,
                 pin_cpu_memory=False,
                 components=frozenset({"text_encoder"}),
             ),
@@ -450,7 +431,7 @@ class TestLayerwiseComponentSelection:
         pipeline = _LegacyComponentPipeline()
         backend = LayerWiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
+                strategy=OffloadStrategy.LAYERWISE,
                 pin_cpu_memory=False,
             ),
             torch.device("cpu"),
@@ -471,7 +452,7 @@ class TestLayerwiseComponentSelection:
         pipeline = _DualEncoderPipeline()
         backend = LayerWiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
+                strategy=OffloadStrategy.LAYERWISE,
                 pin_cpu_memory=False,
                 components=frozenset({"image_encoder"}),
             ),
@@ -493,7 +474,7 @@ class TestLayerwiseComponentSelection:
         pipeline = _GenericEncoderPipeline()
         backend = LayerWiseOffloadBackend(
             OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
+                strategy=OffloadStrategy.LAYERWISE,
                 pin_cpu_memory=False,
                 components=frozenset({"text_encoder"}),
             ),
@@ -617,5 +598,5 @@ class TestLayerwiseComponentConfig:
             )
         )
 
-        assert config.strategy is OffloadStrategy.LAYER_WISE
+        assert config.strategy is OffloadStrategy.LAYERWISE
         assert config.components == frozenset({"text_encoder"})

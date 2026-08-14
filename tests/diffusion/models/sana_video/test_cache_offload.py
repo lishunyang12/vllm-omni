@@ -226,7 +226,7 @@ def test_component_loading_uses_loader_device_not_runtime_device(monkeypatch):
     monkeypatch.setattr(
         pipeline_module,
         "_load_json",
-        lambda _model, filename, _local: ({"vae": [None, "FakeVAE"]} if filename == "model_index.json" else {}),
+        lambda _model, filename, _local: {"vae": [None, "FakeVAE"]} if filename == "model_index.json" else {},
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -283,7 +283,7 @@ def _tiny_pipeline(monkeypatch) -> SanaVideoPipeline:
 
 def _enable_layerwise_offload(pipeline: SanaVideoPipeline) -> LayerWiseOffloadBackend:
     backend = LayerWiseOffloadBackend(
-        OffloadConfig(strategy=OffloadStrategy.LAYER_WISE, pin_cpu_memory=False),
+        OffloadConfig(strategy=OffloadStrategy.LAYERWISE, pin_cpu_memory=False),
         device=torch.device("cpu"),
     )
     backend.enable(pipeline)
