@@ -69,8 +69,7 @@ vllm serve Lightricks/LTX-2.5-Diffusers \
   --quantization fp8 \
   --diffusion-attention-backend CUDNN_ATTN \
   --host 0.0.0.0 \
-  --port 8000 \
-  --enforce-eager
+  --port 8000
 ```
 
 Use the T2V or I2V request below after the server is ready.
@@ -101,7 +100,6 @@ python examples/offline_inference/text_to_video/text_to_video.py \
   --frame-rate 24 \
   --fps 24 \
   --seed 42 \
-  --enforce-eager \
   --output ltx25-t2v.mp4
 ```
 
@@ -120,7 +118,6 @@ python examples/offline_inference/image_to_video/image_to_video.py \
   --frame-rate 24 \
   --fps 24 \
   --seed 42 \
-  --enforce-eager \
   --output ltx25-i2v.mp4
 ```
 
@@ -136,8 +133,7 @@ vllm serve "${MODEL}" \
   --model-class-name "${PIPELINE}" \
   --host 0.0.0.0 \
   --port 8000 \
-  --stage-init-timeout 900 \
-  --enforce-eager
+  --stage-init-timeout 900
 ```
 
 T2V request:
