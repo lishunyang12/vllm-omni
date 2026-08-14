@@ -221,6 +221,27 @@ def test_create_noised_state_matches_official_fp32_lerp():
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
 
 
+def test_create_conditioned_noised_state_matches_official_two_lerps():
+    latents = torch.linspace(-2, 2, 24, dtype=torch.bfloat16).reshape(1, 3, 8)
+    clean_latents = latents.clone()
+    clean_latents[:, 0] = 3.0
+    denoise_mask = torch.tensor([[[0.0], [1.0], [1.0]]])
+    expected_generator = torch.Generator().manual_seed(42)
+    noise = torch.randn(latents.shape, generator=expected_generator, dtype=latents.dtype)
+    noised = torch.lerp(latents.float(), noise.float(), 0.909375)
+    expected = torch.lerp(clean_latents.float(), noised, denoise_mask).to(latents.dtype)
+
+    actual = latent_ops.create_conditioned_noised_state(
+        latents,
+        clean_latents,
+        denoise_mask,
+        0.909375,
+        torch.Generator().manual_seed(42),
+    )
+
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+
 def test_prepare_supplied_video_latents_uses_official_token_major_layout():
     pipeline = _make_pipeline(LTX2Pipeline)
     supplied = torch.arange(512, dtype=torch.float32).reshape(1, 32, 16)

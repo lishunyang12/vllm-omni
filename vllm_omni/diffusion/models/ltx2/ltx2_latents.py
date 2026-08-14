@@ -129,6 +129,18 @@ def create_noised_state(
     return torch.lerp(latents.float(), noise.float(), lerp_weight).to(latents.dtype)
 
 
+def create_conditioned_noised_state(
+    latents: torch.Tensor,
+    clean_latents: torch.Tensor,
+    denoise_mask: torch.Tensor,
+    noise_scale: float | torch.Tensor,
+    generator: torch.Generator | list[torch.Generator] | None = None,
+) -> torch.Tensor:
+    """Match the official conditioned Gaussian noisier operation order."""
+    noised_latents = create_noised_state(latents, noise_scale, generator)
+    return torch.lerp(clean_latents.float(), noised_latents.float(), denoise_mask.float()).to(latents.dtype)
+
+
 def pack_audio_latents(latents: torch.Tensor) -> torch.Tensor:
     return latents.transpose(1, 2).flatten(2, 3)
 

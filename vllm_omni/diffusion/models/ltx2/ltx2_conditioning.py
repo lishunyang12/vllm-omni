@@ -574,6 +574,7 @@ class LTXI2VConditioningMixin:
                     self.vae.latents_std,
                     self.vae.config.scaling_factor,
                 )
+                clean_latents = latents
                 if image is not None:
                     image_latents = self._encode_i2v_image_latents(
                         image,
@@ -581,11 +582,16 @@ class LTXI2VConditioningMixin:
                         generator=generator,
                         dtype=dtype,
                     )
-                    # Official distilled Stage 2 starts from the upsampled Stage 1
-                    # state, then reapplies the source image at final resolution.
-                    latents = self._replace_first_latent_frame(latents, image_latents)
+                    # Official Stage 2 starts from the upsampled Stage 1 state,
+                    # then reapplies the source image at final resolution.
+                    clean_latents = self._replace_first_latent_frame(clean_latents, image_latents)
                 latents = latent_ops.pack_latents(
                     latents,
+                    self.transformer_spatial_patch_size,
+                    self.transformer_temporal_patch_size,
+                )
+                clean_latents = latent_ops.pack_latents(
+                    clean_latents,
                     self.transformer_spatial_patch_size,
                     self.transformer_temporal_patch_size,
                 )
@@ -604,9 +610,11 @@ class LTXI2VConditioningMixin:
                     f" {latents.shape}, but the expected shape is {conditioning_mask.shape + (num_channels_latents,)}."
                 )
             if unpacked_latents:
-                latents = latent_ops.create_noised_state(
+                latents = latent_ops.create_conditioned_noised_state(
                     latents,
-                    noise_scale * (1 - conditioning_mask.float()).unsqueeze(-1),
+                    clean_latents,
+                    (1 - conditioning_mask.float()).unsqueeze(-1),
+                    noise_scale,
                     generator,
                 )
             elif not unpacked_latents and image is not None:
@@ -655,9 +663,13 @@ class LTXI2VConditioningMixin:
             self.transformer_temporal_patch_size,
         ).squeeze(-1)
         if is_ltx25:
-            latents = latent_ops.create_noised_state(
+            clean_latents = init_latents
+            init_latents = torch.zeros_like(init_latents)
+            latents = latent_ops.create_conditioned_noised_state(
                 init_latents,
-                noise_scale * (1 - packed_conditioning_mask.float()).unsqueeze(-1),
+                clean_latents,
+                (1 - packed_conditioning_mask.float()).unsqueeze(-1),
+                noise_scale,
                 generator=generator,
             )
         else:

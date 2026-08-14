@@ -418,7 +418,7 @@ class TestLTXImageToVideoConditioning:
         torch.testing.assert_close(conditioning_mask, torch.tensor([[1.0, 0.0, 0.0]]))
         torch.testing.assert_close(out, torch.tensor([[[10.0, 11.0], [1.0, 1.0], [1.0, 1.0]]]))
 
-    def test_ltx25_re_noise_keeps_scalar_noise_scale_in_fp32(self, monkeypatch):
+    def test_ltx25_re_noise_uses_official_scalar_noise_scale(self, monkeypatch):
         import vllm_omni.diffusion.models.ltx2.ltx2_latents as ltx2_latents
         from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
 
@@ -460,14 +460,7 @@ class TestLTXImageToVideoConditioning:
             latents=torch.zeros(1, 2, 3, 1, 1, dtype=torch.bfloat16),
         )
 
-        noise_scale = captured["noise_scale"]
-        assert noise_scale.dtype is torch.float32
-        torch.testing.assert_close(
-            noise_scale,
-            torch.tensor([[[0.0], [0.909375], [0.909375]]], dtype=torch.float32),
-            rtol=0,
-            atol=0,
-        )
+        assert captured["noise_scale"] == 0.909375
 
     def test_ltx23_i2v_video_step_preserves_conditioning_frame(self):
         from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
