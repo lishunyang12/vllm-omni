@@ -264,7 +264,7 @@ def test_ltx_multistage_rejects_cache_dit_before_component_initialization(tmp_pa
 
     monkeypatch.setattr(ltx2_runtime, "initialize_pipeline_components", stub_components)
 
-    with pytest.raises(ValueError, match="only one-stage LTX recipes"):
+    with pytest.raises(ValueError, match="not qualified for this LTX recipe"):
         LTX2TwoStagePipeline(
             od_config=SimpleNamespace(
                 model=str(tmp_path),

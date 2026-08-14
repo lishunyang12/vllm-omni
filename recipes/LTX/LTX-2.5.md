@@ -328,11 +328,11 @@ All decoded outputs included synchronized 48 kHz stereo audio. Extended
 | Distributed layerwise offload DP2 | Capacity fallback | Output matched eager; primary-rank peak memory decreased by 43.3%, with lower performance. |
 | Whole-model CPU offload | Capacity fallback | Output matched eager; peak memory decreased by 35.3%, with lower performance. |
 | VAE slicing | Release-qualified | Output matched eager. |
-| VAE tiling | Release-qualified | The tiled decode completed successfully and reduced peak memory; unlike slicing, tiling is not bit-exact with eager. |
+| VAE tiling | Not release-qualified | The tiled decode completed and reduced peak memory, but the 1080p result did not meet the SSIM >= 0.99 quality gate. |
 | TP2 / Ulysses SP2 | Experimental | Strict Ulysses completed, but neither TP2 nor SP2 passed the fixed-seed quality gate; `advanced_uaa` is rejected. |
 | Regional `torch.compile` | Experimental | Generation completed, but the first run was slower and did not pass the fixed-seed quality gate. |
 | FP8 | Experimental | Generation completed with 23.4% lower peak memory, but did not pass the quality gate. |
-| Cache-DiT | Experimental | One-stage only: threshold 0.12 preserved eager output but recorded zero cache steps; threshold 0.15 exercised caching but failed the fixed-seed quality gate. Two-stage requests fail fast until phase-aware cache refresh is implemented. |
+| Cache-DiT | Not supported | All LTX-2.5 recipes reject it. Threshold 0.12 recorded zero cache steps; threshold 0.15 exercised caching but failed the fixed-seed quality gate. |
 | `TRTLLM_ATTN` | Unsupported | The current kernel rejects LTX-2.5's head dimension of 64. |
 | Ring SP2 | Unsupported | The tested path did not complete successfully. |
 | TeaCache | Unsupported | LTX-2.5 has no validated TeaCache residual extractor or coefficient profile. |
@@ -355,9 +355,8 @@ All decoded outputs included synchronized 48 kHz stereo audio. Extended
 - LTX sequence parallelism supports only strict Ulysses. `advanced_uaa` is
   rejected because its mask redistribution does not preserve LTX cross-modal
   key-padding semantics.
-- Cache-DiT is enabled only for one-stage recipes. Two-stage recipes change
-  phase and spatial resolution, so they reject Cache-DiT until cache state and
-  refresh policy become phase-aware.
+- All LTX-2.5 recipes reject Cache-DiT because no tested configuration passed
+  both the fixed-seed quality and latency gates.
 - `TRTLLM_ATTN` currently rejects the LTX-2.5 head dimension of 64. Use
   `CUDNN_ATTN` on B300.
 - DLO, CPU offload, and HSDP are memory-capacity fallbacks, not latency

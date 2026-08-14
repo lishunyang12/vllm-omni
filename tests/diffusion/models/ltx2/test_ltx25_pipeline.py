@@ -452,7 +452,7 @@ def test_ltx25_distilled_one_stage_uses_native_low_resolution():
     assert phase.spatial_downscale == 1
     assert phase.sigmas == LTX_DISTILLED_SIGMAS
     assert phase.sampler == "euler_ancestral"
-    assert LTX25_DISTILLED_ONE_STAGE_RECIPE.supports_cache_dit
+    assert not LTX25_DISTILLED_ONE_STAGE_RECIPE.supports_cache_dit
 
 
 def test_ltx25_regular_two_stage_uses_full_transformer_then_distilled_lora():
@@ -473,7 +473,6 @@ def test_ltx25_regular_two_stage_uses_full_transformer_then_distilled_lora():
     [
         LTX2_ONE_STAGE_RECIPE,
         LTX23_ONE_STAGE_RECIPE,
-        LTX25_FULL_RECIPE,
         LTX_POSITIVE_ONLY_RECIPE,
     ],
 )
@@ -484,11 +483,13 @@ def test_ltx_one_stage_recipes_declare_cache_dit_supported(recipe):
 @pytest.mark.parametrize(
     "recipe",
     [
+        LTX25_FULL_RECIPE,
+        LTX25_DISTILLED_ONE_STAGE_RECIPE,
         LTX2_DISTILLED_TWO_STAGE_RECIPE,
         LTX25_DISTILLED_TWO_STAGE_RECIPE,
     ],
 )
-def test_ltx_multistage_recipes_declare_cache_dit_unsupported(recipe):
+def test_ltx25_and_multistage_recipes_declare_cache_dit_unsupported(recipe):
     assert not recipe.supports_cache_dit
 
 

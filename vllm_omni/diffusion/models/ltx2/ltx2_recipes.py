@@ -128,7 +128,6 @@ LTX23_ONE_STAGE_RECIPE = LTXPipelineRecipe(
     phases=(LTXPhaseRecipe(name="generate", guidance=_official_guidance(28)),),
 )
 LTX25_FULL_RECIPE = LTXPipelineRecipe(
-    supports_cache_dit=True,
     height=544,
     width=960,
     num_inference_steps=30,
@@ -228,7 +227,11 @@ LTX25_DISTILLED_TWO_STAGE_RECIPE = LTXPipelineRecipe(
 LTX23_DISTILLED_TWO_STAGE_RECIPE = LTX2_DISTILLED_TWO_STAGE_RECIPE
 
 
-def _distilled_one_stage_recipe(two_stage_recipe: LTXPipelineRecipe) -> LTXPipelineRecipe:
+def _distilled_one_stage_recipe(
+    two_stage_recipe: LTXPipelineRecipe,
+    *,
+    supports_cache_dit: bool = True,
+) -> LTXPipelineRecipe:
     """Run the merged-distilled checkpoint at its native Stage-1 resolution."""
     generate_phase = replace(
         two_stage_recipe.phases[0],
@@ -243,13 +246,16 @@ def _distilled_one_stage_recipe(two_stage_recipe: LTXPipelineRecipe) -> LTXPipel
         video_output_phase=0,
         audio_output_phase=0,
         allow_request_phase_sigmas=False,
-        supports_cache_dit=True,
+        supports_cache_dit=supports_cache_dit,
     )
 
 
 LTX2_DISTILLED_ONE_STAGE_RECIPE = _distilled_one_stage_recipe(LTX2_DISTILLED_TWO_STAGE_RECIPE)
 LTX23_DISTILLED_ONE_STAGE_RECIPE = _distilled_one_stage_recipe(LTX23_DISTILLED_TWO_STAGE_RECIPE)
-LTX25_DISTILLED_ONE_STAGE_RECIPE = _distilled_one_stage_recipe(LTX25_DISTILLED_TWO_STAGE_RECIPE)
+LTX25_DISTILLED_ONE_STAGE_RECIPE = _distilled_one_stage_recipe(
+    LTX25_DISTILLED_TWO_STAGE_RECIPE,
+    supports_cache_dit=False,
+)
 
 
 def _official_two_stage_recipe(one_stage_recipe: LTXPipelineRecipe) -> LTXPipelineRecipe:
