@@ -554,6 +554,7 @@ class MiniMaxH3Pipeline(
         "decode",
     ]
     dummy_run_num_frames: ClassVar[int] = 0
+    num_inference_steps: ClassVar[int] = 50
     # Only distilled releases pin a schedule, so the default keeps the legacy
     # uniform path available to partially constructed pipelines.
     _base_schedule_by_partition: ClassVar[Mapping[str, DMD2SigmaSchedule | None]] = {}
@@ -1807,7 +1808,7 @@ class MiniMaxH3Pipeline(
         sigma_schedule = self._base_schedule_for_task(task)
         if sigma_schedule is None:
             base_schedule = None
-            num_steps = int(sampling.num_inference_steps or 50)
+            num_steps = int(sampling.num_inference_steps or self.num_inference_steps)
         else:
             # The schedule lists sigma boundaries; the denoise loop runs one
             # step per interval, and that count is what requests and Cache-DiT
