@@ -16,7 +16,7 @@ both model licenses and authenticate before first use.
 
 ## Choose a pipeline
 
-| Pipeline | Mode | Final size | Schedule |
+| Pipeline | Mode | Default size | Schedule |
 |---|---|---:|---:|
 | `LTX2Pipeline` | Full/SFT one-stage | 960x544 | 30 steps |
 | `LTX2TwoStagePipeline` | Full/SFT two-stage | 1920x1088 | 30 + 3 steps |
@@ -57,12 +57,6 @@ configuration; use a larger GPU or reduce the output configuration.
 Use the distilled one-stage pipeline with FP8 and cuDNN attention:
 
 ```bash
-export MODEL=Lightricks/LTX-2.5-Diffusers
-export PIPELINE=LTX2DistilledOneStagePipeline
-export WIDTH=960
-export HEIGHT=544
-export STEPS=8
-
 vllm serve Lightricks/LTX-2.5-Diffusers \
   --omni \
   --model-class-name LTX2DistilledOneStagePipeline \
@@ -142,12 +136,6 @@ T2V request:
 curl -sS --fail-with-body \
   -X POST http://127.0.0.1:8000/v1/videos/sync \
   -F 'prompt=A cinematic shot of a red fox walking through a snowy forest at dawn, the camera tracking alongside, snow crunching underfoot.' \
-  -F "width=${WIDTH}" \
-  -F "height=${HEIGHT}" \
-  -F 'num_frames=121' \
-  -F 'fps=24' \
-  -F "num_inference_steps=${STEPS}" \
-  -F 'seed=42' \
   -o ltx25-online-t2v.mp4
 ```
 
@@ -160,12 +148,6 @@ curl -sS --fail-with-body \
   -X POST http://127.0.0.1:8000/v1/videos/sync \
   -F "input_reference=@${FIRST_FRAME};type=image/png" \
   -F 'prompt=The red fox walks forward while the camera tracks alongside.' \
-  -F "width=${WIDTH}" \
-  -F "height=${HEIGHT}" \
-  -F 'num_frames=121' \
-  -F 'fps=24' \
-  -F "num_inference_steps=${STEPS}" \
-  -F 'seed=42' \
   -o ltx25-online-i2v.mp4
 ```
 
@@ -174,7 +156,10 @@ different weight layout and execution topology.
 
 ## Constraints
 
-- `num_frames` must be `8k+1`; set it explicitly for online requests.
+- Online `width`, `height`, `num_frames`, `fps`, and `num_inference_steps`
+  are optional and use the selected pipeline defaults when omitted. `seed` is
+  optional and random when omitted.
+- `num_frames` must be `8k+1` when overridden.
 - One-stage width and height must be divisible by 32; two-stage final
   dimensions must be divisible by 64.
 - Full/SFT pipelines accept negative prompts. Distilled pipelines are
