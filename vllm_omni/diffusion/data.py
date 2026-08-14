@@ -1507,7 +1507,6 @@ class AttnQuantSpec:
 # Backends that select key blocks instead of attending densely, and so accept
 # a ``block_sparse`` spec. Each maps the same knobs onto its own kernel.
 BLOCK_SPARSE_BACKENDS = frozenset({"RAINFUSION_ATTN"})
-SDPA_KERNEL_BACKENDS = frozenset({"MATH", "FLASH_ATTENTION", "EFFICIENT_ATTENTION", "CUDNN_ATTENTION"})
 
 
 @dataclass
@@ -1540,7 +1539,6 @@ class AttentionSpec:
     skip_softmax: SkipSoftmaxSpec | None = None
     quant: AttnQuantSpec | None = None
     block_sparse: BlockSparseSpec | None = None
-    sdpa_backends: str | list[str] | None = None
     skip_calibration: dict | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -1568,27 +1566,6 @@ class AttentionSpec:
                 f"block_sparse is only supported by the {sorted(BLOCK_SPARSE_BACKENDS)} backends, but "
                 f"backend={self.backend!r}. Remove block_sparse or set a supported backend."
             )
-        if self.sdpa_backends is not None:
-            if self.backend.upper() != "TORCH_SDPA":
-                raise ValueError(
-                    f"sdpa_backends is only supported by the TORCH_SDPA backend, but backend={self.backend!r}. "
-                    "Remove sdpa_backends or set backend to TORCH_SDPA."
-                )
-            if isinstance(self.sdpa_backends, str):
-                sdpa_backends = [self.sdpa_backends]
-            elif isinstance(self.sdpa_backends, list) and all(isinstance(item, str) for item in self.sdpa_backends):
-                sdpa_backends = self.sdpa_backends
-            else:
-                raise TypeError("Expected str or list[str] for sdpa_backends")
-            normalized_sdpa_backends = [item.upper() for item in sdpa_backends]
-            if not normalized_sdpa_backends:
-                raise ValueError("sdpa_backends must contain at least one backend")
-            unsupported = sorted(set(normalized_sdpa_backends) - SDPA_KERNEL_BACKENDS)
-            if unsupported:
-                raise ValueError(
-                    f"Unsupported sdpa_backends {unsupported}; expected values from {sorted(SDPA_KERNEL_BACKENDS)}."
-                )
-            self.sdpa_backends = normalized_sdpa_backends
 
     @staticmethod
     def _coerce(value: Any, cls: type, field_name: str) -> Any:
@@ -1627,8 +1604,6 @@ class AttentionSpec:
             kw["start_step"] = bs.start_step
             if bs.skip_layer_indices:
                 kw["skip_layers"] = sorted(bs.skip_layer_indices)
-        if self.sdpa_backends is not None:
-            kw["sdpa_backends"] = self.sdpa_backends
         return kw or None
 
 

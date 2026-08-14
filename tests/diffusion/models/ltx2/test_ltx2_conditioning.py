@@ -418,6 +418,57 @@ class TestLTXImageToVideoConditioning:
         torch.testing.assert_close(conditioning_mask, torch.tensor([[1.0, 0.0, 0.0]]))
         torch.testing.assert_close(out, torch.tensor([[[10.0, 11.0], [1.0, 1.0], [1.0, 1.0]]]))
 
+    def test_ltx25_re_noise_keeps_scalar_noise_scale_in_fp32(self, monkeypatch):
+        import vllm_omni.diffusion.models.ltx2.ltx2_latents as ltx2_latents
+        from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
+
+        pipe = object.__new__(LTX2Pipeline)
+        torch.nn.Module.__init__(pipe)
+        pipe.model_version = "2.5"
+        pipe.vae_spatial_compression_ratio = 1
+        pipe.vae_temporal_compression_ratio = 1
+        pipe.transformer_spatial_patch_size = 1
+        pipe.transformer_temporal_patch_size = 1
+        pipe.vae = SimpleNamespace(
+            latents_mean=torch.zeros(2),
+            latents_std=torch.ones(2),
+            config=SimpleNamespace(scaling_factor=1.0),
+        )
+        object.__setattr__(
+            pipe,
+            "_encode_i2v_image_latents",
+            lambda *_args, **_kwargs: torch.zeros(1, 2, 1, 1, 1, dtype=torch.bfloat16),
+        )
+        captured = {}
+
+        def fake_create_noised_state(latents, noise_scale, generator=None):
+            del generator
+            captured["noise_scale"] = noise_scale
+            return latents
+
+        monkeypatch.setattr(ltx2_latents, "create_noised_state", fake_create_noised_state)
+        pipe.prepare_latents(
+            image=torch.zeros(1, 3, 1, 1),
+            batch_size=1,
+            num_channels_latents=2,
+            height=1,
+            width=1,
+            num_frames=3,
+            noise_scale=0.909375,
+            dtype=torch.bfloat16,
+            device=torch.device("cpu"),
+            latents=torch.zeros(1, 2, 3, 1, 1, dtype=torch.bfloat16),
+        )
+
+        noise_scale = captured["noise_scale"]
+        assert noise_scale.dtype is torch.float32
+        torch.testing.assert_close(
+            noise_scale,
+            torch.tensor([[[0.0], [0.909375], [0.909375]]], dtype=torch.float32),
+            rtol=0,
+            atol=0,
+        )
+
     def test_ltx23_i2v_video_step_preserves_conditioning_frame(self):
         from vllm_omni.diffusion.models.ltx2.pipeline_ltx2 import LTX2Pipeline
 

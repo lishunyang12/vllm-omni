@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-from contextlib import nullcontext
 from typing import Literal
 
 import torch
-from torch.nn.attention import SDPBackend, sdpa_kernel
 from vllm.logger import init_logger
 
 from vllm_omni.diffusion.attention.backends.abstract import (
@@ -19,12 +17,6 @@ logger = init_logger(__name__)
 
 
 SDPAMaskMode = Literal["broadcast_k", "full_qk"]
-_SDPA_BACKENDS = {
-    "MATH": SDPBackend.MATH,
-    "FLASH_ATTENTION": SDPBackend.FLASH_ATTENTION,
-    "EFFICIENT_ATTENTION": SDPBackend.EFFICIENT_ATTENTION,
-    "CUDNN_ATTENTION": SDPBackend.CUDNN_ATTENTION,
-}
 
 
 def _maybe_reshape_attn_mask(
@@ -94,24 +86,8 @@ class SDPAImpl(AttentionImpl):
     ) -> None:
         self.causal = causal
         self.softmax_scale = softmax_scale
-        backend_kwargs = backend_kwargs or {}
-        unknown_kwargs = sorted(set(backend_kwargs) - {"sdpa_backends"})
-        if unknown_kwargs:
-            logger.warning("SDPAImpl ignoring backend_kwargs: %s", unknown_kwargs)
-        configured_backends = backend_kwargs.get("sdpa_backends")
-        if isinstance(configured_backends, str):
-            configured_backends = [configured_backends]
-        if configured_backends is None:
-            self.sdpa_backends = None
-        elif not isinstance(configured_backends, list) or not configured_backends:
-            raise ValueError("sdpa_backends must be a non-empty string or list of strings")
-        else:
-            try:
-                self.sdpa_backends = [_SDPA_BACKENDS[name.upper()] for name in configured_backends]
-            except (AttributeError, KeyError) as error:
-                raise ValueError(
-                    f"Unsupported sdpa_backends {configured_backends!r}; expected values from {sorted(_SDPA_BACKENDS)}."
-                ) from error
+        if backend_kwargs:
+            logger.warning("SDPAImpl ignoring backend_kwargs: %s", list(backend_kwargs.keys()))
 
     def _forward_impl(
         self,
@@ -145,20 +121,16 @@ class SDPAImpl(AttentionImpl):
             logger.debug(
                 "CUDA SDPA cannot use a fused native-GQA kernel for this shape; expanding K/V heads before SDPA."
             )
-        kernel_context = (
-            nullcontext() if self.sdpa_backends is None else sdpa_kernel(self.sdpa_backends, set_priority=True)
+        output = torch.nn.functional.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=attention_mask,
+            dropout_p=0.0,
+            is_causal=self.causal,
+            scale=self.softmax_scale,
+            enable_gqa=enable_gqa,
         )
-        with kernel_context:
-            output = torch.nn.functional.scaled_dot_product_attention(
-                query,
-                key,
-                value,
-                attn_mask=attention_mask,
-                dropout_p=0.0,
-                is_causal=self.causal,
-                scale=self.softmax_scale,
-                enable_gqa=enable_gqa,
-            )
         out = output.permute(0, 2, 1, 3)
         return out
 

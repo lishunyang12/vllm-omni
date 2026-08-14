@@ -1,11 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-from contextlib import contextmanager
-
 import pytest
 import torch
-from torch.nn.attention import SDPBackend
 
 import vllm_omni.diffusion.attention.backends.sdpa as sdpa_backend
 from vllm_omni.diffusion.attention.backends.sdpa import SDPAImpl
@@ -57,32 +54,4 @@ def test_sdpa_keeps_compressed_kv_when_native_gqa_kernel_is_available(monkeypatc
     assert query_shape == (1, 4, 3, 8)
     assert key_shape == value_shape == (1, 2, 3, 8)
     assert kwargs["enable_gqa"] is True
-    assert output.shape == (1, 3, 4, 8)
-
-
-def test_sdpa_honors_explicit_kernel_priority(monkeypatch):
-    kernel_calls = []
-
-    @contextmanager
-    def fake_sdpa_kernel(backends, *, set_priority=False):
-        kernel_calls.append((backends, set_priority))
-        yield
-
-    monkeypatch.setattr(sdpa_backend, "sdpa_kernel", fake_sdpa_kernel)
-    monkeypatch.setattr(torch.nn.functional, "scaled_dot_product_attention", lambda query, *_args, **_kwargs: query)
-
-    impl = SDPAImpl(
-        num_heads=4,
-        num_kv_heads=4,
-        head_size=8,
-        softmax_scale=0.5,
-        backend_kwargs={"sdpa_backends": ["MATH"]},
-    )
-    output = impl.forward_cuda(
-        torch.randn(1, 3, 4, 8),
-        torch.randn(1, 3, 4, 8),
-        torch.randn(1, 3, 4, 8),
-    )
-
-    assert kernel_calls == [([SDPBackend.MATH], True)]
     assert output.shape == (1, 3, 4, 8)

@@ -606,7 +606,7 @@ class LTXI2VConditioningMixin:
             if unpacked_latents:
                 latents = latent_ops.create_noised_state(
                     latents,
-                    noise_scale * (1 - conditioning_mask).unsqueeze(-1),
+                    noise_scale * (1 - conditioning_mask.float()).unsqueeze(-1),
                     generator,
                 )
             elif not unpacked_latents and image is not None:
@@ -657,7 +657,7 @@ class LTXI2VConditioningMixin:
         if is_ltx25:
             latents = latent_ops.create_noised_state(
                 init_latents,
-                noise_scale * (1 - packed_conditioning_mask).unsqueeze(-1),
+                noise_scale * (1 - packed_conditioning_mask.float()).unsqueeze(-1),
                 generator=generator,
             )
         else:
