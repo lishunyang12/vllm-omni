@@ -46,10 +46,21 @@ Install matching vLLM and vLLM-Omni versions, and ensure `ffmpeg` and
 | NVIDIA B300 | Verified | All four canonical pipelines |
 | NVIDIA B200 or H200 | Capacity-based recommendation; not yet verified | All four canonical pipelines |
 | NVIDIA GB200 or GB300 | Capacity-based recommendation; not yet verified | All four canonical pipelines |
+| NVIDIA H100 80 GB | Experimental FP8 | One-stage pipelines at 960x544 |
+| NVIDIA A100 80 GB | Experimental FP8 weight-only fallback | One-stage pipelines at 960x544 |
 
 The 1920x1088 two-stage examples require about 114 GB of peak GPU memory.
 80 GB GPUs do not have enough safety margin for the canonical two-stage
 configuration; use a larger GPU or reduce the output configuration.
+
+To reduce transformer memory on an 80 GB H100 or A100, add
+`--quantization fp8` to an offline command or the server command. H100 uses
+native FP8 kernels; A100 may use the Ampere weight-only fallback, so treat it
+as a memory-saving option rather than a guaranteed speedup. This path is
+experimental for LTX-2.5 because its fixed-seed output does not meet the BF16
+quality-parity gate. It is intended for the 960x544 one-stage configurations;
+the canonical 1920x1088 two-stage configurations still require a larger GPU,
+reduced dimensions, or multi-GPU execution.
 
 ## Offline inference
 
