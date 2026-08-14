@@ -242,7 +242,9 @@ import vllm_omni.diffusion.distributed.parallel_state as ps  # noqa: E402
 
 
 def _patch_topo(monkeypatch, *, world_size, world_rank=0, cfg_size=1, cfg_rank=0, sp_size=1, sp_rank=0):
-    monkeypatch.setattr(ps, "get_world_group", lambda: SimpleNamespace(world_size=world_size, rank_in_group=world_rank))
+    monkeypatch.setattr(
+        ps, "get_dit_group_coordinator", lambda: SimpleNamespace(world_size=world_size, rank_in_group=world_rank)
+    )
     monkeypatch.setattr(ps, "get_classifier_free_guidance_world_size", lambda: cfg_size)
     monkeypatch.setattr(ps, "get_classifier_free_guidance_rank", lambda: cfg_rank)
     monkeypatch.setattr(ps, "get_cfg_group", lambda: None)
@@ -319,7 +321,7 @@ def test_recv_role_uninitialized_defaults_local(monkeypatch):
     def _boom():
         raise AssertionError("world group is not initialized")
 
-    monkeypatch.setattr(ps, "get_world_group", _boom)
+    monkeypatch.setattr(ps, "get_dit_group_coordinator", _boom)
     assert _role(mgr) is ReceiveRole.LOCAL
 
 

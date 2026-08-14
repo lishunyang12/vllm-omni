@@ -31,6 +31,10 @@ requests up to DP capacity because each replica executes one independently
 routed request. This exception MUST NOT relax batching for ordinary request
 batches or AllGather-backed DLO.
 
+Independent rank-local routing currently applies only to request-batch execution.
+Step execution, including `streaming_output=True`, is limited to one running
+request until step dispatch and result routing become DP-aware.
+
 ## Candidate invariants
 
 ### BATCH-INV-001: Compatibility is explicit

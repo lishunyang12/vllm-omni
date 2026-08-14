@@ -436,6 +436,21 @@ class TestRequestBatchCapability:
         assert scheduled.num_waiting_reqs == int(dlo_use_allgather)
         fake_executor_cls.assert_called_once_with(od_config)
 
+    def test_dlo_dp_step_execution_remains_serial(self) -> None:
+        engine = object.__new__(DiffusionEngine)
+        engine.od_config = SimpleNamespace(
+            parallel_config=SimpleNamespace(data_parallel_size=2),
+            enable_distributed_layerwise_offload=True,
+            request_batch_max_wait_ms=0,
+        )
+        engine.step_execution = True
+        engine.scheduler = SimpleNamespace(max_num_running_reqs=2)
+
+        engine._init_runtime_state()
+
+        assert engine.dp_concurrent is False
+        assert engine.scheduler.max_num_running_reqs == 1
+
     @pytest.mark.parametrize("request_ids", [("req-a",), ("req-a", "req-b")])
     def test_engine_enables_batch_dispatch_for_request_batch_pipeline(
         self,

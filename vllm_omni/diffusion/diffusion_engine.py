@@ -254,7 +254,12 @@ class DiffusionEngine:
         # dispatch heterogeneous requests independently. Ordinary DP with a
         # non-batch pipeline still does not schedule multiple requests.
         dp_size = getattr(getattr(self.od_config, "parallel_config", None), "data_parallel_size", 1)
-        if _uses_dlo_dp_concurrency(self.od_config):
+        uses_dlo_dp_concurrency = _uses_dlo_dp_concurrency(self.od_config)
+        if uses_dlo_dp_concurrency and self.step_execution:
+            self.scheduler.max_num_running_reqs = 1
+            self.dp_concurrent = False
+            logger.info("DLO DP concurrency is disabled for step execution until step dispatch is DP-aware.")
+        elif uses_dlo_dp_concurrency:
             self.scheduler.max_num_running_reqs = dp_size
             self.dp_concurrent = True
             logger.info(
