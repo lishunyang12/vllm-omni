@@ -40,3 +40,16 @@ def ltx_preserves_reference_image_size(*, model: str | None, revision: str | Non
     )
 
     return ltx_preserves_reference_image_size(model=model, revision=revision)
+
+
+def ltx_transformer_config_subfolder(
+    *,
+    model: str | None,
+    revision: str | None = None,
+) -> str:
+    """Select the transformer config used by the requested LTX checkpoint."""
+    if model is None:
+        return "transformer"
+    from vllm_omni.diffusion.models.ltx2.ltx2_components import detect_ltx_model_version
+
+    return "transformer_full" if detect_ltx_model_version(model, revision=revision) == "2.5" else "transformer"

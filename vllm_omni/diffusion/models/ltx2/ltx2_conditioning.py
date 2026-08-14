@@ -86,6 +86,8 @@ def _apply_image_conditioning_crf(image: np.ndarray, crf: int) -> np.ndarray:
     """Round-trip one RGB frame through H.264 to match LTX-2.5 training."""
     if image.dtype != np.uint8 or image.ndim != 3 or image.shape[-1] != 3:
         raise ValueError("LTX image-conditioning CRF expects a uint8 RGB image.")
+    if min(image.shape[:2]) < 2:
+        return image
     try:
         import av
     except ImportError as exc:

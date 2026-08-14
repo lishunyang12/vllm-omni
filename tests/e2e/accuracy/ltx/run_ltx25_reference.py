@@ -91,6 +91,22 @@ def _save_outputs(
     (output_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
 
 
+def _reset_accelerator_peak_memory_stats() -> None:
+    if torch.accelerator.is_available():
+        torch.accelerator.reset_peak_memory_stats()
+
+
+def _accelerator_peak_memory_stats() -> dict[str, float]:
+    if not torch.accelerator.is_available():
+        return {}
+    torch.accelerator.synchronize()
+    mib = 1024**2
+    return {
+        "peak_memory_allocated_mb": torch.accelerator.max_memory_allocated() / mib,
+        "peak_memory_reserved_mb": torch.accelerator.max_memory_reserved() / mib,
+    }
+
+
 def _insert_official_paths(official_root: Path) -> None:
     for relative_path in ("packages/ltx-core/src", "packages/ltx-pipelines/src"):
         path = str((official_root / relative_path).resolve())
@@ -171,6 +187,10 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
     if args.official_root is None:
         raise ValueError("Official backend requires --official-root")
     _insert_official_paths(args.official_root)
+    # Keep Gemma on the same SDPA path in both subprocesses. DiT attention is
+    # still pinned independently to the explicit cuDNN backend below.
+    torch.backends.cuda.enable_cudnn_sdp(False)
+    _reset_accelerator_peak_memory_stats()
 
     from ltx_pipelines.utils.args import ImageConditioningInput
     from ltx_pipelines.utils.model_paths import ModelPaths
@@ -395,9 +415,15 @@ def _run_official(args: argparse.Namespace, request: dict[str, Any]) -> None:
             "sigmas": request.get("sigmas"),
             "stage_1_sigmas": request.get("stage_1_sigmas"),
             "stage_2_sigmas": request.get("stage_2_sigmas"),
+            **_accelerator_peak_memory_stats(),
             **checkpoint_metadata,
         },
     )
+
+
+def _omni_worker_peak_memory_mb(output: Any) -> float:
+    result = output[0] if isinstance(output, list) and output else output
+    return float(getattr(result, "peak_memory_mb", 0.0) or 0.0)
 
 
 def _unwrap_omni_output(output: Any) -> tuple[Any, Any, int]:
@@ -472,6 +498,10 @@ def _run_omni(args: argparse.Namespace, request: dict[str, Any]) -> None:
     if args.model is None or args.model_class_name is None:
         raise ValueError("Omni backend requires --model and --model-class-name")
 
+    # vLLM imports can otherwise change the process-wide Gemma dispatch.
+    torch.backends.cuda.enable_cudnn_sdp(False)
+    _reset_accelerator_peak_memory_stats()
+
     attention_config = {"default": {"backend": "CUDNN_ATTN"}}
 
     from vllm_omni.diffusion.data import DiffusionParallelConfig
@@ -540,6 +570,8 @@ def _run_omni(args: argparse.Namespace, request: dict[str, Any]) -> None:
                 "stage_1_sigmas": request.get("stage_1_sigmas"),
                 "stage_2_sigmas": request.get("stage_2_sigmas"),
                 "model_class_name": model_class_name,
+                "worker_peak_memory_mb": _omni_worker_peak_memory_mb(output),
+                **_accelerator_peak_memory_stats(),
             },
         )
     finally:

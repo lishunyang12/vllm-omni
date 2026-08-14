@@ -38,6 +38,7 @@ from vllm_omni.model_extras.ltx2 import (
     LTX_EXTRA_BODY_PARAMS,
     LTX_EXTRA_OUTPUT_PARAMS,
     ltx_preserves_reference_image_size,
+    ltx_transformer_config_subfolder,
 )
 from vllm_omni.model_extras.magi_human import (
     MAGI_HUMAN_EXTRA_BODY_PARAMS,
@@ -107,6 +108,15 @@ class ReferenceImageSizeResolver(Protocol):
         model: str | None,
         revision: str | None = None,
     ) -> bool: ...
+
+
+class TransformerConfigSubfolderResolver(Protocol):
+    def __call__(
+        self,
+        *,
+        model: str | None,
+        revision: str | None = None,
+    ) -> str: ...
 
 
 def default_x_to_text_prompt(
@@ -245,6 +255,10 @@ _EXTRA_SPECS: dict[str, dict[str, Any]] = {
     },
 }
 
+for model_class_name in ("LTX2Pipeline", "LTX2TwoStagePipeline"):
+    _EXTRA_SPECS[model_class_name]["transformer_config_subfolder_resolver"] = ltx_transformer_config_subfolder
+
+
 # Multi-stage discovery reports the top-level wrapper rather than its DiT
 # submodule, so both names must resolve to the same request builders.
 _EXTRA_SPECS["MammothModa2ForConditionalGeneration"] = _EXTRA_SPECS["MammothModa2DiTPipeline"]
@@ -291,6 +305,20 @@ def get_output_tensor_range(model_class_name: str | None) -> OutputTensorRange:
     if spec is None:
         return "negative_one_to_one"
     return spec.get("output_tensor_range", "negative_one_to_one")
+
+
+def get_transformer_config_subfolder(
+    model_class_name: str | None,
+    *,
+    model: str | None,
+    revision: str | None = None,
+) -> str:
+    """Return the model-declared DiT config subfolder, or the standard default."""
+    spec = _get_spec(model_class_name)
+    resolver: TransformerConfigSubfolderResolver | None = (
+        spec.get("transformer_config_subfolder_resolver") if spec else None
+    )
+    return resolver(model=model, revision=revision) if resolver else "transformer"
 
 
 def should_preserve_reference_image_size(

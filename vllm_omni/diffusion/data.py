@@ -1213,7 +1213,18 @@ class OmniDiffusionConfig:
                             exc,
                         )
                 else:
-                    tf_config_dict = get_hf_file_to_dict("transformer/config.json", self.model, revision=self.revision)
+                    from vllm_omni.model_extras import get_transformer_config_subfolder
+
+                    transformer_subfolder = get_transformer_config_subfolder(
+                        self.model_class_name,
+                        model=self.model,
+                        revision=self.revision,
+                    )
+                    tf_config_dict = get_hf_file_to_dict(
+                        f"{transformer_subfolder}/config.json",
+                        self.model,
+                        revision=self.revision,
+                    )
                     if tf_config_dict is None:
                         tf_config_dict = get_hf_file_to_dict("unet/config.json", self.model, revision=self.revision)
                     if tf_config_dict is not None:

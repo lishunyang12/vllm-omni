@@ -733,9 +733,7 @@ class LTXRuntime(
             state,
             forward_ctx,
             denoise_ctx,
-            preserve_positive_velocity=(
-                getattr(forward_ctx.video_audio_step_adapter, "_sampler", "euler") == "euler_ancestral"
-            ),
+            preserve_positive_velocity=forward_ctx.sampler == "euler_ancestral",
         )
 
     def _denoise_step(

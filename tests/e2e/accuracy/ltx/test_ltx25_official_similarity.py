@@ -22,7 +22,6 @@ import shutil
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -35,7 +34,6 @@ from tests.e2e.accuracy.helpers import reset_artifact_dir
 from tests.helpers.mark import hardware_test
 
 OFFICIAL_REPOSITORY = "https://github.com/Lightricks/LTX-2.git"
-OFFICIAL_REVISION = "9377758131b1ffde4b7f766804590a6617bf2ab9"
 LTX25_OFFICIAL_REVISION = "7954dcb0d986bdc36ef272564a9789ade07fcc65"
 LTX25_OMNI_MODEL_ID = "Lightricks/LTX-2.5-Diffusers"
 LTX25_OMNI_MODEL_REVISION = "a6de4b5354f078db24d9cf4778c14846788aea3d"
@@ -63,10 +61,6 @@ LTX25_OFFICIAL_VARIANT_FILES = {
 # Version selected by the pinned official source's uv.lock. Keep it isolated
 # from Omni's runtime and development dependencies.
 OFFICIAL_OPENIMAGEIO_VERSION = "3.1.11.0"
-PROMPT = (
-    "A space shuttle launches vertically above a desert launch pad. Bright exhaust flames and a dense white "
-    "plume billow beneath it while the camera remains fixed."
-)
 LTX25_PROMPT = "A cinematic shot of a red fox walking through a snowy forest at dawn, the camera tracking alongside."
 LTX25_I2V_IMAGE_REPO = "huggingface/documentation-images"
 LTX25_I2V_IMAGE_FILENAME = "diffusers/svd/rocket.png"
@@ -120,7 +114,7 @@ LTX25_STAGE_2_SIGMAS = [0.909375, 0.725, 0.421875, 0.0]
 def test_ltx_reference_runner_unwraps_flattened_pipeline_output() -> None:
     from vllm_omni.outputs import OmniRequestOutput
 
-    from .run_ltx25_reference import _unwrap_omni_output
+    from .run_ltx25_reference import _omni_worker_peak_memory_mb, _unwrap_omni_output
 
     frame = object()
     audio = object()
@@ -135,67 +129,8 @@ def test_ltx_reference_runner_unwraps_flattened_pipeline_output() -> None:
     assert frames is frame
     assert actual_audio is audio
     assert sample_rate == 48_000
-
-
-@dataclass(frozen=True)
-class LTXAccuracyCase:
-    name: str
-    model_id: str
-    model_revision: str
-    model_env: str
-    model_class_name: str
-    checkpoint_repo: str
-    checkpoint_filename: str
-    checkpoint_revision: str
-    checkpoint_env: str
-    stg_block: int
-    prompt: str = PROMPT
-    image_repo: str | None = None
-    image_filename: str | None = None
-    image_revision: str | None = None
-
-
-CASES = (
-    LTXAccuracyCase(
-        name="ltx2",
-        model_id="Lightricks/LTX-2",
-        model_revision="47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
-        model_env="VLLM_TEST_LTX2_MODEL",
-        model_class_name="LTX2Pipeline",
-        checkpoint_repo="Lightricks/LTX-2",
-        checkpoint_filename="ltx-2-19b-dev.safetensors",
-        checkpoint_revision="47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
-        checkpoint_env="VLLM_TEST_LTX2_OFFICIAL_CHECKPOINT",
-        stg_block=29,
-    ),
-    LTXAccuracyCase(
-        name="ltx2_3",
-        model_id="diffusers/LTX-2.3-Diffusers",
-        model_revision="8eee8edcf067e838b843f926ec4d4cc9b2be1aaf",
-        model_env="VLLM_TEST_LTX23_MODEL",
-        model_class_name="LTX2Pipeline",
-        checkpoint_repo="Lightricks/LTX-2.3",
-        checkpoint_filename="ltx-2.3-22b-dev.safetensors",
-        checkpoint_revision="4229404625088d21c4f112eb640fb04a0900ee25",
-        checkpoint_env="VLLM_TEST_LTX23_OFFICIAL_CHECKPOINT",
-        stg_block=28,
-    ),
-    LTXAccuracyCase(
-        name="ltx2_3_i2v",
-        model_id="diffusers/LTX-2.3-Diffusers",
-        model_revision="8eee8edcf067e838b843f926ec4d4cc9b2be1aaf",
-        model_env="VLLM_TEST_LTX23_MODEL",
-        model_class_name="LTX2Pipeline",
-        checkpoint_repo="Lightricks/LTX-2.3",
-        checkpoint_filename="ltx-2.3-22b-dev.safetensors",
-        checkpoint_revision="4229404625088d21c4f112eb640fb04a0900ee25",
-        checkpoint_env="VLLM_TEST_LTX23_OFFICIAL_CHECKPOINT",
-        stg_block=28,
-        image_repo="huggingface/documentation-images",
-        image_filename="diffusers/svd/rocket.png",
-        image_revision="645d8364f0c7a101180b364811b5a11a362e4010",
-    ),
-)
+    output.peak_memory_mb = 12_345.0
+    assert _omni_worker_peak_memory_mb([output]) == 12_345.0
 
 
 def _run(command: list[str], *, env: dict[str, str], timeout: int = 1800) -> None:
@@ -237,23 +172,6 @@ def _git_revision(root: Path) -> str | None:
         return None
 
 
-def _official_source(artifact_root: Path) -> tuple[Path, str]:
-    repository = os.environ.get("VLLM_TEST_LTX_OFFICIAL_REPOSITORY", OFFICIAL_REPOSITORY)
-    revision = os.environ.get("VLLM_TEST_LTX_OFFICIAL_REVISION", OFFICIAL_REVISION)
-    configured_root = os.environ.get("VLLM_TEST_LTX_OFFICIAL_ROOT")
-    root = Path(configured_root) if configured_root else artifact_root / f"official-source-{revision[:12]}"
-    actual_revision = _git_revision(root) if root.exists() else None
-    if actual_revision != revision and configured_root:
-        raise AssertionError(f"Official source revision mismatch: {actual_revision} != {revision}")
-    if actual_revision != revision:
-        if root.exists():
-            shutil.rmtree(root)
-        _clone_pinned_source(root, repository, revision)
-        actual_revision = _git_revision(root)
-    assert actual_revision == revision, f"Official source revision mismatch: {actual_revision} != {revision}"
-    return root, revision
-
-
 def _ltx25_official_source(artifact_root: Path) -> tuple[Path, str]:
     repository = os.environ.get("VLLM_TEST_LTX25_OFFICIAL_REPOSITORY", OFFICIAL_REPOSITORY)
     revision = os.environ.get("VLLM_TEST_LTX25_OFFICIAL_REVISION", LTX25_OFFICIAL_REVISION)
@@ -285,38 +203,6 @@ def _official_runner_prefix() -> list[str]:
         sys.executable,
         "python",
     ]
-
-
-def _resolve_model(case: LTXAccuracyCase) -> Path:
-    configured_model = os.environ.get(case.model_env)
-    if configured_model and Path(configured_model).exists():
-        return Path(configured_model)
-    model_id = configured_model or case.model_id
-    revision = os.environ.get(f"{case.model_env}_REVISION")
-    if revision is None and model_id == case.model_id:
-        revision = case.model_revision
-    return Path(
-        snapshot_download(
-            repo_id=model_id,
-            revision=revision,
-            allow_patterns=[
-                "model_index.json",
-                "audio_vae/*",
-                "connectors/config.json",
-                "connectors/diffusion_pytorch_model.safetensors.index.json",
-                "connectors/diffusion_pytorch_model-*.safetensors",
-                "processor/*",
-                "scheduler/*",
-                "text_encoder/config.json",
-                "text_encoder/generation_config.json",
-                "text_encoder/model*",
-                "tokenizer/*",
-                "transformer/*",
-                "vae/*",
-                "vocoder/*",
-            ],
-        )
-    )
 
 
 def _resolve_ltx25_omni_model(*, transformer_subfolder: str = "transformer") -> tuple[Path, str, str | None]:
@@ -401,70 +287,6 @@ def _resolve_gemma_root(model: Path) -> Path:
         assert root.is_dir(), f"Gemma root not found: {root}"
         return root
     return model
-
-
-def _resolve_checkpoint(case: LTXAccuracyCase, model: Path) -> Path:
-    configured_checkpoint = os.environ.get(case.checkpoint_env)
-    if configured_checkpoint:
-        checkpoint = Path(configured_checkpoint)
-        assert checkpoint.is_file(), f"Official checkpoint not found: {checkpoint}"
-        return checkpoint
-    model_checkpoint = model / case.checkpoint_filename
-    if model_checkpoint.is_file():
-        return model_checkpoint
-    return Path(
-        hf_hub_download(
-            repo_id=case.checkpoint_repo,
-            filename=case.checkpoint_filename,
-            revision=case.checkpoint_revision,
-        )
-    )
-
-
-def _resolve_image(case: LTXAccuracyCase) -> Path | None:
-    if case.image_filename is None:
-        return None
-    if case.image_repo is None or case.image_revision is None:
-        raise ValueError(f"Incomplete image source for LTX accuracy case {case.name!r}.")
-    configured_image = os.environ.get("VLLM_TEST_LTX_I2V_IMAGE")
-    if configured_image:
-        image = Path(configured_image)
-        assert image.is_file(), f"LTX I2V conditioning image not found: {image}"
-        return image
-    return Path(
-        hf_hub_download(
-            repo_id=case.image_repo,
-            repo_type="dataset",
-            filename=case.image_filename,
-            revision=case.image_revision,
-        )
-    )
-
-
-def _request(case: LTXAccuracyCase, image: Path | None) -> dict[str, object]:
-    request: dict[str, object] = {
-        "prompt": case.prompt,
-        "negative_prompt": NEGATIVE_PROMPT,
-        "width": 512,
-        "height": 384,
-        "num_frames": 25,
-        "fps": 24,
-        "num_inference_steps": 20,
-        "seed": 42,
-        "video_cfg_scale": 3.0,
-        "audio_cfg_scale": 7.0,
-        "video_stg_scale": 1.0,
-        "audio_stg_scale": 1.0,
-        "video_modality_scale": 3.0,
-        "audio_modality_scale": 3.0,
-        "video_rescale_scale": 0.7,
-        "audio_rescale_scale": 0.7,
-        "video_stg_blocks": [case.stg_block],
-        "audio_stg_blocks": [case.stg_block],
-    }
-    if image is not None:
-        request["image"] = str(image.resolve())
-    return request
 
 
 def _resolve_ltx25_image() -> Path:
@@ -719,6 +541,13 @@ def test_ltx25_distilled_two_stage_matches_official(accuracy_artifact_root: Path
         "omni_model": omni_model_source,
         "omni_model_revision": omni_model_revision,
         "resolved_omni_model_path": str(omni_model),
+        "peak_memory_mb": {
+            "official_allocated": official_metadata["peak_memory_allocated_mb"],
+            "official_reserved": official_metadata["peak_memory_reserved_mb"],
+            "omni_worker_reported": omni_metadata["worker_peak_memory_mb"],
+            "omni_parent_allocated": omni_metadata["peak_memory_allocated_mb"],
+            "omni_parent_reserved": omni_metadata["peak_memory_reserved_mb"],
+        },
         "video": video_metrics,
         "audio": audio_metrics,
     }
@@ -871,6 +700,13 @@ def test_ltx25_full_matches_official(accuracy_artifact_root: Path, task: str, pi
         "omni_model": omni_model_source,
         "omni_model_revision": omni_model_revision,
         "resolved_omni_model_path": str(omni_model),
+        "peak_memory_mb": {
+            "official_allocated": official_metadata["peak_memory_allocated_mb"],
+            "official_reserved": official_metadata["peak_memory_reserved_mb"],
+            "omni_worker_reported": omni_metadata["worker_peak_memory_mb"],
+            "omni_parent_allocated": omni_metadata["peak_memory_allocated_mb"],
+            "omni_parent_reserved": omni_metadata["peak_memory_reserved_mb"],
+        },
         "video": video_metrics,
         "audio": audio_metrics,
     }

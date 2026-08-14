@@ -89,7 +89,6 @@ class LTXComponentProfile:
     transformer_subfolder: str = "transformer"
     scheduler_use_dynamic_shifting: bool = False
     scheduler_shift_terminal: float | None = None
-    checkpoint_kind: LTXCheckpointKind | None = None
 
 
 LTX2_COMPONENT_PROFILE = LTXComponentProfile(
@@ -125,7 +124,6 @@ LTX25_FULL_COMPONENT_PROFILE = LTXComponentProfile(
     transformer_subfolder="transformer_full",
     scheduler_use_dynamic_shifting=True,
     scheduler_shift_terminal=0.1,
-    checkpoint_kind="regular",
 )
 
 
@@ -136,7 +134,6 @@ LTX2_DISTILLED_COMPONENT_PROFILE = LTXComponentProfile(
     vae_modules=("vae", "audio_vae"),
     resident_modules=("vocoder", "latent_upsampler"),
     video_vae_cls=DistributedAutoencoderKLLTX2Video,
-    checkpoint_kind="distilled",
 )
 
 LTX25_DISTILLED_COMPONENT_PROFILE = LTXComponentProfile(
@@ -149,7 +146,6 @@ LTX25_DISTILLED_COMPONENT_PROFILE = LTXComponentProfile(
     vocoder_cls=LTX2VocoderWithBWE or LTX2Vocoder,
     vocoder_fallback_cls=LTX2Vocoder,
     text_encoder_cls=_LTX25_TEXT_ENCODER_CLS,
-    checkpoint_kind="distilled",
 )
 
 LTX2_DISTILLED_ONE_STAGE_COMPONENT_PROFILE = replace(
@@ -171,7 +167,6 @@ LTX23_DISTILLED_COMPONENT_PROFILE = replace(
     resident_modules=(*LTX23_COMPONENT_PROFILE.resident_modules, "latent_upsampler"),
     artifact_repo_id="Lightricks/LTX-2.3",
     latent_upsampler_filename="ltx-2.3-spatial-upscaler-x2-1.1.safetensors",
-    checkpoint_kind="distilled",
 )
 
 LTX23_DISTILLED_ONE_STAGE_COMPONENT_PROFILE = replace(
@@ -187,7 +182,6 @@ LTX2_TWO_STAGE_COMPONENT_PROFILE = replace(
     artifact_repo_id="Lightricks/LTX-2",
     latent_upsampler_filename="ltx-2-spatial-upscaler-x2-1.0.safetensors",
     distilled_lora_filename="ltx-2-19b-distilled-lora-384.safetensors",
-    checkpoint_kind="regular",
 )
 
 LTX23_TWO_STAGE_COMPONENT_PROFILE = replace(
@@ -197,7 +191,6 @@ LTX23_TWO_STAGE_COMPONENT_PROFILE = replace(
     artifact_repo_id="Lightricks/LTX-2.3",
     latent_upsampler_filename="ltx-2.3-spatial-upscaler-x2-1.1.safetensors",
     distilled_lora_filename="ltx-2.3-22b-distilled-lora-384-1.1.safetensors",
-    checkpoint_kind="regular",
 )
 
 
@@ -226,6 +219,17 @@ _COMPONENT_PROFILES: dict[tuple[str, str], LTXComponentProfile] = {
     ("dmd2", "2"): LTX2_COMPONENT_PROFILE,
     ("dmd2", "2.3"): LTX23_COMPONENT_PROFILE,
 }
+
+
+def resolve_ltx_checkpoint_kind(pipeline_kind: str) -> LTXCheckpointKind | None:
+    """Derive checkpoint requirements from the execution contract."""
+    if pipeline_kind in {"one_stage", "two_stage"}:
+        return "regular"
+    if pipeline_kind in {"distilled_one_stage", "distilled_two_stage"}:
+        return "distilled"
+    if pipeline_kind == "dmd2":
+        return None
+    raise ValueError(f"Unsupported LTX pipeline kind: {pipeline_kind!r}.")
 
 
 def resolve_ltx_artifact(
@@ -653,7 +657,7 @@ def initialize_pipeline_components(pipeline: Any, od_config: Any) -> None:
         )
     validate_ltx_checkpoint(
         pipeline.scheduler.config,
-        expected_kind=profile.checkpoint_kind,
+        expected_kind=resolve_ltx_checkpoint_kind(pipeline.pipeline_kind),
         pipeline_name=type(pipeline).__name__,
     )
 

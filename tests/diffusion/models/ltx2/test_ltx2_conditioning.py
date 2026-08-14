@@ -150,6 +150,14 @@ class TestLTXImageToVideoForwardStages:
 
         assert captured_prepare_kwargs[0]["image"].shape == (1, 3, 4, 4)
 
+    def test_ltx25_i2v_crf_preserves_single_pixel_dimension(self, monkeypatch):
+        from vllm_omni.diffusion.models.ltx2.ltx2_conditioning import _apply_image_conditioning_crf
+
+        image = torch.zeros(1, 4, 3, dtype=torch.uint8).numpy()
+        monkeypatch.setitem(sys.modules, "av", None)
+
+        assert _apply_image_conditioning_crf(image, 18) is image
+
     def test_ltx25_i2v_reports_missing_pyav(self, monkeypatch):
         from vllm_omni.diffusion.models.ltx2.ltx2_conditioning import _apply_image_conditioning_crf
 

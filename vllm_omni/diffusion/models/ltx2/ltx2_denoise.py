@@ -42,6 +42,7 @@ class LTXForwardContext:
     original_audio_num_frames: int
     padded_audio_num_frames: int
     timesteps: torch.Tensor
+    sampler: str
     audio_scheduler: Any
     video_audio_step_adapter: Any
 
@@ -572,6 +573,7 @@ class LTXPhaseExecutor:
             original_audio_num_frames=original_audio_num_frames,
             padded_audio_num_frames=padded_audio_num_frames,
             timesteps=timesteps_tensor,
+            sampler=phase_recipe.sampler,
             audio_scheduler=audio_scheduler,
             video_audio_step_adapter=video_audio_step_adapter,
         )

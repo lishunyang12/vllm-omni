@@ -18,6 +18,7 @@ from vllm_omni.diffusion.models.ltx2.ltx2_components import (
     LTX25_FULL_COMPONENT_PROFILE,
     LTX25_TWO_STAGE_COMPONENT_PROFILE,
     detect_ltx_model_version,
+    resolve_ltx_checkpoint_kind,
     resolve_ltx_component_profile,
 )
 from vllm_omni.diffusion.models.ltx2.ltx2_denoise import (
@@ -88,7 +89,7 @@ def test_ltx_ancestral_step_clears_sp_audio_padding_after_scheduler_update(monke
     )
     forward_ctx = SimpleNamespace(
         original_audio_num_frames=3,
-        video_audio_step_adapter=SimpleNamespace(_sampler="euler_ancestral"),
+        sampler="euler_ancestral",
     )
     denoise_ctx = SimpleNamespace(latents=None, audio_latents=None)
     pipe = SimpleNamespace(
@@ -96,7 +97,7 @@ def test_ltx_ancestral_step_clears_sp_audio_padding_after_scheduler_update(monke
     )
 
     def fake_step(_pipeline, actual_forward_ctx, _denoise_ctx, *_args):
-        assert actual_forward_ctx.video_audio_step_adapter._sampler == "euler_ancestral"
+        assert actual_forward_ctx.sampler == "euler_ancestral"
         updated_audio = torch.ones_like(state.audio)
         updated_audio[:, 3:] = 99.0
         return torch.ones_like(state.video), updated_audio
@@ -195,7 +196,7 @@ def test_ltx_converted_component_loading_propagates_revision(monkeypatch):
         vocoder_fallback_cls=None,
         scheduler_use_dynamic_shifting=False,
     )
-    pipeline = SimpleNamespace(component_profile=profile)
+    pipeline = SimpleNamespace(component_profile=profile, pipeline_kind="distilled_two_stage")
     od_config = SimpleNamespace(
         model="org/converted-ltx25",
         revision=revision,
@@ -379,6 +380,21 @@ def test_ltx25_checkpoint_selects_distilled_two_stage_profile(tmp_path, monkeypa
     assert pipe.pipeline_recipe is LTX25_DISTILLED_TWO_STAGE_RECIPE
 
 
+def test_ltx25_full_config_enrichment_uses_selected_transformer_subfolder(tmp_path):
+    from vllm_omni.diffusion.data import OmniDiffusionConfig
+
+    (tmp_path / "model_index.json").write_text(json.dumps({"_class_name": "LTX2Pipeline", "model_version": "2.5"}))
+    for subfolder, marker in (("transformer", "distilled"), ("transformer_full", "full")):
+        path = tmp_path / subfolder
+        path.mkdir()
+        (path / "config.json").write_text(json.dumps({"marker": marker}))
+
+    config = OmniDiffusionConfig(model=str(tmp_path), model_class_name="LTX2Pipeline")
+    config.enrich_config()
+
+    assert config.tf_model_config.get("marker") == "full"
+
+
 def test_ltx25_four_public_pipeline_semantics_are_disjoint():
     assert resolve_ltx_component_profile("one_stage", "2.5") is LTX25_FULL_COMPONENT_PROFILE
     assert resolve_ltx_pipeline_recipe("one_stage", "2.5") is LTX25_FULL_RECIPE
@@ -393,6 +409,25 @@ def test_ltx25_four_public_pipeline_semantics_are_disjoint():
     assert LTX2TwoStagePipeline.pipeline_kind == "two_stage"
     assert LTX2DistilledOneStagePipeline.pipeline_kind == "distilled_one_stage"
     assert LTX2DistilledTwoStagePipeline.pipeline_kind == "distilled_two_stage"
+
+
+@pytest.mark.parametrize(
+    ("pipeline_kind", "expected"),
+    [
+        ("one_stage", "regular"),
+        ("two_stage", "regular"),
+        ("distilled_one_stage", "distilled"),
+        ("distilled_two_stage", "distilled"),
+        ("dmd2", None),
+    ],
+)
+def test_ltx_checkpoint_kind_is_derived_from_pipeline_kind(pipeline_kind, expected):
+    assert resolve_ltx_checkpoint_kind(pipeline_kind) == expected
+
+
+def test_ltx_checkpoint_kind_rejects_unknown_pipeline():
+    with pytest.raises(ValueError, match="Unsupported LTX pipeline kind"):
+        resolve_ltx_checkpoint_kind("unknown")
 
 
 def test_ltx25_distilled_two_stage_recipe_matches_model_card_resolution():
