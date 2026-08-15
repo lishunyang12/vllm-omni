@@ -723,6 +723,41 @@ def test_ltx_component_loader_installs_omni_connector_attention(monkeypatch):
     assert all(kernel["role_category"] == "self" for kernel in kernels)
     assert all(kernel["skip_sequence_parallel"] for kernel in kernels)
     assert all(kernel["disable_kv_quant"] for kernel in kernels)
+    assert all(processor.has_learned_registers for processor in installed)
+    assert not any(processor.preserve_learned_register_mask for processor in installed)
+
+
+def test_ltx25_connector_attention_preserves_learned_register_mask(monkeypatch):
+    installed = []
+
+    class OmniAttention:
+        def __init__(self, **_kwargs):
+            pass
+
+    class Attention:
+        heads = 32
+        head_dim = 128
+        inner_kv_dim = 4096
+
+        def set_processor(self, processor):
+            installed.append(processor)
+
+    monkeypatch.setattr(ltx2_components, "OmniAttention", OmniAttention)
+    connectors = SimpleNamespace(
+        video_connector=SimpleNamespace(
+            learnable_registers=object(),
+            transformer_blocks=[SimpleNamespace(attn1=Attention())],
+        ),
+        audio_connector=SimpleNamespace(
+            learnable_registers=object(),
+            transformer_blocks=[SimpleNamespace(attn1=Attention())],
+        ),
+    )
+
+    _install_connector_attention(connectors, preserve_learned_register_mask=True)
+
+    assert all(processor.has_learned_registers for processor in installed)
+    assert all(processor.preserve_learned_register_mask for processor in installed)
 
 
 def test_ltx_connector_attention_dispatches_through_omni_kernel():

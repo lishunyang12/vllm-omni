@@ -89,6 +89,7 @@ class LTXComponentProfile:
     transformer_subfolder: str = "transformer"
     scheduler_use_dynamic_shifting: bool = False
     scheduler_shift_terminal: float | None = None
+    preserve_connector_attention_mask: bool = False
 
 
 LTX2_COMPONENT_PROFILE = LTXComponentProfile(
@@ -124,6 +125,7 @@ LTX25_FULL_COMPONENT_PROFILE = LTXComponentProfile(
     transformer_subfolder="transformer_full",
     scheduler_use_dynamic_shifting=True,
     scheduler_shift_terminal=0.1,
+    preserve_connector_attention_mask=True,
 )
 
 
@@ -146,6 +148,7 @@ LTX25_DISTILLED_COMPONENT_PROFILE = LTXComponentProfile(
     vocoder_cls=LTX2VocoderWithBWE or LTX2Vocoder,
     vocoder_fallback_cls=LTX2Vocoder,
     text_encoder_cls=_LTX25_TEXT_ENCODER_CLS,
+    preserve_connector_attention_mask=True,
 )
 
 LTX2_DISTILLED_ONE_STAGE_COMPONENT_PROFILE = replace(
@@ -366,6 +369,15 @@ def preserves_reference_image_size(*, model: str | None, revision: str | None = 
 class _LTXConnectorAttnProcessor:
     """Preserve official connector math around Omni attention dispatch."""
 
+    def __init__(
+        self,
+        *,
+        has_learned_registers: bool = False,
+        preserve_learned_register_mask: bool = False,
+    ) -> None:
+        self.has_learned_registers = has_learned_registers
+        self.preserve_learned_register_mask = preserve_learned_register_mask
+
     def __call__(
         self,
         attn: Any,
@@ -412,10 +424,12 @@ class _LTXConnectorAttnProcessor:
         key = key.view(batch_size, -1, kv_heads, head_dim)
         value = value.view(batch_size, -1, kv_heads, head_dim)
 
-        # Official learned-register connectors keep the resulting all-zero
-        # additive mask and therefore use the masked SDPA path. Preserve that
-        # dispatch; Flash backends consume the equivalent 2D all-keep mask.
-        if attention_mask is not None and attn.omni_attention.attn_backend.get_name().upper() == "FLASH_ATTN":
+        # LTX-2/2.3 replace padding tokens with learned registers, so their
+        # old padding mask becomes a no-op. LTX-2.5 preserves that all-zero
+        # additive mask to match the official masked-SDPA dispatch.
+        if self.has_learned_registers and not self.preserve_learned_register_mask:
+            attention_mask = None
+        elif attention_mask is not None and attn.omni_attention.attn_backend.get_name().upper() == "FLASH_ATTN":
             attention_mask = to_ltx_padding_mask(attention_mask)
         attn_metadata = AttentionMetadata(attn_mask=attention_mask) if attention_mask is not None else None
         hidden_states = attn.omni_attention(query, key, value, attn_metadata)
@@ -430,9 +444,14 @@ class _LTXConnectorAttnProcessor:
         return attn.to_out[1](hidden_states)
 
 
-def _install_connector_attention(connectors: LTX2TextConnectors) -> None:
+def _install_connector_attention(
+    connectors: LTX2TextConnectors,
+    *,
+    preserve_learned_register_mask: bool = False,
+) -> None:
     for connector_name in ("video_connector", "audio_connector"):
         connector = getattr(connectors, connector_name, None)
+        has_learned_registers = getattr(connector, "learnable_registers", None) is not None
         for block_index, block in enumerate(getattr(connector, "transformer_blocks", ())):
             attention = getattr(block, "attn1", None)
             if attention is not None:
@@ -448,7 +467,12 @@ def _install_connector_attention(connectors: LTX2TextConnectors) -> None:
                     skip_sequence_parallel=True,
                     disable_kv_quant=True,
                 )
-                attention.set_processor(_LTXConnectorAttnProcessor())
+                attention.set_processor(
+                    _LTXConnectorAttnProcessor(
+                        has_learned_registers=has_learned_registers,
+                        preserve_learned_register_mask=preserve_learned_register_mask,
+                    )
+                )
 
 
 def _detect_vocoder_output_sample_rate(model: str, revision: str | None = None) -> int | None:
@@ -568,7 +592,10 @@ def initialize_pipeline_components(pipeline: Any, od_config: Any) -> None:
         dtype=dtype,
         revision=revision,
     )
-    _install_connector_attention(pipeline.connectors)
+    _install_connector_attention(
+        pipeline.connectors,
+        preserve_learned_register_mask=profile.preserve_connector_attention_mask,
+    )
     pipeline.vae = _load_component(
         profile.video_vae_cls,
         model,

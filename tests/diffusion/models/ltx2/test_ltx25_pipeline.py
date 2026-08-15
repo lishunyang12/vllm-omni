@@ -205,7 +205,7 @@ def test_ltx_converted_component_loading_propagates_revision(monkeypatch):
     )
 
     monkeypatch.setattr(ltx2_components, "get_local_device", lambda: torch.device("cpu"))
-    monkeypatch.setattr(ltx2_components, "_install_connector_attention", lambda _connectors: None)
+    monkeypatch.setattr(ltx2_components, "_install_connector_attention", lambda _connectors, **_kwargs: None)
     monkeypatch.setattr(ltx2_components, "_place_aux_components", lambda _pipeline: None)
 
     def fake_prefetch(model, subfolders, **kwargs):
