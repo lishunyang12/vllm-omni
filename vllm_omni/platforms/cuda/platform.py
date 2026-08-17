@@ -204,6 +204,15 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
                     "FLASHINFER_ATTN was explicitly selected, but FlashInfer is unavailable. "
                     "Install a compatible FlashInfer build or select a different backend."
                 )
+            if backend_upper == "CUDNN_ATTN":
+                from vllm_omni.diffusion.attention.backends.cudnn_attn import CuDNNAttentionBackend
+
+                if not CuDNNAttentionBackend.supports_head_size(head_size):
+                    raise ValueError(
+                        f"CUDNN_ATTN was explicitly selected but head_size={head_size} is unsupported. "
+                        "Blackwell cuDNN FMHA requires head_dim divisible by 8 and no larger than 256. "
+                        "Select FLASHINFER_ATTN or TORCH_SDPA."
+                    )
             if backend_upper == "TRTLLM_ATTN":
                 trtllm_attn_supported = compute_capability is not None and compute_capability.major == 10
                 if not trtllm_attn_supported:
@@ -237,19 +246,33 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
             return DiffusionAttentionBackendEnum.TRTLLM_ATTN.get_path()
 
         if is_blackwell and cudnn_blackwell_ready:
+            from vllm_omni.diffusion.attention.backends.cudnn_attn import CuDNNAttentionBackend
+
+            if CuDNNAttentionBackend.supports_head_size(head_size):
+                logger.info(
+                    "Defaulting to diffusion attention backend CUDNN_ATTN (Blackwell %s, cuDNN %d, head_dim %d)",
+                    sm_str,
+                    cudnn_version,
+                    head_size,
+                )
+                return DiffusionAttentionBackendEnum.CUDNN_ATTN.get_path()
             logger.info(
-                "Defaulting to diffusion attention backend CUDNN_ATTN (Blackwell %s, cuDNN %d)",
+                "Skipping CUDNN_ATTN on Blackwell %s: head_dim %d is outside cuDNN FMHA "
+                "(multiples of 8, 8-256). Automatic selection will use FlashInfer when available, otherwise SDPA.",
                 sm_str,
-                cudnn_version,
+                head_size,
             )
-            return DiffusionAttentionBackendEnum.CUDNN_ATTN.get_path()
 
         if is_blackwell and flashinfer_available:
-            logger.info(
-                "Defaulting to diffusion attention backend FLASHINFER_ATTN (Blackwell %s, cuDNN unavailable)",
-                sm_str,
-            )
-            return DiffusionAttentionBackendEnum.FLASHINFER_ATTN.get_path()
+            from vllm_omni.diffusion.attention.backends.flashinfer_attn import FlashInferAttentionBackend
+
+            if FlashInferAttentionBackend.supports_head_size(head_size):
+                logger.info(
+                    "Defaulting to diffusion attention backend FLASHINFER_ATTN (Blackwell %s, head_dim %d)",
+                    sm_str,
+                    head_size,
+                )
+                return DiffusionAttentionBackendEnum.FLASHINFER_ATTN.get_path()
 
         if is_blackwell and not cudnn_blackwell_ready:
             logger.warning(

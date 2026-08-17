@@ -360,9 +360,7 @@ class FlashInferAttentionImpl(AttentionImpl):
             # than silently dropping the explicit mask (diverging from SDPA),
             # require the caller to select a compatible backend.
             if custom_mask is not None and self.causal:
-                raise ValueError(
-                    "FLASHINFER_ATTN does not support causal=True together with an explicit custom mask."
-                )
+                raise ValueError("FLASHINFER_ATTN does not support causal=True together with an explicit custom mask.")
 
         if custom_mask is not None and self.flashinfer_backend == "cute-dsl":
             raise ValueError(

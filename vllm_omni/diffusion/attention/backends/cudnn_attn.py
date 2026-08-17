@@ -16,16 +16,29 @@ class CuDNNAttentionBackend(AttentionBackend):
     accept_output_buffer: bool = True
     supports_prefix_kv_slicing: bool = True
 
+    # cuDNN 9.5+ FMHA on Blackwell: head_dim divisible by 8 and at most 256
+    # for BF16/FP16. Used by automatic platform selection; explicit CUDNN_ATTN
+    # raises when the configured head size is outside this set.
+    _MAX_HEAD_SIZE = 256
+    _HEAD_SIZE_MULTIPLE = 8
+
     @classmethod
     def supports_attention_mask(cls) -> bool:
         return True
 
     @staticmethod
     def get_supported_head_sizes() -> list[int]:
-        # cuDNN 9.5+ FMHA on Blackwell supports any head_dim divisible by 8
-        # up to 256 for BF16/FP16. Empty list = "accept any"; the cuDNN kernel
-        # selector validates the concrete runtime shape.
-        return []
+        return list(
+            range(
+                CuDNNAttentionBackend._HEAD_SIZE_MULTIPLE,
+                CuDNNAttentionBackend._MAX_HEAD_SIZE + 1,
+                CuDNNAttentionBackend._HEAD_SIZE_MULTIPLE,
+            )
+        )
+
+    @classmethod
+    def supports_head_size(cls, head_size: int) -> bool:
+        return 0 < head_size <= cls._MAX_HEAD_SIZE and head_size % cls._HEAD_SIZE_MULTIPLE == 0
 
     @staticmethod
     def get_name() -> str:

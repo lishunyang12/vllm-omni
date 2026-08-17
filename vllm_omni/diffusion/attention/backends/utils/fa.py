@@ -22,6 +22,7 @@ from vllm_omni.platforms import current_omni_platform
 
 logger = init_logger(__name__)
 
+
 def _is_blackwell() -> bool:
     try:
         capability = current_omni_platform.get_device_capability()

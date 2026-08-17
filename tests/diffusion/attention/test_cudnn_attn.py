@@ -9,7 +9,7 @@ from torch.nn.attention import SDPBackend
 
 import vllm_omni.diffusion.attention.backends.cudnn_attn as cudnn_backend
 from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
-from vllm_omni.diffusion.attention.backends.cudnn_attn import CuDNNAttentionImpl
+from vllm_omni.diffusion.attention.backends.cudnn_attn import CuDNNAttentionBackend, CuDNNAttentionImpl
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
 
@@ -88,3 +88,15 @@ def test_cudnn_rejects_invalid_valid_kv_length():
             query,
             AttentionMetadata(extra={"valid_kv_length": 9}),
         )
+
+
+@pytest.mark.parametrize("head_size", [8, 64, 128, 256])
+def test_cudnn_backend_accepts_blackwell_fmha_head_sizes(head_size):
+    assert CuDNNAttentionBackend.supports_head_size(head_size)
+    assert head_size in CuDNNAttentionBackend.get_supported_head_sizes()
+
+
+@pytest.mark.parametrize("head_size", [0, 7, 12, 320])
+def test_cudnn_backend_rejects_incompatible_head_sizes(head_size):
+    assert not CuDNNAttentionBackend.supports_head_size(head_size)
+    assert head_size not in CuDNNAttentionBackend.get_supported_head_sizes()
