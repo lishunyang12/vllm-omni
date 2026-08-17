@@ -14,6 +14,7 @@ from vllm_omni.diffusion.attention.backends.ring.ring_globals import (
     FA3_SUPPORTED_CUDA_MAJORS,
     HAS_AITER,
     HAS_FA3,
+    HAS_FA4,
     HAS_FLASH_ATTN,
 )
 from vllm_omni.diffusion.attention.backends.ring.ring_selector import AttnType
@@ -44,12 +45,19 @@ def _can_use_fa3(device: torch.device) -> bool:
     return major in FA3_SUPPORTED_CUDA_MAJORS
 
 
+def _can_use_fa4(device: torch.device) -> bool:
+    """Return whether the installed FA4 kernels support ``device``."""
+    if not HAS_FA4 or device.type != "cuda":
+        return False
+    major, _minor = torch.cuda.get_device_capability(device)
+    return major >= 10
+
+
 def _can_use_fa2(device: torch.device) -> bool:
     """Return whether the FA2 backend supports ``device``.
 
     FA2's CUDA backend supports Ampere, Ada, and Hopper.  Blackwell support is
-    provided by the separate FA4 implementation, which this ring backend does
-    not expose.
+    provided by the separate FA4 implementation.
     """
     if not HAS_FLASH_ATTN or device.type != "cuda":
         return False
@@ -204,9 +212,10 @@ class RingParallelAttention:
                 )
             return _run_sdpa()
 
+        can_use_fa4 = _can_use_fa4(query.device)
         can_use_fa3 = _can_use_fa3(query.device)
         can_use_fa2 = _can_use_fa2(query.device)
-        if not can_use_fa3 and not can_use_fa2 and not HAS_AITER:
+        if not can_use_fa4 and not can_use_fa3 and not can_use_fa2 and not HAS_AITER:
             if self.attn_backend_explicit:
                 raise RuntimeError(
                     f"{self.attn_backend_pref} was explicitly selected, but no compatible ring kernel "
@@ -214,15 +223,18 @@ class RingParallelAttention:
                 )
             logger.warning_once(
                 "Automatic ring backend selection chose TORCH_SDPA because no compatible "
-                "FA2/FA3/AITER ring kernel is available for this device."
+                "FA2/FA3/FA4/AITER ring kernel is available for this device."
             )
             return _run_sdpa()
 
         from vllm_omni.diffusion.attention.backends.ring_flash_attn import ring_flash_attn_func
 
-        # Prefer FA3 over FA2 for better performance (FA3 supports Ampere/Ada/Hopper)
-        # On ROCm, use AITER
-        if can_use_fa3:
+        # Prefer FA4 on Blackwell. An importable Hopper-only FA3 wheel can
+        # otherwise be selected and fail at launch with "no kernel image".
+        if can_use_fa4:
+            attn_type = AttnType.FA4
+        # Prefer FA3 over FA2 on Ampere/Ada/Hopper. On ROCm, use AITER.
+        elif can_use_fa3:
             attn_type = AttnType.FA3
         elif HAS_AITER:
             attn_type = AttnType.AITER

@@ -22,6 +22,14 @@ from vllm_omni.platforms import current_omni_platform
 
 logger = init_logger(__name__)
 
+def _is_blackwell() -> bool:
+    try:
+        capability = current_omni_platform.get_device_capability()
+    except Exception:
+        return False
+    return capability is not None and capability.major >= 10
+
+
 # Flash Attention implementation discovery. All candidates implement the same
 # logical FLASH_ATTN backend; this never substitutes SDPA at runtime.
 flash_attn_func = None
@@ -50,20 +58,35 @@ elif current_omni_platform.is_musa():
         pass
 else:
     # CUDA implementation candidates, ordered by preference.
-    # Candidate 1: FA3 from fa3-fwd PyPI package.
-    try:
-        from fa3_fwd_interface import flash_attn_func, flash_attn_varlen_func  # noqa: F401
-    except (ImportError, ModuleNotFoundError):
-        pass
+    # Candidate 1: CuTe-based FA4. This matters on Blackwell, where an
+    # importable Hopper-only FA3 wheel may otherwise be selected and fail
+    # at launch with "no kernel image is available".
+    if _is_blackwell():
+        try:
+            from flash_attn.cute import flash_attn_func, flash_attn_varlen_func  # noqa: F401
 
-    # Candidate 2: FA3 from a flash-attention source build.
+            logger.info("Using CuTe FlashAttention-4 on Blackwell")
+        except Exception as exc:
+            # Optional FA4 dependencies may be present but ABI-incompatible
+            # (for example, mismatched CUTLASS DSL and Quack builds). Treat
+            # that as unavailable so backend discovery can continue.
+            logger.debug("CuTe FlashAttention-4 is unavailable: %s", exc)
+
+    # Candidate 2: FA3 from fa3-fwd PyPI package.
+    if flash_attn_func is None:
+        try:
+            from fa3_fwd_interface import flash_attn_func, flash_attn_varlen_func  # noqa: F401
+        except (ImportError, ModuleNotFoundError):
+            pass
+
+    # Candidate 3: FA3 from a flash-attention source build.
     if flash_attn_func is None:
         try:
             from flash_attn_interface import flash_attn_func, flash_attn_varlen_func  # noqa: F401
         except (ImportError, ModuleNotFoundError):
             pass
 
-    # Candidate 3: FA2 from the flash-attn package (multiple import paths).
+    # Candidate 4: FA2 from the flash-attn package (multiple import paths).
     if flash_attn_func is None:
         try:
             from flash_attn import flash_attn_func, flash_attn_varlen_func  # noqa: F401
@@ -79,7 +102,7 @@ else:
         except (ImportError, ModuleNotFoundError):
             pass
 
-    # Candidate 4: vLLM's encapsulated Flash Attention dispatcher.
+    # Candidate 5: vLLM's encapsulated Flash Attention dispatcher.
     if flash_attn_varlen_func is None:
         try:
             from vllm.vllm_flash_attn import (  # noqa: F401
@@ -100,7 +123,16 @@ def is_flash_attn_installed() -> bool:
     Shared by CUDA/ROCm/MUSA platforms.
     """
     try:
-        # Check for any FA backend: FA3 (fa3_fwd_interface, flash_attn_interface) or FA2 (flash_attn)
+        # Check for any FA backend: FA4 (flash_attn.cute), FA3
+        # (fa3_fwd_interface, flash_attn_interface), or FA2 (flash_attn).
+        if _is_blackwell():
+            try:
+                from flash_attn.cute import flash_attn_varlen_func  # noqa: F401
+
+                return True
+            except Exception as exc:
+                logger.debug("CuTe FlashAttention-4 is unavailable: %s", exc)
+
         # Try FA3 from fa3-fwd PyPI package
         try:
             import fa3_fwd_interface  # noqa: F401

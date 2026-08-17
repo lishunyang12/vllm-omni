@@ -28,6 +28,19 @@ fa3_attn_func = None  # High-level attention function (flash_attn_func)
 # though its CUDA binary only contains SM8x/SM90 kernels.
 FA3_SUPPORTED_CUDA_MAJORS: frozenset[int] | None = None
 
+# FA4 detection. The CuTe API returns LSE directly, so it can participate in
+# Ring Attention's numerically stable block-wise output accumulation.
+HAS_FA4 = False
+fa4_attn_func = None
+try:
+    from flash_attn.cute import flash_attn_func as fa4_attn_func  # noqa: F401
+
+    HAS_FA4 = True
+except Exception:
+    # Optional CuTe/CUTLASS/Quack components can be importable but
+    # ABI-incompatible. Treat the whole optional backend as unavailable.
+    pass
+
 # Try flash_attn_interface first (from flash-attention source build)
 try:
     from flash_attn_interface import _flash_attn_forward as fa3_fwd_func  # noqa: F401

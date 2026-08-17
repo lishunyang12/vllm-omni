@@ -74,6 +74,7 @@ def test_can_use_fa2_checks_device_arch(monkeypatch, capability, expected):
 
 def test_ring_falls_back_to_sdpa_when_fa3_extension_has_no_device_kernel(monkeypatch):
     monkeypatch.setattr(ring, "HAS_FA3", True)
+    monkeypatch.setattr(ring, "HAS_FA4", False)
     monkeypatch.setattr(ring, "HAS_FLASH_ATTN", False)
     monkeypatch.setattr(ring, "HAS_AITER", False)
     monkeypatch.setattr(ring, "_can_use_fa3", lambda _device: False)
@@ -95,6 +96,7 @@ def test_ring_falls_back_to_sdpa_when_fa3_extension_has_no_device_kernel(monkeyp
 
 def test_explicit_ring_backend_does_not_fallback_to_sdpa(monkeypatch):
     monkeypatch.setattr(ring, "HAS_FA3", True)
+    monkeypatch.setattr(ring, "HAS_FA4", False)
     monkeypatch.setattr(ring, "HAS_FLASH_ATTN", False)
     monkeypatch.setattr(ring, "HAS_AITER", False)
     monkeypatch.setattr(ring, "_can_use_fa3", lambda _device: False)

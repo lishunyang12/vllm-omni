@@ -19,6 +19,11 @@
 # B200 (b200-k8s): matches vLLM device ``b200-k8s`` from ci-infra
 # (AgentQueue.B200_K8S + b200_plugin_template). Queue routes the K8s pool;
 # podSpec uses hostNetwork + /raid|/mnt/shared (no H100-style nodeSelector).
+#
+# The ``l4_*`` presets run under the ``docker`` plugin, which does not put
+# ``buildkite-agent`` on PATH inside the container the way the ``kubernetes``
+# presets do, so they set ``mount-buildkite-agent: true``; without it any step
+# calling ``buildkite-agent`` (artifact upload, annotate, meta-data) fails there.
 
 x-npu-k8s-plugins: &npu_k8s_plugins
   - kubernetes:
@@ -36,6 +41,7 @@ mirror_hardwares:
           image: public.ecr.aws/q9t5s3a7/vllm-ci-test-repo:$BUILDKITE_COMMIT
           always-pull: true
           propagate-environment: true
+          mount-buildkite-agent: true
           shm-size: "8gb"
           environment:
             - HF_HOME=/fsx/hf_cache
@@ -51,6 +57,7 @@ mirror_hardwares:
           image: public.ecr.aws/q9t5s3a7/vllm-ci-test-repo:$BUILDKITE_COMMIT
           always-pull: true
           propagate-environment: true
+          mount-buildkite-agent: true
           shm-size: "8gb"
           environment:
             - HF_HOME=/fsx/hf_cache
