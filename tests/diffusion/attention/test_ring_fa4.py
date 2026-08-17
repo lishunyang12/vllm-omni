@@ -85,8 +85,9 @@ def test_flashinfer_wrapper_canonicalizes_unbatched_lse_to_bhs(monkeypatch):
         return unbatched_out.clone(), unbatched_lse.clone()
 
     monkeypatch.setattr(ring_kernels, "HAS_FLASHINFER", True)
-    monkeypatch.setattr(ring_kernels, "single_prefill_with_kv_cache", fake_prefill)
-    monkeypatch.setattr(ring_kernels, "_LOG2_E", 1.0)
+    # FlashInfer symbols are only bound when HAS_FLASHINFER was true at import.
+    monkeypatch.setattr(ring_kernels, "single_prefill_with_kv_cache", fake_prefill, raising=False)
+    monkeypatch.setattr(ring_kernels, "_LOG2_E", 1.0, raising=False)
 
     out, lse = ring_kernels.flashinfer_attn_forward(query, query, query, softmax_scale=0.1)
 

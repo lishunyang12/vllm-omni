@@ -135,6 +135,36 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
 
         if selected_backend is not None:
             backend_upper = selected_backend.upper()
+            # Architecture / package probes for optional kernels must run before
+            # validate_diffusion_attn_backend, which imports the backend module
+            # and would otherwise load sageattention / sageattn3 on unsupported GPUs.
+            if backend_upper == "SAGE_ATTN":
+                sage_supported_sms = {(8, 0), (8, 6), (8, 9), (9, 0), (12, 0), (12, 1)}
+                if compute_capability is None or tuple(compute_capability) not in sage_supported_sms:
+                    raise ValueError(
+                        f"SAGE_ATTN was explicitly selected but does not provide a kernel for {sm_str or 'this GPU'}. "
+                        "Select a compatible backend."
+                    )
+                try:
+                    importlib.import_module("sageattention")
+                except ImportError as e:
+                    raise ImportError(
+                        "SAGE_ATTN was explicitly selected, but the sageattention package is not available."
+                    ) from e
+            if backend_upper == "SAGE_ATTN_3":
+                sage_attn3_supported = compute_capability is not None and compute_capability.major >= 10
+                if not sage_attn3_supported:
+                    raise ValueError(
+                        "SAGE_ATTN_3 was explicitly selected but requires a Blackwell-class GPU "
+                        "with compute capability >= 10.0. Select a compatible backend."
+                    )
+                try:
+                    importlib.import_module("sageattn3")
+                except ImportError as e:
+                    raise ImportError(
+                        "SAGE_ATTN_3 was explicitly selected, but the sageattn3 package is not available. "
+                        "Install SageAttention/sageattention3_blackwell or select a different backend."
+                    ) from e
             cls.validate_diffusion_attn_backend(backend_upper)
             if backend_upper in ("FLASH_ATTN_HUB", "FLASH_ATTN_3_HUB"):
                 try:
@@ -172,33 +202,6 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
                 raise ValueError(
                     f"FLASH_ATTN was explicitly selected but is unsupported ({reason}). Select a compatible backend."
                 )
-            if backend_upper == "SAGE_ATTN_3":
-                sage_attn3_supported = compute_capability is not None and compute_capability.major >= 10
-                if not sage_attn3_supported:
-                    raise ValueError(
-                        "SAGE_ATTN_3 was explicitly selected but requires a Blackwell-class GPU "
-                        "with compute capability >= 10.0. Select a compatible backend."
-                    )
-                try:
-                    importlib.import_module("sageattn3")
-                except ImportError as e:
-                    raise ImportError(
-                        "SAGE_ATTN_3 was explicitly selected, but the sageattn3 package is not available. "
-                        "Install SageAttention/sageattention3_blackwell or select a different backend."
-                    ) from e
-            if backend_upper == "SAGE_ATTN":
-                sage_supported_sms = {(8, 0), (8, 6), (8, 9), (9, 0), (12, 0), (12, 1)}
-                if compute_capability is None or tuple(compute_capability) not in sage_supported_sms:
-                    raise ValueError(
-                        f"SAGE_ATTN was explicitly selected but does not provide a kernel for {sm_str or 'this GPU'}. "
-                        "Select a compatible backend."
-                    )
-                try:
-                    importlib.import_module("sageattention")
-                except ImportError as e:
-                    raise ImportError(
-                        "SAGE_ATTN was explicitly selected, but the sageattention package is not available."
-                    ) from e
             if backend_upper == "FLASHINFER_ATTN" and not flashinfer_available:
                 raise ValueError(
                     "FLASHINFER_ATTN was explicitly selected, but FlashInfer is unavailable. "
