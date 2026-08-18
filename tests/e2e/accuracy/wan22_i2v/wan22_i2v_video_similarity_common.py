@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from tests.e2e.accuracy.helpers import SimilarityThresholds
 
 RABBIT_IMAGE_URL = "https://vllm-public-assets.s3.us-west-2.amazonaws.com/omni-assets/rabbit.png"
 MODEL_NAME = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
@@ -17,53 +17,13 @@ SEED = 42
 BOUNDARY_RATIO = 0.875
 
 
-@dataclass(frozen=True, slots=True)
-class SimilarityThresholds:
-    ssim: float
-    psnr: float
-
-
-# Per-GPU overrides for online-vs-diffusers video similarity.
+# Per-device overrides for online-vs-diffusers video similarity.
 # Only listed profiles are matched against ``get_device_name()``; everything
 # else (including H100/L4) uses ``default``.
-SIMILARITY_THRESHOLDS_BY_GPU: dict[str, SimilarityThresholds] = {
+SIMILARITY_THRESHOLDS_BY_DEVICE: dict[str, SimilarityThresholds] = {
     "B200": SimilarityThresholds(ssim=0.93, psnr=28.0),
     "default": SimilarityThresholds(ssim=0.94, psnr=28.0),
 }
-
-
-def resolve_gpu_profile(device_name: str | None = None) -> str:
-    """Map the current device name to a hardware profile key.
-
-    Uses ``current_omni_platform.get_device_name()`` by default. Only keys in
-    ``SIMILARITY_THRESHOLDS_BY_GPU`` (except ``default``) are matched as
-    substrings; unmatched devices use ``default``.
-    """
-    if device_name is None:
-        try:
-            from vllm_omni.platforms import current_omni_platform
-
-            device_name = current_omni_platform.get_device_name()
-        except Exception:
-            return "default"
-
-    if not device_name:
-        return "default"
-
-    for profile in SIMILARITY_THRESHOLDS_BY_GPU:
-        if profile == "default":
-            continue
-        if profile in device_name:
-            return profile
-    return "default"
-
-
-def resolve_similarity_thresholds(
-    gpu_profile: str | None = None,
-) -> SimilarityThresholds:
-    """Resolve SSIM/PSNR thresholds for the current (or given) GPU profile."""
-    profile = gpu_profile or resolve_gpu_profile()
-    return SIMILARITY_THRESHOLDS_BY_GPU.get(profile, SIMILARITY_THRESHOLDS_BY_GPU["default"])
 
 
 PROMPT = """一只棕色野兔的正面特写镜头，采用低角度仰拍视角，营造亲密而庄严的视觉冲击。兔子一双圆润漆黑的大眼睛直视镜头深处，眼神中交织着野生动物的警觉与一丝难以言喻的温柔好奇，仿佛在与观者建立跨越物种的静默对话。它毛色呈现层次丰富的棕褐渐变，从浅奶油色腹部过渡到深棕背部，每根毛发纹理清晰可辨，在侧光下泛着丝绸般的光泽。细长洁白的胡须共有三对，随呼吸节奏微微颤动，偶尔因捕捉气流信息而轻轻摇摆。

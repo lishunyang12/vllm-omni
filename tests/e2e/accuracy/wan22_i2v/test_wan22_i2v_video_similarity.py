@@ -15,6 +15,8 @@ from tests.e2e.accuracy.helpers import (
     online_timeout_seconds,
     probe_binary,
     probe_video,
+    resolve_device_profile,
+    resolve_similarity_thresholds,
     send_video_request_with_timeout,
     validate_image_source,
     video_artifact_dir,
@@ -32,10 +34,9 @@ from tests.e2e.accuracy.wan22_i2v.wan22_i2v_video_similarity_common import (
     PROMPT,
     RABBIT_IMAGE_URL,
     SEED,
+    SIMILARITY_THRESHOLDS_BY_DEVICE,
     SIZE,
     WIDTH,
-    resolve_gpu_profile,
-    resolve_similarity_thresholds,
 )
 from tests.helpers.mark import hardware_test
 from tests.helpers.runtime import OmniServerParams
@@ -67,17 +68,9 @@ SERVER_CASES = [
 
 @pytest.mark.core_model
 @pytest.mark.cpu
-def test_resolve_gpu_profile_matches_device_name() -> None:
-    assert resolve_gpu_profile("NVIDIA B200") == "B200"
-    assert resolve_gpu_profile("NVIDIA H100 80GB HBM3") == "default"
-    assert resolve_gpu_profile("Some Unknown GPU") == "default"
-
-
-@pytest.mark.core_model
-@pytest.mark.cpu
-def test_resolve_similarity_thresholds_uses_gpu_profile() -> None:
-    default = resolve_similarity_thresholds("default")
-    b200 = resolve_similarity_thresholds("B200")
+def test_resolve_similarity_thresholds_uses_device_profile() -> None:
+    default = resolve_similarity_thresholds(SIMILARITY_THRESHOLDS_BY_DEVICE, "default")
+    b200 = resolve_similarity_thresholds(SIMILARITY_THRESHOLDS_BY_DEVICE, "B200")
     assert default.ssim == 0.94
     assert default.psnr == 28.0
     assert b200.ssim == 0.93
@@ -294,10 +287,10 @@ def test_wan22_i2v_serving_matches_diffusers_video_similarity(
         f"offline_path={offline_path}"
     )
     assert_video_metadata(online_metadata, width=WIDTH, height=HEIGHT, fps=FPS, frame_count=NUM_FRAMES)
-    gpu_profile = resolve_gpu_profile()
-    thresholds = resolve_similarity_thresholds(gpu_profile)
+    device_profile = resolve_device_profile(profiles=SIMILARITY_THRESHOLDS_BY_DEVICE)
+    thresholds = resolve_similarity_thresholds(SIMILARITY_THRESHOLDS_BY_DEVICE, device_profile)
     print(
-        f"wan22_i2v similarity thresholds: gpu_profile={gpu_profile}, "
+        f"wan22_i2v similarity thresholds: device_profile={device_profile}, "
         f"ssim>={thresholds.ssim:.6f}, psnr>={thresholds.psnr:.6f}"
     )
     assert_video_similarity_metrics(
