@@ -834,7 +834,7 @@ def run_benchmark(
         "Quantization": _to_quantization_value(server_type, serve_args_dict),
         "offload": _to_offload_string(server_type, serve_args_dict),
         "compile": _to_compile_value(server_type, serve_args_dict),
-        "Attn_backend": os.environ.get("DIFFUSION_ATTENTION_BACKEND", ""),
+        "Attn_backend": str(serve_args_dict.get("diffusion-attention-backend") or ""),
         "num_inference_steps": params.get("num-inference-steps", ""),
         "completed": completed,
         "failed": failed,
