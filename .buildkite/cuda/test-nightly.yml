@@ -5,6 +5,7 @@ env:
   HF_HUB_ETAG_TIMEOUT: 60
 
 steps:
+  # debug for test
   # Group: collapses under one heading in the Buildkite UI; child steps still run in parallel.
   - group: ":card_index_dividers: Omni Model Test"
     key: nightly-omni-test-group
