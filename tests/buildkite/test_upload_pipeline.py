@@ -95,7 +95,8 @@ def test_yaml_gated_l2_still_enables_image_via_ready_base() -> None:
     assert "if: true" not in rendered
 
 
-def test_mirror_hardwares_l4_1_expands_to_agents_and_plugins() -> None:
+def test_mirror_hardwares_l4_1_expands_to_agents_and_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("upload_pipeline._get_mirror_hw_selector", lambda: "")
     doc = {
         "steps": [
             {
@@ -141,38 +142,91 @@ def test_mirror_hardwares_a2b3_npu_4_expands_agents_image_and_plugins() -> None:
 
 
 def test_mirror_hardwares_mapping_uses_default_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("MIRROR_HW", raising=False)
+    monkeypatch.setattr("upload_pipeline._get_mirror_hw_selector", lambda: "")
     step = _expand_mirror_hardwares(
         {
             "label": "Nightly Omni",
             "mirror_hardwares": {"default": "h100_2", "b200": "b200_2"},
         },
     )
+    assert step is not None
     assert step["agents"]["queue"] == "mithril-h100-pool"
     assert step["plugins"][0]["kubernetes"]["podSpec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
 
 
 def test_mirror_hardwares_mapping_selects_b200_via_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MIRROR_HW", "B200")
+    monkeypatch.setattr("upload_pipeline._get_mirror_hw_selector", lambda: "b200")
     step = _expand_mirror_hardwares(
         {
             "label": "Nightly Omni",
             "mirror_hardwares": {"default": "h100_2", "b200": "b200_2"},
         },
     )
+    assert step is not None
     assert step["agents"]["queue"] == "b200-k8s"
     assert step["plugins"][0]["kubernetes"]["podSpec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
 
 
-def test_mirror_hardwares_mapping_unknown_env_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MIRROR_HW", "h200")
-    with pytest.raises(ValueError, match="MIRROR_HW='h200'"):
+def test_mirror_hardwares_mapping_missing_selector_skips_step(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("upload_pipeline._get_mirror_hw_selector", lambda: "b200")
+    assert (
         _expand_mirror_hardwares(
             {
-                "label": "Nightly Omni",
-                "mirror_hardwares": {"default": "h100_2", "b200": "b200_2"},
+                "label": "H100 only",
+                "mirror_hardwares": {"default": "h100_4"},
             },
         )
+        is None
+    )
+
+    doc = {
+        "steps": [
+            {
+                "group": ":card_index_dividers: Mixed",
+                "steps": [
+                    {"label": "H100 only", "mirror_hardwares": {"default": "h100_4"}},
+                    {
+                        "label": "Both",
+                        "mirror_hardwares": {"default": "h100_2", "b200": "b200_2"},
+                    },
+                    {"label": "String H100", "mirror_hardwares": "h100_4"},
+                ],
+            },
+            {
+                "group": ":card_index_dividers: H100 only group",
+                "steps": [
+                    {"label": "Skip me", "mirror_hardwares": {"default": "h100_1"}},
+                ],
+            },
+        ],
+    }
+    rendered = _render_test_pipeline(doc, changed_files=None)
+    groups = [step.get("group") for step in rendered["steps"]]
+    assert ":card_index_dividers: H100 only group" not in groups
+    mixed = next(step for step in rendered["steps"] if step.get("group") == ":card_index_dividers: Mixed")
+    assert [child["label"] for child in mixed["steps"]] == ["Both"]
+    assert mixed["steps"][0]["agents"]["queue"] == "b200-k8s"
+
+
+def test_mirror_hardwares_cuda_string_skips_when_selector_is_other_chip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("upload_pipeline._get_mirror_hw_selector", lambda: "b200")
+    assert _expand_mirror_hardwares({"label": "h100 string", "mirror_hardwares": "h100_4"}) is None
+    assert _expand_mirror_hardwares({"label": "l4 string", "mirror_hardwares": "l4_1"}) is None
+    b200 = _expand_mirror_hardwares({"label": "b200 string", "mirror_hardwares": "b200_2"})
+    assert b200 is not None
+    assert b200["agents"]["queue"] == "b200-k8s"
+    npu = _expand_mirror_hardwares({"label": "npu string", "mirror_hardwares": "a2b3_npu_4"})
+    assert npu is not None
+    assert npu["agents"]["queue"] == "ascend-a2b3"
+
+
+def test_mirror_hardwares_cuda_string_kept_when_selector_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("upload_pipeline._get_mirror_hw_selector", lambda: "")
+    step = _expand_mirror_hardwares({"label": "h100 string", "mirror_hardwares": "h100_4"})
+    assert step is not None
+    assert step["agents"]["queue"] == "mithril-h100-pool"
 
 
 def test_mirror_hardwares_mapping_requires_default() -> None:

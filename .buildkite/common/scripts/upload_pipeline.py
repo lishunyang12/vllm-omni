@@ -21,6 +21,9 @@ Test pipeline mode (e.g. test-merge.yml):
         b200: b200_2
 
     Unset / empty ``MIRROR_HW`` → ``default``; ``MIRROR_HW=b200`` → ``b200`` entry.
+    If the mapping has no key for ``MIRROR_HW``, that step is omitted (H100-only jobs
+    list ``default`` and omit ``b200``). A CUDA preset string such as ``h100_4`` is
+    omitted when ``MIRROR_HW`` names a different chip (e.g. ``b200``).
 
 Usage:
   python3 upload_pipeline.py [--upload] [--all | --e2e] <pipeline.yml>
@@ -234,7 +237,27 @@ def _load_mirror_hardwares() -> dict[str, dict[str, Any]]:
     return presets
 
 
-def _resolve_mirror_hardware_name(hardware: Any, *, step_label: str) -> str:
+# Longer tokens first so ``h100`` is not matched as a prefix of ``h200``.
+_CUDA_MIRROR_CHIPS = ("b200", "h200", "h100", "l4")
+
+
+def _cuda_chip_from_preset(preset: str) -> str | None:
+    """Return the CUDA chip token encoded in a preset name, or None for NPU/other."""
+    token = preset.strip().lower()
+    for chip in _CUDA_MIRROR_CHIPS:
+        if token == chip or token.startswith(f"{chip}_"):
+            return chip
+    return None
+
+
+def _get_mirror_hw_selector() -> str:
+    """Return lowercase ``MIRROR_HW``, or empty to use the mapping ``default`` key."""
+    # TEMP: force B200 for PR debug — restore env lookup before merge
+    return "b200"
+    # return os.environ.get("MIRROR_HW", "").strip().lower()
+
+
+def _resolve_mirror_hardware_name(hardware: Any, *, step_label: str) -> str | None:
     """Resolve ``mirror_hardwares`` to a preset name from ``ci_mirror_hardwares.yml``.
 
     Accepts a preset string, or a mapping::
@@ -244,11 +267,20 @@ def _resolve_mirror_hardware_name(hardware: Any, *, step_label: str) -> str:
           b200: b200_2
 
     Selection uses env ``MIRROR_HW`` (case-insensitive). Unset/empty → ``default``.
+    Missing mapping key for the selector omits the step (returns None).
+    A CUDA preset string is omitted when ``MIRROR_HW`` names a different chip.
     """
     if isinstance(hardware, str):
         name = hardware.strip()
         if not name:
             raise ValueError(f"mirror_hardwares must be a non-empty string in step {step_label!r}")
+        selector = _get_mirror_hw_selector()
+        chip = _cuda_chip_from_preset(name)
+        if selector and chip is not None and chip != selector:
+            _log(
+                f"skip {step_label}: preset {name!r} is {chip} hardware; MIRROR_HW={selector!r}",
+            )
+            return None
         return name
 
     if not isinstance(hardware, dict):
@@ -273,45 +305,44 @@ def _resolve_mirror_hardware_name(hardware: Any, *, step_label: str) -> str:
             )
         key_map[key.strip().lower()] = value.strip()
 
-    # Docs / CI ops: set Buildkite env MIRROR_HW (e.g. MIRROR_HW=b200).
-    # TEMP: force B200 for PR debug — remove before merge
-    selector = "b200"
-    # selector = os.environ.get("MIRROR_HW", "").strip().lower()
+    selector = _get_mirror_hw_selector()
     if not selector:
         chosen = key_map["default"]
         _log(f"{step_label}: mirror_hardwares mapping → default={chosen!r}")
         return chosen
     if selector not in key_map:
         known = ", ".join(sorted(hardware))
-        raise ValueError(
-            f"step {step_label!r}: MIRROR_HW={selector!r} is not a key in "
-            f"mirror_hardwares mapping {{{known}}}; add '{selector}: <preset>' or unset "
-            f"MIRROR_HW",
-        )
+        _log(f"skip {step_label}: MIRROR_HW={selector!r} is not a key in mirror_hardwares mapping {{{known}}}")
+        return None
     chosen = key_map[selector]
     _log(f"{step_label}: MIRROR_HW={selector!r} → mirror_hardwares={chosen!r}")
     return chosen
 
 
-def _expand_mirror_hardwares(step: dict[str, Any]) -> dict[str, Any]:
-    """Replace uploader-only ``mirror_hardwares`` with preset fields from ci_mirror_hardwares.yml."""
+def _expand_mirror_hardwares(step: dict[str, Any]) -> dict[str, Any] | None:
+    """Replace uploader-only ``mirror_hardwares`` with preset fields from ci_mirror_hardwares.yml.
+
+    Returns None when the current ``MIRROR_HW`` selector does not apply to this step.
+    """
     hardware = step.get("mirror_hardwares")
     if hardware is None:
         return step
 
     step_label = _get_step_label(step)
+    if step.get("agents") is not None or step.get("plugins") is not None or step.get("image") is not None:
+        raise ValueError(
+            f"step {step_label!r} sets mirror_hardwares together with agents/plugins/image; use mirror_hardwares only",
+        )
+
     preset_name = _resolve_mirror_hardware_name(hardware, step_label=step_label)
+    if preset_name is None:
+        return None
 
     preset = _load_mirror_hardwares().get(preset_name)
     if preset is None:
         known = ", ".join(sorted(_load_mirror_hardwares()))
         raise ValueError(
             f"unknown mirror_hardwares {preset_name!r} in step {step_label!r}; known: {known}",
-        )
-
-    if step.get("agents") is not None or step.get("plugins") is not None or step.get("image") is not None:
-        raise ValueError(
-            f"step {step_label!r} sets mirror_hardwares together with agents/plugins/image; use mirror_hardwares only",
         )
 
     expanded = copy.deepcopy(preset)
@@ -354,7 +385,7 @@ def _process_test_steps(
         nested = step.get("steps")
         if nested is not None:
             kept_nested = _process_test_steps(nested, changed_files)
-            if changed_files is not None and not kept_nested:
+            if not kept_nested:
                 _log(f"omit empty group {_get_step_label(step)!r}")
                 continue
             new_step = {key: value for key, value in step.items() if key != "source_file_dependencies"}
@@ -363,7 +394,10 @@ def _process_test_steps(
             continue
 
         leaf = {key: value for key, value in step.items() if key != "source_file_dependencies"}
-        processed.append(_expand_mirror_hardwares(leaf))
+        expanded = _expand_mirror_hardwares(leaf)
+        if expanded is None:
+            continue
+        processed.append(expanded)
 
     return processed
 
