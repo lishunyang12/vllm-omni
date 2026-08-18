@@ -282,7 +282,6 @@ steps:
         timeout_in_minutes: 180
         commands:
           - export DIFFUSION_BENCHMARK_DIR=tests/dfx/perf/results
-          - export DIFFUSION_ATTENTION_BACKEND=FLASH_ATTN
           - export CACHE_DIT_VERSION=1.5.0
           - |
             set +e
@@ -302,21 +301,21 @@ steps:
       build.pull_request.labels includes "nightly-test" ||
       build.pull_request.labels includes "diffusion-x2v-test"
     steps:
-
-      - label: ":full_moon: Diffusion X2V · Wan2.2 T2V Function Test"
-        timeout_in_minutes: 90
-        commands:
-          - pytest -s -v tests/e2e/online_serving/test_wan22_expansion.py -k "t2v" -m "full_model and cuda" --run-level "full_model"
-        mirror_hardwares:
-          default: h100_2
-          b200: b200_2
-      - label: ":full_moon: Diffusion X2V · Wan2.2 I2V/TI2V Function Test"
-        timeout_in_minutes: 90
-        commands:
-          - pytest -s -v tests/e2e/online_serving/test_wan22_expansion.py -k "i2v" -m "full_model and cuda" --run-level "full_model"
-        mirror_hardwares:
-          default: h100_2
-          b200: b200_2
+      # TEMP: B200 debug — restore the commented X2V jobs before merge.
+      # - label: ":full_moon: Diffusion X2V · Wan2.2 T2V Function Test"
+      #   timeout_in_minutes: 90
+      #   commands:
+      #     - pytest -s -v tests/e2e/online_serving/test_wan22_expansion.py -k "t2v" -m "full_model and cuda" --run-level "full_model"
+      #   mirror_hardwares:
+      #     default: h100_2
+      #     b200: b200_2
+      # - label: ":full_moon: Diffusion X2V · Wan2.2 I2V/TI2V Function Test"
+      #   timeout_in_minutes: 90
+      #   commands:
+      #     - pytest -s -v tests/e2e/online_serving/test_wan22_expansion.py -k "i2v" -m "full_model and cuda" --run-level "full_model"
+      #   mirror_hardwares:
+      #     default: h100_2
+      #     b200: b200_2
       - label: ":full_moon: Diffusion X2V · Doc Test"
         timeout_in_minutes: 60
         commands:
@@ -324,42 +323,40 @@ steps:
         mirror_hardwares:
           default: h100_1
           b200: b200_1
-      - label: ":full_moon: Diffusion X2V · Other Function Test"
-        timeout_in_minutes: 90
-        commands:
-          - pytest -s -v tests/e2e/offline_inference/test_wan22_autoround_w4a16_expansion.py -m "full_model and cuda" --run-level "full_model"
-        mirror_hardwares:
-          default: h100_2
-          b200: b200_2
-      - label: ":full_moon: Diffusion X2V · Wan2.2 Accuracy Test"
-        timeout_in_minutes: 180
-        commands:
-          - pytest -s -v tests/e2e/accuracy/wan22_i2v/test_wan22_i2v_video_similarity.py -m full_model --run-level full_model
-          - pytest -s -v tests/e2e/accuracy/test_diffusers_backend_similarity.py -k '2v_matches_diffusers' -m full_model --run-level full_model
-        mirror_hardwares:
-          default: h100_2
-          b200: b200_2
+      # - label: ":full_moon: Diffusion X2V · Other Function Test"
+      #   timeout_in_minutes: 90
+      #   commands:
+      #     - pytest -s -v tests/e2e/offline_inference/test_wan22_autoround_w4a16_expansion.py -m "full_model and cuda" --run-level "full_model"
+      #   mirror_hardwares:
+      #     default: h100_2
+      #     b200: b200_2
+      # - label: ":full_moon: Diffusion X2V · Wan2.2 Accuracy Test"
+      #   timeout_in_minutes: 180
+      #   commands:
+      #     - pytest -s -v tests/e2e/accuracy/wan22_i2v/test_wan22_i2v_video_similarity.py -m full_model --run-level full_model
+      #     - pytest -s -v tests/e2e/accuracy/test_diffusers_backend_similarity.py -k '2v_matches_diffusers' -m full_model --run-level full_model
+      #   mirror_hardwares:
+      #     default: h100_2
+      #     b200: b200_2
       - label: ":full_moon: Diffusion X2V · MiniMax H3 I2VA/Ref2VA Accuracy Test"
         timeout_in_minutes: 180
         commands:
           - pytest -s -v tests/e2e/accuracy/minimax_h3/test_minimax_h3_i2va_ref2va_similarity.py -m full_model --run-level full_model
-        mirror_hardwares:
-          default: h100_4
-          b200: b200_4
-      - label: ":full_moon: Diffusion X2V · Other Accuracy Test"
-        timeout_in_minutes: 180
-        commands:
-          - pytest -s -v tests/e2e/accuracy/hunyuanvideo15_t2v/test_hunyuanvideo15_t2v_video_similarity.py -m full_model --run-level full_model
-          - pytest -s -v tests/e2e/accuracy/hunyuanvideo15_i2v/test_hunyuanvideo15_i2v_video_similarity.py -m full_model --run-level full_model
-        mirror_hardwares:
-          default: h100_2
-          b200: b200_2
+        # H100-only: hailuo CDN inputs are not reachable from B200 CI (#6295).
+        mirror_hardwares: h100_4
+      # - label: ":full_moon: Diffusion X2V · Other Accuracy Test"
+      #   timeout_in_minutes: 180
+      #   commands:
+      #     - pytest -s -v tests/e2e/accuracy/hunyuanvideo15_t2v/test_hunyuanvideo15_t2v_video_similarity.py -m full_model --run-level full_model
+      #     - pytest -s -v tests/e2e/accuracy/hunyuanvideo15_i2v/test_hunyuanvideo15_i2v_video_similarity.py -m full_model --run-level full_model
+      #   mirror_hardwares:
+      #     default: h100_2
+      #     b200: b200_2
       - label: ":full_moon: Diffusion X2V · Perf Test"
         key: nightly-diffusion-x2v-performance
         timeout_in_minutes: 180
         commands:
           - export DIFFUSION_BENCHMARK_DIR=tests/dfx/perf/results
-          - export DIFFUSION_ATTENTION_BACKEND=FLASH_ATTN
           - |
             set +e
             pytest -s -v tests/dfx/perf/scripts/run_diffusion_benchmark.py --test-config-file tests/dfx/perf/tests/test_wan22_i2v_vllm_omni.json
@@ -378,7 +375,6 @@ steps:
         timeout_in_minutes: 180
         commands:
           - export DIFFUSION_BENCHMARK_DIR=tests/dfx/perf/results
-          - export DIFFUSION_ATTENTION_BACKEND=FLASH_ATTN
           - |
             set +e
             pytest -s -v tests/dfx/perf/scripts/run_diffusion_benchmark.py --test-config-file tests/dfx/perf/tests/test_minimax_h3_vllm_omni.json

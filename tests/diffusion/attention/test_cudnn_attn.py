@@ -14,7 +14,31 @@ from vllm_omni.diffusion.attention.backends.cudnn_attn import CuDNNAttentionBack
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
 
 
-def test_cudnn_backend_does_not_fallback_for_unsupported_shape(monkeypatch):
+def test_cudnn_backend_uses_math_for_kv_seq_len_one(monkeypatch):
+    selected_backends = []
+
+    @contextmanager
+    def fake_sdpa_kernel(backends):
+        selected_backends.append(tuple(backends))
+        yield
+
+    def fake_sdpa(query, key, value, **kwargs):
+        return query
+
+    monkeypatch.setattr(cudnn_backend, "sdpa_kernel", fake_sdpa_kernel)
+    monkeypatch.setattr(torch.nn.functional, "scaled_dot_product_attention", fake_sdpa)
+
+    impl = CuDNNAttentionImpl(num_heads=2, head_size=8, softmax_scale=0.5)
+    query = torch.randn(1, 2, 2, 8)
+    singleton_kv = torch.randn(1, 1, 2, 8)
+
+    output = impl.forward_cuda(query, singleton_kv, singleton_kv)
+
+    assert output.shape == query.shape
+    assert selected_backends == [(SDPBackend.MATH,)]
+
+
+def test_cudnn_backend_pins_cudnn_only_when_kv_seq_len_gt_one(monkeypatch):
     selected_backends = []
 
     @contextmanager
@@ -29,11 +53,10 @@ def test_cudnn_backend_does_not_fallback_for_unsupported_shape(monkeypatch):
     monkeypatch.setattr(torch.nn.functional, "scaled_dot_product_attention", reject_shape)
 
     impl = CuDNNAttentionImpl(num_heads=2, head_size=8, softmax_scale=0.5)
-    query = torch.randn(1, 2, 2, 8)
-    singleton_kv = torch.randn(1, 1, 2, 8)
+    tensors = torch.randn(1, 2, 2, 8)
 
     with pytest.raises(RuntimeError, match="No available kernel"):
-        impl.forward_cuda(query, singleton_kv, singleton_kv)
+        impl.forward_cuda(tensors, tensors, tensors)
 
     assert selected_backends == [(SDPBackend.CUDNN_ATTENTION,)]
 

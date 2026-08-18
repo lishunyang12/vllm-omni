@@ -94,15 +94,24 @@ class CuDNNAttentionImpl(AttentionImpl):
                 )
 
         enable_gqa = query.shape[2] != key.shape[2]
+        kv_seq_len = key.shape[1]
         query, key, value = (x.permute(0, 2, 1, 3) for x in (query, key, value))
 
-        # Pin cuDNN exclusively. A priority list like [CUDNN, FLASH, MATH] hits a
+        # Pin one backend only. A priority list like [CUDNN, FLASH, MATH] hits a
         # PyTorch SDPA dispatch quirk: when FLASH rejects a non-None attn_mask,
         # cuDNN gets runtime-disabled in the same call and the dispatcher falls
         # through to MATH even though cuDNN alone handles the mask fine
         # (~11 ms vs ~215 ms for MATH on sm_120 HV-1.5 shapes).
-        # Explicit CUDNN_ATTN must not silently substitute MATH/EFFICIENT.
-        with sdpa_kernel([SDPBackend.CUDNN_ATTENTION]):
+        # Explicit CUDNN_ATTN must not silently substitute MATH/EFFICIENT for
+        # shapes cuDNN can run.
+        #
+        # Exception: cuDNN FMHA rejects KV sequence length 1
+        # ("cudnn SDPA does not support key/value sequence length 1"). MATH is
+        # the only kernel that can execute that shape; using it here is not the
+        # masked-attn silent fallback above. Dummy warmup and some I2V layers
+        # (e.g. LTX-2) hit this on Blackwell when CUDNN_ATTN is the default.
+        backends = [SDPBackend.MATH] if kv_seq_len <= 1 else [SDPBackend.CUDNN_ATTENTION]
+        with sdpa_kernel(backends):
             output = torch.nn.functional.scaled_dot_product_attention(
                 query,
                 key,
