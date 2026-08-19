@@ -6,6 +6,7 @@ env:
 
 steps:
   # Group: collapses under one heading in the Buildkite UI; child steps still run in parallel.
+  # debug for test
   - group: ":card_index_dividers: Omni Model Test"
     key: nightly-omni-test-group
     depends_on: upload-nightly-pipeline
