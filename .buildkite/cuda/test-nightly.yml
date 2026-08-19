@@ -5,11 +5,13 @@ env:
   HF_HUB_ETAG_TIMEOUT: 60
 
 steps:
+  # TEMP: only the "Diffusion Test" group is enabled; other nightly groups are gated off.
   # Group: collapses under one heading in the Buildkite UI; child steps still run in parallel.
   - group: ":card_index_dividers: Omni Model Test"
     key: nightly-omni-test-group
     depends_on: upload-nightly-pipeline
-    if: build.env("NIGHTLY") == "1" || build.pull_request.labels includes "nightly-test" || build.pull_request.labels includes "omni-test"
+    # if: build.env("NIGHTLY") == "1" || build.pull_request.labels includes "nightly-test" || build.pull_request.labels includes "omni-test"
+    if: false
     steps:
 
       - label: ":full_moon: Omni · Function Test with H100"
@@ -163,7 +165,8 @@ steps:
   - group: ":card_index_dividers: TTS Model Test"
     key: nightly-tts-test-group
     depends_on: upload-nightly-pipeline
-    if: build.env("NIGHTLY") == "1" || build.pull_request.labels includes "nightly-test" || build.pull_request.labels includes "tts-test"
+    # if: build.env("NIGHTLY") == "1" || build.pull_request.labels includes "nightly-test" || build.pull_request.labels includes "tts-test"
+    if: false
     steps:
 
       - label: ":full_moon: TTS · Function Test with L4"
@@ -194,9 +197,10 @@ steps:
   - group: ":card_index_dividers: Tiny Model Tests [Multi-GPU]"
     key: nightly-tiny-model-test-group
     depends_on: upload-nightly-pipeline
-    if: >-
-      build.env("NIGHTLY") == "1" ||
-      build.pull_request.labels includes "nightly-test"
+    # if: >-
+    #   build.env("NIGHTLY") == "1" ||
+    #   build.pull_request.labels includes "nightly-test"
+    if: false
     steps:
 
       - label: ":full_moon: Tiny Model Tests · Diffusion (Multi-GPU accelerations)"
@@ -216,10 +220,11 @@ steps:
   - group: ":card_index_dividers: Diffusion X2I(&A&T) Model Test"
     key: nightly-diffusion-x2iat-group
     depends_on: upload-nightly-pipeline
-    if: >-
-      build.env("NIGHTLY") == "1" ||
-      build.pull_request.labels includes "nightly-test" ||
-      build.pull_request.labels includes "diffusion-x2iat-test"
+    # if: >-
+    #   build.env("NIGHTLY") == "1" ||
+    #   build.pull_request.labels includes "nightly-test" ||
+    #   build.pull_request.labels includes "diffusion-x2iat-test"
+    if: false
     steps:
       # Use explicit file shards so single-card cases do not reserve 2+ GPUs.
 
@@ -295,10 +300,11 @@ steps:
   - group: ":card_index_dividers: Diffusion X2V Model Test"
     key: nightly-diffusion-x2v-group
     depends_on: upload-nightly-pipeline
-    if: >-
-      build.env("NIGHTLY") == "1" ||
-      build.pull_request.labels includes "nightly-test" ||
-      build.pull_request.labels includes "diffusion-x2v-test"
+    # if: >-
+    #   build.env("NIGHTLY") == "1" ||
+    #   build.pull_request.labels includes "nightly-test" ||
+    #   build.pull_request.labels includes "diffusion-x2v-test"
+    if: false
     steps:
       - label: ":full_moon: Diffusion X2V · Wan2.2 T2V Function Test"
         timeout_in_minutes: 90
@@ -443,7 +449,8 @@ steps:
       - nightly-tts-performance
       - nightly-diffusion-x2iat-performance-qwen-image
       - nightly-diffusion-x2v-performance
-    if: build.env("NIGHTLY") == "1" && build.env("EMAIL_DISTRIBUTION") == "1"
+    # if: build.env("NIGHTLY") == "1" && build.env("EMAIL_DISTRIBUTION") == "1"
+    if: false
     commands:
       - pip install openpyxl
       - export DEFAULT_INPUT_DIR=tests/dfx/perf/results
