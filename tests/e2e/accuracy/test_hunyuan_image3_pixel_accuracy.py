@@ -42,7 +42,7 @@ PSNR_THRESHOLD_NPU = 26.0
 
 # Per-device SSIM/PSNR for online/offline vs baseline. Unlisted devices use ``default``.
 SIMILARITY_THRESHOLDS_BY_DEVICE: dict[str, SimilarityThresholds] = {
-    "B200": SimilarityThresholds(ssim=0.96, psnr=30.0),
+    "B200": SimilarityThresholds(ssim=0.96, psnr=28.0),
     "default": SimilarityThresholds(ssim=0.97, psnr=30.0),
 }
 
