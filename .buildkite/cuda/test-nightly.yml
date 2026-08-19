@@ -6,8 +6,8 @@ env:
 
 steps:
   # Group: collapses under one heading in the Buildkite UI; child steps still run in parallel.
-  # TEMP: B200 debug — comment out jobs, keep original group if-conditions.
-# TEMP: commented nightly groups (original if preserved in comments)
+  # TEMP: B200 debug — only Wan2.2 Accuracy + MiniMax-H3 Perf; restore commented jobs before merge.
+# TEMP: commented nightly groups (original if preserved)
 #   - group: ":card_index_dividers: Omni Model Test"
 #     key: nightly-omni-test-group
 #     depends_on: upload-nightly-pipeline
@@ -294,14 +294,14 @@ steps:
 #         mirror_hardwares:
 #           default: h100_4
 #           b200: b200_4
-#   - group: ":card_index_dividers: Diffusion X2V Model Test"
-#     key: nightly-diffusion-x2v-group
-#     depends_on: upload-nightly-pipeline
-#     if: >-
-#       build.env("NIGHTLY") == "1" ||
-#       build.pull_request.labels includes "nightly-test" ||
-#       build.pull_request.labels includes "diffusion-x2v-test"
-#     steps:
+  - group: ":card_index_dividers: Diffusion X2V Model Test"
+    key: nightly-diffusion-x2v-group
+    depends_on: upload-nightly-pipeline
+    if: >-
+      build.env("NIGHTLY") == "1" ||
+      build.pull_request.labels includes "nightly-test" ||
+      build.pull_request.labels includes "diffusion-x2v-test"
+    steps:
 #       - label: ":full_moon: Diffusion X2V · Wan2.2 T2V Function Test"
 #         timeout_in_minutes: 90
 #         commands:
@@ -330,14 +330,14 @@ steps:
 #         mirror_hardwares:
 #           default: h100_2
 #           b200: b200_2
-#       - label: ":full_moon: Diffusion X2V · Wan2.2 Accuracy Test"
-#         timeout_in_minutes: 180
-#         commands:
-#           - pytest -s -v tests/e2e/accuracy/wan22_i2v/test_wan22_i2v_video_similarity.py -m full_model --run-level full_model
-#           - pytest -s -v tests/e2e/accuracy/test_diffusers_backend_similarity.py -k '2v_matches_diffusers' -m full_model --run-level full_model
-#         mirror_hardwares:
-#           default: h100_2
-#           b200: b200_2
+      - label: ":full_moon: Diffusion X2V · Wan2.2 Accuracy Test"
+        timeout_in_minutes: 180
+        commands:
+          - pytest -s -v tests/e2e/accuracy/wan22_i2v/test_wan22_i2v_video_similarity.py -m full_model --run-level full_model
+          - pytest -s -v tests/e2e/accuracy/test_diffusers_backend_similarity.py -k '2v_matches_diffusers' -m full_model --run-level full_model
+        mirror_hardwares:
+          default: h100_2
+          b200: b200_2
 #       - label: ":full_moon: Diffusion X2V · MiniMax H3 I2VA/Ref2VA Accuracy Test"
 #         timeout_in_minutes: 180
 #         commands:
@@ -370,69 +370,65 @@ steps:
 #         mirror_hardwares:
 #           default: h100_2
 #           b200: b200_2
-#       - label: ":full_moon: Diffusion X2V · Perf Test · MiniMax-H3"
-#         key: nightly-diffusion-x2v-performance-minimax-h3
-#         timeout_in_minutes: 180
-#         commands:
-#           - export DIFFUSION_BENCHMARK_DIR=tests/dfx/perf/results
-#           - |
-#             set +e
-#             pytest -s -v tests/dfx/perf/scripts/run_diffusion_benchmark.py --test-config-file tests/dfx/perf/tests/test_minimax_h3_vllm_omni.json
-#             EXIT=$$?
-#             buildkite-agent artifact upload "tests/dfx/perf/results/diffusion_result_*.json"
-#             buildkite-agent artifact upload "tests/dfx/perf/results/logs/*.log"
-#             exit $$EXIT
-#         mirror_hardwares:
-#           default: h100_4
-#           b200: b200_4
-  - group: ":card_index_dividers: Diffusion Test"
-    key: nightly-diffusion-test-group
-    depends_on: upload-nightly-pipeline
-    if: build.env("NIGHTLY") == "1" || build.pull_request.labels includes "nightly-test"
-    steps:
-      - label: ":full_moon: Diffusion · Distributed Test with L4"
-        timeout_in_minutes: 60
+      - label: ":full_moon: Diffusion X2V · Perf Test · MiniMax-H3"
+        key: nightly-diffusion-x2v-performance-minimax-h3
+        timeout_in_minutes: 180
         commands:
-          - pytest -sv tests/diffusion/distributed/ -m 'full_model and cuda and L4' --run-level "full_model"
-        mirror_hardwares:
-          default: l4_4
-          b200: b200_4
-      - label: ":full_moon: Diffusion · Distributed Test with H100"
-        timeout_in_minutes: 60
-        commands:
-          - pytest -sv tests/diffusion/distributed/ -m 'full_model and cuda and H100' --run-level "full_model"
+          - export DIFFUSION_BENCHMARK_DIR=tests/dfx/perf/results
+          - |
+            set +e
+            pytest -s -v tests/dfx/perf/scripts/run_diffusion_benchmark.py --test-config-file tests/dfx/perf/tests/test_minimax_h3_vllm_omni.json
+            EXIT=$$?
+            buildkite-agent artifact upload "tests/dfx/perf/results/diffusion_result_*.json"
+            buildkite-agent artifact upload "tests/dfx/perf/results/logs/*.log"
+            exit $$EXIT
         mirror_hardwares:
           default: h100_4
           b200: b200_4
-      - label: ":full_moon: Diffusion · Offloader Test"
-        timeout_in_minutes: 60
-        commands:
-          - pytest -sv tests/diffusion/offloader -m "full_model and cuda"
-        mirror_hardwares:
-          default: l4_1
-          b200: b200_1
-      - label: ":full_moon: Diffusion · Quantization Test with H100 · Single-GPU"
-        timeout_in_minutes: 60
-        commands:
-          - pytest -sv tests/diffusion/quantization -m 'full_model and cuda and H100' --run-level "full_model"
-        mirror_hardwares:
-          default: h100_1
-          b200: b200_1
-      - label: ":full_moon: Diffusion · MiniMax H3 FP8 Quality Test with H100 · 2-GPU"
-        timeout_in_minutes: 60
-        commands:
-          - pytest -sv tests/diffusion/models/minimax_h3/test_minimax_h3_quantization_quality.py -m 'full_model and cuda and H100' --run-level "full_model"
-        mirror_hardwares:
-          default: h100_2
-          b200: b200_2
-      - label: ":full_moon: Diffusion · Quantization Test with L4"
-        timeout_in_minutes: 60
-        commands:
-          - pip install "vllm-gguf-plugin>=0.0.3"
-          - pytest -sv tests/diffusion/quantization -m 'full_model and cuda and L4' --run-level "full_model"
-        mirror_hardwares:
-          default: l4_1
-          b200: b200_1
+#   - group: ":card_index_dividers: Diffusion Test"
+#     key: nightly-diffusion-test-group
+#     depends_on: upload-nightly-pipeline
+#     if: build.env("NIGHTLY") == "1" || build.pull_request.labels includes "nightly-test"
+#     steps:
+#       - label: ":full_moon: Diffusion · Distributed Test with L4"
+#         timeout_in_minutes: 60
+#         commands:
+#           - pytest -sv tests/diffusion/distributed/ -m 'full_model and cuda and L4' --run-level "full_model"
+#         mirror_hardwares:
+#           default: l4_4
+#           b200: b200_4
+#       - label: ":full_moon: Diffusion · Distributed Test with H100"
+#         timeout_in_minutes: 60
+#         commands:
+#           - pytest -sv tests/diffusion/distributed/ -m 'full_model and cuda and H100' --run-level "full_model"
+#         mirror_hardwares:
+#           default: h100_4
+#           b200: b200_4
+#       - label: ":full_moon: Diffusion · Offloader Test"
+#         timeout_in_minutes: 60
+#         commands:
+#           - pytest -sv tests/diffusion/offloader -m "full_model and cuda"
+#         mirror_hardwares:
+#           default: l4_1
+#           b200: b200_1
+#       - label: ":full_moon: Diffusion · Quantization Test with H100 · Single-GPU"
+#         timeout_in_minutes: 60
+#         commands:
+#           - pytest -sv tests/diffusion/quantization -m 'full_model and cuda and H100' --run-level "full_model"
+#         mirror_hardwares: h100_1
+#       - label: ":full_moon: Diffusion · MiniMax H3 FP8 Quality Test with H100 · 2-GPU"
+#         timeout_in_minutes: 60
+#         commands:
+#           - pytest -sv tests/diffusion/models/minimax_h3/test_minimax_h3_quantization_quality.py -m 'full_model and cuda and H100' --run-level "full_model"
+#         mirror_hardwares: h100_2
+#       - label: ":full_moon: Diffusion · Quantization Test with L4"
+#         timeout_in_minutes: 60
+#         commands:
+#           - pip install "vllm-gguf-plugin>=0.0.3"
+#           - pytest -sv tests/diffusion/quantization -m 'full_model and cuda and L4' --run-level "full_model"
+#         mirror_hardwares:
+#           default: l4_1
+#           b200: b200_1
   # NOTE: ":email: Nightly Collection & Email" is deprecated and will be removed soon.
   # Do not add new depends_on entries or extend this step.
 #   - label: ":email: Nightly Collection & Email"
