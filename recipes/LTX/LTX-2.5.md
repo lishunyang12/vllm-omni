@@ -116,6 +116,11 @@ The same two keys can be sent in the online videos API `extra_params`
 object. Keep the server topology fixed for its lifetime and enable
 `--ulysses-degree 4 --enforce-eager` at startup.
 
+Decoded 2K/4K tensors can be several GiB before MP4 encoding. The diffusion
+worker therefore allows 300 seconds by default for background D2H and
+shared-memory output transfer. Deployments can override this positive,
+finite limit with `VLLM_OMNI_DIFFUSION_ASYNC_OUTPUT_TIMEOUT_S`.
+
 ## Offline inference
 
 Choose values from the pipeline table. For example, the distilled two-stage
