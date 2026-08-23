@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 from __future__ import annotations
 
@@ -40,7 +40,6 @@ def test_text_to_video_builds_canonical_prompt(
         ("robbyant/lingbot-video-dense-1.3b", None, "lingbot"),
         ("/models/custom-checkpoint", "LingBotVideoPipeline", "lingbot"),
         ("Lightricks/LTX-2", "LTX2DistilledPipeline", "ltx2_distilled"),
-        ("BestWishYsh/Helios-Distilled", None, "helios"),
         ("/models/cosmos-edge", "Cosmos3EdgeVFMTransformer", "cosmos3_edge"),
         ("/models/vace", "WanVACEPipeline", "vace"),
     ],

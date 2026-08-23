@@ -183,7 +183,6 @@ CHECK_IMPORTS = {
             "vllm_omni/diffusion/model_loader/hub_prefetch.py",
             "vllm_omni/diffusion/models/cosmos3/sound_tokenizer.py",
             "vllm_omni/diffusion/models/dreamzero/pipeline_dreamzero.py",
-            "vllm_omni/diffusion/models/helios/pipeline_helios.py",
             "vllm_omni/diffusion/models/longcat_video/pipeline_longcat_video_avatar.py",
             "vllm_omni/diffusion/models/ltx2/ltx2_components.py",
             "vllm_omni/diffusion/models/magi_human/pipeline_magi_human.py",

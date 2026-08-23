@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """Tests for midway prompt update across runner, batch, pipeline, and entrypoint layers."""
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from tests.engine.test_orchestrator import (
 )
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
 from vllm_omni.diffusion.inline_stage_diffusion_client import InlineStageDiffusionClient
-from vllm_omni.diffusion.models.helios.pipeline_helios import HeliosPipeline
+from vllm_omni.diffusion.prompt_update import PromptUpdateMixin
 from vllm_omni.diffusion.worker.diffusion_model_runner import DiffusionModelRunner
 from vllm_omni.diffusion.worker.input_batch import InputBatch
 from vllm_omni.diffusion.worker.utils import StepRequestState
@@ -43,9 +43,13 @@ from vllm_omni.outputs import OmniRequestOutput
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
 
 
+class _PromptUpdatePipeline(PromptUpdateMixin):
+    supports_step_execution = True
+
+
 @pytest.fixture
-def pipeline() -> HeliosPipeline:
-    pipeline = object.__new__(HeliosPipeline)
+def pipeline() -> _PromptUpdatePipeline:
+    pipeline = _PromptUpdatePipeline()
     pipeline.device = torch.device("cpu")
     pipeline.transformer = SimpleNamespace(dtype=torch.float32)  # pyright: ignore[reportAttributeAccessIssue]
     pipeline.encode_prompt = MagicMock(
@@ -54,7 +58,6 @@ def pipeline() -> HeliosPipeline:
             None,
         )
     )
-    pipeline._prepare_next_chunk = MagicMock()
     return pipeline
 
 
@@ -74,7 +77,7 @@ def _make_diffusion_model_runner(*, pipeline, streaming_output: bool = True) -> 
     runner.pipeline = pipeline
     runner.state_cache = {}
     runner.od_config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
-        model_class_name="HeliosPipeline",
+        model_class_name="_PromptUpdatePipeline",
         streaming_output=streaming_output,
     )
     runner._supports_step_mode = lambda: True
@@ -99,7 +102,7 @@ def _prompt_interaction(
 class TestPromptUpdateExecution:
     """Runner, InputBatch cache, and pipeline chunk-boundary behavior."""
 
-    def test_runner_interaction_delegates_to_helios_pipeline(self, pipeline: HeliosPipeline) -> None:
+    def test_runner_interaction_delegates_to_prompt_update_pipeline(self, pipeline: _PromptUpdatePipeline) -> None:
         """Runner encodes the new prompt and queues pending embeds on the request state."""
         runner = _make_diffusion_model_runner(pipeline=pipeline)
         state = _make_diffusion_request_state()
@@ -139,7 +142,7 @@ class TestPromptUpdateExecution:
     )
     def test_runner_interaction_rejects_structural_payloads_until_implemented(
         self,
-        pipeline: HeliosPipeline,
+        pipeline: _PromptUpdatePipeline,
         interaction: dict[str, Any],
     ) -> None:
         """Unsupported interaction dict shapes are preserved to and rejected by the runner."""
@@ -169,8 +172,8 @@ class TestPromptUpdateExecution:
         refreshed = InputBatch.make_batch([state], cached_batch=batch)
         assert torch.equal(refreshed.prompt_embeds, torch.ones(1, 2, 3))  # pyright: ignore[reportArgumentType]
 
-    def test_helios_prepare_prompt_update_queues_pending_target(self, pipeline: HeliosPipeline) -> None:
-        """HeliosPipeline queues target embeds without mutating current prompt_embeds."""
+    def test_prepare_prompt_update_queues_pending_target(self, pipeline: _PromptUpdatePipeline) -> None:
+        """The generic prompt-update mixin queues target embeds without mutating current prompt_embeds."""
         state = _make_diffusion_request_state()
 
         pipeline.prepare_prompt_update(state, "new scene", "ui-update-1", transition_chunks=2)
@@ -180,7 +183,7 @@ class TestPromptUpdateExecution:
         assert pending["transition_chunks"] == 2
         assert torch.equal(state.prompt_embeds, torch.zeros(1, 4, 2))  # pyright: ignore[reportArgumentType]
 
-    def test_helios_prepare_prompt_update_rejects_before_initial_generation(self, pipeline: HeliosPipeline) -> None:
+    def test_prepare_prompt_update_rejects_before_initial_generation(self, pipeline: _PromptUpdatePipeline) -> None:
         """Reject prompt updates submitted before initial prompt embeds exist."""
         state = _make_diffusion_request_state()
         state.prompt_embeds = None
@@ -193,7 +196,7 @@ class TestPromptUpdateExecution:
 
         assert "pending_prompt_update" not in state.extra
 
-    def test_helios_apply_prompt_update_at_chunk_boundary_starts_transition(self, pipeline: HeliosPipeline) -> None:
+    def test_apply_prompt_update_at_chunk_boundary_starts_transition(self, pipeline: _PromptUpdatePipeline) -> None:
         """At chunk boundary, starts transition state and bumps prompt_update_version."""
         state = _make_diffusion_request_state()
         pipeline.prepare_prompt_update(state, "new scene", "ui-update-1", transition_chunks=2)
@@ -209,7 +212,7 @@ class TestPromptUpdateExecution:
             "completed_event_ids": [],
         }
 
-    def test_helios_apply_prompt_update_advances_transition_over_chunks(self, pipeline: HeliosPipeline) -> None:
+    def test_apply_prompt_update_advances_transition_over_chunks(self, pipeline: _PromptUpdatePipeline) -> None:
         """At chunk boundary, interpolates embeds until the target prompt is reached."""
         state = _make_diffusion_request_state()
         pipeline.prepare_prompt_update(state, "new scene", "ui-update-1", transition_chunks=3)
@@ -265,7 +268,7 @@ class TestPromptUpdateIntegration:
         )
 
     @pytest.mark.asyncio
-    async def test_runner_prompt_update_failure_surfaces_non_fatal_error(self, pipeline: HeliosPipeline) -> None:
+    async def test_runner_prompt_update_failure_surfaces_non_fatal_error(self, pipeline: _PromptUpdatePipeline) -> None:
         """Runner-side prepare_prompt_update rejection is reported through the orchestrator."""
         pipeline.prepare_prompt_update = MagicMock(  # pyright: ignore[reportAttributeAccessIssue, reportMethodAssignment]
             side_effect=ValueError("prompt embeds are not ready")
@@ -309,7 +312,7 @@ class TestPromptUpdateIntegration:
         )
 
     @pytest.mark.asyncio
-    async def test_prompt_update_reaches_runner_from_async_omni(self, pipeline: HeliosPipeline) -> None:
+    async def test_prompt_update_reaches_runner_from_async_omni(self, pipeline: _PromptUpdatePipeline) -> None:
         """Midway prompt update submitted via AsyncOmni reaches the diffusion runner."""
         streaming_pipeline = self._IncrementalStreamingPipeline()
         runner = _make_diffusion_model_runner(pipeline=pipeline)

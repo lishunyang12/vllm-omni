@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """Gradio demo for `/v1/realtime/video`.
 
 Usage:
     python gradio_demo.py --host 127.0.0.1 --port 7860
 
 Start a vLLM-Omni server with streaming output enabled first, for example:
-    vllm serve BestWishYsh/Helios-Distilled --omni --diffusion-streaming-output --port 8000
+    vllm serve <streaming-video-model> --omni --diffusion-streaming-output --port 8000
 """
 
 from __future__ import annotations
@@ -186,14 +186,6 @@ def _build_session_start(
     _maybe_set(payload, "true_cfg_scale", _optional_float(true_cfg_scale))
     _maybe_set(payload, "seed", _optional_int(seed))
 
-    if "Helios" in model:
-        payload["extra_params"] = {
-            "is_enable_stage2": True,
-            "pyramid_num_stages": 3,
-            "pyramid_num_inference_steps_list": [1, 1, 1],
-            "is_amplify_first_chunk": True,
-        }
-
     return payload
 
 
@@ -274,7 +266,7 @@ def create_demo() -> gr.Blocks:
             with gr.Column(scale=1):
                 host = gr.Textbox(label="Server Host", value="127.0.0.1")
                 port = gr.Number(label="Server Port", value=8000, precision=0)
-                model = gr.Textbox(label="Model", value="BestWishYsh/Helios-Distilled")
+                model = gr.Textbox(label="Model", value="")
                 prompt = gr.Textbox(label="Prompt", value=DEFAULT_PROMPT, lines=3)
 
                 with gr.Row():

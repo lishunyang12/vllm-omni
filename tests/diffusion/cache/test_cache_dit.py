@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 """
 Model specific tests for CacheDiT enablement.
@@ -19,7 +19,6 @@ import vllm_omni.diffusion.cache.cachedit.model_specific as cd_model_specific
 from vllm_omni.diffusion.cache.cachedit import CacheDiTAdapterConfig, CacheDiTBackend, cache_summary
 from vllm_omni.diffusion.data import DiffusionCacheConfig
 from vllm_omni.diffusion.models.cosmos3.transformer_cosmos3 import Cosmos3VFMTransformer
-from vllm_omni.diffusion.models.helios.helios_transformer import HeliosTransformer3DModel
 from vllm_omni.diffusion.models.longcat_image.longcat_image_transformer import LongCatImageTransformer2DModel
 from vllm_omni.diffusion.models.ltx2.ltx2_transformer import LTX2VideoTransformer3DModel
 from vllm_omni.platforms import current_omni_platform
@@ -36,7 +35,6 @@ pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
 
 SEPARATE_CFG_TRANSFORMERS = [
     DreamIdOmniModel,
-    HeliosTransformer3DModel,
     LongCatImageTransformer2DModel,
     Cosmos3VFMTransformer,
 ]

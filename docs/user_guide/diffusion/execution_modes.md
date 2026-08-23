@@ -8,7 +8,7 @@ are exposed.
 ## Choose a Mode
 
 | Goal | CLI configuration |
-|---|---|
+| --- | --- |
 | Serial request execution | `--max-num-seqs 1` |
 | Fused request-level batching | `--max-num-seqs N` |
 | Single-request step execution | `--step-execution --max-num-seqs 1` |
@@ -100,20 +100,15 @@ set `DIFFUSION_ATTENTION_BACKEND=TORCH_SDPA` or configure
 `diffusion_attention_config.default.backend=TORCH_SDPA` before using
 `--max-num-seqs >1`. See the
 [HunyuanImage-3.0 recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/Tencent/HunyuanImage-3.0-Instruct.md)
-for its validated configuration. Helios supports single-request step execution only: use
-`--step-execution --max-num-seqs 1` for Helios. Consult the selected pipeline's
-documentation and source for the latest support status.
+for its validated configuration. Consult the selected pipeline's documentation and
+source for the latest support status.
 
 ## Streaming Output
 
 Use `--diffusion-streaming-output` for a pipeline that can produce intermediate
-diffusion outputs:
-
-```bash
-vllm serve BestWishYsh/Helios-Distilled --omni \
-  --port 8000 \
-  --diffusion-streaming-output
-```
+diffusion outputs. No in-tree video pipeline currently advertises chunk-capable
+streaming output; an out-of-tree pipeline must implement step execution and emit
+intermediate results.
 
 Streaming output requires step execution. If
 `--diffusion-streaming-output` is set without `--step-execution`, the engine
@@ -225,7 +220,7 @@ For step execution, set `step_execution: true` and remove
 ## CLI Reference
 
 | Flag | Default | Effect |
-|---|---:|---|
+| --- | ---: | --- |
 | `--step-execution` | disabled | Select step-wise scheduling |
 | `--max-num-seqs` | `1` for diffusion stages | Set request- or step-scheduler capacity |
 | `--request-batch-max-wait-ms` | `0` | Wait for burst coalescing in request mode |

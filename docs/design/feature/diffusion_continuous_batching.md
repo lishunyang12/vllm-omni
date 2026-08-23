@@ -11,7 +11,7 @@ and output delivery. For user-facing configuration and CLI examples, see
 `max_num_seqs` as that mode's scheduler capacity:
 
 | Configuration | Engine mode | Scheduler | Execution |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `step_execution=False`, `max_num_seqs=1` | `REQUEST_BATCH` | `RequestScheduler` | One complete request-level `forward()` |
 | `step_execution=False`, `max_num_seqs>1` | `REQUEST_BATCH` | `RequestScheduler` | One fused `forward()` over compatible requests |
 | `step_execution=True`, `max_num_seqs=1` | `STEP_BATCH` | `StepScheduler` | One request advanced one denoise step per scheduler tick |
@@ -139,7 +139,7 @@ Step execution exposes denoising progress to the scheduler. A supporting
 pipeline implements four stateful operations:
 
 | Operation | Responsibility |
-|---|---|
+| --- | --- |
 | `prepare_encode(state)` | Validate input, encode prompts, initialize latents and timesteps, and create request-local scheduler state |
 | `denoise_step(input_batch, *, states=...)` | Run one denoise forward for the scheduler-provided request states |
 | `step_scheduler(state, noise_pred)` | Update latents and advance request progress |
@@ -150,7 +150,7 @@ that do not belong in the shared contract should be stored in `state.extra`.
 Queueing and lifecycle metadata remain in the scheduler's request state.
 
 Current native pipelines that explicitly enable step execution include
-Qwen-Image, HunyuanImage3, and Helios. Step execution alone does not imply
+Qwen-Image and HunyuanImage3. Step execution alone does not imply
 continuous-batching support: Qwen-Image accepts batched step states.
 HunyuanImage3 accepts batched step states only when its resolved self-attention
 backend is `TORCH_SDPA`; otherwise it rejects groups larger than one request.
@@ -158,8 +158,7 @@ Configure `DIFFUSION_ATTENTION_BACKEND=TORCH_SDPA` or
 `diffusion_attention_config.default.backend=TORCH_SDPA` when
 `max_num_seqs>1`. See the
 [HunyuanImage-3.0 recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/Tencent/HunyuanImage-3.0-Instruct.md)
-for its validated configuration. Helios supports only a single active step
-request and must use `max_num_seqs=1`.
+for its validated configuration.
 
 ### Continuous Batching
 

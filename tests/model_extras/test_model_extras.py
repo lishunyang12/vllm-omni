@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 from __future__ import annotations
 
@@ -425,36 +425,6 @@ def test_audiox_declared_extra_args_route_into_sampling_params() -> None:
         "seconds_total": 10.0,
         "sigma_min": 0.03,
     }
-
-
-@pytest.mark.core_model
-@pytest.mark.cpu
-def test_helios_extra_registry_declares_request_and_response_params() -> None:
-    expected_body = frozenset(
-        {
-            "is_enable_stage2",
-            "pyramid_num_stages",
-            "pyramid_num_inference_steps_list",
-            "is_amplify_first_chunk",
-            "is_skip_first_chunk",
-            "use_cfg_zero_star",
-            "use_zero_init",
-            "zero_steps",
-            "image",
-            "video",
-            "add_noise_to_image_latents",
-            "image_noise_sigma_min",
-            "image_noise_sigma_max",
-            "add_noise_to_video_latents",
-            "video_noise_sigma_min",
-            "video_noise_sigma_max",
-        }
-    )
-    # Both the base and pyramid class names resolve to the same declaration.
-    for cls in ("HeliosPipeline", "HeliosPyramidPipeline"):
-        assert get_extra_body_params(cls) == expected_body
-        assert get_extra_output_params(cls) == frozenset()
-        assert should_init_extra_args_for_non_diffusion_stages(cls) is False
 
 
 @pytest.mark.core_model

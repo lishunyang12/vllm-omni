@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 """
 Tests for the DiffusersPipelineLoader.
@@ -10,7 +10,6 @@ from types import SimpleNamespace
 import pytest
 import torch
 import torch.nn as nn
-from huggingface_hub import snapshot_download
 from vllm.config.load import LoadConfig
 
 from vllm_omni.diffusion.config import get_current_diffusion_config, get_current_diffusion_config_or_none
@@ -21,29 +20,9 @@ from vllm_omni.diffusion.model_loader.host_weight_plan import (
     HostWeightPlanResult,
     TensorBinding,
 )
-from vllm_omni.diffusion.models.helios import HeliosPipeline
 from vllm_omni.diffusion.registry import initialize_model
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
-
-model_path = "hf-internal-testing/tiny-helios-modular-pipe"
-
-
-@pytest.fixture(scope="module")
-def prefetch_helios_model():
-    """Downloads the tiny helios model prior to running a test."""
-    snapshot_download(model_path)
-
-
-@pytest.fixture(scope="function")
-def mock_tp_group(mocker):
-    """Mocks the tensor parallel group; this is needed to initialize the Helios model."""
-    mocker.patch("vllm.model_executor.layers.linear.get_tensor_model_parallel_world_size", return_value=1)
-    mocker.patch("vllm.model_executor.layers.linear.get_tensor_model_parallel_rank", return_value=0)
-    mock_group = mocker.MagicMock()
-    mock_group.world_size = 1
-    mock_group.rank_in_group = 0
-    mocker.patch("vllm.distributed.parallel_state.get_tp_group", return_value=mock_group)
 
 
 class _DummyPipelineModel(nn.Module):
@@ -528,33 +507,3 @@ def test_hsdp_processes_quantized_weights_before_sharding(mocker):
     loader._load_model_with_hsdp(torch.device("cpu"))
 
     assert events == ["load", "process", "prepare", "shard"]
-
-
-def test_get_all_weights(prefetch_helios_model, mock_tp_group):
-    """Ensure that get all weights on a tiny model resolves to nonempty weights."""
-    od_config = OmniDiffusionConfig(
-        model_class_name="HeliosPipeline",
-        model=model_path,
-    )
-    loader = DiffusersPipelineLoader(
-        load_config=LoadConfig(),
-        od_config=od_config,
-    )
-    pipeline = HeliosPipeline(od_config=od_config)
-
-    weights = list(loader.get_all_weights(pipeline))
-    assert len(weights) > 0
-
-
-def test_load_model(prefetch_helios_model, mock_tp_group):
-    """Ensure that load model creates an instance of the expected pipeline class."""
-    od_config = OmniDiffusionConfig(
-        model_class_name="HeliosPipeline",
-        model=model_path,
-    )
-    loader = DiffusersPipelineLoader(
-        load_config=LoadConfig(),
-        od_config=od_config,
-    )
-    model = loader.load_model(load_device="cpu")
-    assert isinstance(model, HeliosPipeline)

@@ -17,7 +17,7 @@ in deep DiT blocks.
 ## Hardware Support
 
 | Device | Support |
-|--------|---------|
+| -------- | --------- |
 | NVIDIA Blackwell GPU (SM 100+) | ✅ |
 | NVIDIA Ada/Hopper GPU (SM 89+) | ✅ |
 | NVIDIA Ampere GPU (SM 80+) | ✅ |
@@ -83,7 +83,7 @@ warmup_quack_fp8([(14040, 2048, 6144), (14040, 2048, 2048)])
 ### Diffusion Models
 
 | Model | HF models | Online | Pre-calibrated | Recommendation | `ignored_layers` | Text-Encoder quantization |
-|-------|-----------|:-------:|:------:|----------------|------------------|------------------|
+| ------- | ----------- | :-------: | :------: | ---------------- | ------------------ | ------------------ |
 | Qwen-Image | `Qwen/Qwen-Image`, `Qwen/Qwen-Image-2512` | Yes | Yes | Skip sensitive image-stream MLPs when quality regresses | `img_mlp` | |
 | Wan2.2 | Wan2.2 diffusion pipelines | Not validated | Not validated | Validate against BF16 before documenting as supported | TBD | |
 | LTX-2 | `Lightricks/LTX-2`, `rootonchair/LTX-2-19b-distilled` | Yes | Not validated | Transformer only; use dynamic phase LoRA for ordinary two-stage | None | |
@@ -151,7 +151,7 @@ For a pipeline that exposes both a transformer and a quantization-aware text
 encoder, the scope is:
 
 | Configuration | Transformer | Text encoder | Components without supported quantizable layers |
-|---------------|-------------|--------------|-------------------------------------------------|
+| --------------- | ------------- | -------------- | ------------------------------------------------- |
 | `quantization="fp8"` | FP8 | FP8 | checkpoint precision |
 | `{"transformer": {"method": "fp8"}}` | FP8 | checkpoint precision | checkpoint precision |
 | `{"text_encoder": {"method": "fp8"}}` | checkpoint precision | FP8 | checkpoint precision |
@@ -200,7 +200,7 @@ does not fit the workload.
 ## Parameters
 
 | Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
+| ----------- | ------ | --------- | ------------- |
 | `method` | str | - | Quantization method (`"fp8"`) |
 | `ignored_layers` | list[str] | `[]` | Layer name patterns to keep in BF16 |
 | `activation_scheme` | str | `"dynamic"` | `"dynamic"` selects online activation scaling, or `"static"` when scales are available |
@@ -223,5 +223,5 @@ omni = Omni(
 ```
 
 Compare generated outputs with a BF16 baseline before adding a new model to the
-supported table. GLM-Image and Helios are not listed as FP8-supported diffusion
-models until they have method-specific validation.
+supported table. GLM-Image is not listed as an FP8-supported diffusion model until
+it has method-specific validation.

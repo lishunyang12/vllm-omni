@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 from __future__ import annotations
 
@@ -27,10 +27,6 @@ from vllm_omni.model_extras.bagel import build_x_to_text_prompt as build_bagel_x
 from vllm_omni.model_extras.cosmos3 import (
     COSMOS3_EXTRA_BODY_PARAMS,
     COSMOS3_EXTRA_OUTPUT_PARAMS,
-)
-from vllm_omni.model_extras.helios import (
-    HELIOS_EXTRA_BODY_PARAMS,
-    HELIOS_EXTRA_OUTPUT_PARAMS,
 )
 from vllm_omni.model_extras.hunyuan_image3 import build_x_to_text_prompt as build_hunyuan_x_to_text_prompt
 from vllm_omni.model_extras.lingbot_video import LINGBOT_VIDEO_EXTRA_BODY_PARAMS
@@ -206,14 +202,6 @@ _EXTRA_SPECS: dict[str, dict[str, Any]] = {
     "MagiHumanPipeline": {
         "extra_body_params": MAGI_HUMAN_EXTRA_BODY_PARAMS,
         "extra_output_params": MAGI_HUMAN_EXTRA_OUTPUT_PARAMS,
-    },
-    "HeliosPipeline": {
-        "extra_body_params": HELIOS_EXTRA_BODY_PARAMS,
-        "extra_output_params": HELIOS_EXTRA_OUTPUT_PARAMS,
-    },
-    "HeliosPyramidPipeline": {
-        "extra_body_params": HELIOS_EXTRA_BODY_PARAMS,
-        "extra_output_params": HELIOS_EXTRA_OUTPUT_PARAMS,
     },
     "LingBotVideoPipeline": {
         "extra_body_params": LINGBOT_VIDEO_EXTRA_BODY_PARAMS,

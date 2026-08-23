@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 import argparse
 import json
@@ -70,15 +70,6 @@ _MODEL_PRESETS = {
         "flow_shift": 3.0,
         "output": "cosmos3_edge_t2v_output.mp4",
     },
-    "helios": {
-        "height": 384,
-        "width": 640,
-        "num_frames": 99,
-        "num_inference_steps": 50,
-        "guidance_scale": 5.0,
-        "fps": 16,
-        "output": "helios_output.mp4",
-    },
     "lingbot": {
         "model_class_name": "LingBotVideoPipeline",
         "height": 192,
@@ -138,8 +129,6 @@ def _detect_preset(model: str, model_class_name: str | None = None) -> dict:
         return _MODEL_PRESETS["cosmos"]
     if "hunyuan" in model_lower or "hunyuan" in class_lower:
         return _MODEL_PRESETS["hunyuan"]
-    if "helios" in model_lower or "helios" in class_lower:
-        return _MODEL_PRESETS["helios"]
     return _MODEL_PRESETS["wan"]
 
 
@@ -194,7 +183,7 @@ def parse_extra_body(value: str) -> dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate a video from a text prompt. "
-        "Supports Wan2.2, HunyuanVideo-1.5, Helios, LingBot-Video, and other text-to-video models."
+        "Supports Wan2.2, HunyuanVideo-1.5, LingBot-Video, and other text-to-video models."
     )
     parser.add_argument(
         "--model",
@@ -223,9 +212,7 @@ def parse_args() -> argparse.Namespace:
         "merged into sampling extra_args. Unknown keys for the chosen model are dropped. "
         'Cosmos3 example: \'{"flow_shift": 10.0, "max_sequence_length": 4096, "guardrails": false, '
         '"use_resolution_template": false, "use_duration_template": false}\' '
-        '(add "generate_sound": true and optional "sound_duration" for synchronized audio). '
-        'Helios-Distilled example: \'{"is_enable_stage2": true, '
-        '"pyramid_num_inference_steps_list": [2, 2, 2], "is_amplify_first_chunk": true}\'.',
+        '(add "generate_sound": true and optional "sound_duration" for synchronized audio).',
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     parser.add_argument("--guidance-scale", type=float, default=None, help="CFG scale. Default: model-specific.")

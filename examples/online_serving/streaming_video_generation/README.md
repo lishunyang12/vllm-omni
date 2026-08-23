@@ -3,12 +3,16 @@
 This example uses the custom WebSocket endpoint `WS /v1/realtime/video` to receive a video byte stream as chunks are produced.
 It covers text-only video generation. Image/reference input is intentionally not included for now.
 
+This example requires a video pipeline that implements step execution and emits
+intermediate outputs. Pass the model explicitly; no default model is bundled.
+
 ## Start The Server
 
 Start a diffusion video model with streaming output enabled:
 
 ```bash
-vllm serve BestWishYsh/Helios-Distilled \
+MODEL=your-org/your-streaming-video-model
+vllm serve "$MODEL" \
   --omni \
   --diffusion-streaming-output \
   --port 8000
@@ -48,7 +52,7 @@ pip install 'vllm-omni[demo]' websockets
 python streaming_video_client.py \
   --host 127.0.0.1 \
   --port 8000 \
-  --model BestWishYsh/Helios-Distilled \
+  --model "$MODEL" \
   --prompt "A serene lakeside sunrise with mist over the water." \
   --width 640 \
   --height 384 \
@@ -56,7 +60,7 @@ python streaming_video_client.py \
   --num-frames 99 \
   --guidance-scale 1.0 \
   --seed 42 \
-  --output helios_stream.mp4
+  --output streaming_video_output.mp4
 ```
 
 The client sends one `session.start` message, prints each received binary video chunk with its byte size and elapsed time, and saves the received bytes to `--output` after `session.done`.
@@ -66,6 +70,7 @@ Schedule midway prompt updates with `--prompt-updates`. Each entry uses `"at"` a
 
 ```bash
 python streaming_video_client.py \
+  --model "$MODEL" \
   --prompt "A serene lakeside sunrise with mist over the water." \
   --prompt-updates '[
     {"at": 2.5, "prompt": "A sea turtle glides past the reeds"},
@@ -82,27 +87,3 @@ python gradio_demo.py \
 ```
 
 The Gradio demo requests fMP4 (`m4s`) chunks and appends them directly in the browser with a Media Source Extensions player.
-
-## Model Choice
-
-### Helios
-
-The example uses `BestWishYsh/Helios-Distilled` model by default.
-
-To ensure streaming-level generation speed, `pyramid_num_inference_steps_list` is suggested to be as low as `[1, 1, 1]`. Both example clients uses the following Helios-Distilled preset by default:
-
-```json
-{
-  "is_enable_stage2": true,
-  "pyramid_num_stages": 3,
-  "pyramid_num_inference_steps_list": [1, 1, 1],
-  "is_amplify_first_chunk": true
-}
-```
-
-Disable it in the CLI example with `--no-helios-distilled-preset`, or override/extend it with `--extra-params`:
-
-```bash
-python streaming_video_client.py \
-  --extra-params '{"pyramid_num_inference_steps_list":[2, 2, 2]}'
-```

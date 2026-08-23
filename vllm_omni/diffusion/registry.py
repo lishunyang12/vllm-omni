@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 import importlib
 
@@ -245,16 +245,6 @@ _DIFFUSION_MODELS = {
         "omnigen2",
         "pipeline_omnigen2",
         "OmniGen2Pipeline",
-    ),
-    "HeliosPipeline": (
-        "helios",
-        "pipeline_helios",
-        "HeliosPipeline",
-    ),
-    "HeliosPyramidPipeline": (
-        "helios",
-        "pipeline_helios",
-        "HeliosPipeline",
     ),
     "Flux2Pipeline": (
         "flux2",
@@ -579,8 +569,6 @@ _DIFFUSION_POST_PROCESS_FUNCS = {
     "FluxDMD2Pipeline": "get_flux_post_process_func",
     "QwenImageDMD2Pipeline": "get_qwen_image_post_process_func",
     "OmniGen2Pipeline": "get_omnigen2_post_process_func",
-    "HeliosPipeline": "get_helios_post_process_func",
-    "HeliosPyramidPipeline": "get_helios_post_process_func",
     "Flux2Pipeline": "get_flux2_post_process_func",
     "HunyuanVideo15Pipeline": "get_hunyuan_video_15_post_process_func",
     "HunyuanVideo15ImageToVideoPipeline": "get_hunyuan_video_15_i2v_post_process_func",
@@ -626,8 +614,6 @@ _DIFFUSION_PRE_PROCESS_FUNCS = {
     "WanI2VDMD2Pipeline": "get_wan22_i2v_pre_process_func",
     "LingBotWorldCausalDMDPipeline": "get_lingbot_world_pre_process_func",
     "OmniGen2Pipeline": "get_omnigen2_pre_process_func",
-    "HeliosPipeline": "get_helios_pre_process_func",
-    "HeliosPyramidPipeline": "get_helios_pre_process_func",
     "HunyuanVideo15ImageToVideoPipeline": "get_hunyuan_video_15_i2v_pre_process_func",
     "LingBotVideoPipeline": "get_lingbot_video_pre_process_func",
     "HunyuanImage3ForCausalMM": "get_hunyuan_image_3_pre_process_func",

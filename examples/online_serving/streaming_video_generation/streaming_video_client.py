@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """Text-only WebSocket client for `/v1/realtime/video`.
 
 The client prints a line for every binary video chunk it receives and writes
@@ -32,14 +32,6 @@ except ImportError:
     except ImportError:
         print("Please install websockets: pip install websockets")
         raise SystemExit(1)
-
-
-HELIOS_DISTILLED_EXTRA_PARAMS = {
-    "is_enable_stage2": True,
-    "pyramid_num_stages": 3,
-    "pyramid_num_inference_steps_list": [1, 1, 1],
-    "is_amplify_first_chunk": True,
-}
 
 DEFAULT_TRANSITION_CHUNKS = 3
 
@@ -131,11 +123,7 @@ def build_session_start(args: argparse.Namespace) -> dict[str, Any]:
     _maybe_set(payload, "true_cfg_scale", args.true_cfg_scale)
     _maybe_set(payload, "seed", args.seed)
 
-    extra_params: dict[str, Any] = {}
-    if "Helios-Distilled" in args.model and args.helios_distilled_preset:
-        extra_params.update(HELIOS_DISTILLED_EXTRA_PARAMS)
-    if args.extra_params:
-        extra_params.update(args.extra_params)
+    extra_params: dict[str, Any] = dict(args.extra_params or {})
     if extra_params:
         payload["extra_params"] = extra_params
 
@@ -338,7 +326,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8000, help="API server port")
     parser.add_argument(
         "--model",
-        default="BestWishYsh/Helios-Distilled",
+        required=True,
         help="Model name served by the API server",
     )
     parser.add_argument(
@@ -371,12 +359,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--true-cfg-scale", type=float, default=None, help="True CFG scale for models that support it")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
-    parser.add_argument(
-        "--helios-distilled-preset",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Send the Helios-Distilled extra_params used by the bundled example.",
-    )
     parser.add_argument(
         "--extra-params",
         type=_parse_extra_params,
