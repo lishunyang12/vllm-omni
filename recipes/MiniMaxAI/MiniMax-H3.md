@@ -40,10 +40,8 @@ The vLLM-Omni pipeline downloads `FL2VA/**`, `Ref2VA/model_index.json`, and
 `transformer`, `transformer_ref`, or `vae` weights at the repository root, nor
 duplicate Ref2VA copies of shared components.
 
-Install vLLM-Omni from the checkout containing MiniMax H3 support. The
-two-GPU RTX 5090/4090 profiles use cuDNN attention and do not need
-FlashAttention-4. Install the optional dependency only for the four-GPU
-B300/GB200 `FLASH_ATTN` profile:
+Install vLLM-Omni from the checkout containing MiniMax H3 support. The base
+install covers the default and cuDNN attention paths:
 
 ```bash
 uv venv
@@ -80,7 +78,7 @@ between the legacy and direct planar paths
 ([full result](https://github.com/vllm-project/vllm-omni/pull/6288#issuecomment-5337546499)):
 
 | Metric | Legacy | Direct planar | Change |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | Median wall time | 1.805 s | 1.394 s | -22.8% |
 | Median process CPU time | 3.613 s | 3.207 s | -11.2% |
 | Peak RSS | 3182 MiB | 2794 MiB | -387 MiB (-12.2%) |
@@ -92,41 +90,24 @@ not be interpreted as GPU, DiT, or stage 0 speedups.
 
 ## Start a server
 
-Pass the repository ID directly. The pipeline uses `FL2VA` for model discovery
-and shared components, and loads the second DiT from `Ref2VA/transformer`.
+Serve the checkpoint root. The pipeline discovers both `FL2VA` and `Ref2VA`
+and loads the tokenizer, processor, Qwen3-VL encoder, video VAE, and audio VAE
+once.
 
-### Memory and storage requirements
+Treat model storage, host RAM, and GPU memory as separate budgets. Each DiT
+partition contains about 134 GiB of BF16 safetensors, so a local combined
+service needs roughly 270 GiB of checkpoint storage. Offload reduces GPU
+residency but does not reduce checkpoint or host-memory requirements.
 
-Treat GPU HBM, host RAM, and checkpoint storage as separate requirements. Each
-H3 checkpoint partition (`FL2VA` or `Ref2VA`) contains about **134 GiB** of
-BF16 safetensors (about **135 GiB** on disk). Keeping both partitions
-locally therefore needs roughly **270 GiB** of model storage. A combined
-service downloads both; `--task-type fl2va` or `--task-type ref2va` downloads
-only the selected partition.
+### Combined service
 
-CPU offload and distributed layerwise offload reduce GPU residency; they do
-not make the model weights disappear. With `--dlo-no-use-allgather`, each
-worker retains its standard-loader rank-local weights in host memory, including
-pinned CPU buffers used for H2D streaming. Use at least **200 GiB available
-system RAM** before starting the two-GPU recipe; a **384 GiB host is
-recommended** to leave room for the OS, CUDA/PyTorch allocations, request
-inputs, and filesystem cache. Do not run the FL2VA and Ref2VA servers at the
-same time on a host sized for this minimum.
-
-The consumer-GPU profiles below are HBM budgets only. They still require the
-host-RAM budget above.
-
-### Single GPU: accuracy and memory first
-
-The single-GPU configuration uses model-level CPU offload.
-This matches the accuracy-qualified reference path and prevents the Qwen3-VL
-encoder and DiT from being resident on the GPU at the same time.
+A combined process accepts every H3 request family and selects the DiT from
+`extra_params.task`:
 
 ```bash
-export MODEL=MiniMaxAI/MiniMax-H3
+export MODEL=/path/to/MiniMax-H3
 export PORT=8091
 
-CUDA_VISIBLE_DEVICES=0 \
 VLLM_WORKER_MULTIPROC_METHOD=spawn \
 VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
 vllm serve "${MODEL}" \
@@ -135,147 +116,38 @@ vllm serve "${MODEL}" \
   --port "${PORT}" \
   --trust-remote-code \
   --num-gpus 1 \
-  --enable-cpu-offload \
-  --diffusion-attention-backend FLASH_ATTN
+  --enable-cpu-offload
 ```
 
-Use a GPU with enough memory for the active H3 component and enough system RAM
-for both offloaded DiTs plus the shared components. Model-level offload keeps
-the two DiTs mutually exclusive on GPU, but adds PCIe/NVLink transfer latency.
+This is the topology-neutral reference command, not a performance
+recommendation. It requires enough host RAM for both DiTs and the shared
+components.
 
-### Two 24/32 GB GPUs: TP2 distributed layerwise offload
+### Task-scoped service
 
-For two PCIe consumer GPUs, combine TP2 with distributed layerwise offload
-(DLO). The standard loader first creates the rank-local TP shard. DLO keeps
-that shard in pinned host memory and streams the 30 tail DiT blocks through a
-shared two-buffer window without a DP AllGather. The first 20 DiT blocks are
-copied to the GPUs once per denoise stage, reused by every sampling step, and
-released before VAE decode so the decoder can reuse their HBM.
+When both DiTs do not fit the target capacity, load one family:
 
 ```bash
-export MODEL=MiniMaxAI/MiniMax-H3
-export PORT=8091
-
-CUDA_VISIBLE_DEVICES=0,1 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=14400 \
 vllm serve "${MODEL}" \
   --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
   --trust-remote-code \
   --task-type fl2va \
-  --num-gpus 2 \
-  --tensor-parallel-size 2 \
-  --usp 1 \
-  --ring 1 \
-  --text-encoder-tp-size 2 \
-  --vae-patch-parallel-size 2 \
-  --vae-parallel-mode tile \
-  --vae-use-tiling \
-  --enable-distributed-layerwise-offload \
-  --dlo-no-use-allgather \
-  --dlo-resident-layers 20 \
-  --enforce-eager \
-  --diffusion-attention-backend CUDNN_ATTN
+  --enable-cpu-offload
 ```
 
-Use the profile that matches the per-GPU memory capacity:
+Use `--task-type fl2va` for `t2va` and `fl2va` requests, or
+`--task-type ref2va` for `ref2va` requests. Restart the process to change
+families. Task-scoped loading downloads and loads only the selected partition.
 
-| Profile | GPUs | Starting shape | Resident DiT blocks | Attention | Execution | Status |
-|---|---:|---:|---:|---|---|---|
-| `rtx5090` | 2 x 32 GB | 1344x768 | 20 | cuDNN attention | eager | Target-hardware validated |
-| `rtx4090` | 2 x 24 GB | 1024x576 | 12 | cuDNN attention | eager | Capacity-proxy starting point |
+Hardware-specific GPU counts, parallelism, offload placement, precision,
+request shapes, and scoped measurements are generated by the
+[MiniMax-H3 deployment recipe](https://recipes.vllm.ai/MiniMaxAI/MiniMax-H3).
+That matrix is the source of truth for deployment profiles; this document owns
+the model and API contract.
 
-This topology uses all available parallel capacity: TP2 shards both the DiT
-and text encoder, `--dlo-no-use-allgather` streams each rank's local TP shard
-without reconstructing full blocks, and VAE patch parallelism splits tiled
-decode across both GPUs. cuDNN attention is selected explicitly for the RTX
-consumer path; the server stays eager to avoid an unqualified compile path.
+## Runtime tuning
 
-The resident count changes placement and transfer frequency only; it does not
-quantize or change the BF16/FP32 denoise math. Re-measure peak memory before
-increasing it on a different request shape.
-
-### RTX 5090 target-hardware validation
-
-At vLLM-Omni commit `ae6577ea`, one full 50-step T2VA request completed on
-2 x RTX 5090 without OOM:
-
-| Shape | Frames | Client E2E | Sampled peak/GPU | Output validation |
-|---:|---:|---:|---:|---|
-| 1344x768 | 124 at 24 FPS | 8 min 38 s | approximately 22.6 GiB | H.264 video + 32 kHz stereo AAC; full `ffmpeg` decode passed |
-
-This is a single end-to-end validation run, not a warmed multi-run latency
-benchmark. The sampled `nvidia-smi` peak is also not a CUDA allocator
-high-water mark. The environment used vLLM 0.26.0, vLLM-Omni
-`0.26.1.dev14+gae6577ea`, and PyTorch 2.11.0+cu130. The
-[run record](https://github.com/lishunyang12/vllm-omni-rankings/blob/dcd06d7e83cb069842535918c0169ee9f3f29ba0/scripts/%E5%BE%AE%E4%BF%A1%E5%9B%BE%E7%89%87_20260805000034_86_237.png)
-captures the environment, output contract, elapsed time, and sampled peak.
-
-Before the target run, both profiles were exercised on two B300 ranks as an
-allocation and correctness proxy. At 1344x768, 124 frames, and 50 steps, the
-20-layer profile peaked at 27,726 MiB per rank. At 1024x576, the 12-layer
-profile peaked at 18,888 MiB per rank in a 5-step capacity run. The resident
-and fully streamed placements produced identical decoded video-frame and audio
-hashes for the same shape, step count, prompt, and seed. The B300 result does
-not establish RTX 4090 PCIe latency; treat the 4090 profile as a conservative
-starting point until it is measured on that GPU.
-
-To run T2VA, FL2VA, image+audio Ref2VA, and two-video Ref2VA in order, validate
-every MP4's H.264/AAC streams, and retain live server and GPU-memory logs:
-
-```bash
-RUN_ROOT=/path/to/run-root \
-MODEL_ROOT=/path/to/MiniMax-H3 \
-GPU_IDS=0,1 \
-PROFILE=rtx5090 \
-bash examples/offline_inference/minimax_h3/run_h3_2gpu_all_tasks.sh
-```
-
-The script selects 20 resident layers for `PROFILE=rtx5090` and 12 for
-`PROFILE=rtx4090`; `DLO_RESIDENT_LAYERS=N` overrides either default.
-
-### Four GPUs: throughput-oriented combined service
-
-For a combined service on four high-memory GPUs, use:
-
-- no CPU or layerwise offload;
-- Ulysses sequence parallelism degree 4;
-- native tiled VAE patch parallelism degree 4;
-- regional `torch.compile` for the repeated DiT blocks;
-- dense BF16 `TRTLLM_ATTN`, with Ring and TP left at 1.
-
-Both DiTs remain resident in this no-offload configuration. If they do not fit,
-use model-level CPU offload.
-
-```bash
-export MODEL=MiniMaxAI/MiniMax-H3
-export PORT=8091
-
-CUDA_VISIBLE_DEVICES=0,1,2,3 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-vllm serve "${MODEL}" \
-  --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
-  --trust-remote-code \
-  --num-gpus 4 \
-  --usp 4 \
-  --ring 1 \
-  --vae-patch-parallel-size 4 \
-  --vae-parallel-mode tile \
-  --vae-use-tiling
-```
-
-Do not add `--enforce-eager` to this performance configuration. The first
-request includes regional compilation; warm the server once before measuring
-steady-state latency. H3 is CFG-distilled, so `--cfg-parallel-size` must remain
-1. The H3 VAE supports its native `tile` mode, not
-`spatial_shard_height` or `spatial_shard_width`.
-
-### Attention Backends
+### Attention backends
 
 On datacenter Blackwell GPUs, MiniMax H3 defaults to dense BF16
 `TRTLLM_ATTN`; no attention backend flag is required. To select it explicitly,
@@ -338,208 +210,82 @@ and
 
 ### Text encoder tensor parallelism
 
-The Qwen3-VL text encoder (~51.5 GB in BF16 for the retained 50 layers) is by
-default fully resident on the DiT main rank.  On multi-GPU no-offload runs that
-rank becomes the peak-memory hotspot.  Add `--text-encoder-tp-size N` to shard
-the encoder across the first `N` DiT ranks (the encoder is implemented with
-vLLM-style tensor-parallel layers and runs with distributed collectives over
-its own encoder process group):
+The Qwen3-VL text encoder retains 50 layers and occupies about 51.5 GB in
+BF16. By default it is resident on the DiT main rank. Use
+`--text-encoder-tp-size N` to shard it across the first `N` DiT ranks:
 
 ```bash
-export MODEL=MiniMaxAI/MiniMax-H3
-export PORT=8091
-
-CUDA_VISIBLE_DEVICES=0,1,2,3 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-vllm serve "${MODEL}" \
-  --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
-  --trust-remote-code \
-  --num-gpus 4 \
-  --usp 4 \
-  --ring 1 \
-  --text-encoder-tp-size 4 \
-  --vae-patch-parallel-size 4 \
-  --vae-parallel-mode tile \
-  --vae-use-tiling
+--text-encoder-tp-size 4
 ```
 
-`N` must divide the Qwen3-VL head counts (64 attention heads / 8 KV heads), so
-valid values on a 4-GPU server are 1, 2, and 4 (1, 2, 4, 8 on 8 GPUs).  The
-encoder TP rank set is the first `N` DiT ranks; on 4 GPUs
-`--text-encoder-tp-size 4` shards the encoder 4-way, dropping the DiT main
-rank's no-offload peak by roughly `(N-1)/N` of the ~51.5 GB encoder while the
-other ranks each gain `~51.5/N` GB.  The encoder output remains identical to
-the reference path within bf16 rounding: every encoder rank all-reduces the
-row-parallel projections, so the full `[seq, 5120]` layer-50 hidden state is
-replicated on every rank.
+`N` must divide both the 64 attention heads and 8 KV heads. Valid values are
+1, 2, and 4 for a four-rank DiT group, and additionally 8 for an eight-rank
+group. Encoder TP uses its own process group; every rank receives the complete
+encoder output after the row-parallel reductions.
 
-No restart is needed: `task=fl2va` routes to `FL2VA/transformer`, while
-`task=ref2va` routes to
-`Ref2VA/transformer`. T2VA uses the FL2VA DiT.
+Task routing is independent of encoder TP. A combined process routes
+`task=fl2va` and `task=ref2va` without restarting.
 
 ### Online FP8 quantization
 
-MiniMax H3 supports online FP8 quantization of both the DiT and the Qwen3-VL
-text decoder. The checkpoint remains BF16 on disk; vLLM-Omni creates FP8
-weights at runtime and uses dynamic activation scaling during inference. By
-default, `--quantization fp8` quantizes eligible attention and MLP linears in
-the text decoder, token refiner, and main DiT blocks, as well as the DiT
-condition and AdaLN projections. The Qwen vision tower, embeddings, norms,
-RoPE, both VAEs, and the model's FP32 patch, timestep, and output projections
-keep checkpoint precision.
+`--quantization fp8` quantizes eligible attention and MLP linears in the
+Qwen3-VL text decoder, token refiner, and main DiT blocks at load time. The
+checkpoint remains BF16 on disk. The vision tower, embeddings, norms, RoPE,
+both VAEs, and H3's FP32 patch, timestep, and output projections keep their
+checkpoint precision.
 
-To select a component, use `--diffusion-quantization-config` with
-`{"transformer":{"method":"fp8"}}` for DiT-only FP8 or
-`{"text_encoder":{"method":"fp8"}}` for text-decoder-only FP8. The two
-entries can be combined. The shorthand below enables both components.
-
-Add this option to an existing H3 server command:
+Add the shorthand to any compatible deployment:
 
 ```bash
 --quantization fp8
 ```
 
-#### Single 96 GB GPU, no-offload capacity check
+For component-level control, use
+`--diffusion-quantization-config` instead:
 
-Use the FL2VA-only partition for this capacity test. Loading the combined
-service would also load the Ref2VA DiT and would test a different memory
-budget. A no-offload capacity check should contain none of
-`--enable-cpu-offload`, `--enable-layerwise-offload`, or
-`--enable-distributed-layerwise-offload`. VAE tiling changes decode placement
-but does not offload model weights to the CPU.
+```bash
+--diffusion-quantization-config \
+  '{"transformer":{"method":"fp8"},"text_encoder":{"method":"fp8"}}'
+```
 
-The run passes the capacity check when the server initializes, the request
-finishes without CUDA OOM or Xid errors, `peak_used_mib` remains below the
-card's reported `memory_total_mib`, and `ffprobe` reports H.264 video plus
-32 kHz stereo AAC audio. Report the measured headroom rather than assuming
-that every nominal 96 GB SKU exposes the same MiB total.
-
-As a capacity proxy only, the same five-second case on one B300 measured a
-92,946 MiB whole-device first-request peak and a 92,146 MiB worker peak. Its
-encode, diffuse, decode, and client wall times were 8.664 s, 134.504 s,
-6.016 s, and 151.583 s. These numbers suggest that a 96 GB card may fit, but
-they are not an RTX PRO 6000 validation: kernels, allocator behavior, and
-reported device capacity differ across GPUs.
-
-Use `ignored_layers` to keep any otherwise eligible linear in BF16. H3
-resolves the `transformer` component before constructing the DiT, so names do
-not start with `transformer.`. Entries are exact runtime linear prefixes; a
-parent name such as `blocks.0.attn` does not exclude its children.
-
-Eligible names are the `attn.qkv_proj`, `attn.out_proj`, `mlp.fc1`, and
-`mlp.fc2` children under `token_refiner.blocks.<0-1>` or `blocks.<0-49>`.
-The other eligible names are `condition_proj`,
-`blocks.<0-49>.adaln_proj.linear`, and `final_layer.adaln_proj.linear`.
-For example, keep the first main block's attention projections in BF16 with:
+`ignored_layers` keeps named eligible linears in BF16. H3 resolves the
+`transformer` component before constructing the DiT, so names do not start
+with `transformer.`. Entries must be exact runtime prefixes, for example:
 
 ```bash
 --diffusion-quantization-config \
   '{"transformer":{"method":"fp8","ignored_layers":["blocks.0.attn.qkv_proj","blocks.0.attn.out_proj"]}}'
 ```
 
-The structured option replaces `--quantization fp8`. Online FP8 can be used
-with H3 layerwise offload and with both DLO transfer paths. The default
-AllGather path uses the ordinary loader to finalize FP8 weights and scales
-before sharding them across ranks. `--dlo-no-use-allgather` instead retains
-complete rank-local tensors and avoids the synchronized request-wave contract.
+Eligible transformer names include the `attn.qkv_proj`, `attn.out_proj`,
+`mlp.fc1`, and `mlp.fc2` children under `token_refiner.blocks.<0-1>` or
+`blocks.<0-49>`, plus the condition and AdaLN projections.
+
+Online FP8 works with H3 layerwise offload. The DLO AllGather path finalizes
+FP8 weights before sharding; `--dlo-no-use-allgather` retains complete
+rank-local tensors and avoids synchronized reconstruction. Size startup host
+memory for the selected path.
+
+FP8 is approximate. Hardware/workload-specific capacity, latency, and quality
+measurements belong to the
+[deployment recipe evidence](https://recipes.vllm.ai/MiniMaxAI/MiniMax-H3).
 
 ## AMD ROCm (gfx942 / gfx950)
 
-The sections above describe the NVIDIA CUDA path. This section covers the AMD
-ROCm path; use it instead of the CUDA commands when running on AMD Instinct
-GPUs.
+MiniMax H3 runs in BF16 on AMD Instinct gfx942 and gfx950. Select devices with
+`HIP_VISIBLE_DEVICES`, install without the CUDA-only `[fa4]` extra, and use
+`--diffusion-attention-backend FLASH_ATTN`; on supported ROCm systems it
+resolves to AITER packed variable-length attention. The H3 VAE uses AITER
+GroupNorm.
 
-MiniMax H3 runs on AMD Instinct GPUs (gfx942 / gfx950) in BF16. Use
-`--diffusion-attention-backend FLASH_ATTN`, which resolves to AITER packed varlen
-attention on both architectures.
+The prebuilt `vllm/vllm-omni-rocm:minimax-h3` image includes TorchCodec and
+FFmpeg for the full request path. For a source install, follow the
+[ROCm installation guide](../../docs/getting_started/installation/gpu.md) and
+set `VLLM_OMNI_TARGET_DEVICE=rocm`.
 
-Select the device with `HIP_VISIBLE_DEVICES` (not `CUDA_VISIBLE_DEVICES`), drop the
-CUDA-only `FLASHINFER_DISABLE_VERSION_CHECK`, and install without the `[fa4]` extra
-(FA4 is CUDA-only). The VAE uses AITER GroupNorm on ROCm.
-
-Install (ROCm wheel + source vLLM-Omni):
-
-```bash
-pip install "vllm==0.26.0+rocm723" \
-  --extra-index-url https://wheels.vllm.ai/rocm/0.26.0/rocm723
-VLLM_OMNI_TARGET_DEVICE=rocm pip install -e . --no-build-isolation
-```
-
-Prebuilt image: `vllm/vllm-omni-rocm:minimax-h3`. All tasks work out of the box:
-the image bundles TorchCodec (for image+audio Ref2VA) and `ffmpeg` (for
-video-reference Ref2VA).
-
-### ROCm single GPU
-
-Single GPU with model-level CPU offload keeps the Qwen3-VL encoder and DiT from
-being co-resident:
-
-```bash
-export MODEL="${MODEL_ROOT}/FL2VA"
-export PORT=8091
-
-HIP_VISIBLE_DEVICES=0 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-vllm serve "${MODEL}" \
-  --omni --host 0.0.0.0 --port "${PORT}" --trust-remote-code \
-  --num-gpus 1 --enable-cpu-offload \
-  --diffusion-attention-backend FLASH_ATTN
-```
-
-### ROCm four GPUs
-
-The best-practice CUDA four-GPU configuration works on ROCm with the changes above.
-It mirrors the CUDA command including Ulysses sequence parallelism, VAE patch
-parallelism, and text-encoder tensor parallelism, with no CPU offload when the model
-shards across the GPUs:
-
-```bash
-export MODEL="${MODEL_ROOT}/FL2VA"
-export PORT=8091
-
-HIP_VISIBLE_DEVICES=0,1,2,3 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-vllm serve "${MODEL}" \
-  --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
-  --trust-remote-code \
-  --num-gpus 4 \
-  --usp 4 \
-  --ring 1 \
-  --text-encoder-tp-size 4 \
-  --vae-patch-parallel-size 4 \
-  --vae-parallel-mode tile \
-  --vae-use-tiling \
-  --diffusion-attention-backend FLASH_ATTN
-```
-
-As on CUDA, H3 is CFG-distilled, so keep `--cfg-parallel-size` at 1, and the H3 VAE
-supports only its native `tile` mode. `--text-encoder-tp-size` is validated on
-gfx942; on gfx950 it was not exercised.
-
-### Validated ROCm evidence
-
-vLLM-Omni with MiniMax H3 support, BF16. gfx942 rows measured with the
-`vllm/vllm-omni-rocm:minimax-h3` image; gfx950 rows measured with the
-`0.26.0+rocm723` wheel (HIP 7.2).
-
-| Workload | Configuration | Observed result |
-|----------|---------------|-----------------|
-| T2VA, 1344x768, 209 frames, 50 steps | 4x gfx942 (MI300X), FLASH_ATTN, USP4, text-enc TP4, VAE PP4 tile | encode 0.09 s, denoise 244.04 s, decode 4.15 s, 267.42 s client E2E; H.264 24 FPS + 32 kHz stereo AAC |
-| FL2VA, 1344x768, 209 frames, 50 steps | 4x gfx942 (MI300X), FLASH_ATTN, USP4, text-enc TP4, VAE PP4 tile | encode 13.98 s, denoise 257.58 s, decode 4.11 s, 287.07 s client E2E; H.264 24 FPS + 32 kHz stereo AAC |
-| T2VA, 832x480, ~4 s, 40 steps | 1x gfx950 (MI350), FLASH_ATTN, CPU offload | valid MP4 (H.264 + synced audio); ~0.73 s/denoise-step (~1.37 it/s), ~55 s client E2E incl. warmup |
-
-gfx942 figures are the mean of three requests after one excluded warmup
-(external evidence: vllm-project/recipes#732). gfx950 figures are
-functional-correctness validations, not tuned throughput; the first request
-includes lazy regional compilation. MI325X (gfx942) and other MI355X SKUs are not
-listed until their own evidence is added.
+The model and HTTP contract are identical on CUDA and ROCm. Platform-specific
+topology, environment variables, and scoped measurements are generated by the
+[MiniMax-H3 deployment recipe](https://recipes.vllm.ai/MiniMaxAI/MiniMax-H3).
 
 ## HTTP API examples
 
@@ -712,7 +458,7 @@ at most 15 seconds combined.
 ## Official input matrix and limits
 
 | Task | Supported references | Limits |
-|------|----------------------|--------|
+| ------ | ---------------------- | -------- |
 | T2VA | text only | prompt must be non-empty |
 | FL2VA | first image, last image, or ordered first+last images | at most 2 images; `frame_indices` is `[0]`, `[-1]`, or `[0,-1]` |
 | Ref2VA | image-only, image+image, image+video, video+audio, and mixed image/video/audio | images ≤9, videos ≤3, audios ≤3, total references ≤12; audio requires a visual reference |
@@ -749,7 +495,7 @@ TP4, 1344×768, 124 frames, 24 FPS, and 50 inference steps. One full
 balanced switch order.
 
 | `quality` | Median inference latency | Speedup | SSIM vs `lossless` | PSNR vs `lossless` | Expected trade-off |
-|---|---:|---:|---:|---:|---|
+| --- | ---: | ---: | ---: | ---: | --- |
 | `lossless` | 85.49 s | 1.00× | 1.0000 | exact | Native reference path |
 | `high` | 63.36 s | 1.35× | 0.9709 | 34.98 dB | Faster with measured same-seed deviation |
 
@@ -762,7 +508,7 @@ balanced switch order.
 ## Key parameters
 
 | Parameter | Recommended value | Notes |
-|-----------|-------------------|-------|
+| ----------- | ------------------- | ------- |
 | `quality` | omitted or `lossless` | Request-level quality intent; `high` dynamically installs H3's conservative Cache-DiT profile |
 | `extra_params.force_refresh_step_hint` | omitted | Optional positive 1-based denoising-step hint for an active Cache-DiT request; pair with `extra_params.force_refresh_step_policy`=`once` or `repeat` |
 | `task` | `t2va`, `fl2va`, or `ref2va` | Passed in `extra_params`; selects the task-specific DiT |
@@ -782,35 +528,13 @@ balanced switch order.
 
 Users can also use a ComfyUI frontend to interact with a hosted MiniMax-H3 service. The ComfyUI frontend can run in a separate environment or machine. Refer to [vLLM-Omni ComfyUI Integration](../../docs/features/comfyui.md) for details.
 
-## Validated four-GPU evidence
+## Deployment profiles and evidence
 
-The four-GPU recommendation was measured on four NVIDIA B300 GPUs with one
-excluded warmup followed by three requests.
-
-| Workload | Configuration | Observed result |
-|----------|---------------|-----------------|
-| FL2VA, 209 frames, 1248x768 | no offload, U4, VPP4 tile, regional compile | 86.964 s mean HTTP client latency |
-| Two-video Ref2VA, 362 frames, 1344x768 | no offload, U4, VPP4 tile, regional compile | 784.394 s accounted model-stage mean |
-
-These measurements describe the validated shapes rather than a general
-throughput guarantee. Multi-video Ref2VA is much slower because the two
-reference videos expand both the Qwen3-VL vision sequence and the packed DiT
-attention sequence.
-
-## Validated FP8 evidence
-
-With eager DiT/text-encoder TP2 and VAE tiling, the 384x672, 107-frame,
-10-step quality case measured LPIPS 0.1156 (limit 0.20), PSNR 23.6316 dB,
-audio spectral cosine 0.9589 (minimum 0.80), and audio RMS ratio 0.9342. The
-resident per-GPU peak was 68.52 GiB for BF16 and 53.51 GiB for FP8, a 22%
-reduction.
-
-For direct human inspection, see the external
-[BF16 versus global-FP8 comparison](https://lishunyang12.github.io/vllm-omni-rankings/scripts/minimax_h3_global_fp8_vs_bf16/),
-which includes matched five-second T2VA, I2VA, and Ref2VA videos. The
-[comparison sources](https://github.com/lishunyang12/vllm-omni-rankings/tree/main/scripts/minimax_h3_global_fp8_vs_bf16)
-also record per-task fidelity metrics and provenance without storing generated
-media in this repository.
+Hardware recommendations and measurements are workload-scoped. Use the
+[MiniMax-H3 deployment recipe](https://recipes.vllm.ai/MiniMaxAI/MiniMax-H3)
+to select hardware, precision, and request mode together. Its Evidence panel
+shows only measurements that match the active hardware, variant, and task;
+missing evidence is not treated as validation.
 
 ## TeaCache acceleration
 
@@ -884,11 +608,6 @@ vllm serve "${MODEL_ROOT}/FL2VA" \
 - H3 currently executes one generation request per diffusion batch.
 - The first regional-compile request is a warmup and should not be included in
   steady-state performance measurements.
-- The serving path accepts fewer references than the model supports. H3 documents up
-  to 9 images, 3 video clips, and 3 audio clips (12 files) per Omni Reference
-  request; the current vLLM-Omni path takes exactly one image plus one audio
-  reference, or one or more videos with no separate `audio_reference` (it uses the
-  source soundtracks).
 - The 768 px short-edge mode is available for T2VA and FL2VA; 1344x768 is the
   documented 16:9 request shape.
 - `--cfg-parallel-size > 1` is rejected by design (CFG-distilled, no negative branch).
@@ -900,9 +619,6 @@ vllm serve "${MODEL_ROOT}/FL2VA" \
   in host memory on every rank during startup before retaining only each rank's
   shard. Size startup host memory for that transient peak.
 - TeaCache and Cache-DiT cannot be enabled on the same server.
-- Image+audio Ref2VA accepts exactly one image and one audio reference.
-- Video Ref2VA accepts one or more video files, but not an additional standalone
-  audio reference.
 - Pure Ulysses still replicates the full DiT on every rank, so smaller-memory GPUs
   cannot use `--usp N --tp 1` as a resident capacity path. Use DiT tensor parallelism
   or model-level CPU offload; text-encoder TP alone is not sufficient.
@@ -912,3 +628,4 @@ vllm serve "${MODEL_ROOT}/FL2VA" \
 - [Supported models](../../docs/models/supported_models.md)
 - [Video API](../../docs/serving/videos_api.md)
 - [Diffusion parallelism](../../docs/user_guide/diffusion/parallelism/overview.md)
+- [Selection-aware deployment profiles](https://recipes.vllm.ai/MiniMaxAI/MiniMax-H3)
