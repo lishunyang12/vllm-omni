@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from vllm_omni.diffusion.attention.backends import trtllm_attn as tg
 from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
-from vllm_omni.diffusion.attention.backends.trtllm_attn import TrtllmAttentionImpl
+from vllm_omni.diffusion.attention.backends.trtllm_attn import TrtllmAttentionBackend, TrtllmAttentionImpl
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cuda]
 
@@ -33,6 +33,12 @@ requires_trtllm_attn = pytest.mark.skipif(
 
 def _impl(**bk):
     return TrtllmAttentionImpl(8, 128, 1.0 / math.sqrt(128), causal=False, num_kv_heads=8, backend_kwargs=bk)
+
+
+def test_backend_advertises_only_packed_prefix_mask_support():
+    assert TrtllmAttentionBackend.supports_packed_prefix_mask
+    assert not TrtllmAttentionBackend.supports_attention_mask()
+    assert not TrtllmAttentionBackend.supports_packed_mask_free()
 
 
 def test_skip_config_pure_resolution():

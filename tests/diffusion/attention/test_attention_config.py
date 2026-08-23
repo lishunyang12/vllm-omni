@@ -568,6 +568,38 @@ class TestAttentionInitUsesCurrentDiffusionConfig:
         with pytest.raises(ValueError, match="does not support attn_mask"):
             Attention._assert_metadata_compatible(fake_attention, metadata)
 
+    def test_packed_prefix_mask_is_delegated_to_capable_backend(self):
+        forwarded = []
+        fake_backend = SimpleNamespace(
+            get_name=lambda: "PACKED_PREFIX_BACKEND",
+            supports_attention_mask=lambda: False,
+            supports_packed_prefix_mask=True,
+        )
+        fake_attention = SimpleNamespace(
+            attn_backend=fake_backend,
+            attention=SimpleNamespace(
+                forward=lambda query, key, value, metadata: forwarded.append(metadata) or query,
+            ),
+        )
+        fake_attention._assert_metadata_compatible = lambda metadata: Attention._assert_metadata_compatible(
+            fake_attention, metadata
+        )
+        query = torch.randn(1, 2, 4, 8)
+        metadata = AttentionMetadata(
+            attn_mask=torch.tensor([[True, False]]),
+            extra={
+                "cu_seqlens_q": torch.tensor([0, 1, 2], dtype=torch.int32),
+                "cu_seqlens_k": torch.tensor([0, 1, 2], dtype=torch.int32),
+                "max_seqlen_q": 1,
+                "max_seqlen_k": 1,
+            },
+        )
+
+        output = Attention._run_local_attention(fake_attention, query, query, query, metadata)
+
+        assert output is query
+        assert forwarded == [metadata]
+
     def test_ring_attention_rejects_mask_instead_of_ignoring_it(self):
         fake_attention = SimpleNamespace(attention=SimpleNamespace(skip=None), ring_runner=None)
         query = torch.randn(1, 2, 4, 8)

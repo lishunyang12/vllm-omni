@@ -308,7 +308,10 @@ class Attention(nn.Module):
         if attn_metadata is None:
             return
         backend_name = self.attn_backend.get_name()
-        if attn_metadata.attn_mask is not None and not self.attn_backend.supports_attention_mask():
+        supports_packed_prefix_mask = getattr(self.attn_backend, "supports_packed_prefix_mask", False)
+        if attn_metadata.attn_mask is not None and not (
+            self.attn_backend.supports_attention_mask() or supports_packed_prefix_mask
+        ):
             raise ValueError(
                 f"Attention backend '{backend_name}' does not support attn_mask. Select a mask-capable backend."
             )

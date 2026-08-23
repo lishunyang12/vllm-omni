@@ -19,6 +19,9 @@ class AttentionBackend(ABC):
     # tensors instead of materializing a padding mask. Models may use this to
     # avoid a slower masked-attention plan when tail padding is not semantic.
     supports_prefix_kv_slicing: bool = False
+    # The backend accepts a prefix-valid padding mask when paired with packed
+    # cu_seqlens/max_seqlen metadata and validates that structure itself.
+    supports_packed_prefix_mask: bool = False
 
     @classmethod
     def supports_packed_mask_free(cls) -> bool:

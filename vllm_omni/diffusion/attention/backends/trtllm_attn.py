@@ -153,6 +153,7 @@ def _workspace_bytes() -> int:
 
 class TrtllmAttentionBackend(AttentionBackend):
     accept_output_buffer: bool = True
+    supports_packed_prefix_mask: bool = True
 
     @staticmethod
     def get_supported_head_sizes() -> list[int]:
