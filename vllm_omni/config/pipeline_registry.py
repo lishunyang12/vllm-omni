@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """Pipeline registry and factory for vllm-omni.
 
 ``OMNI_PIPELINES`` maps each ``model_type`` to either a ``PipelineConfig``
@@ -86,6 +86,7 @@ from vllm_omni.model_executor.models.ming_tts.pipeline import (
 )
 from vllm_omni.model_executor.models.minicpmo_4_5.pipeline import MINICPMO_4_5_PIPELINE
 from vllm_omni.model_executor.models.minimax_h3.pipeline import MINIMAX_H3_PIPELINE
+from vllm_omni.model_executor.models.minimax_h3_super.pipeline import MINIMAX_H3_SUPER_PIPELINE
 from vllm_omni.model_executor.models.minimax_music3.pipeline import MINIMAX_MUSIC3_PIPELINE
 from vllm_omni.model_executor.models.moss_tts.pipeline import (
     MOSS_TTS_LOCAL_PIPELINE,
@@ -181,6 +182,7 @@ OMNI_PIPELINES: dict[str, PipelineConfig | PipelineResolverFunc] = {
     "moss_tts_local": MOSS_TTS_LOCAL_PIPELINE,
     "minicpmo_4_5": MINICPMO_4_5_PIPELINE,
     "minimax_music3": MINIMAX_MUSIC3_PIPELINE,
+    "minimax_h3_super": MINIMAX_H3_SUPER_PIPELINE,
     "higgs_audio_v2": HIGGS_AUDIO_V2_PIPELINE,
     "higgs_multimodal_qwen3": HIGGS_AUDIO_V3_PIPELINE,
     "dynin_omni": DYNIN_OMNI_PIPELINE,

@@ -234,6 +234,7 @@ _COMPONENT_PROFILES: dict[tuple[str, str], LTXComponentProfile] = {
     ("two_stage", "2"): LTX2_TWO_STAGE_COMPONENT_PROFILE,
     ("two_stage", "2.3"): LTX23_TWO_STAGE_COMPONENT_PROFILE,
     ("two_stage", "2.5"): LTX25_TWO_STAGE_COMPONENT_PROFILE,
+    ("h3_refiner", "2.5"): LTX25_TWO_STAGE_COMPONENT_PROFILE,
     ("distilled_one_stage", "2"): LTX2_DISTILLED_ONE_STAGE_COMPONENT_PROFILE,
     ("distilled_one_stage", "2.3"): LTX23_DISTILLED_ONE_STAGE_COMPONENT_PROFILE,
     ("distilled_one_stage", "2.5"): LTX25_DISTILLED_ONE_STAGE_COMPONENT_PROFILE,
@@ -247,7 +248,7 @@ _COMPONENT_PROFILES: dict[tuple[str, str], LTXComponentProfile] = {
 
 def resolve_ltx_checkpoint_kind(pipeline_kind: str) -> LTXCheckpointKind | None:
     """Derive checkpoint requirements from the execution contract."""
-    if pipeline_kind in {"one_stage", "two_stage"}:
+    if pipeline_kind in {"one_stage", "two_stage", "h3_refiner"}:
         return "regular"
     if pipeline_kind in {"distilled_one_stage", "distilled_two_stage"}:
         return "distilled"

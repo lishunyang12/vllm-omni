@@ -526,7 +526,7 @@ class LTXRuntime(
         del req, request_inputs
         return image
 
-    def _make_output(self, output: tuple[torch.Tensor, torch.Tensor]) -> DiffusionOutput:
+    def _make_output(self, output: Any) -> DiffusionOutput:
         if self.reports_stage_durations:
             return DiffusionOutput(
                 output=output,

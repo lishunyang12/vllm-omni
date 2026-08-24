@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 import asyncio
 import time
@@ -9,6 +9,7 @@ import pytest
 
 from vllm_omni.diffusion.stage_diffusion_proc import StageDiffusionProc
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
+from vllm_omni.lora.request import LoRARequest
 from vllm_omni.outputs import OmniRequestOutput
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
@@ -24,6 +25,26 @@ BASE_HEIGHT = 512
 BASE_WIDTH = 512
 BASE_INFER_STEPS = 10
 DELAY_BASE = 0.01
+
+
+def test_reconstruct_sampling_params_accepts_yaml_lora_mapping():
+    stage_proc = object.__new__(StageDiffusionProc)
+
+    params = stage_proc._reconstruct_sampling_params(
+        {
+            "lora_request": {
+                "lora_name": "h3-turbo",
+                "lora_int_id": 1,
+                "lora_path": "/models/h3-turbo.safetensors",
+            }
+        }
+    )
+
+    assert params.lora_request == LoRARequest(
+        lora_name="h3-turbo",
+        lora_int_id=1,
+        lora_path="/models/h3-turbo.safetensors",
+    )
 
 
 class MockDiffusionEngine:

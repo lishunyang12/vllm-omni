@@ -81,6 +81,11 @@ _DIFFUSION_MODELS = {
         "pipeline_ltx2_two_stage",
         "LTX2TwoStagePipeline",
     ),
+    "LTX25H3RefinerPipeline": (
+        "ltx2",
+        "pipeline_ltx25_h3_refiner",
+        "LTX25H3RefinerPipeline",
+    ),
     "LTX2DistilledOneStagePipeline": (
         "ltx2",
         "pipeline_ltx2",
@@ -110,6 +115,11 @@ _DIFFUSION_MODELS = {
         "minimax_h3",
         "pipeline_minimax_h3",
         "MiniMaxH3Pipeline",
+    ),
+    "MiniMaxH3SuperDraftPipeline": (
+        "minimax_h3",
+        "pipeline_minimax_h3_super",
+        "MiniMaxH3SuperDraftPipeline",
     ),
     "MiniMaxH3ModularPipeline": (
         "minimax_h3",
@@ -549,12 +559,14 @@ _DIFFUSION_POST_PROCESS_FUNCS = {
     "WanVACEPipeline": "get_wan22_vace_post_process_func",
     "LTX2Pipeline": "get_ltx2_post_process_func",
     "LTX2TwoStagePipeline": "get_ltx2_post_process_func",
+    "LTX25H3RefinerPipeline": "get_ltx25_h3_refiner_post_process_func",
     "LTX2DistilledOneStagePipeline": "get_ltx2_post_process_func",
     "LTX2DistilledTwoStagePipeline": "get_ltx2_post_process_func",
     "LTX2DistilledPipeline": "get_ltx2_post_process_func",
     "LTX2T2VDMD2Pipeline": "get_ltx2_post_process_func",
     "LTX2I2VDMD2Pipeline": "get_ltx2_post_process_func",
     "MiniMaxH3Pipeline": "get_minimax_h3_post_process_func",
+    "MiniMaxH3SuperDraftPipeline": "get_minimax_h3_super_post_process_func",
     "MiniMaxH3ModularPipeline": "get_minimax_h3_post_process_func",
     "StableAudioPipeline": "get_stable_audio_post_process_func",
     "WanImageToVideoPipeline": "get_wan22_i2v_post_process_func",

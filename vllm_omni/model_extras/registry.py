@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 from __future__ import annotations
 
@@ -215,6 +215,7 @@ _EXTRA_SPECS: dict[str, dict[str, Any]] = {
         for model_class_name in (
             "LTX2Pipeline",
             "LTX2TwoStagePipeline",
+            "LTX25H3RefinerPipeline",
             "LTX2DistilledOneStagePipeline",
             "LTX2DistilledPipeline",
             "LTX2DistilledTwoStagePipeline",
@@ -246,7 +247,7 @@ _EXTRA_SPECS: dict[str, dict[str, Any]] = {
     },
 }
 
-for model_class_name in ("LTX2Pipeline", "LTX2TwoStagePipeline"):
+for model_class_name in ("LTX2Pipeline", "LTX2TwoStagePipeline", "LTX25H3RefinerPipeline"):
     _EXTRA_SPECS[model_class_name]["transformer_config_subfolder_resolver"] = ltx_transformer_config_subfolder
 
 

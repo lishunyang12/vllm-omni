@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 """IPC utilities for transferring large tensors via POSIX shared memory.
 
@@ -51,7 +51,7 @@ def _array_from_shm(handle: dict[str, Any]) -> np.ndarray:
     shm = shared_memory.SharedMemory(name=handle["name"])
     try:
         array = np.ndarray(
-            handle["shape"],
+            handle.get("storage_shape", handle["shape"]),
             dtype=np.dtype(handle["numpy_dtype"]),
             buffer=shm.buf[: handle["nbytes"]],
         ).copy()
@@ -76,14 +76,13 @@ def _tensor_to_shm(
     packed.
     """
     original_dtype = tensor.dtype
+    original_shape = list(tensor.shape)
     if d2h_stream is not None:
         # Non-blocking D2H: copy on side stream to pinned CPU memory.
         old_stream = torch.accelerator.current_stream()
         torch.accelerator.set_stream(d2h_stream)
         try:
             t = tensor.detach()
-            if original_dtype == torch.bfloat16:
-                t = t.to(torch.float32)
             cpu = torch.empty(t.shape, dtype=t.dtype, pin_memory=True)
             cpu.copy_(t, non_blocking=True)
         finally:
@@ -92,9 +91,14 @@ def _tensor_to_shm(
         tensor = cpu
     else:
         tensor = tensor.detach().cpu().contiguous()
-        if original_dtype == torch.bfloat16:
-            tensor = tensor.to(torch.float32)
-    handle = _array_to_shm(tensor.numpy())
+    if original_dtype == torch.bfloat16:
+        storage = tensor.view(torch.uint8).reshape(-1).numpy()
+    else:
+        storage = tensor.numpy()
+    handle = _array_to_shm(storage)
+    if original_dtype == torch.bfloat16:
+        handle["storage_shape"] = handle["shape"]
+        handle["shape"] = original_shape
     handle.update(
         {
             "__tensor_shm__": True,
@@ -112,7 +116,9 @@ def _tensor_from_shm(handle: dict[str, Any]) -> torch.Tensor:
     torch_dtype_str = handle.get("torch_dtype", "")
     if torch_dtype_str:
         original_dtype = getattr(torch, torch_dtype_str.replace("torch.", ""), None)
-        if original_dtype is not None and tensor.dtype != original_dtype:
+        if original_dtype == torch.bfloat16 and tensor.dtype == torch.uint8:
+            tensor = tensor.view(original_dtype).reshape(handle["shape"])
+        elif original_dtype is not None and tensor.dtype != original_dtype:
             tensor = tensor.to(original_dtype)
     return tensor
 

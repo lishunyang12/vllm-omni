@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 """Declarative execution recipes for the LTX model family."""
 
@@ -299,6 +299,38 @@ LTX23_TWO_STAGE_RECIPE = _official_two_stage_recipe(LTX23_ONE_STAGE_RECIPE)
 LTX25_TWO_STAGE_RECIPE = _official_two_stage_recipe(LTX25_FULL_RECIPE)
 
 
+# MiniMax H3 Super Acceleration uses H3 as the low-resolution generator and
+# enters only the official LTX-2.5 refinement phase. The H3 draft is encoded
+# and spatially upsampled by ``LTX25H3RefinerPipeline`` before this recipe is
+# executed, so the single phase starts from the final-resolution latent state.
+LTX25_H3_REFINER_RECIPE = LTXPipelineRecipe(
+    height=768,
+    width=1344,
+    num_frames=121,
+    frame_rate=24.0,
+    num_inference_steps=len(LTX_STAGE_2_DISTILLED_SIGMAS) - 1,
+    negative_prompt="",
+    phases=(
+        LTXPhaseRecipe(
+            name="refine",
+            guidance=LTXGuidanceSpec.positive_only(),
+            sigmas=LTX_STAGE_2_DISTILLED_SIGMAS,
+            noise_scale=LTX_STAGE_2_DISTILLED_SIGMAS[0],
+            adapter_slot=LTX_DISTILLED_ADAPTER_SLOT,
+            allow_guidance_override=False,
+            use_official_sigma_schedule=False,
+        ),
+    ),
+    video_output_phase=0,
+    audio_output_phase=0,
+    allow_request_sigmas=False,
+    allow_request_phase_sigmas=False,
+    allow_request_latents=True,
+    allow_negative_prompt=False,
+    fixed_num_inference_steps=True,
+)
+
+
 _PIPELINE_RECIPES: dict[tuple[str, str], LTXPipelineRecipe] = {
     ("one_stage", "2"): LTX2_ONE_STAGE_RECIPE,
     ("one_stage", "2.3"): LTX23_ONE_STAGE_RECIPE,
@@ -306,6 +338,7 @@ _PIPELINE_RECIPES: dict[tuple[str, str], LTXPipelineRecipe] = {
     ("two_stage", "2"): LTX2_TWO_STAGE_RECIPE,
     ("two_stage", "2.3"): LTX23_TWO_STAGE_RECIPE,
     ("two_stage", "2.5"): LTX25_TWO_STAGE_RECIPE,
+    ("h3_refiner", "2.5"): LTX25_H3_REFINER_RECIPE,
     ("distilled_one_stage", "2"): LTX2_DISTILLED_ONE_STAGE_RECIPE,
     ("distilled_one_stage", "2.3"): LTX23_DISTILLED_ONE_STAGE_RECIPE,
     ("distilled_one_stage", "2.5"): LTX25_DISTILLED_ONE_STAGE_RECIPE,

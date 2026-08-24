@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """Unit tests for OpenAI-compatible video API encoding helpers."""
 
 import base64
@@ -155,6 +155,12 @@ def test_encode_video_bytes_exports_frames_without_interpolation(monkeypatch):
     assert mux_calls[0]["frames"].dtype == np.uint8
     assert mux_calls[0]["fps"] == 8.0
     assert mux_calls[0]["audio"] is None
+
+
+def test_encode_video_bytes_preserves_worker_encoded_mp4():
+    encoded = b"worker-encoded-mp4"
+
+    assert video_api_utils._encode_video_bytes(encoded, fps=24) is encoded
 
 
 def test_float_frames_are_converted_without_stacking_full_video(monkeypatch):

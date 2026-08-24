@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """
 Shared helper utilities for OpenAI-compatible video generation API.
 """
@@ -774,6 +774,9 @@ def _encode_video_bytes(
 ) -> bytes:
     """Encode a video payload through the direct planar or legacy path."""
     from vllm_omni.diffusion.utils.media_utils import mux_av_video_audio_bytes
+
+    if isinstance(video, bytes):
+        return video
 
     # Prepare once so validation is shared by both paths and malformed common
     # input is reported before any muxer is opened.

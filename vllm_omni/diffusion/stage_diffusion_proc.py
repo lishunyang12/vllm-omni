@@ -13,7 +13,7 @@ import asyncio
 import contextlib
 import multiprocessing.connection
 import signal
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
@@ -153,7 +153,9 @@ class StageDiffusionProc:
             from vllm.lora.request import LoRARequest
 
             if not isinstance(lora_req, LoRARequest):
-                sampling_params_dict["lora_request"] = msgspec.convert(lora_req, LoRARequest)
+                sampling_params_dict["lora_request"] = (
+                    LoRARequest(**lora_req) if isinstance(lora_req, Mapping) else msgspec.convert(lora_req, LoRARequest)
+                )
 
         return OmniDiffusionSamplingParams(**sampling_params_dict)
 
