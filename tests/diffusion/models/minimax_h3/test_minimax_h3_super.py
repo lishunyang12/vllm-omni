@@ -414,11 +414,22 @@ def test_h3_super_deploy_merges_two_independent_diffusion_stages():
     assert stages[1].yaml_runtime["devices"] == "1"
     assert stages[0].yaml_engine_args["model"] == "MiniMaxAI/MiniMax-H3"
     assert stages[0].yaml_engine_args["model_class_name"] == "MiniMaxH3SuperDraftPipeline"
+    attention_roles = stages[0].yaml_engine_args["diffusion_attention_config"]["per_role"]
+    assert attention_roles["self"] == {
+        "backend": "TRTLLM_ATTN",
+        "quant": {
+            "dtype_qk": "fp8_e4m3",
+            "q_block_size": 1,
+            "k_block_size": 16,
+        },
+    }
+    assert attention_roles["minimax_h3.token_refiner"] == {"backend": "TRTLLM_ATTN"}
     assert stages[0].yaml_engine_args["additional_config"]["taeh3_checkpoint"] == TAEH3_CHECKPOINT_URL
     assert stages[0].yaml_extras["default_sampling_params"]["height"] == 512
     assert stages[0].yaml_extras["default_sampling_params"]["num_inference_steps"] == 5
     assert stages[1].yaml_engine_args["model"] == "Lightricks/LTX-2.5-Diffusers"
     assert stages[1].yaml_engine_args["model_class_name"] == "LTX25H3RefinerPipeline"
+    assert "diffusion_attention_config" not in stages[1].yaml_engine_args
     assert stages[1].yaml_engine_args["enforce_eager"] is False
     assert stages[1].yaml_engine_args["diffusion_compile_dynamic"] is False
     assert stages[1].yaml_engine_args["additional_config"]["taehv_checkpoint"] == TAEHV_CHECKPOINT_URL

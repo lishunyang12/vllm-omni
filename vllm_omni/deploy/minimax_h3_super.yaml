@@ -14,6 +14,16 @@ stages:
     max_num_seqs: 1
     enforce_eager: true
     lora_backend: peft
+    diffusion_attention_config:
+      per_role:
+        self:
+          backend: TRTLLM_ATTN
+          quant:
+            dtype_qk: fp8_e4m3
+            q_block_size: 1
+            k_block_size: 16
+        minimax_h3.token_refiner:
+          backend: TRTLLM_ATTN
     additional_config:
       taeh3_checkpoint: https://raw.githubusercontent.com/madebyollin/taehv/e589fddc076e77f5ba8cd6baabe4ba3260b261cd/taeh3.pth
     default_sampling_params:
