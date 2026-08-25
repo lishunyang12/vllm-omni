@@ -4,6 +4,7 @@
 # DeepSpeed Team & Jiarui Fang
 #  from https://github.com/feifeibear/long-context-attention/blob/main/yunchang/comm/all_to_all.py
 import os
+import statistics
 from typing import Any
 
 import torch
@@ -18,12 +19,19 @@ __all__ = ["all_to_all_4D", "all_to_all_5D", "SeqAllToAll4D", "SeqAllToAll5D", "
 logger = init_logger(__name__)
 
 _ULYSSES_TRANSPORT = os.getenv("VLLM_OMNI_ULYSSES_TRANSPORT", "nccl").lower()
-if _ULYSSES_TRANSPORT not in {"nccl", "pitched", "packed"}:
+if _ULYSSES_TRANSPORT not in {"nccl", "pitched", "packed", "auto"}:
     raise ValueError(
-        f"VLLM_OMNI_ULYSSES_TRANSPORT must be one of 'nccl', 'pitched', or 'packed', got {_ULYSSES_TRANSPORT!r}"
+        f"VLLM_OMNI_ULYSSES_TRANSPORT must be one of 'nccl', 'pitched', 'packed', or 'auto', got {_ULYSSES_TRANSPORT!r}"
     )
 _FAST_ULYSSES_GROUPS: dict[tuple[int, str, int], Any] = {}
+_FAST_ULYSSES_OUTPUTS: dict[tuple[Any, ...], tuple[tuple[int, ...], Tensor]] = {}
+_FAST_ULYSSES_AUTO_BACKENDS: dict[tuple[Any, ...], str] = {}
 _FAST_ULYSSES_ALLOW_NON_NVLINK = os.getenv("VLLM_OMNI_FAST_ULYSSES_ALLOW_NON_NVLINK", "0").lower() in {
+    "1",
+    "true",
+    "yes",
+}
+_FAST_ULYSSES_ZERO_COPY = os.getenv("VLLM_OMNI_FAST_ULYSSES_ZERO_COPY", "0").lower() in {
     "1",
     "true",
     "yes",
@@ -62,21 +70,103 @@ def _get_fast_ulysses_group(group, backend: str):
     return fast_group
 
 
-def _fast_all_to_all_4d(input: Tensor, scatter_idx: int, gather_idx: int, group, use_sync: bool) -> Tensor:
+def _benchmark_fast_backend(input: Tensor, mode: int, group, backend: str) -> float:
+    fast_group = _get_fast_ulysses_group(group, backend)
+    for _ in range(2):
+        fast_group.all_to_all_4d(input, mode=mode)
+
+    samples = []
+    for _ in range(5):
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        fast_group.all_to_all_4d(input, mode=mode)
+        end.record()
+        end.synchronize()
+        samples.append(start.elapsed_time(end))
+
+    process_group = group if group is not None else dist.group.WORLD
+    slowest = torch.tensor(statistics.median(samples), dtype=torch.float64, device=input.device)
+    dist.all_reduce(slowest, op=dist.ReduceOp.MAX, group=process_group)
+    return float(slowest.item())
+
+
+def _select_fast_backend(input: Tensor, mode: int, group) -> str:
+    process_group = group if group is not None else dist.group.WORLD
+    device_index = input.device.index
+    key = (id(process_group), device_index, mode, tuple(input.shape), input.dtype)
+    selected = _FAST_ULYSSES_AUTO_BACKENDS.get(key)
+    if selected is not None:
+        return selected
+
+    pitched_ms = _benchmark_fast_backend(input, mode, process_group, "pitched")
+    packed_ms = _benchmark_fast_backend(input, mode, process_group, "packed")
+    selected = "packed" if packed_ms < pitched_ms * 0.95 else "pitched"
+    _FAST_ULYSSES_AUTO_BACKENDS[key] = selected
+    logger.info(
+        "Selected fast-ulysses auto backend=%s mode=%d shape=%s pitched_ms=%.3f packed_ms=%.3f",
+        selected,
+        mode,
+        tuple(input.shape),
+        pitched_ms,
+        packed_ms,
+    )
+    return selected
+
+
+def _get_fast_output(input: Tensor, mode: int, group, backend: str, output_slot: int) -> Tensor:
+    process_group = group if group is not None else dist.group.WORLD
+    device_index = input.device.index
+    key = (id(process_group), backend, device_index, mode, input.dtype, output_slot)
+    input_shape = tuple(input.shape)
+    cached = _FAST_ULYSSES_OUTPUTS.get(key)
+    if cached is None or cached[0] != input_shape:
+        output = _get_fast_ulysses_group(process_group, backend).empty_output(input, mode=mode)
+        _FAST_ULYSSES_OUTPUTS[key] = (input_shape, output)
+        logger.info(
+            "Allocated fast-ulysses zero-copy output backend=%s mode=%d slot=%d input_shape=%s output_shape=%s",
+            backend,
+            mode,
+            output_slot,
+            tuple(input.shape),
+            tuple(output.shape),
+        )
+        return output
+    return cached[1]
+
+
+def _fast_all_to_all_4d(
+    input: Tensor,
+    scatter_idx: int,
+    gather_idx: int,
+    group,
+    use_sync: bool,
+    output_slot: int | None,
+) -> Tensor:
     if (scatter_idx, gather_idx) == (2, 1):
         mode = 0
     elif (scatter_idx, gather_idx) == (1, 2):
         mode = 1
     else:
         raise RuntimeError("scatter_idx must be 1 or 2 and gather_idx must be 1 or 2")
-    output = _get_fast_ulysses_group(group, _ULYSSES_TRANSPORT).all_to_all_4d(input, mode=mode)
+    backend = _select_fast_backend(input, mode, group) if _ULYSSES_TRANSPORT == "auto" else _ULYSSES_TRANSPORT
+    fast_group = _get_fast_ulysses_group(group, backend)
+    out = None
+    if _FAST_ULYSSES_ZERO_COPY and output_slot is not None:
+        out = _get_fast_output(input, mode, group, backend, output_slot)
+    output = fast_group.all_to_all_4d(input, mode=mode, out=out)
     if use_sync:
         current_omni_platform.synchronize()
     return output
 
 
 def all_to_all_4D(
-    input: torch.tensor, scatter_idx: int = 2, gather_idx: int = 1, group=None, use_sync: bool = False
+    input: torch.tensor,
+    scatter_idx: int = 2,
+    gather_idx: int = 1,
+    group=None,
+    use_sync: bool = False,
+    output_slot: int | None = None,
 ) -> torch.tensor:
     """
     all-to-all for QKV
@@ -87,6 +177,7 @@ def all_to_all_4D(
         gather_idx (int): default 2
         group (torch.distributed.ProcessGroup): torch process group
         use_sync (bool): whether to synchronize after all-to-all
+        output_slot (int | None): persistent fast-ulysses output role; ignored by NCCL
 
     Returns:
         torch.tensor: resharded tensor (bs, seqlen/P, hc, hs)
@@ -96,7 +187,7 @@ def all_to_all_4D(
     seq_world_size = dist.get_world_size(group)
 
     if seq_world_size > 1 and _ULYSSES_TRANSPORT != "nccl":
-        return _fast_all_to_all_4d(input, scatter_idx, gather_idx, group, use_sync)
+        return _fast_all_to_all_4d(input, scatter_idx, gather_idx, group, use_sync, output_slot)
 
     if scatter_idx == 2 and gather_idx == 1:
         # input (torch.tensor): a tensor sharded along dim 1 (bs, seqlen/P, hc, hs) output: (bs, seqlen, hc/P, hs)
@@ -174,12 +265,20 @@ class SeqAllToAll4D(torch.autograd.Function):
         scatter_idx: int,
         gather_idx: int,
         use_sync: bool = False,
+        output_slot: int | None = None,
     ) -> Tensor:
         ctx.group = group
         ctx.scatter_idx = scatter_idx
         ctx.gather_idx = gather_idx
         ctx.use_sync = use_sync
-        return all_to_all_4D(input, scatter_idx, gather_idx, group=group, use_sync=use_sync)
+        return all_to_all_4D(
+            input,
+            scatter_idx,
+            gather_idx,
+            group=group,
+            use_sync=use_sync,
+            output_slot=output_slot,
+        )
 
 
 def all_to_all_5D(
