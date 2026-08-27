@@ -56,6 +56,7 @@ from vllm_omni.diffusion.offloader.module_collector import ModuleDiscovery
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import (
     DiffusionPipelineProfilerMixin,
 )
+from vllm_omni.diffusion.profiler.runtime_timing import get_diffusion_runtime_timing
 from vllm_omni.diffusion.sched.sigma_schedule import DMD2SigmaSchedule
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
 from vllm_omni.errors import OmniClientError, client_error_from_metadata
@@ -1691,6 +1692,9 @@ class MiniMaxH3Pipeline(
     @contextmanager
     def _resident_dit_layers_on_device(self, *, enabled: bool = True):
         controller = getattr(self, "_dlo_residency_controller", None)
+        runtime_timing = get_diffusion_runtime_timing()
+        if enabled:
+            runtime_timing.begin_request()
         if controller is not None and enabled:
             controller.load_resident_layers()
         try:
@@ -1698,6 +1702,8 @@ class MiniMaxH3Pipeline(
         finally:
             if controller is not None and enabled:
                 controller.offload_resident_layers()
+            if enabled:
+                runtime_timing.finish_request()
 
     def _build_denoise_inputs(
         self,

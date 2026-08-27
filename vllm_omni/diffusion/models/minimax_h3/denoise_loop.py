@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """MiniMax H3 cfg-distilled full denoise loop.
 
 Per step, the positive presentation is forwarded exactly once. Video and audio
@@ -19,6 +20,7 @@ from vllm_omni.diffusion.forward_context import (
     set_forward_context_denoise_step_idx,
     set_forward_context_denoise_timestep,
 )
+from vllm_omni.diffusion.profiler.runtime_timing import get_diffusion_runtime_timing
 
 from .scheduling_minimax_h3_euler_ancestral import (
     minimax_h3_euler_eta0_step,
@@ -276,7 +278,10 @@ def minimax_h3_denoise_loop(
                 audio_ref_cond_timestep=audio_ref_cond_t,
             )
             with torch.inference_mode():
+                runtime_timing = get_diffusion_runtime_timing()
+                dit_start = runtime_timing.start_cuda()
                 v_video, v_audio = model(**fk)
+                runtime_timing.finish_cuda("dit.forward", dit_start)
             mv_video_t = v_video.float()[update]
             mv_audio_t = v_audio.float()[audio_update]
 

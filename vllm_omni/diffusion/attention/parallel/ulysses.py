@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from vllm_omni.diffusion.attention.parallel.base import ParallelAttentionContext
 from vllm_omni.diffusion.distributed.comm import SeqAllToAll4D
 from vllm_omni.diffusion.distributed.group_coordinator import SequenceParallelGroupCoordinator
 from vllm_omni.diffusion.forward_context import get_ulysses_mode
+from vllm_omni.diffusion.profiler.runtime_timing import get_diffusion_runtime_timing
 
 
 def _ceil_div(n: int, d: int) -> int:
@@ -45,7 +46,10 @@ def _all_gather_int(pg: dist.ProcessGroup, value: int, *, device: torch.device) 
 
     t = torch.tensor([int(value)], dtype=torch.int64, device=device)
     gathered = [torch.empty_like(t) for _ in range(world_size)]
+    runtime_timing = get_diffusion_runtime_timing()
+    start = runtime_timing.start_cuda()
     dist.all_gather(gathered, t, group=pg)
+    runtime_timing.finish_cuda("ulysses.metadata_allgather", start)
     return [int(x.item()) for x in gathered]
 
 
@@ -75,7 +79,10 @@ def _ulysses_all_to_all_any_qkv(
     head_cnt_local = padded_head_cnt // world_size
 
     # (B, S_local, H, D) -> (world_size, S_local, B, H_local, D)
+    runtime_timing = get_diffusion_runtime_timing()
+    pack_start = runtime_timing.start_cuda()
     x_t = x.reshape(bsz, s_local, world_size, head_cnt_local, head_dim).permute(2, 1, 0, 3, 4).contiguous()
+    runtime_timing.finish_cuda("ulysses.mode0.pack", pack_start)
     # (world_size, S_local, B, H_local, D) -> (world_size * S_local, B, H_local, D)
     x_t = x_t.flatten(0, 1)
 
@@ -84,6 +91,7 @@ def _ulysses_all_to_all_any_qkv(
     s_global = int(sum(output_split_sizes))
 
     out = torch.empty((s_global, bsz, head_cnt_local, head_dim), device=x.device, dtype=x.dtype)
+    a2a_start = runtime_timing.start_cuda()
     dist.all_to_all_single(
         out,
         x_t,
@@ -91,13 +99,20 @@ def _ulysses_all_to_all_any_qkv(
         input_split_sizes=input_split_sizes,
         group=pg,
     )
+    runtime_timing.finish_cuda(
+        "ulysses.mode0.a2a",
+        a2a_start,
+        num_bytes=x_t.numel() * x_t.element_size() * (world_size - 1) // world_size,
+    )
     if use_sync:
         from vllm_omni.platforms import current_omni_platform
 
         current_omni_platform.synchronize()
 
     # (S_global, B, H_local, D) -> (B, S_global, H_local, D)
+    unpack_start = runtime_timing.start_cuda()
     out = out.permute(1, 0, 2, 3).contiguous()
+    runtime_timing.finish_cuda("ulysses.mode0.unpack", unpack_start)
     return out, orig_head_cnt
 
 
@@ -119,12 +134,16 @@ def _ulysses_all_to_all_any_o(
     s_local = int(local_seq_len)
 
     # (B, S_global, H_local, D) -> (S_global, B, H_local, D)
+    runtime_timing = get_diffusion_runtime_timing()
+    pack_start = runtime_timing.start_cuda()
     x_t = x.permute(1, 0, 2, 3).contiguous()
+    runtime_timing.finish_cuda("ulysses.mode1.pack", pack_start)
 
     input_split_sizes = seq_lens
     output_split_sizes = [s_local] * world_size
 
     out = torch.empty((world_size * s_local, bsz, head_cnt_local, head_dim), device=x.device, dtype=x.dtype)
+    a2a_start = runtime_timing.start_cuda()
     dist.all_to_all_single(
         out,
         x_t,
@@ -132,17 +151,24 @@ def _ulysses_all_to_all_any_o(
         input_split_sizes=input_split_sizes,
         group=pg,
     )
+    runtime_timing.finish_cuda(
+        "ulysses.mode1.a2a",
+        a2a_start,
+        num_bytes=x_t.numel() * x_t.element_size() * (world_size - 1) // world_size,
+    )
     if use_sync:
         from vllm_omni.platforms import current_omni_platform
 
         current_omni_platform.synchronize()
 
     # (world_size * S_local, B, H_local, D) -> (B, S_local, H, D)
+    unpack_start = runtime_timing.start_cuda()
     out = out.reshape(world_size, s_local, bsz, head_cnt_local, head_dim).permute(2, 1, 0, 3, 4).contiguous()
     out = out.reshape(bsz, s_local, world_size * head_cnt_local, head_dim)
 
     if out.shape[2] != orig_head_cnt:
         out = out[:, :, :orig_head_cnt, :].contiguous()
+    runtime_timing.finish_cuda("ulysses.mode1.unpack", unpack_start)
     return out
 
 
@@ -467,7 +493,16 @@ class UlyssesParallelAttention:
             # Ensure tensor is contiguous for all_gather (slicing may create non-contiguous views)
             output_joint = output_joint.contiguous()
             gathered_joint = [torch.zeros_like(output_joint) for _ in range(dist.get_world_size(ctx.ulysses_pg))]
+            runtime_timing = get_diffusion_runtime_timing()
+            joint_start = runtime_timing.start_cuda()
             dist.all_gather(gathered_joint, output_joint, group=ctx.ulysses_pg)
+            runtime_timing.finish_cuda(
+                "ulysses.joint_allgather",
+                joint_start,
+                num_bytes=(
+                    output_joint.numel() * output_joint.element_size() * (dist.get_world_size(ctx.ulysses_pg) - 1)
+                ),
+            )
             output_joint = torch.cat(gathered_joint, dim=2)
             if ctx.use_uaa and ctx.joint_orig_head_cnt > 0 and output_joint.shape[2] != ctx.joint_orig_head_cnt:
                 output_joint = output_joint[:, :, : ctx.joint_orig_head_cnt, :].contiguous()

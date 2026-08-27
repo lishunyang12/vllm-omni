@@ -32,6 +32,7 @@ from vllm_omni.diffusion.hooks import HookRegistry, ModelHook
 from vllm_omni.diffusion.model_loader.host_weight_plan import (
     HostWeightPlan,
 )
+from vllm_omni.diffusion.profiler.runtime_timing import get_diffusion_runtime_timing
 from vllm_omni.host_weight_runtime import HostWeightLease
 from vllm_omni.platforms import current_omni_platform
 
@@ -65,6 +66,10 @@ logger = init_logger(__name__)
 # retry removes the pair before closing the lease.
 _ACTIVE_HWR_REGISTRATIONS: list[tuple[HostRegistration, HostWeightLease]] = []
 _ACTIVE_HWR_REGISTRATIONS_LOCK = threading.Lock()
+
+
+def _tensor_dict_nbytes(tensors: dict[torch.dtype, torch.Tensor]) -> int:
+    return sum(tensor.numel() * tensor.element_size() for tensor in tensors.values())
 
 
 def _retain_active_hwr_registration(
@@ -103,8 +108,11 @@ def _stage_shards_and_allgather(
     non_blocking: bool,
 ) -> Any:
     """Copy local weight shards to device and reconstruct full buffers."""
+    runtime_timing = get_diffusion_runtime_timing()
+    local_bytes = _tensor_dict_nbytes(cpu_shards)
     local_gpu_shards: dict[torch.dtype, torch.Tensor] = {}
     with current_omni_platform.stream(copy_stream):
+        h2d_start = runtime_timing.start_cuda(copy_stream)
         for dtype, cpu_shard in cpu_shards.items():
             local_gpu_shard = gpu_shard_buffers[dtype][: cpu_shard.numel()]
             local_gpu_shard.copy_(
@@ -112,10 +120,12 @@ def _stage_shards_and_allgather(
                 non_blocking=non_blocking,
             )
             local_gpu_shards[dtype] = local_gpu_shard
+        runtime_timing.finish_cuda("dlo.h2d", h2d_start, stream=copy_stream, num_bytes=local_bytes)
 
     ready = current_omni_platform.Event()
     comm_stream.wait_stream(copy_stream)
     with current_omni_platform.stream(comm_stream):
+        allgather_start = runtime_timing.start_cuda(comm_stream)
         for dtype, local_gpu_shard in local_gpu_shards.items():
             output_numel = local_gpu_shard.numel() * shard_world_size
             torch.distributed.all_gather_into_tensor(
@@ -123,6 +133,12 @@ def _stage_shards_and_allgather(
                 local_gpu_shard,
                 group=shard_group,
             )
+        runtime_timing.finish_cuda(
+            "dlo.allgather",
+            allgather_start,
+            stream=comm_stream,
+            num_bytes=local_bytes * (shard_world_size - 1),
+        )
         ready.record(comm_stream)
     return ready
 
@@ -232,6 +248,7 @@ class DistributedLayerwiseOffloadHook(ModelHook):
 
         # Per-block synchronization primitive: set after H2D copy completes.
         self._prefetch_done: Any | None = None
+        self._compute_start: Any | None = None
 
         # Shared shard (AllGather input) buffers — assigned by backend.
         self.gpu_shard_buffers: list[dict[torch.dtype, torch.Tensor] | None] = [None, None]
@@ -560,21 +577,27 @@ class DistributedLayerwiseOffloadHook(ModelHook):
 
     def _stage_mmap_sources(self, slot: int) -> dict[torch.dtype, torch.Tensor]:
         """Pack this block's mmap views into one bounded host staging slot."""
+        runtime_timing = get_diffusion_runtime_timing()
         previous_copy = self.cpu_staging_events[slot]
         if previous_copy is not None:
-            synchronize = getattr(previous_copy, "synchronize", None)
-            if callable(synchronize):
-                synchronize()
-            else:
-                # Platform events normally expose synchronize().  Retain a
-                # correctness fallback for test and non-CUDA platform shims.
-                current_omni_platform.synchronize()
+            with runtime_timing.cpu_range("dlo.staging_reuse_wait"):
+                synchronize = getattr(previous_copy, "synchronize", None)
+                if callable(synchronize):
+                    synchronize()
+                else:
+                    # Platform events normally expose synchronize().  Retain a
+                    # correctness fallback for test and non-CUDA platform shims.
+                    current_omni_platform.synchronize()
             self.cpu_staging_events[slot] = None
 
         slot_buffers = self.cpu_staging_buffers[slot]
         if slot_buffers is None:
             raise RuntimeError(f"cpu_staging_buffers[{slot}] was not allocated")
-        return self._pack_mmap_sources(self.cpu_sources, self.metadata, slot_buffers)
+        block_bytes = sum(
+            meta["numel"] * _dtype_size(dtype) for dtype, metas in self.metadata.items() for meta in metas
+        )
+        with runtime_timing.cpu_range("dlo.cpu_pack", num_bytes=block_bytes):
+            return self._pack_mmap_sources(self.cpu_sources, self.metadata, slot_buffers)
 
     @staticmethod
     def _copy_mmap_sources_to_device(
@@ -614,25 +637,48 @@ class DistributedLayerwiseOffloadHook(ModelHook):
 
         gpu_weights = self.gpu_buffers[slot]
         assert gpu_weights is not None, f"gpu_buffers[{slot}] not allocated"
+        runtime_timing = get_diffusion_runtime_timing()
+        block_bytes = sum(
+            meta["numel"] * _dtype_size(dtype) for dtype, metas in self.metadata.items() for meta in metas
+        )
 
         if self.dp_size <= 1 or self.dp_group is None:
             evt = current_omni_platform.Event()
+            cpu_weights: dict[torch.dtype, torch.Tensor] | None = None
+            if self.rank_local_mmap and not self.registered_mmap:
+                cpu_weights = self._stage_mmap_sources(slot)
             if self.rank_local_mmap and self.registered_mmap:
                 with current_omni_platform.stream(self.copy_stream):
-                    self._copy_mmap_sources_to_device(
-                        self.cpu_sources,
-                        self.metadata,
-                        gpu_weights,
-                        non_blocking=non_blocking,
+                    h2d_start = runtime_timing.start_cuda(self.copy_stream)
+                    with runtime_timing.cpu_range("dlo.mmap_submit", num_bytes=block_bytes):
+                        self._copy_mmap_sources_to_device(
+                            self.cpu_sources,
+                            self.metadata,
+                            gpu_weights,
+                            non_blocking=non_blocking,
+                        )
+                    runtime_timing.finish_cuda(
+                        "dlo.h2d",
+                        h2d_start,
+                        stream=self.copy_stream,
+                        num_bytes=block_bytes,
                     )
                     evt.record(self.copy_stream)
             else:
-                cpu_weights = self._stage_mmap_sources(slot) if self.rank_local_mmap else self.cpu_shards
+                if cpu_weights is None:
+                    cpu_weights = self.cpu_shards
                 with current_omni_platform.stream(self.copy_stream):
+                    h2d_start = runtime_timing.start_cuda(self.copy_stream)
                     for dtype, cpu_shard in cpu_weights.items():
                         gw = gpu_weights[dtype]
                         async_copy = non_blocking and cpu_shard.is_pinned()
                         gw[: cpu_shard.numel()].copy_(cpu_shard, non_blocking=async_copy)
+                    runtime_timing.finish_cuda(
+                        "dlo.h2d",
+                        h2d_start,
+                        stream=self.copy_stream,
+                        num_bytes=_tensor_dict_nbytes(cpu_weights),
+                    )
                     evt.record(self.copy_stream)
                 if self.rank_local_mmap:
                     # The CPU slot may be overwritten only after this H2D copy has
@@ -686,7 +732,8 @@ class DistributedLayerwiseOffloadHook(ModelHook):
         if evt is None and self._prev_hook is not None:
             evt = self._prev_hook.ready_events[slot]
         if evt is not None:
-            current_omni_platform.current_stream().wait_event(evt)
+            stream = current_omni_platform.current_stream()
+            get_diffusion_runtime_timing().wait_event("dlo.prefetch_wait", stream, evt)
         return self.gpu_buffers[slot]
 
     # ------------------------------------------------------------------ #
@@ -698,7 +745,8 @@ class DistributedLayerwiseOffloadHook(ModelHook):
         """Free GPU memory for current block by replacing tensors with placeholders."""
         evt = self._prefetch_done
         if evt is not None:
-            current_omni_platform.current_stream().wait_event(evt)
+            stream = current_omni_platform.current_stream()
+            get_diffusion_runtime_timing().wait_event("dlo.prefetch_wait", stream, evt)
         self._prefetch_done = None
 
         for _, param in self.block_parameters.items():
@@ -745,10 +793,17 @@ class DistributedLayerwiseOffloadHook(ModelHook):
         # caused cascading NPU stream synchronization stalls (~10ms/layer).
         next_slot = 1 - self.current_slot
         self.prefetch_layer(next_slot, non_blocking=True)
+        self._compute_start = get_diffusion_runtime_timing().start_cuda(current_omni_platform.current_stream())
 
         return args, kwargs
 
     def post_forward(self, module: nn.Module, output: Any) -> Any:
+        get_diffusion_runtime_timing().finish_cuda(
+            "dit.streaming_block_compute",
+            self._compute_start,
+            stream=current_omni_platform.current_stream(),
+        )
+        self._compute_start = None
         self.offload_layer()
         return output
 
@@ -938,19 +993,20 @@ class PinnedResidentLayerGroup:
                 )
 
         self.copy_stream.wait_stream(current_omni_platform.current_stream())
+        runtime_timing = get_diffusion_runtime_timing()
         ready: Any | None = None
         slot_events: list[Any | None] = [None] * len(gpu_shard_buffers)
         for index, (state, block_buffers) in enumerate(zip(self._states, gpu_buffers)):
             if self.shard_world_size > 1:
-                slot = index % len(gpu_shard_buffers)
-                previous_gather = slot_events[slot]
+                gather_slot = index % len(gpu_shard_buffers)
+                previous_gather = slot_events[gather_slot]
                 if previous_gather is not None:
                     self.copy_stream.wait_event(previous_gather)
                 if self.shard_group is None:
                     raise RuntimeError("resident-layer AllGather process group is unavailable")
                 ready = _stage_shards_and_allgather(
                     cpu_shards=state["cpu_shards"],
-                    gpu_shard_buffers=gpu_shard_buffers[slot],
+                    gpu_shard_buffers=gpu_shard_buffers[gather_slot],
                     full_gpu_buffers=block_buffers,
                     copy_stream=self.copy_stream,
                     comm_stream=self.comm_stream,
@@ -958,45 +1014,62 @@ class PinnedResidentLayerGroup:
                     shard_world_size=self.shard_world_size,
                     non_blocking=self.pin_memory,
                 )
-                slot_events[slot] = ready
+                slot_events[gather_slot] = ready
                 continue
 
             ready = current_omni_platform.Event()
-            with current_omni_platform.stream(self.copy_stream):
-                if self.rank_local_mmap and self.registered_mmap:
-                    DistributedLayerwiseOffloadHook._copy_mmap_sources_to_device(
+            h2d_bytes = sum(
+                meta["numel"] * _dtype_size(dtype) for dtype, metas in state["metadata"].items() for meta in metas
+            )
+            cpu_weights: dict[torch.dtype, torch.Tensor] | None = None
+            staging_slot: int | None = None
+            if self.rank_local_mmap and not self.registered_mmap:
+                staging_slot = index % 2
+                previous_copy = self._cpu_staging_events[staging_slot]
+                if previous_copy is not None:
+                    with runtime_timing.cpu_range("dlo.staging_reuse_wait"):
+                        synchronize = getattr(previous_copy, "synchronize", None)
+                        if callable(synchronize):
+                            synchronize()
+                        else:
+                            current_omni_platform.synchronize()
+                with runtime_timing.cpu_range("dlo.cpu_pack", num_bytes=h2d_bytes):
+                    cpu_weights = DistributedLayerwiseOffloadHook._pack_mmap_sources(
                         state["cpu_sources"],
                         state["metadata"],
-                        block_buffers,
-                        non_blocking=True,
+                        self._cpu_staging_buffers[staging_slot],
                     )
-                else:
-                    if self.rank_local_mmap:
-                        slot = index % 2
-                        previous_copy = self._cpu_staging_events[slot]
-                        if previous_copy is not None:
-                            synchronize = getattr(previous_copy, "synchronize", None)
-                            if callable(synchronize):
-                                synchronize()
-                            else:
-                                current_omni_platform.synchronize()
-                        cpu_weights = DistributedLayerwiseOffloadHook._pack_mmap_sources(
+            elif not self.rank_local_mmap:
+                cpu_weights = state["cpu_shards"]
+
+            with current_omni_platform.stream(self.copy_stream):
+                h2d_start = runtime_timing.start_cuda(self.copy_stream)
+                if self.rank_local_mmap and self.registered_mmap:
+                    with runtime_timing.cpu_range("dlo.mmap_submit", num_bytes=h2d_bytes):
+                        DistributedLayerwiseOffloadHook._copy_mmap_sources_to_device(
                             state["cpu_sources"],
                             state["metadata"],
-                            self._cpu_staging_buffers[slot],
+                            block_buffers,
+                            non_blocking=True,
                         )
-                    else:
-                        cpu_weights = state["cpu_shards"]
-
+                else:
+                    assert cpu_weights is not None
                     for dtype, cpu_weight in cpu_weights.items():
                         block_buffers[dtype].copy_(
                             cpu_weight,
                             non_blocking=cpu_weight.is_pinned(),
                         )
+                runtime_timing.finish_cuda(
+                    "dlo.h2d",
+                    h2d_start,
+                    stream=self.copy_stream,
+                    num_bytes=h2d_bytes,
+                )
                 if self.rank_local_mmap and not self.registered_mmap:
+                    assert staging_slot is not None
                     slot_ready = current_omni_platform.Event()
                     slot_ready.record(self.copy_stream)
-                    self._cpu_staging_events[slot] = slot_ready
+                    self._cpu_staging_events[staging_slot] = slot_ready
                 ready.record(self.copy_stream)
 
         for state, block_buffers in zip(self._states, gpu_buffers):
@@ -1014,7 +1087,8 @@ class PinnedResidentLayerGroup:
                     )
 
         if ready is not None:
-            current_omni_platform.current_stream().wait_event(ready)
+            stream = current_omni_platform.current_stream()
+            runtime_timing.wait_event("dlo.resident_wait", stream, ready)
         self._gpu_buffers = gpu_buffers
         self._gpu_shard_buffers = gpu_shard_buffers
         self.loaded = True

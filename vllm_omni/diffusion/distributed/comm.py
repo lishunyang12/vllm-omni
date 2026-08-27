@@ -1,5 +1,6 @@
 # Copyright (c) Microsoft Corporation and Jiarui Fang
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 # DeepSpeed Team & Jiarui Fang
 #  from https://github.com/feifeibear/long-context-attention/blob/main/yunchang/comm/all_to_all.py
 from typing import Any
@@ -8,6 +9,7 @@ import torch
 import torch.distributed as dist
 from torch import Tensor
 
+from vllm_omni.diffusion.profiler.runtime_timing import get_diffusion_runtime_timing
 from vllm_omni.platforms import current_omni_platform
 
 __all__ = ["all_to_all_4D", "all_to_all_5D", "SeqAllToAll4D", "SeqAllToAll5D", "RingComm"]
@@ -32,6 +34,7 @@ def all_to_all_4D(
     assert input.dim() == 4, f"input must be 4D tensor, got {input.dim()} and shape {input.shape}"
 
     seq_world_size = dist.get_world_size(group)
+    runtime_timing = get_diffusion_runtime_timing()
 
     if scatter_idx == 2 and gather_idx == 1:
         # input (torch.tensor): a tensor sharded along dim 1 (bs, seqlen/P, hc, hs) output: (bs, seqlen, hc/P, hs)
@@ -41,23 +44,33 @@ def all_to_all_4D(
 
         # transpose groups of heads with the seq-len parallel dimension, so that we can scatter them!
         # (bs, seqlen/P, hc, hs) -reshape-> (bs, seq_len/P, P, hc/P, hs) -transpose(0,2)-> (P, seq_len/P, bs, hc/P, hs)
+        pack_start = runtime_timing.start_cuda()
         input_t = input.reshape(bs, shard_seqlen, seq_world_size, shard_hc, hs).transpose(0, 2).contiguous()
+        runtime_timing.finish_cuda("ulysses.mode0.pack", pack_start)
 
         output = torch.empty_like(input_t)
         # https://pytorch.org/docs/stable/distributed.html#torch.distributed.all_to_all_single
         # (P, seq_len/P, bs, hc/P, hs) scatter seqlen -all2all-> (P, seq_len/P, bs, hc/P, hs) scatter head
 
         if seq_world_size > 1:
+            a2a_start = runtime_timing.start_cuda()
             dist.all_to_all_single(output, input_t, group=group)
+            runtime_timing.finish_cuda(
+                "ulysses.mode0.a2a",
+                a2a_start,
+                num_bytes=input_t.numel() * input_t.element_size() * (seq_world_size - 1) // seq_world_size,
+            )
             if use_sync:
                 current_omni_platform.synchronize()
         else:
             output = input_t
         # if scattering the seq-dim, transpose the heads back to the original dimension
+        unpack_start = runtime_timing.start_cuda()
         output = output.reshape(seqlen, bs, shard_hc, hs)
 
         # (seq_len, bs, hc/P, hs) -reshape-> (bs, seq_len, hc/P, hs)
         output = output.transpose(0, 1).contiguous().reshape(bs, seqlen, shard_hc, hs)
+        runtime_timing.finish_cuda("ulysses.mode0.unpack", unpack_start)
 
         return output
 
@@ -71,6 +84,7 @@ def all_to_all_4D(
         # transpose groups of heads with the seq-len parallel dimension, so that we can scatter them!
         # (bs, seqlen, hc/P, hs) -reshape-> (bs, P, seq_len/P, hc/P, hs) -transpose(0, 3)->
         #  (hc/P, P, seqlen/P, bs, hs) -transpose(0, 1) -> (P, hc/P, seqlen/P, bs, hs)
+        pack_start = runtime_timing.start_cuda()
         input_t = (
             input.reshape(bs, seq_world_size, shard_seqlen, shard_hc, hs)
             .transpose(0, 3)
@@ -78,22 +92,31 @@ def all_to_all_4D(
             .contiguous()
             .reshape(seq_world_size, shard_hc, shard_seqlen, bs, hs)
         )
+        runtime_timing.finish_cuda("ulysses.mode1.pack", pack_start)
 
         output = torch.empty_like(input_t)
         # https://pytorch.org/docs/stable/distributed.html#torch.distributed.all_to_all_single
         # (P, bs x hc/P, seqlen/P, hs) scatter seqlen -all2all-> (P, bs x seq_len/P, hc/P, hs) scatter head
         if seq_world_size > 1:
+            a2a_start = runtime_timing.start_cuda()
             dist.all_to_all_single(output, input_t, group=group)
+            runtime_timing.finish_cuda(
+                "ulysses.mode1.a2a",
+                a2a_start,
+                num_bytes=input_t.numel() * input_t.element_size() * (seq_world_size - 1) // seq_world_size,
+            )
             if use_sync:
                 current_omni_platform.synchronize()
         else:
             output = input_t
 
         # if scattering the seq-dim, transpose the heads back to the original dimension
+        unpack_start = runtime_timing.start_cuda()
         output = output.reshape(hc, shard_seqlen, bs, hs)
 
         # (hc, seqlen/N, bs, hs) -transpose(0,2)-> (bs, seqlen/N, hc, hs)
         output = output.transpose(0, 2).contiguous().reshape(bs, shard_seqlen, hc, hs)
+        runtime_timing.finish_cuda("ulysses.mode1.unpack", unpack_start)
 
         return output
     else:
