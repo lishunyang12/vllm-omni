@@ -262,14 +262,14 @@ python text_to_video.py \
 - `--num-inference-steps`: sampling steps. Default depends on model.
 - `--fps`: frames per second for the saved MP4.
 - `--output`: path to save the generated video.
-- `--extra-body`: JSON dict of model-specific knobs (declared in `vllm_omni/model_extras/`), merged into sampling `extra_args`. See the Helios recipes above.
+- `--extra-body`: JSON object of model-specific generation parameters, filtered against the model's declared `extra_body_params` and merged into sampling `extra_args`; see the Helios and Cosmos3 examples above.
 - `--vae-use-slicing`: enable VAE slicing for memory optimization.
 - `--vae-use-tiling`: enable VAE tiling for memory optimization.
 - `--cfg-parallel-size`: set it to 2 to enable CFG Parallel. See more examples in [`user_guide`](../../../docs/user_guide/diffusion/parallelism_acceleration.md#cfg-parallel).
 - `--tensor-parallel-size`: tensor parallel size (effective for models that support TP, e.g. LTX2).
 - `--enable-cpu-offload`: enable CPU offloading for diffusion models.
 - `--enable-layerwise-offload`: enable layerwise (blockwise) offloading.
-- `--layerwise-offload-components`: comma-separated component groups to offload (for example, `dit,text_encoder`).
+- `--layerwise-offload-components`: comma-separated component groups to offload; unset selects `dit`, `default` selects `text_encoder,image_encoder,vae`, and `all` selects every group.
 - `--enable-distributed-layerwise-offload`: enable distributed layerwise offload.
 - `--dlo-use-allgather` / `--dlo-no-use-allgather`: use sharded AllGather reconstruction (the default) or stream rank-local weights without AllGather.
 - `--dlo-resident-layers`: keep this many leading main-DiT blocks device-resident during distributed layerwise offload (default: `0`).
@@ -280,7 +280,6 @@ python text_to_video.py \
 - `--lora-path`: path to PEFT LoRA adapter folder or checkpoint file.
 - `--lora-scale`: scale factor for LoRA weights.
 - `--lora-backend`: backend for loading LoRA adapters. Default: peft. Available options: peft, distill.
-- `--extra-body`: JSON object of model-specific generation params, filtered against the model's declared `extra_body_params` (see [`vllm_omni/model_extras`](../../../vllm_omni/model_extras)). Used by Cosmos3 (see above).
 
 ### Wan2.2-specific
 
