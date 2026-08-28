@@ -138,8 +138,8 @@ vllm serve "${MODEL}" \
   --trust-remote-code \
   --task-type fl2va \
   --num-gpus 1 \
-  --offload-strategy layerwise \
-  --offload-components dit,text_encoder \
+  --diffusion-offload-config \
+  '{"mode":"layer","components":{"dit":{},"text_encoder":{}}}' \
   --enforce-eager \
   --diffusion-attention-backend FLASH_ATTN
 ```
@@ -157,10 +157,10 @@ steps. It installed 77 encoder hooks across the vision and text stacks, used a
 denoise, and 4.503 seconds decode. These reduced-step numbers validate the
 execution path; they are not a quality or production-latency benchmark.
 
-To keep the older whole-component behavior, replace the two layerwise flags
-with `--enable-cpu-offload`. Model-level offload swaps the complete encoder and
-DiT and therefore has a higher encode-phase peak than encoder blockwise
-offload.
+To use whole-component behavior, change the config to
+`{"mode":"module","components":{"dit":{},"text_encoder":{}}}`. Module
+offload swaps the complete encoder and DiT and therefore has a higher
+encode-phase peak than encoder blockwise offload.
 
 ### Two 24/32 GB GPUs: TP2 distributed layerwise offload
 
@@ -192,10 +192,8 @@ vllm serve "${MODEL}" \
   --vae-patch-parallel-size 2 \
   --vae-parallel-mode tile \
   --vae-use-tiling \
-  --offload-strategy distributed-layerwise \
-  --offload-components dit,text_encoder \
-  --dlo-transfer rank-local \
-  --dlo-resident-layers 20 \
+  --diffusion-offload-config \
+  '{"mode":"layer","components":{"dit":{"transfer":"rank-local","resident_layers":20},"text_encoder":{"transfer":"rank-local"}}}' \
   --enforce-eager \
   --diffusion-attention-backend CUDNN_ATTN
 ```
@@ -208,7 +206,7 @@ Use the profile that matches the per-GPU memory capacity:
 | `rtx4090` | 2 x 24 GB | 1024x576 | 12 | cuDNN attention | eager | Capacity-proxy starting point |
 
 This topology uses all available parallel capacity: TP2 shards both the DiT
-and text encoder, `--dlo-transfer rank-local` streams each rank's local TP shard
+and text encoder, `transfer="rank-local"` streams each rank's local TP shard
 without reconstructing full blocks, and VAE patch parallelism splits tiled
 decode across both GPUs. cuDNN attention is selected explicitly for the RTX
 consumer path; the server stays eager to avoid an unqualified compile path.
@@ -502,11 +500,9 @@ Add this option to an existing H3 server command:
 
 Use the FL2VA-only partition for this capacity test. Loading the combined
 service would also load the Ref2VA DiT and would test a different memory
-budget. A no-offload capacity check should contain none of
-`--offload-strategy model`, `--offload-strategy layerwise`, or
-`--offload-strategy distributed-layerwise`. The corresponding legacy
-`--enable-*-offload` aliases still work. VAE tiling changes decode placement
-but does not offload model weights to the CPU.
+budget. A no-offload capacity check should omit
+`--diffusion-offload-config` and all legacy `--enable-*-offload` aliases. VAE
+tiling changes decode placement but does not offload model weights to the CPU.
 
 The run passes the capacity check when the server initializes, the request
 finishes without CUDA OOM or Xid errors, `peak_used_mib` remains below the
@@ -587,6 +583,12 @@ vllm serve "${MODEL}" \
   --num-gpus 1 --enable-cpu-offload \
   --diffusion-attention-backend FLASH_ATTN
 ```
+
+This validated ROCm capacity recipe intentionally retains the deprecated
+full-topology alias because MiniMax-H3 also stages its VAEs on that path. The
+compact API in this release selects only `dit` and `text_encoder`, so replacing
+the flag would change residency rather than perform a mechanical migration.
+The alias emits a migration warning and remains supported until v0.30.
 
 ### ROCm four GPUs
 
@@ -1123,7 +1125,10 @@ omni = Omni(
     cache_backend="tea_cache",
     cache_config={"rel_l1_thresh": 0.17},
     trust_remote_code=True,
-    enable_cpu_offload=True,
+    diffusion_offload_config={
+        "mode": "module",
+        "components": {"dit": {}, "text_encoder": {}},
+    },
 )
 outputs = omni.generate(
     "A quiet cinematic night scene with matching ambient sound.",
