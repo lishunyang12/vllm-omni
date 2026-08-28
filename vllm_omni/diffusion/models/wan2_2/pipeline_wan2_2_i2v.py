@@ -201,7 +201,6 @@ class Wan22I2VPipeline(
             "text_encoder": ("encoder.block",),
         },
         encoder_dlo_weight_replication=frozenset({"text_encoder"}),
-        encoder_host_resident_table_attrs={"text_encoder": ("shared",)},
     )
 
     def __init__(

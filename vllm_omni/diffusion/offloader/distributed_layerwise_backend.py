@@ -701,6 +701,62 @@ class DistributedLayerwiseOffloadHook(ModelHook):
         for _, buf in self.block_buffers.items():
             set_tensor_storage(buf, make_offload_placeholder(buf))
 
+    @torch.compiler.disable
+    def restore_next_block_to_cpu(self) -> None:
+        """Restore hook-owned master weights before removing the hook.
+
+        Every circular hook owns the host backing for its ``next_block``.
+        Dropping that hook while the module points at rotating device buffers
+        or placeholders would make a later enable shard invalid tensors.
+        """
+
+        def restore_target(target: torch.Tensor, value: torch.Tensor) -> None:
+            restored = torch.empty_strided(
+                value.shape,
+                value.stride(),
+                dtype=value.dtype,
+                device="cpu",
+            )
+            restored.copy_(value)
+            set_tensor_storage(target, restored)
+
+        if self.rank_local_mmap:
+            for dtype, metas in self.metadata.items():
+                for source_info, meta in zip(self.cpu_sources[dtype], metas, strict=True):
+                    source = self._resolve_mmap_source(source_info, meta, dtype)
+                    target = (
+                        self.next_block_parameters[meta["name"]]
+                        if meta["name"] in self.next_block_parameters
+                        else self.next_block_buffers[meta["name"]]
+                    )
+                    restore_target(target, source)
+            return
+
+        if self.dp_size <= 1:
+            for dtype, metas in self.metadata.items():
+                flat = self.cpu_shards[dtype]
+                for meta in metas:
+                    value = torch.as_strided(
+                        flat[meta["offset"] : meta["offset"] + meta["numel"]],
+                        size=meta["shape"],
+                        stride=meta["stride"],
+                    )
+                    target = (
+                        self.next_block_parameters[meta["name"]]
+                        if meta["name"] in self.next_block_parameters
+                        else self.next_block_buffers[meta["name"]]
+                    )
+                    restore_target(target, value)
+            return
+
+        if self.dp_group is None:
+            raise RuntimeError("Cannot restore distributed offload weights without the DLO process group")
+        self.prefetch_layer(0, non_blocking=False)
+        current_omni_platform.synchronize()
+        for target in chain(self.next_block_parameters.values(), self.next_block_buffers.values()):
+            local = target.to_local() if hasattr(target, "to_local") else target
+            restore_target(target, local)
+
     # ------------------------------------------------------------------ #
     #  ModelHook interface                                                #
     # ------------------------------------------------------------------ #
@@ -2132,6 +2188,15 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
 
         if self._using_rank_local_mmap or has_registration:
             current_omni_platform.synchronize()
+
+        restored_blocks: set[int] = set()
+        for group in self._all_hook_groups:
+            for hook in group:
+                block_id = id(hook.next_block)
+                if block_id in restored_blocks:
+                    continue
+                hook.restore_next_block_to_cpu()
+                restored_blocks.add(block_id)
 
         for blocks in self._blocks:
             for block in blocks:

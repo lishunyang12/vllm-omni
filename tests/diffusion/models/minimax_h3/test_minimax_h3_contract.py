@@ -1306,6 +1306,38 @@ def test_model_offload_uses_hooked_text_encoder_call():
     pipeline.text_encoder.load_to_device.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    ("enable_layerwise", "enable_distributed"),
+    [(True, False), (False, True)],
+)
+def test_legacy_layer_offload_preserves_minimax_stage_lifecycle(enable_layerwise, enable_distributed):
+    from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
+
+    pipeline = object.__new__(MiniMaxH3Pipeline)
+    torch.nn.Module.__init__(pipeline)
+    pipeline.od_config = SimpleNamespace(
+        diffusion_offload_config=None,
+        enable_cpu_offload=False,
+        enable_layerwise_offload=enable_layerwise,
+        enable_distributed_layerwise_offload=enable_distributed,
+    )
+    pipeline.text_encoder = Mock()
+    expected = torch.ones(2, 3)
+    pipeline.text_encoder.encode_ids.return_value = expected
+
+    actual = pipeline._encode_text_hidden(torch.tensor([1, 2]), {})
+
+    assert actual is expected
+    pipeline.text_encoder.load_to_device.assert_called_once_with()
+    pipeline.text_encoder.offload_to_cpu.assert_called_once_with()
+
+    vae = Mock()
+    with pipeline._component_on_device(vae):
+        pass
+    vae.load_to_device.assert_called_once_with()
+    vae.offload_to_cpu.assert_called_once_with()
+
+
 @pytest.mark.parametrize("components", ["text_encoder", "all"])
 def test_layerwise_encoder_selection_releases_text_encoder(components):
     from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
@@ -1354,34 +1386,6 @@ def test_layerwise_dit_only_keeps_text_encoder_resident():
     assert actual is expected
     pipeline.text_encoder.load_to_device.assert_called_once_with()
     pipeline.text_encoder.offload_to_cpu.assert_not_called()
-
-
-@pytest.mark.parametrize("components", ["text_encoder", "all"])
-def test_distributed_layerwise_encoder_selection_releases_text_encoder(components):
-    from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
-
-    pipeline = object.__new__(MiniMaxH3Pipeline)
-    torch.nn.Module.__init__(pipeline)
-    pipeline.od_config = SimpleNamespace(
-        enable_cpu_offload=False,
-        enable_layerwise_offload=False,
-        enable_distributed_layerwise_offload=False,
-        diffusion_offload_config={
-            "mode": "layer",
-            "components": {
-                name: {} for name in ({"text_encoder"} if components == "text_encoder" else {"dit", "text_encoder"})
-            },
-        },
-    )
-    pipeline.text_encoder = Mock()
-    expected = torch.ones(2, 3)
-    pipeline.text_encoder.encode_ids.return_value = expected
-
-    actual = pipeline._encode_text_hidden(torch.tensor([1, 2]), {})
-
-    assert actual is expected
-    pipeline.text_encoder.load_to_device.assert_called_once_with()
-    pipeline.text_encoder.offload_to_cpu.assert_called_once_with()
 
 
 def test_standalone_audio_conditions_keep_audio_vae_resident(monkeypatch):

@@ -2569,7 +2569,7 @@ class TestDistributedComponentSelection:
                 strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
                 pin_cpu_memory=False,
                 dlo_use_allgather=False,
-                components=frozenset({"all"}),
+                components=frozenset({"dit", "text_encoder"}),
             ),
             torch.device("cpu"),
         )
@@ -2639,6 +2639,15 @@ class TestDistributedComponentSelection:
 
     def test_standard_encoder_needs_only_declared_block_paths(self, patched_offload_runtime):
         pipeline = _GenericDistributedEncoderPipeline()
+        blocks = pipeline.text_encoder.encoder.block
+        expected_parameters = {name: parameter.detach().clone() for name, parameter in pipeline.named_parameters()}
+
+        def assert_parameters_restored() -> None:
+            actual_parameters = dict(pipeline.named_parameters())
+            assert actual_parameters.keys() == expected_parameters.keys()
+            for name, expected in expected_parameters.items():
+                torch.testing.assert_close(actual_parameters[name], expected)
+
         backend = DistributedLayerwiseOffloadBackend(
             OffloadConfig(
                 strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
@@ -2651,7 +2660,6 @@ class TestDistributedComponentSelection:
 
         backend.enable(pipeline)
 
-        blocks = pipeline.text_encoder.encoder.block
         assert pipeline.text_encoder._omni_layerwise_enabled
         assert all(block._hook_registry.get_hook("distributed_layerwise_offload") is not None for block in blocks)
         assert pipeline.text_encoder.final_norm.weight.numel() == 4
@@ -2660,9 +2668,21 @@ class TestDistributedComponentSelection:
 
         assert not pipeline.text_encoder._omni_layerwise_enabled
         assert all(block._hook_registry.get_hook("distributed_layerwise_offload") is None for block in blocks)
+        assert_parameters_restored()
+
+        backend.enable(pipeline)
+        assert all(block._hook_registry.get_hook("distributed_layerwise_offload") is not None for block in blocks)
+        backend.disable()
+        assert_parameters_restored()
 
     def test_dit_and_encoder_choose_transfer_independently(self, patched_offload_runtime, monkeypatch):
         pipeline = _GenericDistributedEncoderPipeline()
+        expected_parameters = {name: parameter.detach().clone() for name, parameter in pipeline.named_parameters()}
+        full_weights_by_rank_zero_shard = {
+            tuple(parameter.flatten()[: (parameter.numel() + 1) // 2].tolist()): parameter.flatten()
+            for parameter in expected_parameters.values()
+            if parameter.numel() > 4
+        }
         backend = DistributedLayerwiseOffloadBackend(
             OffloadConfig(
                 strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
@@ -2674,10 +2694,15 @@ class TestDistributedComponentSelection:
             torch.device("cpu"),
         )
         backend.dp_group = object()
+
+        def fake_allgather(output, local, group):
+            del group
+            output.copy_(full_weights_by_rank_zero_shard[tuple(local.tolist())])
+
         monkeypatch.setattr(
             torch.distributed,
             "all_gather_into_tensor",
-            lambda output, local, group: output.copy_(local.repeat(2)),
+            fake_allgather,
         )
 
         backend.enable(pipeline)
@@ -2688,6 +2713,9 @@ class TestDistributedComponentSelection:
         assert dit_hook.dp_size == 1
 
         backend.disable()
+        actual_parameters = dict(pipeline.named_parameters())
+        for name, expected in expected_parameters.items():
+            torch.testing.assert_close(actual_parameters[name], expected)
 
     def test_encoder_allgather_rejects_undeclared_replication(self, patched_offload_runtime):
         pipeline = _DistributedComponentPipeline()

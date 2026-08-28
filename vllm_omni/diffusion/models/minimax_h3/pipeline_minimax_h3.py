@@ -1036,7 +1036,13 @@ class MiniMaxH3Pipeline(
             self.text_encoder_group = None
             self.text_encoder = None
             self._encoder_modules = []
-        component_load_device = self.device
+        legacy_manual_components = getattr(od_config, "diffusion_offload_config", None) is None and bool(
+            od_config.enable_layerwise_offload or getattr(od_config, "enable_distributed_layerwise_offload", False)
+        )
+        # Preserve the legacy MiniMax-H3 low-residency path. The compact API
+        # deliberately limits explicit component selection to dit/text_encoder,
+        # so VAEs stay resident for new configurations.
+        component_load_device = torch.device("cpu") if legacy_manual_components else self.device
         self.video_vae = MiniMaxH3VideoVAE(
             os.path.join(model_path, "video_vae"),
             device=self.device,
@@ -1053,10 +1059,15 @@ class MiniMaxH3Pipeline(
         self._dlo_component_cache = None
         if getattr(od_config, "enable_distributed_layerwise_offload", False):
             self._dlo_component_cache = BoundedAllocatorCache(self.device)
-            _register_dlo_component_cache(
-                self._dlo_component_cache,
-                self.text_encoder,
-            )
+            if legacy_manual_components:
+                _register_dlo_component_cache(
+                    self._dlo_component_cache,
+                    self.text_encoder,
+                    self.video_vae,
+                    self.audio_vae,
+                )
+            elif should_offload_component(od_config, TEXT_ENCODER_COMPONENT):
+                _register_dlo_component_cache(self._dlo_component_cache, self.text_encoder)
 
         self._quality_policy = MiniMaxH3QualityPolicy(od_config)
         self._cache_dit_runtime = RequestScopedCacheDiTRuntime(self)
@@ -1520,12 +1531,9 @@ class MiniMaxH3Pipeline(
             # swaps the resident DiT and encoder.
             return self.text_encoder(input_ids, **vision_kwargs)
 
-        if should_offload_component(self.od_config, TEXT_ENCODER_COMPONENT):
-            self.text_encoder.load_to_device()
-            try:
+        if self._uses_manual_component_offload(self.text_encoder):
+            with self._component_on_device(self.text_encoder):
                 return self.text_encoder.encode_ids(input_ids, **vision_kwargs)
-            finally:
-                self.text_encoder.offload_to_cpu()
 
         # Keep Qwen resident when it is not selected for layerwise offload.
         self.text_encoder.load_to_device()
@@ -1535,6 +1543,11 @@ class MiniMaxH3Pipeline(
         od_config = getattr(self, "od_config", None)
         if od_config is None:
             return False
+        if getattr(od_config, "diffusion_offload_config", None) is None:
+            return bool(
+                getattr(od_config, "enable_layerwise_offload", False)
+                or getattr(od_config, "enable_distributed_layerwise_offload", False)
+            )
         return component is getattr(self, "text_encoder", None) and should_offload_component(
             od_config, TEXT_ENCODER_COMPONENT
         )

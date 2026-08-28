@@ -35,9 +35,11 @@ The public API describes intent in one nested configuration:
 
 The historical `enable_cpu_offload`, `enable_layerwise_offload`, and
 `enable_distributed_layerwise_offload` fields remain compatibility aliases
-until v0.30 and emit migration warnings. Conflicting sources fail during
-configuration. `distributed-layerwise` remains an internal backend name; users
-select `mode="layer"`, and the runtime chooses the capable backend.
+until v0.30 and emit migration warnings. Existing combinations retain their
+priority (`distributed layerwise` > `layerwise` > `module`), while mixing a
+legacy alias with `diffusion_offload_config` fails during configuration.
+`distributed-layerwise` remains an internal backend name; users select
+`mode="layer"`, and the runtime chooses the capable backend.
 
 ## Usage
 

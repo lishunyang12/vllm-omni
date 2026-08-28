@@ -64,6 +64,11 @@ _LEGACY_STRATEGY_FIELDS = {
     "enable_layerwise_offload": OffloadStrategy.LAYER_WISE,
     "enable_distributed_layerwise_offload": OffloadStrategy.DISTRIBUTED_LAYER_WISE,
 }
+_LEGACY_STRATEGY_PRIORITY = (
+    OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+    OffloadStrategy.LAYER_WISE,
+    OffloadStrategy.MODEL_LEVEL,
+)
 
 
 def _parse_mode(value: Any) -> OffloadMode:
@@ -196,16 +201,19 @@ def _legacy_strategy(config: Any, *, warn: bool) -> OffloadStrategy:
     enabled_aliases = [
         (field, strategy) for field, strategy in _LEGACY_STRATEGY_FIELDS.items() if bool(getattr(config, field, False))
     ]
-    if len(enabled_aliases) > 1:
-        fields = ", ".join(field for field, _ in enabled_aliases)
-        raise ValueError(f"Conflicting legacy offload flags: {fields}; use diffusion_offload_config instead")
     if not enabled_aliases:
         return OffloadStrategy.NONE
 
-    field, strategy = enabled_aliases[0]
+    strategy = next(
+        candidate
+        for candidate in _LEGACY_STRATEGY_PRIORITY
+        if any(enabled_strategy is candidate for _, enabled_strategy in enabled_aliases)
+    )
     if warn and not bool(getattr(config, "_diffusion_offload_flags_materialized", False)):
+        fields = ", ".join(field for field, _ in enabled_aliases)
         warnings.warn(
-            f"{field} is deprecated and will be removed in v{LEGACY_OFFLOAD_REMOVAL_VERSION}; "
+            f"{fields} {'are' if len(enabled_aliases) > 1 else 'is'} deprecated and will be removed in "
+            f"v{LEGACY_OFFLOAD_REMOVAL_VERSION}; "
             "use diffusion_offload_config instead",
             FutureWarning,
             stacklevel=3,

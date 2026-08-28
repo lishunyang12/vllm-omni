@@ -661,9 +661,28 @@ class TestLayerwiseComponentConfig:
         assert config.dlo_resident_layers == 3
         assert not config.uses_allgather("dit")
 
-    def test_conflicting_legacy_aliases_fail(self):
-        with pytest.raises(ValueError, match="Conflicting legacy offload flags"):
-            OffloadConfig.from_od_config(_offload_od_config(enable_cpu_offload=True, enable_layerwise_offload=True))
+    @pytest.mark.parametrize(
+        ("legacy_flags", "expected_strategy"),
+        [
+            (
+                {"enable_cpu_offload": True, "enable_layerwise_offload": True},
+                OffloadStrategy.LAYER_WISE,
+            ),
+            (
+                {
+                    "enable_cpu_offload": True,
+                    "enable_layerwise_offload": True,
+                    "enable_distributed_layerwise_offload": True,
+                },
+                OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+            ),
+        ],
+    )
+    def test_legacy_aliases_preserve_existing_priority(self, legacy_flags, expected_strategy):
+        with pytest.warns(FutureWarning, match="removed in v0.30"):
+            config = OffloadConfig.from_od_config(_offload_od_config(**legacy_flags))
+
+        assert config.strategy is expected_strategy
 
     def test_compact_config_cannot_mix_with_legacy_alias(self):
         with pytest.raises(ValueError, match="cannot be combined"):
