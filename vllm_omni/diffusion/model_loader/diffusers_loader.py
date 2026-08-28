@@ -286,7 +286,7 @@ class DiffusersPipelineLoader(HWRLoaderMixin):
                 ignore_patterns=self.load_config.ignore_patterns,
             )
         else:
-            hf_folder = model_name_or_path
+            hf_folder = str(model_name_or_path)
 
         if subfolder is not None:
             hf_folder = os.path.join(hf_folder, subfolder)
@@ -363,7 +363,7 @@ class DiffusersPipelineLoader(HWRLoaderMixin):
     def _get_source_quant_config(self, source: "ComponentSource") -> object | None:
         quant_config = self.quant_config
         resolve = getattr(quant_config, "resolve", None)
-        if resolve is not None:
+        if callable(resolve):
             return resolve(source.prefix.rstrip("."))
         return quant_config
 
@@ -691,10 +691,10 @@ class DiffusersPipelineLoader(HWRLoaderMixin):
         marked = 0
         for module in model.modules():
             quant_method = getattr(module, "quant_method", None)
-            if quant_method is None or not getattr(quant_method, "supports_offload_after_quant", False):
-                continue
-            quant_method.enable_offload_after_quant()
-            marked += 1
+            enable_offload = getattr(quant_method, "enable_offload_after_quant", None)
+            if getattr(quant_method, "supports_offload_after_quant", False) and callable(enable_offload):
+                enable_offload()
+                marked += 1
         return marked
 
     @staticmethod
@@ -818,14 +818,6 @@ class DiffusersPipelineLoader(HWRLoaderMixin):
                 continue
 
             if has_online_quant:
-                # finalize_layerwise_processing() and the synchronous online
-                # loader already processed these layers.  Avoid moving their
-                # quantized CPU weights back to the accelerator merely to call
-                # an idempotent no-op; doing so rebuilds a large CUDA allocator
-                # cache and defeats streaming CPU offload's startup-memory bound.
-                if getattr(module, "_already_called_process_weights_after_loading", False):
-                    continue
-
                 # Online quant may leave straggler params on the ``meta`` device.
                 # Move only real (non-meta) params onto the target device for
                 # processing and restore them afterward, mirroring upstream vLLM's

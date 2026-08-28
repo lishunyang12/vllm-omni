@@ -14,7 +14,7 @@ import time
 from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import PIL.Image
@@ -127,12 +127,25 @@ __all__ = [
 
 
 def _func_accepts_parameter(func: object | None, parameter_name: str) -> bool:
-    if func is None:
+    if not callable(func):
         return False
     parameters = inspect.signature(func).parameters
     return parameter_name in parameters or any(
         parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
     )
+
+
+def _wait_output_ready(
+    executor: DiffusionExecutor,
+    async_output_id: str,
+) -> concurrent.futures.Future[DiffusionOutput]:
+    wait = getattr(executor, "wait_output_ready", None)
+    if not callable(wait):
+        raise RuntimeError(f"{type(executor).__name__} returned an async output without wait_output_ready()")
+    future = wait(async_output_id)
+    if not isinstance(future, concurrent.futures.Future):
+        raise TypeError("wait_output_ready() must return concurrent.futures.Future")
+    return future
 
 
 def _resolve_custom_pipeline_cls(custom_pipeline_args: dict[str, Any] | None) -> type | None:
@@ -441,7 +454,7 @@ class DiffusionEngine:
             exec_total_time = time.perf_counter() - exec_start_time
             # Async mode: wait for background D2H/SHM to complete.
             if output.async_output_id:
-                fut = self.executor.wait_output_ready(output.async_output_id)
+                fut = _wait_output_ready(self.executor, output.async_output_id)
                 timeout = _async_output_timeout()
                 try:
                     output = await asyncio.wait_for(asyncio.wrap_future(fut), timeout=timeout)
@@ -560,7 +573,10 @@ class DiffusionEngine:
         )
 
     def _busy_loop(self):
-        while not self.stop_event.is_set():
+        stop_event = self.stop_event
+        if stop_event is None:
+            raise RuntimeError("Diffusion engine stop event is not initialized")
+        while not stop_event.is_set():
             self._process_aborts_queue()
             self._process_rpc_queue()
 
@@ -569,11 +585,11 @@ class DiffusionEngine:
                     not self.scheduler.has_requests()
                     and self._rpc_queue.empty()
                     and self.abort_queue.empty()
-                    and not self.stop_event.is_set()
+                    and not stop_event.is_set()
                 ):
                     self._cv.wait(timeout=1.0)
 
-                if self.stop_event.is_set():
+                if stop_event.is_set():
                     break
 
                 if not self.scheduler.has_requests():
@@ -609,7 +625,7 @@ class DiffusionEngine:
 
             self._process_aborts_queue()
             self._process_rpc_queue()
-            finished_req_ids = self.scheduler.update_from_output(sched_output, runner_output)
+            finished_req_ids = self.scheduler.update_from_output(sched_output, cast(Any, runner_output))
             self._emit_outputs(finished_req_ids, sched_output.scheduled_request_ids, runner_output)
 
         # Engine is stopping: fail any RPCs still queued so callers don't hang.
@@ -631,7 +647,10 @@ class DiffusionEngine:
         last_waiting = -1
         stable_since = start
 
-        while not self.stop_event.is_set():
+        stop_event = self.stop_event
+        if stop_event is None:
+            raise RuntimeError("Diffusion engine stop event is not initialized")
+        while not stop_event.is_set():
             waiting = self.scheduler.num_waiting_requests()
             now = time.monotonic()
 
@@ -968,11 +987,12 @@ class DiffusionEngine:
 
                 self._process_aborts_queue()
 
-                finished_req_ids = self.scheduler.update_from_output(sched_output, runner_output)
+                finished_req_ids = self.scheduler.update_from_output(sched_output, cast(Any, runner_output))
 
                 # sync func should receive one result
-                if not isinstance(runner_output, RunnerOutput) and not len(runner_output) == 1:
-                    raise ValueError("Sync func should receive one result at one time")
+                if not isinstance(runner_output, RunnerOutput):
+                    if not isinstance(runner_output, BatchRunnerOutput) or len(runner_output) != 1:
+                        raise ValueError("Sync func should receive one result at one time")
                 if target_request_id in finished_req_ids:
                     self._remove_diffusion_kv_requests([target_request_id])
                     req_output = runner_output.get_request_output(target_request_id)
@@ -982,7 +1002,7 @@ class DiffusionEngine:
                         missing_result_error="Diffusion execution finished without a final output.",
                     )
                     if output.async_output_id:
-                        fut = self.executor.wait_output_ready(output.async_output_id)
+                        fut = _wait_output_ready(self.executor, output.async_output_id)
                         output = fut.result(timeout=_async_output_timeout())
                     return output
 
@@ -1009,10 +1029,8 @@ class DiffusionEngine:
                 raise RuntimeError(f"Could not {action} profiler: {e}") from e
 
     def run_startup_warmup(self) -> None:
-        # Skip dummy run when AllGather is used with more than 1 rank,
-        # because the dummy run sends only 1 request but AllGather requires
-        # all ranks to participate simultaneously.  This covers both DP > 1
-        # and SP > 1 (where dp_size is derived from sp_size in OffloadConfig).
+        # A one-request dummy run would deadlock when any selected component
+        # uses a multi-rank DLO collective. This covers both DP and SP groups.
         pc = getattr(self.od_config, "parallel_config", None)
         dp_size = getattr(pc, "data_parallel_size", 1) if pc else 1
         sp_size = getattr(pc, "sequence_parallel_size", 1) if pc else 1
@@ -1020,7 +1038,7 @@ class DiffusionEngine:
         skip_dummy = any_selected_component_uses_allgather(self.od_config) and effective_shard_size > 1
         if skip_dummy:
             logger.info(
-                "Skipping dummy run (dist_offload with AllGather, dp_size=%d, sp_size=%d)",
+                "Skipping dummy run (distributed offload has a multi-rank AllGather component, dp_size=%d, sp_size=%d)",
                 dp_size,
                 sp_size,
             )
@@ -1030,7 +1048,7 @@ class DiffusionEngine:
         except Exception as e:
             logger.error(f"Dummy run failed: {e}")
             self.close()
-            raise e
+            raise
 
     def _make_dummy_request(
         self,
@@ -1042,10 +1060,13 @@ class DiffusionEngine:
         num_inference_steps: int = 1,
     ) -> OmniDiffusionRequest | None:
         """Build a minimal model request for startup profiling or warmup."""
-        prompt: OmniTextPrompt = {"prompt": "dummy run"}
+        prompt = OmniTextPrompt(prompt="dummy run")
+        model_class_name = self.od_config.model_class_name
+        if model_class_name is None:
+            raise RuntimeError("Dummy request requires a resolved model_class_name")
         supports_image_input, supports_audio_input = supports_multimodal_input(self.od_config)
         if supports_image_input:
-            color_format = image_color_format(self.od_config.model_class_name)
+            color_format = image_color_format(model_class_name)
             images = [PIL.Image.new(color_format, (width, height)) for _ in range(num_image_inputs)]
             prompt.setdefault("multi_modal_data", {})["image"] = images[0] if len(images) == 1 else images
 
@@ -1053,7 +1074,7 @@ class DiffusionEngine:
             audio_sr = 16000
             prompt.setdefault("multi_modal_data", {})["audio"] = np.random.randn(audio_sr * 2).astype(np.float32)
 
-        num_frames = get_dummy_run_num_frames(self.od_config.model_class_name, supports_audio_input)
+        num_frames = get_dummy_run_num_frames(model_class_name, supports_audio_input)
         if num_frames <= 0:
             return None
         return OmniDiffusionRequest(
@@ -1093,11 +1114,14 @@ class DiffusionEngine:
             is not DiffusionKVCacheMode.PAGED_SCHEDULER
         ):
             return None
+        model_class_name = self.od_config.model_class_name
+        if model_class_name is None:
+            raise RuntimeError("Diffusion KV profiling requires a resolved model_class_name")
         request = self._make_dummy_request(
             height=1024,
             width=1024,
             guidance_scale=5.0,
-            num_image_inputs=get_dummy_run_num_image_inputs(self.od_config.model_class_name),
+            num_image_inputs=get_dummy_run_num_image_inputs(model_class_name),
         )
         if request is None:
             raise RuntimeError("paged_scheduler requires a runnable Diffusion KV memory profile request")
