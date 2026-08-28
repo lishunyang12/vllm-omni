@@ -93,7 +93,7 @@ def get_offload_backend(
     # Extract and validate configuration
     config = OffloadConfig.from_od_config(od_config)
 
-    if host_weight_plan is not None and config.strategy != OffloadStrategy.DISTRIBUTED_LAYERWISE:
+    if host_weight_plan is not None and config.strategy != OffloadStrategy.DISTRIBUTED_LAYER_WISE:
         raise RuntimeError(
             "A loader-owned DLO host-weight plan was produced, but distributed layerwise offload is not selected"
         )
@@ -131,9 +131,9 @@ def get_offload_backend(
     # Create appropriate backend
     if config.strategy == OffloadStrategy.MODEL_LEVEL:
         return ModelLevelOffloadBackend(config, device)
-    elif config.strategy == OffloadStrategy.LAYERWISE:
+    elif config.strategy == OffloadStrategy.LAYER_WISE:
         return LayerWiseOffloadBackend(config, device)
-    elif config.strategy == OffloadStrategy.DISTRIBUTED_LAYERWISE:
+    elif config.strategy == OffloadStrategy.DISTRIBUTED_LAYER_WISE:
         return DistributedLayerwiseOffloadBackend(
             config,
             device,

@@ -608,7 +608,7 @@ def test_dlo_no_allgather_enable_preserves_staged_aux_and_streams_blocks(
     )
     backend = DistributedLayerwiseOffloadBackend(
         OffloadConfig(
-            strategy=OffloadStrategy.DISTRIBUTED_LAYERWISE,
+            strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
             pin_cpu_memory=False,
             dlo_use_allgather=False,
         ),

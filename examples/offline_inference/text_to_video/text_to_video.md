@@ -267,10 +267,9 @@ python text_to_video.py \
 - `--vae-use-tiling`: enable VAE tiling for memory optimization.
 - `--cfg-parallel-size`: set it to 2 to enable CFG Parallel. See more examples in [`user_guide`](../../../docs/user_guide/diffusion/parallelism_acceleration.md#cfg-parallel).
 - `--tensor-parallel-size`: tensor parallel size (effective for models that support TP, e.g. LTX2).
-- `--enable-cpu-offload`: enable CPU offloading for diffusion models.
-- `--enable-layerwise-offload`: enable layerwise (blockwise) offloading.
-- `--layerwise-offload-components`: comma-separated `dit` and `text_encoder` selection; unset selects `dit`, and `all` selects both.
-- `--enable-distributed-layerwise-offload`: enable distributed layerwise offload.
+- `--offload-strategy`: select `model`, `layerwise`, or `distributed-layerwise` CPU offload.
+- `--offload-components`: comma-separated `dit` and `text_encoder` selection; unset selects `dit`, and `all` selects both.
+- `--enable-distributed-layerwise-offload`: legacy alias for `--offload-strategy distributed-layerwise`.
 - `--dlo-use-allgather` / `--dlo-no-use-allgather`: use sharded AllGather reconstruction (the default) or stream rank-local weights without AllGather.
 - `--dlo-resident-layers`: keep this many leading main-DiT blocks device-resident during distributed layerwise offload (default: `0`).
 - `--frame-rate`: generation FPS for pipelines that require it (e.g., LTX2).
@@ -299,4 +298,5 @@ python text_to_video.py \
 | 720p I2V | 7.0 | 6.0 | 50 |
 | CFG-distilled | (same) | 1.0 | 50 |
 
-> If you encounter OOM errors, try `--vae-use-slicing`, `--vae-use-tiling`, `--enable-cpu-offload`, or `--quantization fp8`.
+> If you encounter OOM errors, try `--vae-use-slicing`, `--vae-use-tiling`,
+> `--offload-strategy model`, or `--quantization fp8`.

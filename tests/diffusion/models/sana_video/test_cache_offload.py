@@ -283,7 +283,7 @@ def _tiny_pipeline(monkeypatch) -> SanaVideoPipeline:
 
 def _enable_layerwise_offload(pipeline: SanaVideoPipeline) -> LayerWiseOffloadBackend:
     backend = LayerWiseOffloadBackend(
-        OffloadConfig(strategy=OffloadStrategy.LAYERWISE, pin_cpu_memory=False),
+        OffloadConfig(strategy=OffloadStrategy.LAYER_WISE, pin_cpu_memory=False),
         device=torch.device("cpu"),
     )
     backend.enable(pipeline)

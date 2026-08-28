@@ -25,7 +25,7 @@ This folder provides a unified CLI script for image-to-video generation using vL
 | ----- | ------------------ | -------------- | ------------- | -------- | ---------- |
 | `Wan-AI/Wan2.2-I2V-A14B-Diffusers` | 480 x 832 | 81 | 50 | 5.0 | Around 60 GiB BF16 for basic single-card usage |
 | `Wan-AI/Wan2.2-TI2V-5B-Diffusers` | 480 x 832 | 81 | 50 | 4.0 | Around 20–25 GiB BF16, smallest I2V model |
-| `hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v` | 480 x 832 | 121 | 50 | 6.0 | Around 100 GiB at default settings; the example enables `--enable-cpu-offload` + VAE tiling/slicing to fit an 80 GiB card |
+| `hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v` | 480 x 832 | 121 | 50 | 6.0 | Around 100 GiB at default settings; the example uses model offload plus VAE tiling/slicing to fit an 80 GiB card |
 | `Lightricks/LTX-2` | 512 x 768 | 121 | 40 | video 3.0 / audio 7.0 | Memory use depends on frame count and tensor parallelism |
 | `sand-ai/MAGI-2-preview` | 512 x 896 | 125 | 100 | Model-fixed | Native four-GPU TP/SP; resident SP4 default; DLO available |
 | `Efficient-Large-Model/SANA-Video_2B_480p_diffusers` | 480 x 832 | 81 | 50 | 6.0 | Native `SanaImageToVideoPipeline`; Wan VAE |
@@ -150,10 +150,9 @@ python image_to_video.py \
 | `--output` | str | `i2v_output.mp4` | Path to save the generated video |
 | `--vae-use-slicing` | flag | off | Enable VAE slicing for memory optimization |
 | `--vae-use-tiling` | flag | off | Enable VAE tiling for memory optimization |
-| `--enable-cpu-offload` | flag | off | Enable CPU offloading for diffusion models |
-| `--enable-layerwise-offload` | flag | off | Enable layerwise (blockwise) offloading |
-| `--layerwise-offload-components` | str | unset (`dit`) | Comma-separated `dit` and `text_encoder` selection; `all` selects both |
-| `--enable-distributed-layerwise-offload` | flag | off | Enable distributed layerwise offload |
+| `--offload-strategy` | choice | `none` | Select `model`, `layerwise`, or `distributed-layerwise` CPU offload |
+| `--offload-components` | str | unset (`dit`) | Comma-separated `dit` and `text_encoder` selection; `all` selects both |
+| `--enable-distributed-layerwise-offload` | flag | off | Legacy alias for `--offload-strategy distributed-layerwise` |
 | `--dlo-use-allgather` / `--dlo-no-use-allgather` | flag | on / off | Select sharded AllGather reconstruction (default) or rank-local streaming |
 | `--dlo-resident-layers` | int | `0` | Leading main-DiT blocks kept device-resident during distributed layerwise offload |
 | `--cfg-parallel-size` | int | `1` | Set to `2` to enable CFG Parallel |
@@ -219,7 +218,7 @@ python image_to_video.py \
   --flow-shift 5.0 \
   --num-inference-steps 50 \
   --fps 24 \
-  --enable-cpu-offload \
+  --offload-strategy model \
   --vae-use-tiling \
   --vae-use-slicing \
   --output hunyuan_i2v.mp4
@@ -343,7 +342,8 @@ Key arguments:
 - `--vae-use-tiling`: Enable VAE tiling for memory optimization.
 - `--cfg-parallel-size`: set it to 2 to enable CFG Parallel. See more examples in [`user_guide`](https://github.com/vllm-project/vllm-omni/tree/main/docs/user_guide/diffusion/parallelism/cfg_parallel.md).
 - `--tensor-parallel-size`: tensor parallel size (effective for models that support TP, e.g. LTX2).
-- `--enable-cpu-offload`: enable CPU offloading for diffusion models.
+- `--offload-strategy`: select `model`, `layerwise`, or
+  `distributed-layerwise` CPU offload.
 - `--use-hsdp`: Enable Hybrid Sharded Data Parallel to shard model weights across GPUs.
 - `--hsdp-shard-size`: Number of GPUs to shard model weights across within each replica group. -1 (default) auto-calculates as world_size / replicate_size.
 - `--hsdp-replicate-size`: Number of replica groups for HSDP. Each replica holds a full sharded copy. Default 1 means pure sharding (no replication).
@@ -448,7 +448,7 @@ assets, see the [LoRA guide](../../../docs/user_guide/diffusion/lora.md#wan22-li
 
 ## FAQ
 
-**OOM errors**: Try using `--vae-use-slicing` and `--vae-use-tiling` to reduce memory usage. For very large models, add `--enable-cpu-offload` or `--enable-layerwise-offload`.
+**OOM errors**: Try using `--vae-use-slicing` and `--vae-use-tiling` to reduce memory usage. For very large models, add `--offload-strategy model` or `--offload-strategy layerwise`.
 
 **Auto-calculated resolution**: If `--height` and `--width` are not provided, the script calculates output dimensions from the input image while maintaining aspect ratio and targeting 480 x 832 area (or 512 x 768 for LTX2).
 
