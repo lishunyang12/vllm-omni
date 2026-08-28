@@ -707,13 +707,11 @@ class _DiffusionConfigProjection:
     lora_backend: str = "peft"
     max_cpu_loras: int | None = None
     output_type: str = "pil"
-    offload_strategy: Literal["none", "model", "layerwise", "distributed-layerwise"] | None = None
-    offload_components: str | list[str] | None = None
-    # Deprecated compatibility aliases for offload_strategy.
+    diffusion_offload_config: dict[str, Any] | None = None
+    # Deprecated compatibility aliases; removed in v0.30.
     enable_cpu_offload: bool = False
     enable_layerwise_offload: bool = False
     enable_distributed_layerwise_offload: bool = False
-    dlo_transfer: str | dict[str, str] | None = None
     dlo_use_allgather: bool = True
     dlo_resident_layers: int = Field(default=0, ge=0)
     host_weight_runtime_mode: Literal["disabled", "preferred", "required"] = "disabled"

@@ -25,17 +25,19 @@ Slots:           slot 0: Layer N    slot 1: Layer N+1
 AllGather communicates only request-independent weight shards, so data-
 parallel ranks may process different requests concurrently.
 
-Offload configuration has three independent levels:
+The public API describes intent in one nested configuration:
 
 | Level | Setting | Question answered |
 | --- | --- | --- |
-| Policy | `offload_strategy` | model, layerwise, or distributed-layerwise scheduling |
-| Topology | `offload_components` | which declared components may move to CPU |
-| DLO detail | `dlo_transfer`, `dlo_resident_layers` | how distributed-layerwise stages and retains selected blocks |
+| Granularity | `mode` | move a complete component (`module`) or stream its blocks (`layer`) |
+| Selection | `components` keys | whether `dit` and/or `text_encoder` may move to CPU |
+| Per-component layer options | `transfer`, `resident_layers` | use rank-local or AllGather transfer and optionally retain leading DiT blocks |
 
 The historical `enable_cpu_offload`, `enable_layerwise_offload`, and
-`enable_distributed_layerwise_offload` fields remain compatibility aliases.
-Conflicting strategy sources fail during configuration.
+`enable_distributed_layerwise_offload` fields remain compatibility aliases
+until v0.30 and emit migration warnings. Conflicting sources fail during
+configuration. `distributed-layerwise` remains an internal backend name; users
+select `mode="layer"`, and the runtime chooses the capable backend.
 
 ## Usage
 
@@ -43,23 +45,20 @@ Conflicting strategy sources fail during configuration.
 # Four SP ranks; Wan declares replicated text-encoder weights, so both
 # selected components can use AllGather safely.
 vllm serve Wan-AI/Wan2.2-T2V-A14B-Diffusers --omni \
-  --offload-strategy distributed-layerwise \
-  --offload-components dit,text_encoder \
-  --dlo-transfer allgather \
+  --diffusion-offload-config \
+  '{"mode":"layer","components":{"dit":{"transfer":"allgather"},"text_encoder":{"transfer":"allgather"}}}' \
   --usp 4
 
 # Mix transfers independently: sharded DiT, loader-produced encoder layout
 vllm serve /path/to/model --omni \
-  --offload-strategy distributed-layerwise \
-  --offload-components dit,text_encoder \
-  --dlo-transfer dit=allgather,text_encoder=rank-local \
+  --diffusion-offload-config \
+  '{"mode":"layer","components":{"dit":{"transfer":"allgather"},"text_encoder":{"transfer":"rank-local"}}}' \
   --usp 4
 
 # Standard-loader rank-local weights for both components
 vllm serve /path/to/model --omni \
-  --offload-strategy distributed-layerwise \
-  --offload-components all \
-  --dlo-transfer rank-local \
+  --diffusion-offload-config \
+  '{"mode":"layer","components":{"dit":{},"text_encoder":{}}}' \
   --usp 4
 ```
 
@@ -68,26 +67,32 @@ from vllm_omni import Omni
 
 omni = Omni(
     model="/path/to/model",
-    offload_strategy="distributed-layerwise",
-    offload_components=["dit", "text_encoder"],
-    dlo_transfer={
-        "dit": "allgather",
-        "text_encoder": "rank-local",
+    diffusion_offload_config={
+        "mode": "layer",
+        "components": {
+            "dit": {
+                "transfer": "rank-local",
+                "resident_layers": 20,
+            },
+            "text_encoder": {
+                "transfer": "allgather",
+            },
+        },
+        "pin_memory": True,
     },
 )
 ```
 
 ## Flags
 
-| Flag | Meaning | Default |
+| Setting | Meaning | Default |
 | --- | --- | --- |
-| `--offload-strategy distributed-layerwise` | Select the distributed-layerwise policy | `none` |
-| `--offload-components LIST` | Select `dit`, `text_encoder`, or `all` independently of policy | `dit` |
-| `--dlo-transfer MODE_OR_MAP` | `allgather`, `rank-local`, or a component map such as `dit=allgather,text_encoder=rank-local` | `allgather` |
+| `diffusion_offload_config.mode` | `module` or `layer` granularity | required |
+| `diffusion_offload_config.components` | Non-empty mapping containing `dit`, `text_encoder`, or both | required |
+| `components.NAME.transfer` | `rank-local` or `allgather` | `rank-local` |
+| `components.dit.resident_layers` | Leading main-DiT blocks kept on device; requires `rank-local` and model-declared resident paths | `0` |
+| `diffusion_offload_config.pin_memory` | Pin streamed host memory for faster H2D copies | `true` |
 | `--data-parallel-size N` | DP ranks and AllGather weight-sharding group | `1` |
-| `--dlo-use-allgather` | Legacy global alias for `--dlo-transfer allgather` | `true` |
-| `--dlo-no-use-allgather` | Legacy global alias for `--dlo-transfer rank-local` | `false` |
-| `--dlo-resident-layers N` | Keep N leading main-DiT blocks on device; requires DiT `rank-local` and model-declared resident paths | `0` |
 | `--host-weight-runtime-mode {disabled,preferred,required}` | HWR policy: no interaction, populate on a miss, or require an exact hit | `disabled` |
 | `--host-weight-runtime-root PATH` | Writable node-local HWR store shared by workers in one storage domain; required for `preferred` and `required` | unset |
 | `--dlo-host-registration-limit-gib N` | Optional per-worker ceiling for registering an HWR mmap; zero adds no ceiling | `0` |
@@ -107,8 +112,8 @@ AllGather fails at startup with guidance to use `rank-local`. This makes SP
 AllGather available to replicated encoders without silently corrupting an
 encoder-TP layout.
 
-`dlo_resident_layers` remains a DiT-only setting and currently requires the
-DiT transfer to be `rank-local`.
+`resident_layers` remains a DiT-only setting and currently requires the DiT
+transfer to be `rank-local`.
 
 ## Host-weight loading
 
@@ -163,8 +168,8 @@ the validated scope.
 
 ```bash
 vllm serve /path/to/model --omni \
-  --offload-strategy distributed-layerwise \
-  --dlo-transfer rank-local \
+  --diffusion-offload-config \
+  '{"mode":"layer","components":{"dit":{"transfer":"rank-local"}}}' \
   --host-weight-runtime-mode preferred \
   --host-weight-runtime-root /var/cache/vllm-omni/hwr
 ```
@@ -205,15 +210,15 @@ For example:
 ```bash
 # First startup: canonically load and populate the exact artifacts.
 vllm serve /path/to/model --omni \
-  --offload-strategy distributed-layerwise \
-  --dlo-transfer rank-local \
+  --diffusion-offload-config \
+  '{"mode":"layer","components":{"dit":{"transfer":"rank-local"}}}' \
   --host-weight-runtime-mode preferred \
   --host-weight-runtime-root /var/cache/vllm-omni/hwr
 
 # After a healthy startup and clean shutdown, enforce cache hits.
 vllm serve /path/to/model --omni \
-  --offload-strategy distributed-layerwise \
-  --dlo-transfer rank-local \
+  --diffusion-offload-config \
+  '{"mode":"layer","components":{"dit":{"transfer":"rank-local"}}}' \
   --host-weight-runtime-mode required \
   --host-weight-runtime-root /var/cache/vllm-omni/hwr
 ```
@@ -247,7 +252,7 @@ H2D behavior.
 #### Registered direct H2D
 
 Registration is attempted automatically only for an eligible warm HWR hit when
-`pin_cpu_memory` is enabled. A successful path is:
+`diffusion_offload_config.pin_memory` is enabled. A successful path is:
 
 ```text
 shared read-only HWR mmap -> existing rotating HBM block buffer -> GPU kernel
@@ -261,9 +266,9 @@ CUDA requires read-only host-registration capability for the immutable HWR
 mapping. Unsupported capability, a positive registration limit smaller than
 the complete page-aligned mapping, or a safely rolled-back registration error
 falls back to bounded staging. Programmatic configurations can set
-`pin_cpu_memory=False` to disable registration explicitly. A successful
-registration locks the complete mapped range in host memory for that worker's
-lifetime, so use
+`diffusion_offload_config.pin_memory=false` to disable registration explicitly.
+A successful registration locks the complete mapped range in host memory for
+that worker's lifetime, so use
 `--dlo-host-registration-limit-gib` when an operator-enforced ceiling is
 required.
 

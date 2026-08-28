@@ -267,11 +267,9 @@ python text_to_video.py \
 - `--vae-use-tiling`: enable VAE tiling for memory optimization.
 - `--cfg-parallel-size`: set it to 2 to enable CFG Parallel. See more examples in [`user_guide`](../../../docs/user_guide/diffusion/parallelism_acceleration.md#cfg-parallel).
 - `--tensor-parallel-size`: tensor parallel size (effective for models that support TP, e.g. LTX2).
-- `--offload-strategy`: select `model`, `layerwise`, or `distributed-layerwise` CPU offload.
-- `--offload-components`: comma-separated `dit` and `text_encoder` selection; unset selects `dit`, and `all` selects both.
-- `--enable-distributed-layerwise-offload`: legacy alias for `--offload-strategy distributed-layerwise`.
-- `--dlo-use-allgather` / `--dlo-no-use-allgather`: use sharded AllGather reconstruction (the default) or stream rank-local weights without AllGather.
-- `--dlo-resident-layers`: keep this many leading main-DiT blocks device-resident during distributed layerwise offload (default: `0`).
+- `--diffusion-offload-config`: JSON config selecting `module` or `layer`
+  mode and `dit` and/or `text_encoder`, with optional per-component
+  `transfer` and DiT `resident_layers` settings.
 - `--frame-rate`: generation FPS for pipelines that require it (e.g., LTX2).
 - `--audio-sample-rate`: fallback audio sample rate when the pipeline returns audio.
 - `--quantization`: quantization method (such as `fp8` for FP8).
@@ -299,4 +297,5 @@ python text_to_video.py \
 | CFG-distilled | (same) | 1.0 | 50 |
 
 > If you encounter OOM errors, try `--vae-use-slicing`, `--vae-use-tiling`,
-> `--offload-strategy model`, or `--quantization fp8`.
+> module/layer offload through `--diffusion-offload-config`, or
+> `--quantization fp8`.

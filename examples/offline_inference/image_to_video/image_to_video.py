@@ -223,19 +223,10 @@ def parse_args() -> argparse.Namespace:
         help="Enable VAE tiling for memory optimization.",
     )
     parser.add_argument(
-        "--offload-strategy",
-        choices=("none", "model", "layerwise", "distributed-layerwise"),
-        default="none",
-        help="CPU-offload scheduling policy.",
-    )
-    parser.add_argument(
-        "--offload-components",
-        type=str,
+        "--diffusion-offload-config",
+        type=json.loads,
         default=None,
-        help=(
-            "Comma-separated component groups to offload. Unset selects dit; "
-            "Supported values are dit,text_encoder,all; unset preserves DiT-only offload."
-        ),
+        help="Diffusion CPU-offload JSON config with mode and components.",
     )
     parser.add_argument(
         "--enable-distributed-layerwise-offload",
@@ -580,8 +571,7 @@ def main():
     profiler_enabled = args.profiler_config is not None
     omni_kwargs = dict(
         model=args.model,
-        offload_strategy=args.offload_strategy,
-        offload_components=args.offload_components,
+        diffusion_offload_config=args.diffusion_offload_config,
         vae_use_slicing=args.vae_use_slicing,
         vae_use_tiling=args.vae_use_tiling,
         boundary_ratio=args.boundary_ratio,

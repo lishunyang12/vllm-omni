@@ -521,7 +521,7 @@ class DiffusersPipelineLoader(HWRLoaderMixin):
                     getattr(self.od_config, "enable_distributed_layerwise_offload", False)
                     and DIT_COMPONENT in selected_offload_components(self.od_config)
                 )
-                _use_ag = component_uses_allgather(self.od_config, DIT_COMPONENT)
+                _use_ag = _dist_offload and component_uses_allgather(self.od_config, DIT_COMPONENT)
                 _has_online_quant = self._has_online_quant(model)
                 _tp_size = int(getattr(self.parallel_config, "tensor_parallel_size", 1))
                 _use_hsdp = bool(getattr(self.parallel_config, "use_hsdp", False))

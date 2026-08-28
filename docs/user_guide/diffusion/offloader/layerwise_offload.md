@@ -29,33 +29,39 @@ from vllm_omni import Omni
 
 omni = Omni(
     model="Wan-AI/Wan2.2-T2V-A14B-Diffusers",
-    offload_strategy="layerwise",
+    diffusion_offload_config={
+        "mode": "layer",
+        "components": {"dit": {}},
+    },
 )
 ```
 
 ```bash
 vllm serve Wan-AI/Wan2.2-T2V-A14B-Diffusers \
-  --omni --offload-strategy layerwise
+  --omni \
+  --diffusion-offload-config.mode layer \
+  --diffusion-offload-config.components.dit '{}'
 ```
 
 ## Component selection
 
-Use the policy-independent `--offload-components` selector with `dit`,
-`text_encoder`, or both:
+Add `dit`, `text_encoder`, or both under `components`. Presence selects a
+component; an empty mapping uses its safe rank-local defaults:
 
-- Omitting the option selects `dit`, preserving the existing DiT-only behavior.
-- `all` selects both supported categories.
-- An explicit subset such as `dit,text_encoder` controls only those categories.
+- `{"dit": {}}` streams only DiT blocks.
+- `{"text_encoder": {}}` streams only declared text-encoder blocks.
+- Listing both streams both components.
 
 ```bash
-# Backward-compatible DiT-only behavior
+# DiT-only layer offload
 vllm serve /path/to/model --omni \
-  --offload-strategy layerwise
+  --diffusion-offload-config \
+  '{"mode":"layer","components":{"dit":{}}}'
 
 # Stream a model-declared text encoder while keeping the DiT resident
 vllm serve /path/to/model --omni \
-  --offload-strategy layerwise \
-  --offload-components text_encoder
+  --diffusion-offload-config \
+  '{"mode":"layer","components":{"text_encoder":{}}}'
 ```
 
 Encoder categories are resolved from `OffloadPlan.encoder_component_types`
@@ -99,8 +105,9 @@ offload consume the same `OffloadPlan` metadata.
 
 ## Limitations
 
-- The ordinary backend uses rank-local transfer. For multi-device shard +
-  AllGather transport, use distributed layerwise offload.
+- The default transfer is `rank-local`. Set a selected component's `transfer`
+  to `allgather` to shard its host weights across a compatible multi-device
+  group; backend selection is automatic.
 - Setup consolidates and pins block parameters, increasing cold-start time.
 - Performance depends on block compute time and host-to-device bandwidth;
   lightweight blocks may not hide transfers.

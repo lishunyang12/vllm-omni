@@ -8,7 +8,7 @@ import random
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import diffusers
 import huggingface_hub
@@ -804,11 +804,10 @@ class OmniDiffusionConfig:
 
     output_type: str = "pil"
 
-    # CPU offload parameters
-    # Canonical policy and strategy-independent component selection.
-    offload_strategy: Literal["none", "model", "layerwise", "distributed-layerwise"] | None = None
-    offload_components: str | list[str] | None = None
-    # Deprecated compatibility aliases for offload_strategy.
+    # CPU offload parameters. Public policy, component selection, and
+    # component-specific layer settings live in one compact mapping.
+    diffusion_offload_config: dict[str, Any] | None = None
+    # Deprecated compatibility aliases; removed in v0.30.
     # When enabled, DiT and encoders swap GPU access (mutual exclusion):
     # - Text encoders run on GPU while DiT is on CPU
     # - DiT runs on GPU while encoders are on CPU
@@ -817,9 +816,6 @@ class OmniDiffusionConfig:
     enable_layerwise_offload: bool = False
     # Distributed layer-wise offloading with H2D + AllGather overlap (RFC-1)
     enable_distributed_layerwise_offload: bool = False
-    # DLO transfer mode. A scalar applies to every selected component; a
-    # component map allows independent DiT/text-encoder selection.
-    dlo_transfer: str | dict[str, str] | None = None
     # If True: shard weights 1/dp_size + AllGather (saves CPU memory, requires
     # concurrent requests in DP mode). If False: each rank streams the standard
     # loader's rank-local tensors (including TP-local shards) via H2D only.

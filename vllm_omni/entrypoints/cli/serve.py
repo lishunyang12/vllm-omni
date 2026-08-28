@@ -704,55 +704,39 @@ class OmniServeCommand(CLISubcommand):
 
         # diffusion model offload parameters
         omni_config_group.add_argument(
-            "--offload-strategy",
-            choices=("none", "model", "layerwise", "distributed-layerwise"),
+            "--diffusion-offload-config",
+            type=json.loads,
             default=None,
-            help="CPU-offload scheduling policy. Default: none. The legacy "
-            "--enable-*-offload flags remain compatibility aliases.",
-        )
-        omni_config_group.add_argument(
-            "--offload-components",
-            type=str,
-            default=None,
-            help="Comma-separated diffusion components selected for offload: "
-            "dit,text_encoder,all. Component selection is independent of the "
-            "offload policy; omitted preserves the current DiT-only default for "
-            "block-streaming policies.",
+            help="Diffusion CPU-offload config as JSON or vLLM-style dotted flags. "
+            "Set mode to module or layer, then select dit and/or text_encoder "
+            "under components. Layer settings are transfer (rank-local or "
+            "allgather) and resident_layers (DiT only). Example: "
+            "--diffusion-offload-config.mode layer "
+            "--diffusion-offload-config.components.dit.transfer rank-local.",
         )
         omni_config_group.add_argument(
             "--enable-cpu-offload",
             action="store_true",
-            help="Deprecated alias for --offload-strategy model.",
+            help="Deprecated; removed in v0.30. Use --diffusion-offload-config.mode module and select components.",
         )
         omni_config_group.add_argument(
             "--enable-layerwise-offload",
             action="store_true",
-            help="Deprecated alias for --offload-strategy layerwise.",
+            help="Deprecated; removed in v0.30. Use --diffusion-offload-config.mode layer and select components.",
         )
         omni_config_group.add_argument(
             "--enable-distributed-layerwise-offload",
             action="store_true",
-            help="Deprecated alias for --offload-strategy distributed-layerwise. "
-            "Enables H2D + AllGather overlap, "
-            "Shards weights across DP ranks, stores only 1/DP_size on each host, "
-            "and overlaps H2D transfers and AllGather with computation. "
-            "DP size is automatically derived from the parallel configuration.",
-        )
-        omni_config_group.add_argument(
-            "--dlo-transfer",
-            type=str,
-            default=None,
-            help="Distributed-layerwise transfer mode. Use allgather or rank-local "
-            "for every selected component, or a component map such as "
-            "dit=allgather,text_encoder=rank-local. Default: allgather. The "
-            "legacy --dlo-no-use-allgather flag remains supported.",
+            help="Deprecated; removed in v0.30. Use mode=layer and configure "
+            "transfer per component in --diffusion-offload-config.",
         )
         omni_config_group.add_argument(
             "--dlo-use-allgather",
             dest="dlo_use_allgather",
             action="store_true",
             default=True,
-            help="Use shard + AllGather for weight reconstruction (default: True). "
+            help="Deprecated; removed in v0.30. Use component transfer=allgather. "
+            "Use shard + AllGather for weight reconstruction (default: True). "
             "When disabled (--dlo-no-use-allgather), each rank streams the "
             "standard loader's rank-local tensors via H2D only — no additional "
             "DP sharding, no AllGather, and no concurrent-request requirement.",
@@ -762,6 +746,7 @@ class OmniServeCommand(CLISubcommand):
             dest="dlo_use_allgather",
             action="store_false",
             help=(
+                "Deprecated; removed in v0.30. Use component transfer=rank-local. "
                 "Disable AllGather and stream standard-loader rank-local weights "
                 "independently (including existing TP shards)."
             ),
@@ -770,8 +755,7 @@ class OmniServeCommand(CLISubcommand):
             "--dlo-resident-layers",
             type=int,
             default=0,
-            help="Keep this many leading main-DiT blocks resident on the device "
-            "while distributed layerwise offload streams the remaining blocks.",
+            help="Deprecated; removed in v0.30. Use components.dit.resident_layers in --diffusion-offload-config.",
         )
         omni_config_group.add_argument(
             "--host-weight-runtime-mode",

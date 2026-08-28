@@ -2,7 +2,7 @@
 
 Model-level, or sequential, offloading keeps only the pipeline component group
 currently executing on the accelerator. It is the simplest offload strategy
-and is selected with `--enable-cpu-offload`.
+and is selected with `diffusion_offload_config.mode="module"`.
 
 ## How it works
 
@@ -22,14 +22,24 @@ from vllm_omni import Omni
 
 omni = Omni(
     model="Wan-AI/Wan2.2-T2V-A14B-Diffusers",
-    enable_cpu_offload=True,
+    diffusion_offload_config={
+        "mode": "module",
+        "components": {"dit": {}, "text_encoder": {}},
+    },
 )
 ```
 
 ```bash
 vllm serve Wan-AI/Wan2.2-T2V-A14B-Diffusers \
-  --omni --enable-cpu-offload
+  --omni \
+  --diffusion-offload-config \
+  '{"mode":"module","components":{"dit":{},"text_encoder":{}}}'
 ```
+
+Component presence selects it for offload. Module mode rejects layer-only
+settings such as `transfer` and `resident_layers`. The legacy
+`enable_cpu_offload=True` entry point remains supported with a migration
+warning until v0.30.
 
 ## Model integration
 

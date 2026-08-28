@@ -498,12 +498,10 @@ class TestLayerwiseComponentSelection:
 
 def _offload_od_config(**overrides):
     values = {
-        "offload_strategy": None,
+        "diffusion_offload_config": None,
         "enable_cpu_offload": False,
         "enable_layerwise_offload": False,
         "enable_distributed_layerwise_offload": False,
-        "offload_components": None,
-        "dlo_transfer": None,
         "dlo_use_allgather": True,
         "dlo_resident_layers": 0,
         "pin_cpu_memory": True,
@@ -515,151 +513,163 @@ def _offload_od_config(**overrides):
 
 
 class TestLayerwiseComponentConfig:
-    def test_csv_and_sequence_values_are_normalized(self):
-        csv_config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                offload_strategy="layerwise",
-                offload_components="dit, text_encoder",
-            )
-        )
-        sequence_config = OffloadConfig.from_od_config(
-            _offload_od_config(offload_strategy="layerwise", offload_components=["all"])
-        )
-
-        assert csv_config.components == frozenset({"dit", "text_encoder"})
-        assert sequence_config.components == frozenset({"dit", "text_encoder"})
-
-    def test_omitted_selector_preserves_legacy_dit_only_behavior(self):
-        config = OffloadConfig.from_od_config(_offload_od_config(offload_strategy="layerwise"))
-
-        assert config.components == frozenset({"dit"})
-        assert config.offloads("dit")
-        assert not config.offloads("text_encoder")
-
-    def test_all_selects_the_two_supported_components(self):
-        all_config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                offload_strategy="layerwise",
-                offload_components="all,dit",
-            )
-        )
-        assert all_config.components == frozenset({"dit", "text_encoder"})
-        assert all_config.offloads("dit")
-        plan = OffloadPlan(encoder_component_types={"mllm": "text_encoder"})
-        assert all_config.offloads_encoder("mllm", plan)
-
-    def test_removed_auxiliary_selectors_are_rejected(self):
-        for selector in ("default", "image_encoder", "vae"):
-            with pytest.raises(ValueError, match="Unknown offload component"):
-                OffloadConfig.from_od_config(
-                    _offload_od_config(
-                        offload_strategy="layerwise",
-                        offload_components=selector,
-                    )
-                )
-
-    def test_unknown_component_is_rejected(self):
-        with pytest.raises(ValueError, match="Unknown offload component"):
-            OffloadConfig.from_od_config(
-                _offload_od_config(
-                    offload_strategy="layerwise",
-                    offload_components="dit,scheduler",
-                )
-            )
-
-    def test_component_filter_requires_an_offload_strategy(self):
-        with pytest.raises(ValueError, match="requires offload_strategy"):
-            OffloadConfig.from_od_config(_offload_od_config(offload_components="text_encoder"))
-
-    def test_distributed_encoder_only_is_allowed(self):
+    def test_layer_mode_selects_components_without_backend_jargon(self):
         config = OffloadConfig.from_od_config(
             _offload_od_config(
-                offload_strategy="distributed-layerwise",
-                offload_components="text_encoder",
-                dlo_transfer="rank-local",
-            )
-        )
-
-        assert config.components == frozenset({"text_encoder"})
-        assert not config.uses_allgather("text_encoder")
-
-    def test_distributed_offload_accepts_all(self):
-        config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                offload_strategy="distributed-layerwise",
-                offload_components="all",
-            )
-        )
-
-        assert config.components == frozenset({"dit", "text_encoder"})
-        assert config.offloads("dit")
-
-    def test_component_transfer_map_is_independent(self):
-        config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                offload_strategy="distributed-layerwise",
-                offload_components="dit,text_encoder",
-                dlo_transfer="dit=rank-local,text_encoder=allgather",
-            )
-        )
-
-        assert not config.uses_allgather("dit")
-        assert config.uses_allgather("text_encoder")
-        assert config.dlo_use_allgather is False
-
-    def test_transfer_map_rejects_unselected_component(self):
-        with pytest.raises(ValueError, match="not selected"):
-            OffloadConfig.from_od_config(
-                _offload_od_config(
-                    offload_strategy="distributed-layerwise",
-                    offload_components="dit",
-                    dlo_transfer="text_encoder=rank-local",
-                )
-            )
-
-    def test_single_gpu_encoder_only_is_allowed(self):
-        config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                offload_strategy="layerwise",
-                offload_components="text_encoder",
+                diffusion_offload_config={
+                    "mode": "layer",
+                    "components": {"dit": {}, "text_encoder": {}},
+                }
             )
         )
 
         assert config.strategy is OffloadStrategy.LAYER_WISE
-        assert config.components == frozenset({"text_encoder"})
+        assert config.components == frozenset({"dit", "text_encoder"})
+        assert not config.uses_allgather("dit")
+        assert not config.uses_allgather("text_encoder")
+        plan = OffloadPlan(encoder_component_types={"mllm": "text_encoder"})
+        assert config.offloads_encoder("mllm", plan)
+
+    @pytest.mark.parametrize("component", ["image_encoder", "vae", "scheduler", "text-encoder"])
+    def test_unknown_or_noncanonical_component_is_rejected(self, component):
+        with pytest.raises(ValueError, match="Unknown diffusion offload component"):
+            OffloadConfig.from_od_config(
+                _offload_od_config(diffusion_offload_config={"mode": "layer", "components": {component: {}}})
+            )
 
     @pytest.mark.parametrize(
-        ("value", "expected"),
+        "config,match",
         [
-            ("none", OffloadStrategy.NONE),
-            ("model", OffloadStrategy.MODEL_LEVEL),
-            ("layerwise", OffloadStrategy.LAYER_WISE),
-            ("distributed-layerwise", OffloadStrategy.DISTRIBUTED_LAYER_WISE),
+            ({"components": {"dit": {}}}, "requires 'mode'"),
+            ({"mode": "layer"}, "requires 'components'"),
+            ({"mode": "layer", "components": {}}, "non-empty mapping"),
+            ({"mode": "layerwise", "components": {"dit": {}}}, "Unknown diffusion offload mode"),
+            (
+                {"mode": "layer", "components": {"dit": {"transfer": "rank_local"}}},
+                "Unknown offload transfer",
+            ),
+            (
+                {"mode": "layer", "components": {"dit": {"prefetch": 2}}},
+                "Unknown diffusion offload setting",
+            ),
+            (
+                {"mode": "layer", "components": {"text_encoder": {"resident_layers": 1}}},
+                "supports only the 'dit'",
+            ),
         ],
     )
-    def test_canonical_strategy_values(self, value, expected):
-        config = OffloadConfig.from_od_config(_offload_od_config(offload_strategy=value))
+    def test_schema_rejects_ambiguous_or_unsupported_values(self, config, match):
+        with pytest.raises(ValueError, match=match):
+            OffloadConfig.from_od_config(_offload_od_config(diffusion_offload_config=config))
 
-        assert config.strategy is expected
-
-    def test_matching_legacy_alias_still_works(self):
-        config = OffloadConfig.from_od_config(_offload_od_config(enable_layerwise_offload=True))
-
-        assert config.strategy is OffloadStrategy.LAYER_WISE
-
-    def test_model_strategy_accepts_explicit_components(self):
+    def test_module_mode_accepts_component_selection(self):
         config = OffloadConfig.from_od_config(
-            _offload_od_config(offload_strategy="model", offload_components="dit,text_encoder")
+            _offload_od_config(
+                diffusion_offload_config={
+                    "mode": "module",
+                    "components": {"dit": {}, "text_encoder": {}},
+                }
+            )
         )
 
         assert config.strategy is OffloadStrategy.MODEL_LEVEL
         assert config.components == frozenset({"dit", "text_encoder"})
         assert config.components_explicit is True
 
+    @pytest.mark.parametrize("setting", [{"transfer": "rank-local"}, {"resident_layers": 1}])
+    def test_module_mode_rejects_layer_settings(self, setting):
+        with pytest.raises(ValueError, match="require diffusion_offload_config.mode='layer'"):
+            OffloadConfig.from_od_config(
+                _offload_od_config(diffusion_offload_config={"mode": "module", "components": {"dit": setting}})
+            )
+
+    def test_each_component_can_choose_its_transfer(self):
+        config = OffloadConfig.from_od_config(
+            _offload_od_config(
+                diffusion_offload_config={
+                    "mode": "layer",
+                    "components": {
+                        "dit": {"transfer": "rank-local"},
+                        "text_encoder": {"transfer": "allgather"},
+                    },
+                }
+            )
+        )
+
+        assert config.strategy is OffloadStrategy.DISTRIBUTED_LAYER_WISE
+        assert not config.uses_allgather("dit")
+        assert config.uses_allgather("text_encoder")
+        assert config.dlo_use_allgather is False
+
+    def test_dit_residency_selects_capable_backend(self):
+        config = OffloadConfig.from_od_config(
+            _offload_od_config(
+                diffusion_offload_config={
+                    "mode": "layer",
+                    "components": {"dit": {"resident_layers": 20}},
+                }
+            )
+        )
+
+        assert config.strategy is OffloadStrategy.DISTRIBUTED_LAYER_WISE
+        assert config.dlo_resident_layers == 20
+        assert not config.uses_allgather("dit")
+
+    def test_dit_residency_rejects_allgather(self):
+        with pytest.raises(ValueError, match="resident_layers requires dit.transfer='rank-local'"):
+            OffloadConfig.from_od_config(
+                _offload_od_config(
+                    diffusion_offload_config={
+                        "mode": "layer",
+                        "components": {"dit": {"transfer": "allgather", "resident_layers": 1}},
+                    }
+                )
+            )
+
+    def test_pin_memory_override_is_scoped_to_offload_config(self):
+        config = OffloadConfig.from_od_config(
+            _offload_od_config(
+                pin_cpu_memory=True,
+                diffusion_offload_config={
+                    "mode": "layer",
+                    "components": {"dit": {}},
+                    "pin_memory": False,
+                },
+            )
+        )
+
+        assert config.pin_cpu_memory is False
+
+    def test_legacy_omitted_selector_preserves_dit_only_behavior(self):
+        with pytest.warns(FutureWarning, match="removed in v0.30"):
+            config = OffloadConfig.from_od_config(_offload_od_config(enable_layerwise_offload=True))
+
+        assert config.strategy is OffloadStrategy.LAYER_WISE
+        assert config.components == frozenset({"dit"})
+
+    def test_legacy_distributed_settings_still_work(self):
+        with pytest.warns(FutureWarning, match="removed in v0.30"):
+            config = OffloadConfig.from_od_config(
+                _offload_od_config(
+                    enable_distributed_layerwise_offload=True,
+                    dlo_use_allgather=False,
+                    dlo_resident_layers=3,
+                )
+            )
+
+        assert config.strategy is OffloadStrategy.DISTRIBUTED_LAYER_WISE
+        assert config.dlo_resident_layers == 3
+        assert not config.uses_allgather("dit")
+
     def test_conflicting_legacy_aliases_fail(self):
-        with pytest.raises(ValueError, match="Conflicting legacy offload strategy flags"):
+        with pytest.raises(ValueError, match="Conflicting legacy offload flags"):
             OffloadConfig.from_od_config(_offload_od_config(enable_cpu_offload=True, enable_layerwise_offload=True))
 
-    def test_canonical_strategy_conflict_with_legacy_alias_fails(self):
-        with pytest.raises(ValueError, match="conflicts with legacy"):
-            OffloadConfig.from_od_config(_offload_od_config(offload_strategy="layerwise", enable_cpu_offload=True))
+    def test_compact_config_cannot_mix_with_legacy_alias(self):
+        with pytest.raises(ValueError, match="cannot be combined"):
+            OffloadConfig.from_od_config(
+                _offload_od_config(
+                    diffusion_offload_config={"mode": "layer", "components": {"dit": {}}},
+                    enable_cpu_offload=True,
+                )
+            )

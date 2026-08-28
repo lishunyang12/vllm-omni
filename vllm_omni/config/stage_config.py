@@ -11,7 +11,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import Any, NamedTuple
 
 from transformers import PretrainedConfig
 from vllm.logger import init_logger
@@ -472,14 +472,12 @@ class StageDeployConfig:
     # Runtime optimizations used by diffusion loading/execution.
     enable_multithread_weight_load: bool | None = None
     num_weight_load_threads: int | None = None
-    offload_strategy: Literal["none", "model", "layerwise", "distributed-layerwise"] | None = None
-    offload_components: str | list[str] | None = None
-    # Deprecated compatibility aliases for offload_strategy.
+    diffusion_offload_config: dict[str, Any] | None = None
+    # Deprecated compatibility aliases; removed in v0.30.
     enable_cpu_offload: bool | None = None
     enable_layerwise_offload: bool | None = None
 
     enable_distributed_layerwise_offload: bool | None = None
-    dlo_transfer: str | dict[str, str] | None = None
     dlo_use_allgather: bool | None = None
     dlo_resident_layers: int | None = None
     host_weight_runtime_mode: str | None = None

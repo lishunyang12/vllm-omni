@@ -426,8 +426,8 @@ def test_serve_cli_forwards_distilled_lora_to_diffusion_stage():
     ]
 
 
-def test_serve_cli_forwards_distributed_offload_residency():
-    """Ensure the two-GPU DLO placement controls reach the diffusion stage."""
+def test_serve_cli_forwards_compact_diffusion_offload_config():
+    """Ensure component-specific layer settings reach the diffusion stage."""
     parser = TrackingArgumentParser()
     subparsers = parser.add_subparsers(dest="command")
     OmniServeCommand().subparser_init(subparsers)
@@ -437,14 +437,10 @@ def test_serve_cli_forwards_distributed_offload_residency():
             "serve",
             "MiniMaxAI/MiniMax-H3",
             "--omni",
-            "--offload-strategy",
-            "distributed-layerwise",
-            "--offload-components",
-            "dit,text_encoder",
-            "--dlo-transfer",
-            "dit=rank-local,text_encoder=rank-local",
-            "--dlo-resident-layers",
-            "20",
+            "--diffusion-offload-config",
+            '{"mode":"layer","components":{"dit":{"transfer":"rank-local",'
+            '"resident_layers":20},"text_encoder":{"transfer":"allgather"}},'
+            '"pin_memory":true}',
         ]
     )
 
@@ -452,16 +448,16 @@ def test_serve_cli_forwards_distributed_offload_residency():
     stage_cfg = AsyncOmniEngine._create_default_diffusion_stage_cfg(explicit_kwargs)[0]
     engine_args = stage_cfg["engine_args"]
 
-    assert args.offload_strategy == "distributed-layerwise"
-    assert args.offload_components == "dit,text_encoder"
-    assert args.dlo_transfer == "dit=rank-local,text_encoder=rank-local"
-    assert args.dlo_use_allgather is True
-    assert args.dlo_resident_layers == 20
-    assert engine_args["offload_strategy"] == "distributed-layerwise"
-    assert engine_args["offload_components"] == "dit,text_encoder"
-    assert engine_args["dlo_transfer"] == "dit=rank-local,text_encoder=rank-local"
-    assert engine_args["dlo_use_allgather"] is True
-    assert engine_args["dlo_resident_layers"] == 20
+    expected = {
+        "mode": "layer",
+        "components": {
+            "dit": {"transfer": "rank-local", "resident_layers": 20},
+            "text_encoder": {"transfer": "allgather"},
+        },
+        "pin_memory": True,
+    }
+    assert args.diffusion_offload_config == expected
+    assert engine_args["diffusion_offload_config"] == expected
 
 
 def test_serve_cli_forwards_hwr_policy_for_no_allgather_dlo():

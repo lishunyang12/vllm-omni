@@ -1450,7 +1450,8 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             raise ValueError(
                 f"Text encoder {name!r} cannot use DLO AllGather across the DiT offload group: "
                 "its loader-produced weights are not declared replicated across that group. "
-                "Use dlo_transfer=text_encoder=rank-local for encoder-TP or rank-specific layouts."
+                "Set text_encoder.transfer='rank-local' in diffusion_offload_config "
+                "for encoder-TP or rank-specific layouts."
             )
 
         block_groups: list[nn.ModuleList] = []

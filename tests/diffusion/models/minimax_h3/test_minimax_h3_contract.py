@@ -1314,9 +1314,14 @@ def test_layerwise_encoder_selection_releases_text_encoder(components):
     torch.nn.Module.__init__(pipeline)
     pipeline.od_config = SimpleNamespace(
         enable_cpu_offload=False,
-        enable_layerwise_offload=True,
+        enable_layerwise_offload=False,
         enable_distributed_layerwise_offload=False,
-        offload_components=components,
+        diffusion_offload_config={
+            "mode": "layer",
+            "components": {
+                name: {} for name in ({"text_encoder"} if components == "text_encoder" else {"dit", "text_encoder"})
+            },
+        },
     )
     pipeline.text_encoder = Mock()
     expected = torch.ones(2, 3)
@@ -1336,9 +1341,9 @@ def test_layerwise_dit_only_keeps_text_encoder_resident():
     torch.nn.Module.__init__(pipeline)
     pipeline.od_config = SimpleNamespace(
         enable_cpu_offload=False,
-        enable_layerwise_offload=True,
+        enable_layerwise_offload=False,
         enable_distributed_layerwise_offload=False,
-        offload_components="dit",
+        diffusion_offload_config={"mode": "layer", "components": {"dit": {}}},
     )
     pipeline.text_encoder = Mock()
     expected = torch.ones(2, 3)
@@ -1360,8 +1365,13 @@ def test_distributed_layerwise_encoder_selection_releases_text_encoder(component
     pipeline.od_config = SimpleNamespace(
         enable_cpu_offload=False,
         enable_layerwise_offload=False,
-        enable_distributed_layerwise_offload=True,
-        offload_components=components,
+        enable_distributed_layerwise_offload=False,
+        diffusion_offload_config={
+            "mode": "layer",
+            "components": {
+                name: {} for name in ({"text_encoder"} if components == "text_encoder" else {"dit", "text_encoder"})
+            },
+        },
     )
     pipeline.text_encoder = Mock()
     expected = torch.ones(2, 3)
@@ -1384,9 +1394,13 @@ def test_standalone_audio_conditions_keep_audio_vae_resident(monkeypatch):
     torch.nn.Module.__init__(pipeline)
     pipeline.device = torch.device("cpu")
     pipeline.od_config = SimpleNamespace(
-        enable_layerwise_offload=True,
+        enable_cpu_offload=False,
+        enable_layerwise_offload=False,
         enable_distributed_layerwise_offload=False,
-        offload_components="all",
+        diffusion_offload_config={
+            "mode": "layer",
+            "components": {"dit": {}, "text_encoder": {}},
+        },
     )
     pipeline.audio_vae = Mock()
     pipeline.audio_vae.encode_waveform.side_effect = [
@@ -1409,9 +1423,16 @@ def test_distributed_layerwise_all_keeps_vae_component_resident():
     pipeline = object.__new__(MiniMaxH3Pipeline)
     torch.nn.Module.__init__(pipeline)
     pipeline.od_config = SimpleNamespace(
+        enable_cpu_offload=False,
         enable_layerwise_offload=False,
-        enable_distributed_layerwise_offload=True,
-        offload_components="all",
+        enable_distributed_layerwise_offload=False,
+        diffusion_offload_config={
+            "mode": "layer",
+            "components": {
+                "dit": {"transfer": "allgather"},
+                "text_encoder": {},
+            },
+        },
     )
     component = Mock()
 
@@ -1428,9 +1449,13 @@ def test_dit_encoder_selection_keeps_vae_resident():
     pipeline = object.__new__(MiniMaxH3Pipeline)
     torch.nn.Module.__init__(pipeline)
     pipeline.od_config = SimpleNamespace(
-        enable_layerwise_offload=True,
+        enable_cpu_offload=False,
+        enable_layerwise_offload=False,
         enable_distributed_layerwise_offload=False,
-        offload_components="dit,text_encoder",
+        diffusion_offload_config={
+            "mode": "layer",
+            "components": {"dit": {}, "text_encoder": {}},
+        },
     )
     component = Mock()
 

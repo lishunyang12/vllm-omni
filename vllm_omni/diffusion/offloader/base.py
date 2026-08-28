@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -13,16 +12,17 @@ from vllm.logger import init_logger
 from vllm_omni.diffusion.data import OmniDiffusionConfig, validate_dlo_host_registration_options
 
 from .config import (
-    ALL_COMPONENT,
     DEFAULT_OFFLOAD_COMPONENTS,
     DIT_COMPONENT,
     OFFLOAD_COMPONENTS,
     TEXT_ENCODER_COMPONENT,
     DLOTransfer,
     OffloadStrategy,
+    get_diffusion_offload_config,
     parse_dlo_transfer,
     parse_offload_components,
     resolve_offload_strategy,
+    selected_offload_components,
 )
 from .offload_plan import OffloadPlan
 
@@ -38,8 +38,7 @@ def should_offload_component(od_config: OmniDiffusionConfig, component: str) -> 
         OffloadStrategy.DISTRIBUTED_LAYER_WISE,
     }:
         return False
-    components = parse_offload_components(getattr(od_config, "offload_components", None))
-    return component in components
+    return component in selected_offload_components(od_config)
 
 
 @runtime_checkable
@@ -125,7 +124,7 @@ class OffloadConfig:
     def from_od_config(cls, od_config: OmniDiffusionConfig) -> "OffloadConfig":
         """Extract and validate offload settings from OmniDiffusionConfig.
 
-        ``offload_strategy`` is the canonical policy selector. The three
+        ``diffusion_offload_config`` is the canonical public selector. The
         historical ``enable_*_offload`` booleans remain compatibility aliases;
         ambiguous combinations fail instead of using silent precedence.
 
@@ -140,8 +139,13 @@ class OffloadConfig:
             OffloadConfig with validated settings
         """
         strategy = resolve_offload_strategy(od_config)
+        public_config = get_diffusion_offload_config(od_config)
         enable_distributed_layerwise_offload = strategy is OffloadStrategy.DISTRIBUTED_LAYER_WISE
-        pin_cpu_memory = getattr(od_config, "pin_cpu_memory", True)
+        pin_cpu_memory = (
+            public_config.pin_memory
+            if public_config is not None and public_config.pin_memory is not None
+            else getattr(od_config, "pin_cpu_memory", True)
+        )
 
         parallel_config = getattr(od_config, "parallel_config", None)
         use_hsdp = getattr(parallel_config, "use_hsdp", False) if parallel_config else False
@@ -166,34 +170,23 @@ class OffloadConfig:
                 if sp_size and sp_size > 1:
                     dp_size = sp_size
 
-        raw_components = getattr(od_config, "offload_components", None)
-        components = parse_offload_components(raw_components)
-        if raw_components is not None and strategy is OffloadStrategy.NONE:
-            raise ValueError("offload_components requires offload_strategy to select an offload policy")
-        dlo_use_allgather = getattr(od_config, "dlo_use_allgather", True)
-        raw_dlo_transfer = getattr(od_config, "dlo_transfer", None)
-        dlo_transfers = parse_dlo_transfer(
-            raw_dlo_transfer,
-            legacy_use_allgather=dlo_use_allgather,
-        )
-        if raw_dlo_transfer is not None and strategy != OffloadStrategy.DISTRIBUTED_LAYER_WISE:
-            raise ValueError("dlo_transfer requires offload_strategy='distributed-layerwise'")
-        if isinstance(raw_dlo_transfer, Mapping):
-            explicitly_configured = {str(component).strip().lower().replace("-", "_") for component in raw_dlo_transfer}
-        elif isinstance(raw_dlo_transfer, str) and "=" in raw_dlo_transfer:
-            explicitly_configured = {
-                item.partition("=")[0].strip().lower().replace("-", "_") for item in raw_dlo_transfer.split(",")
-            }
+        if public_config is not None:
+            components = frozenset(public_config.components)
+            dlo_transfers = {component: DLOTransfer.RANK_LOCAL for component in OFFLOAD_COMPONENTS}
+            for component, component_config in public_config.components.items():
+                dlo_transfers[component] = component_config.transfer or DLOTransfer.RANK_LOCAL
+            dit_config = public_config.components.get(DIT_COMPONENT)
+            dlo_resident_layers = 0 if dit_config is None else dit_config.resident_layers
+            components_explicit = True
         else:
-            explicitly_configured = set()
-        unused_transfer_components = sorted((explicitly_configured - {ALL_COMPONENT}) - components)
-        if unused_transfer_components:
-            raise ValueError(
-                "dlo_transfer configures component(s) not selected for offload: "
-                f"{', '.join(unused_transfer_components)}"
+            components = DEFAULT_OFFLOAD_COMPONENTS
+            dlo_transfers = parse_dlo_transfer(
+                None,
+                legacy_use_allgather=getattr(od_config, "dlo_use_allgather", True),
             )
+            dlo_resident_layers = int(getattr(od_config, "dlo_resident_layers", 0))
+            components_explicit = False
 
-        dlo_resident_layers = int(getattr(od_config, "dlo_resident_layers", 0))
         dit_uses_allgather = dlo_transfers[DIT_COMPONENT] is DLOTransfer.ALLGATHER
         dlo_host_registration_limit_gib = validate_dlo_host_registration_options(
             limit_gib=getattr(od_config, "dlo_host_registration_limit_gib", 0.0),
@@ -232,8 +225,8 @@ class OffloadConfig:
             raise ValueError(
                 "Distributed layerwise offload with AllGather is incompatible with "
                 "HSDP: HSDP parameters are already sharded DTensors, and the offloader "
-                "would double-shard them. Use --dlo-transfer rank-local (standard-loader "
-                "rank-local weights) or disable HSDP."
+                "would double-shard them. Set transfer='rank-local' for the affected "
+                "component in diffusion_offload_config, or disable HSDP."
             )
 
         return cls(
@@ -246,7 +239,7 @@ class OffloadConfig:
             dlo_host_registration_limit_gib=dlo_host_registration_limit_gib,
             model_path=getattr(od_config, "model", None),
             components=components,
-            components_explicit=raw_components is not None,
+            components_explicit=components_explicit,
             dlo_transfers=dlo_transfers,
         )
 
