@@ -304,22 +304,17 @@ class _PlainEncoder(nn.Module):
         self.final_norm = nn.Linear(2, 2)
 
 
-class _PlainImageEncoder(nn.Module):
-    """Standard vision encoder using the Hugging Face CLIP module layout."""
-
+class _HostTableEncoder(_PlainEncoder):
     def __init__(self):
         super().__init__()
-        self.vision_model = nn.Module()
-        self.vision_model.encoder = nn.Module()
-        self.vision_model.encoder.layers = nn.ModuleList([_DummyBlock(), _DummyBlock()])
-        self.final_norm = nn.Linear(2, 2)
+        self.shared = nn.Embedding(32, 4)
 
 
 class _ComponentPipeline(nn.Module):
     _offload_plan = OffloadPlan(
         encoder_component_types={"text_encoder": "text_encoder"},
         encoder_block_attrs={"text_encoder": ("vision.blocks", "text_model.layers")},
-        on_demand_component_paths=frozenset({"text_encoder", "vae"}),
+        on_demand_component_paths=frozenset({"text_encoder"}),
     )
 
     def __init__(self):
@@ -351,23 +346,17 @@ class _GenericEncoderPipeline(nn.Module):
         self.text_encoder = _PlainEncoder()
 
 
-class _DualEncoderPipeline(nn.Module):
+class _HostTableEncoderPipeline(nn.Module):
     _offload_plan = OffloadPlan(
-        encoder_component_types={
-            "text_encoder": "text_encoder",
-            "image_encoder": "image_encoder",
-        },
-        encoder_block_attrs={
-            "text_encoder": ("encoder.block",),
-            "image_encoder": ("vision_model.encoder.layers",),
-        },
+        encoder_component_types={"text_encoder": "text_encoder"},
+        encoder_block_attrs={"text_encoder": ("encoder.block",)},
+        encoder_host_resident_table_attrs={"text_encoder": ("shared",)},
     )
 
     def __init__(self):
         super().__init__()
         self.transformer = _SingleBlockModel()
-        self.text_encoder = _PlainEncoder()
-        self.image_encoder = _PlainImageEncoder()
+        self.text_encoder = _HostTableEncoder()
 
 
 class TestLayerwiseComponentSelection:
@@ -454,28 +443,6 @@ class TestLayerwiseComponentSelection:
 
         backend.disable()
 
-    def test_image_encoder_selector_does_not_capture_text_encoder(self, patched_offload_runtime):
-        pipeline = _DualEncoderPipeline()
-        backend = LayerWiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.LAYERWISE,
-                pin_cpu_memory=False,
-                components=frozenset({"image_encoder"}),
-            ),
-            torch.device("cpu"),
-        )
-
-        backend.enable(pipeline)
-
-        assert not hasattr(pipeline.text_encoder, "_omni_layerwise_enabled")
-        assert pipeline.image_encoder._omni_layerwise_enabled
-        assert all(
-            block._hook_registry.get_hook("layerwise_offload") is not None
-            for block in pipeline.image_encoder.vision_model.encoder.layers
-        )
-
-        backend.disable()
-
     def test_standard_encoder_needs_only_declared_block_paths(self, patched_offload_runtime):
         pipeline = _GenericEncoderPipeline()
         backend = LayerWiseOffloadBackend(
@@ -500,6 +467,34 @@ class TestLayerwiseComponentSelection:
         assert all(block._hook_registry.get_hook("layerwise_offload") is None for block in blocks)
         assert all(block.weight.numel() == 100 for block in blocks)
 
+    def test_declared_vocab_table_stays_on_host_and_hooks_are_reentrant(self, patched_offload_runtime):
+        pipeline = _HostTableEncoderPipeline()
+        expected_weight = pipeline.text_encoder.shared.weight.detach().clone()
+        backend = LayerWiseOffloadBackend(
+            OffloadConfig(
+                strategy=OffloadStrategy.LAYERWISE,
+                pin_cpu_memory=False,
+                components=frozenset({"text_encoder"}),
+            ),
+            torch.device("cpu"),
+        )
+
+        backend.enable(pipeline)
+
+        table = pipeline.text_encoder.shared
+        assert table.weight.device.type == "cpu"
+        assert len(pipeline.text_encoder._omni_host_resident_table_handles) == 2
+        token_ids = torch.tensor([[1, 3, 5]])
+        assert torch.equal(table(token_ids), torch.nn.functional.embedding(token_ids, expected_weight))
+
+        backend.disable()
+        assert not table._forward_pre_hooks
+        assert not table._forward_hooks
+
+        backend.enable(pipeline)
+        assert len(pipeline.text_encoder._omni_host_resident_table_handles) == 2
+        backend.disable()
+
 
 def _offload_od_config(**overrides):
     values = {
@@ -507,6 +502,7 @@ def _offload_od_config(**overrides):
         "enable_layerwise_offload": False,
         "enable_distributed_layerwise_offload": False,
         "layerwise_offload_components": None,
+        "dlo_transfer": None,
         "dlo_use_allgather": True,
         "dlo_resident_layers": 0,
         "pin_cpu_memory": True,
@@ -526,14 +522,11 @@ class TestLayerwiseComponentConfig:
             )
         )
         sequence_config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                enable_layerwise_offload=True,
-                layerwise_offload_components=["vae", "image-encoder"],
-            )
+            _offload_od_config(enable_layerwise_offload=True, layerwise_offload_components=["all"])
         )
 
         assert csv_config.components == frozenset({"dit", "text_encoder"})
-        assert sequence_config.components == frozenset({"vae", "image_encoder"})
+        assert sequence_config.components == frozenset({"dit", "text_encoder"})
 
     def test_omitted_selector_preserves_legacy_dit_only_behavior(self):
         config = OffloadConfig.from_od_config(_offload_od_config(enable_layerwise_offload=True))
@@ -542,31 +535,27 @@ class TestLayerwiseComponentConfig:
         assert config.offloads("dit")
         assert not config.offloads("text_encoder")
 
-    def test_sglang_all_and_default_aliases(self):
+    def test_all_selects_the_two_supported_components(self):
         all_config = OffloadConfig.from_od_config(
             _offload_od_config(
                 enable_layerwise_offload=True,
                 layerwise_offload_components="all,dit",
             )
         )
-        default_config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                enable_layerwise_offload=True,
-                layerwise_offload_components="default",
-            )
-        )
-
-        assert all_config.components == frozenset({"dit", "text_encoder", "image_encoder", "vae"})
-        assert default_config.components == frozenset({"text_encoder", "image_encoder", "vae"})
+        assert all_config.components == frozenset({"dit", "text_encoder"})
         assert all_config.offloads("dit")
         plan = OffloadPlan(encoder_component_types={"mllm": "text_encoder"})
         assert all_config.offloads_encoder("mllm", plan)
-        assert default_config.offloads_encoder("text_encoder_2")
-        assert default_config.offloads_encoder("condition_text_encoder")
-        assert default_config.offloads_encoder("image_encoder")
-        assert not default_config.offloads_encoder("vision_encoder")
-        vision_plan = OffloadPlan(encoder_component_types={"vision_encoder": "image_encoder"})
-        assert default_config.offloads_encoder("vision_encoder", vision_plan)
+
+    def test_removed_auxiliary_selectors_are_rejected(self):
+        for selector in ("default", "image_encoder", "vae"):
+            with pytest.raises(ValueError, match="Unknown layerwise offload"):
+                OffloadConfig.from_od_config(
+                    _offload_od_config(
+                        enable_layerwise_offload=True,
+                        layerwise_offload_components=selector,
+                    )
+                )
 
     def test_unknown_component_is_rejected(self):
         with pytest.raises(ValueError, match="Unknown layerwise offload"):
@@ -581,14 +570,17 @@ class TestLayerwiseComponentConfig:
         with pytest.raises(ValueError, match="requires layerwise"):
             OffloadConfig.from_od_config(_offload_od_config(layerwise_offload_components="text_encoder"))
 
-    def test_distributed_offload_requires_dit(self):
-        with pytest.raises(ValueError, match="requires the 'dit' component"):
-            OffloadConfig.from_od_config(
-                _offload_od_config(
-                    enable_distributed_layerwise_offload=True,
-                    layerwise_offload_components="text_encoder",
-                )
+    def test_distributed_encoder_only_is_allowed(self):
+        config = OffloadConfig.from_od_config(
+            _offload_od_config(
+                enable_distributed_layerwise_offload=True,
+                layerwise_offload_components="text_encoder",
+                dlo_transfer="rank-local",
             )
+        )
+
+        assert config.components == frozenset({"text_encoder"})
+        assert not config.uses_allgather("text_encoder")
 
     def test_distributed_offload_accepts_all(self):
         config = OffloadConfig.from_od_config(
@@ -598,8 +590,31 @@ class TestLayerwiseComponentConfig:
             )
         )
 
-        assert config.components == frozenset({"dit", "text_encoder", "image_encoder", "vae"})
+        assert config.components == frozenset({"dit", "text_encoder"})
         assert config.offloads("dit")
+
+    def test_component_transfer_map_is_independent(self):
+        config = OffloadConfig.from_od_config(
+            _offload_od_config(
+                enable_distributed_layerwise_offload=True,
+                layerwise_offload_components="dit,text_encoder",
+                dlo_transfer="dit=rank-local,text_encoder=allgather",
+            )
+        )
+
+        assert not config.uses_allgather("dit")
+        assert config.uses_allgather("text_encoder")
+        assert config.dlo_use_allgather is False
+
+    def test_transfer_map_rejects_unselected_component(self):
+        with pytest.raises(ValueError, match="not selected"):
+            OffloadConfig.from_od_config(
+                _offload_od_config(
+                    enable_distributed_layerwise_offload=True,
+                    layerwise_offload_components="dit",
+                    dlo_transfer="text_encoder=rank-local",
+                )
+            )
 
     def test_single_gpu_encoder_only_is_allowed(self):
         config = OffloadConfig.from_od_config(

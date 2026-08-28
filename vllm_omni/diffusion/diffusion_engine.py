@@ -41,6 +41,7 @@ from vllm_omni.diffusion.io_support import (
     supports_audio_output,
     supports_multimodal_input,
 )
+from vllm_omni.diffusion.offloader.config import any_selected_component_uses_allgather
 from vllm_omni.diffusion.output_formatter import (
     format_diffusion_outputs,
     format_empty_diffusion_outputs,
@@ -181,11 +182,7 @@ def _max_num_seqs(od_config: OmniDiffusionConfig) -> int:
 def _uses_dlo_dp_concurrency(od_config: OmniDiffusionConfig) -> bool:
     parallel_config = getattr(od_config, "parallel_config", None)
     dp_size = getattr(parallel_config, "data_parallel_size", 1)
-    return (
-        dp_size > 1
-        and getattr(od_config, "enable_distributed_layerwise_offload", False)
-        and getattr(od_config, "dlo_use_allgather", True)
-    )
+    return dp_size > 1 and any_selected_component_uses_allgather(od_config)
 
 
 def _move_tensor_tree_to_cpu(value: object) -> object:
@@ -1012,7 +1009,6 @@ class DiffusionEngine:
                 raise RuntimeError(f"Could not {action} profiler: {e}") from e
 
     def run_startup_warmup(self) -> None:
-        dlo_use_allgather = getattr(self.od_config, "dlo_use_allgather", True)
         # Skip dummy run when AllGather is used with more than 1 rank,
         # because the dummy run sends only 1 request but AllGather requires
         # all ranks to participate simultaneously.  This covers both DP > 1
@@ -1021,11 +1017,7 @@ class DiffusionEngine:
         dp_size = getattr(pc, "data_parallel_size", 1) if pc else 1
         sp_size = getattr(pc, "sequence_parallel_size", 1) if pc else 1
         effective_shard_size = max(dp_size, sp_size)
-        skip_dummy = (
-            getattr(self.od_config, "enable_distributed_layerwise_offload", False)
-            and dlo_use_allgather
-            and effective_shard_size > 1
-        )
+        skip_dummy = any_selected_component_uses_allgather(self.od_config) and effective_shard_size > 1
         if skip_dummy:
             logger.info(
                 "Skipping dummy run (dist_offload with AllGather, dp_size=%d, sp_size=%d)",

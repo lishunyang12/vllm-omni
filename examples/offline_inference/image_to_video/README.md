@@ -152,7 +152,7 @@ python image_to_video.py \
 | `--vae-use-tiling` | flag | off | Enable VAE tiling for memory optimization |
 | `--enable-cpu-offload` | flag | off | Enable CPU offloading for diffusion models |
 | `--enable-layerwise-offload` | flag | off | Enable layerwise (blockwise) offloading |
-| `--layerwise-offload-components` | str | unset (`dit`) | Comma-separated component groups to offload; `default` selects `text_encoder,image_encoder,vae`, and `all` selects every group |
+| `--layerwise-offload-components` | str | unset (`dit`) | Comma-separated `dit` and `text_encoder` selection; `all` selects both |
 | `--enable-distributed-layerwise-offload` | flag | off | Enable distributed layerwise offload |
 | `--dlo-use-allgather` / `--dlo-no-use-allgather` | flag | on / off | Select sharded AllGather reconstruction (default) or rank-local streaming |
 | `--dlo-resident-layers` | int | `0` | Leading main-DiT blocks kept device-resident during distributed layerwise offload |

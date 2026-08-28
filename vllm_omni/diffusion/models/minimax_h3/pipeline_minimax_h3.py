@@ -54,7 +54,6 @@ from vllm_omni.diffusion.offloader import (
 )
 from vllm_omni.diffusion.offloader.base import (
     TEXT_ENCODER_COMPONENT,
-    VAE_COMPONENT,
     should_offload_component,
 )
 from vllm_omni.diffusion.offloader.module_collector import ModuleDiscovery
@@ -675,7 +674,7 @@ class MiniMaxH3Pipeline(
         resident_dit_paths=frozenset({"transformer"}),
         encoder_component_types={"text_encoder": TEXT_ENCODER_COMPONENT},
         encoder_block_attrs={"text_encoder": ("vision.blocks", "text_model.layers")},
-        on_demand_component_paths=frozenset({"text_encoder", "video_vae", "audio_vae"}),
+        on_demand_component_paths=frozenset({"text_encoder"}),
     )
     _PROFILER_TARGETS: ClassVar[list[str]] = [
         "_prepare_reference_videos",
@@ -1036,8 +1035,7 @@ class MiniMaxH3Pipeline(
             self.text_encoder_group = None
             self.text_encoder = None
             self._encoder_modules = []
-        stage_vae = should_offload_component(od_config, VAE_COMPONENT)
-        component_load_device = torch.device("cpu") if stage_vae else self.device
+        component_load_device = self.device
         self.video_vae = MiniMaxH3VideoVAE(
             os.path.join(model_path, "video_vae"),
             device=self.device,
@@ -1057,8 +1055,6 @@ class MiniMaxH3Pipeline(
             _register_dlo_component_cache(
                 self._dlo_component_cache,
                 self.text_encoder,
-                self.video_vae,
-                self.audio_vae,
             )
 
         self._quality_policy = MiniMaxH3QualityPolicy(od_config)
@@ -1534,9 +1530,13 @@ class MiniMaxH3Pipeline(
         self.text_encoder.load_to_device()
         return self.text_encoder.encode_ids(input_ids, **vision_kwargs)
 
-    def _uses_manual_component_offload(self) -> bool:
+    def _uses_manual_component_offload(self, component: nn.Module) -> bool:
         od_config = getattr(self, "od_config", None)
-        return bool(od_config is not None and should_offload_component(od_config, VAE_COMPONENT))
+        if od_config is None:
+            return False
+        return component is getattr(self, "text_encoder", None) and should_offload_component(
+            od_config, TEXT_ENCODER_COMPONENT
+        )
 
     def enable_omni_model_cpu_offload(
         self,
@@ -1580,7 +1580,7 @@ class MiniMaxH3Pipeline(
             with sequential_offload_component(component):
                 yield
             return
-        staged = self._uses_manual_component_offload()
+        staged = self._uses_manual_component_offload(component)
         try:
             if staged:
                 component.load_to_device()
@@ -1669,8 +1669,7 @@ class MiniMaxH3Pipeline(
                     max_samples = int(round(max_duration_seconds * int(sample_rate)))
                     waveform = waveform[..., :max_samples]
                 bounded_audios.append((waveform, sample_rate))
-            with self._component_on_device(self.audio_vae):
-                encoded = [self.audio_vae.encode_waveform(*audio) for audio in bounded_audios]
+            encoded = [self.audio_vae.encode_waveform(*audio) for audio in bounded_audios]
             rows = torch.cat([item[0] for item in encoded])
             lengths = torch.tensor(
                 [int(item[1]) for item in encoded],
