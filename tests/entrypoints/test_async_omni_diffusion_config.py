@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from vllm_omni.diffusion.data import AttentionConfig
+from vllm_omni.engine import stage_init_utils
 from vllm_omni.engine.async_omni_engine import AsyncOmniEngine
 from vllm_omni.entrypoints.cli.serve import OmniServeCommand
 from vllm_omni.utils.tracking_parser import TrackingArgumentParser
@@ -458,6 +459,34 @@ def test_serve_cli_forwards_compact_diffusion_offload_config():
     }
     assert args.diffusion_offload_config == expected
     assert engine_args["diffusion_offload_config"] == expected
+
+
+def test_invalid_diffusion_offload_config_fails_before_model_loading(monkeypatch, mocker):
+    load_model = mocker.patch("vllm_omni.diffusion.model_loader.diffusers_loader.DiffusersPipelineLoader.load_model")
+    create_client = mocker.patch("vllm_omni.diffusion.stage_diffusion_client.create_diffusion_client")
+    monkeypatch.setattr(
+        stage_init_utils,
+        "build_engine_args_dict",
+        lambda *_args, **_kwargs: {
+            "model": "test",
+            "diffusion_offload_config": {
+                "mode": "layerwise",
+                "components": {"dit": {}},
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match="Unknown diffusion offload mode"):
+        stage_init_utils.initialize_diffusion_stage(
+            stage_id=0,
+            model="test",
+            stage_cfg=object(),
+            metadata=mocker.Mock(),
+            stage_init_timeout=30,
+        )
+
+    create_client.assert_not_called()
+    load_model.assert_not_called()
 
 
 def test_serve_cli_forwards_hwr_policy_for_no_allgather_dlo():
