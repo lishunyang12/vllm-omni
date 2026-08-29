@@ -754,8 +754,7 @@ class OmniServeCommand(CLISubcommand):
             "--dlo-resident-layers",
             type=int,
             default=0,
-            help="Deprecated; removed in v0.30. Use layer_options.dit.resident_layers "
-            "in --diffusion-offload-config.",
+            help="Deprecated; removed in v0.30. Use layer_options.dit.resident_layers in --diffusion-offload-config.",
         )
         omni_config_group.add_argument(
             "--host-weight-runtime-mode",

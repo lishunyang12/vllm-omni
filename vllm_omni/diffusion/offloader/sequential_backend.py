@@ -336,9 +336,7 @@ class ModelLevelOffloadBackend(OffloadBackend):
             offload_dit_modules=(
                 modules.dits if not self.config.components_explicit or self.config.offloads("dit") else ()
             ),
-            offload_encoder_modules=(
-                selected_encoders
-            ),
+            offload_encoder_modules=selected_encoders,
         )
 
         # Track modules for cleanup

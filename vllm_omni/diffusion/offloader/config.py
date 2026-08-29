@@ -113,8 +113,7 @@ def _parse_layer_options(component: str, value: Any) -> LayerOffloadOptions:
     else:
         if not isinstance(value, Mapping):
             raise TypeError(
-                f"diffusion_offload_config.layer_options[{component!r}] must be a mapping, "
-                f"got {type(value).__name__}"
+                f"diffusion_offload_config.layer_options[{component!r}] must be a mapping, got {type(value).__name__}"
             )
         unknown = sorted(set(value) - {"transfer", "resident_layers"})
         if unknown:
@@ -279,8 +278,7 @@ def _validate_legacy_layer_options(config: Any, public: DiffusionOffloadConfig |
 
     if resident_layers and bool(getattr(config, "dlo_use_allgather", True)):
         raise ValueError(
-            "dlo_resident_layers requires the DiT DLO transfer to be rank-local; "
-            "set dlo_use_allgather=False"
+            "dlo_resident_layers requires the DiT DLO transfer to be rank-local; set dlo_use_allgather=False"
         )
 
 
@@ -293,9 +291,7 @@ def resolve_offload_strategy(config: Any) -> OffloadStrategy:
         return legacy
 
     strategy = _public_strategy(config, public)
-    if legacy is not OffloadStrategy.NONE and (
-        not _legacy_flags_materialized(config) or legacy is not strategy
-    ):
+    if legacy is not OffloadStrategy.NONE and (not _legacy_flags_materialized(config) or legacy is not strategy):
         raise ValueError("diffusion_offload_config cannot be combined with legacy enable_*_offload flags")
     return strategy
 

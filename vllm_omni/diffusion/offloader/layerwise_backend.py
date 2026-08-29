@@ -560,9 +560,7 @@ class LayerWiseOffloadBackend(OffloadBackend):
 
         for vae, vae_name in zip(modules.vaes, modules.vae_names):
             legacy_staged = (
-                not self.config.components_explicit
-                and plan is not None
-                and vae_name in plan.on_demand_component_paths
+                not self.config.components_explicit and plan is not None and vae_name in plan.on_demand_component_paths
             )
             self._prepare_component(
                 vae,
