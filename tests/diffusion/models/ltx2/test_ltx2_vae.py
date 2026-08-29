@@ -38,6 +38,13 @@ def test_ltx_base_vocoder_keeps_native_dtype(monkeypatch):
 
 
 class TestLTXDiffusionDecoder:
+    def test_default_diffusion_extras_are_materialized(self):
+        from vllm_omni.diffusion.data import OmniDiffusionConfig
+
+        config = OmniDiffusionConfig.from_kwargs(model="/tmp/fake-model")
+
+        assert config.extras == {}
+
     @pytest.mark.parametrize("mode", ["spatial_shard_height", "spatial_shard_width"])
     def test_distributed_diffusion_decoder_rejects_non_tile_parallel_modes(self, mode):
         from vllm_omni.diffusion.models.ltx2.ltx2_diffusion_decoder_distributed import (
