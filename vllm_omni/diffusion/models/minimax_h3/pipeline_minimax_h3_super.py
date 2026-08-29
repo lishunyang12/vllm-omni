@@ -22,8 +22,8 @@ H3_SUPER_DRAFT_HEIGHT = 512
 H3_SUPER_DRAFT_WIDTH = 896
 H3_SUPER_DEFAULT_DURATION = 5.0
 H3_SUPER_SUPPORTED_DURATIONS = (5.0, 10.0)
-H3_SUPER_REFINER_HEIGHT = 384
-H3_SUPER_REFINER_WIDTH = 672
+H3_SUPER_REFINER_HEIGHT = 544
+H3_SUPER_REFINER_WIDTH = 960
 H3_SUPER_REFINER_FRAME_COUNTS = (121, 241)
 
 
@@ -41,7 +41,7 @@ def _prepare_h3_super_handoff(
     target_height: int = H3_SUPER_REFINER_HEIGHT,
     target_width: int = H3_SUPER_REFINER_WIDTH,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Build the released BF16-video/FP32-PCM Stage 1 handoff on device."""
+    """Build the 2K-refiner BF16-video/FP32-PCM Stage 1 handoff on device."""
     if video.ndim != 5 or video.shape[0] != 1 or video.shape[1] != 3:
         raise RuntimeError(f"MiniMax H3 Super video must be [1,3,T,H,W], got {tuple(video.shape)}")
     if audio.ndim != 3 or audio.shape[0] != 1 or audio.shape[1] not in (1, 2):

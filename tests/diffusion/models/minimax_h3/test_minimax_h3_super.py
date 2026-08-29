@@ -28,6 +28,10 @@ from vllm_omni.diffusion.models.ltx2.ltx2_recipes import (
 )
 from vllm_omni.diffusion.models.ltx2.pipeline_ltx25_h3_refiner import (
     H3_REFINER_AUDIO_SAMPLE_RATE,
+    H3_REFINER_DRAFT_HEIGHT,
+    H3_REFINER_DRAFT_WIDTH,
+    H3_REFINER_OUTPUT_HEIGHT,
+    H3_REFINER_OUTPUT_WIDTH,
     LTX25H3RefinerPipeline,
     _as_audio_tensor,
     _as_video_tensor,
@@ -42,6 +46,8 @@ from vllm_omni.diffusion.models.ltx2.taehv import (
     LTXWideTAEHVDecoder,
 )
 from vllm_omni.diffusion.models.minimax_h3.pipeline_minimax_h3_super import (
+    H3_SUPER_REFINER_HEIGHT,
+    H3_SUPER_REFINER_WIDTH,
     MiniMaxH3SuperDraftPipeline,
     _minimax_h3_super_post_process,
     _prepare_h3_super_handoff,
@@ -62,6 +68,10 @@ def test_h3_refiner_recipe_enters_only_fixed_three_step_phase():
 
     assert recipe is LTX25_H3_REFINER_RECIPE
     assert recipe.num_inference_steps == 3
+    assert (recipe.height, recipe.width) == (1088, 1920)
+    assert (H3_REFINER_OUTPUT_HEIGHT, H3_REFINER_OUTPUT_WIDTH) == (1088, 1920)
+    assert (H3_REFINER_DRAFT_HEIGHT, H3_REFINER_DRAFT_WIDTH) == (544, 960)
+    assert (H3_SUPER_REFINER_HEIGHT, H3_SUPER_REFINER_WIDTH) == (544, 960)
     assert recipe.phases[0].sigmas == LTX_STAGE_2_DISTILLED_SIGMAS
     assert recipe.phases[0].adapter_slot == "ltx_distilled"
     assert recipe.phases[0].adapter_scale == 0.8
@@ -86,6 +96,23 @@ def test_h3_refiner_conforms_mono_audio_to_stereo_and_exact_duration():
     assert audio.shape == (1, 2, 100)
     conformed = LTX25H3RefinerPipeline._conform_source_audio(audio, frame_count=121)
     assert conformed.shape == (1, 2, int(121 / 24 * H3_REFINER_AUDIO_SAMPLE_RATE))
+
+
+def test_h3_refiner_pins_native_ltx25_2k_sampling():
+    sampling = SimpleNamespace()
+    request = SimpleNamespace(sampling_params_list=[sampling])
+    pipeline = SimpleNamespace(pipeline_recipe=LTX25_H3_REFINER_RECIPE)
+
+    LTX25H3RefinerPipeline._normalize_refiner_sampling(
+        pipeline,
+        request,
+        frame_count=121,
+    )
+
+    assert (sampling.height, sampling.width) == (1088, 1920)
+    assert sampling.num_frames == 121
+    assert sampling.fps == 24
+    assert sampling.num_inference_steps == 3
 
 
 def test_h3_refiner_uses_released_full_temporal_vae_tile():
@@ -408,7 +435,7 @@ def test_h3_super_decode_uses_taeh3_and_official_audio_vae(monkeypatch):
 
 
 def test_h3_refiner_skips_preprocessing_for_compact_handoff(monkeypatch):
-    video = torch.full((1, 3, 1, 384, 672), -1.0, dtype=torch.bfloat16)
+    video = torch.full((1, 3, 1, 544, 960), -1.0, dtype=torch.bfloat16)
     pipeline = SimpleNamespace(
         device=torch.device("cpu"),
         vae=SimpleNamespace(dtype=torch.bfloat16),
@@ -491,6 +518,7 @@ def test_h3_super_deploy_merges_two_independent_diffusion_stages():
     assert stages[1].yaml_engine_args["diffusion_compile_dynamic"] is False
     assert stages[1].yaml_engine_args["additional_config"]["taehv_checkpoint"] == TAEHV_CHECKPOINT_URL
     assert stages[1].yaml_engine_args["additional_config"]["encode_output_video"] is True
-    assert stages[1].yaml_extras["default_sampling_params"]["height"] == 768
+    assert stages[1].yaml_extras["default_sampling_params"]["height"] == 1088
+    assert stages[1].yaml_extras["default_sampling_params"]["width"] == 1920
     assert stages[1].yaml_extras["default_sampling_params"]["num_inference_steps"] == 3
     assert stages[1].yaml_extras["default_sampling_params"]["seed"] == 50803

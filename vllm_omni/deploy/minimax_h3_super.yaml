@@ -1,4 +1,4 @@
-# MiniMax H3 Super Acceleration: 4-step H3 Turbo draft + 3-step LTX-2.5 refiner.
+# MiniMax H3 Super Acceleration: 4-step H3 Turbo draft + 3-step native-2K LTX-2.5 refiner.
 # The official profile assigns one GPU to each serial stage (two GPUs/request).
 pipeline: minimax_h3_super
 async_chunk: false
@@ -46,8 +46,8 @@ stages:
       encode_output_video: true
     default_sampling_params:
       seed: 50803
-      height: 768
-      width: 1344
+      height: 1088
+      width: 1920
       num_frames: 121
       fps: 24
       num_inference_steps: 3

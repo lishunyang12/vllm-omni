@@ -304,12 +304,13 @@ LTX25_TWO_STAGE_RECIPE = _official_two_stage_recipe(LTX25_FULL_RECIPE)
 
 
 # MiniMax H3 Super Acceleration uses H3 as the low-resolution generator and
-# enters only the official LTX-2.5 refinement phase. The H3 draft is encoded
-# and spatially upsampled by ``LTX25H3RefinerPipeline`` before this recipe is
-# executed, so the single phase starts from the final-resolution latent state.
+# enters only the official LTX-2.5 refinement phase at its native 2K canvas.
+# The H3 draft is encoded and spatially upsampled by
+# ``LTX25H3RefinerPipeline`` before this recipe is executed, so the single
+# phase starts from the final-resolution latent state.
 LTX25_H3_REFINER_RECIPE = LTXPipelineRecipe(
-    height=768,
-    width=1344,
+    height=1088,
+    width=1920,
     num_frames=121,
     frame_rate=24.0,
     num_inference_steps=len(LTX_STAGE_2_DISTILLED_SIGMAS) - 1,
