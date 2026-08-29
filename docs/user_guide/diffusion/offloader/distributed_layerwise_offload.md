@@ -265,7 +265,7 @@ H2D behavior.
 #### Registered direct H2D
 
 Registration is attempted automatically only for an eligible warm HWR hit when
-`diffusion_offload_config.pin_memory` is enabled. A successful path is:
+the existing `pin_cpu_memory` policy is enabled. A successful path is:
 
 ```text
 shared read-only HWR mmap -> existing rotating HBM block buffer -> GPU kernel
@@ -278,8 +278,8 @@ kernels access host memory directly.
 CUDA requires read-only host-registration capability for the immutable HWR
 mapping. Unsupported capability, a positive registration limit smaller than
 the complete page-aligned mapping, or a safely rolled-back registration error
-falls back to bounded staging. Programmatic configurations can set
-`diffusion_offload_config.pin_memory=false` to disable registration explicitly.
+falls back to bounded staging. Programmatic compatibility configurations can
+set `pin_cpu_memory=False` to disable registration explicitly.
 A successful registration locks the complete mapped range in host memory for
 that worker's lifetime, so use
 `--dlo-host-registration-limit-gib` when an operator-enforced ceiling is
