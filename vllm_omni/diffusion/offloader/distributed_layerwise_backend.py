@@ -1022,6 +1022,44 @@ class PinnedResidentLayerGroup:
         self._gpu_buffers.clear()
         self.loaded = False
 
+    def restore_to_cpu(self) -> None:
+        """Materialize the persistent host masters back into the module.
+
+        Stage-scoped ``offload()`` deliberately leaves placeholders in the
+        module while this group owns the CPU backing. ``disable()`` discards
+        the group, so it must first restore ordinary CPU tensors to make a
+        later enable cycle safe.
+        """
+        self.offload()
+
+        def restore_target(target: torch.Tensor, value: torch.Tensor) -> None:
+            restored = torch.empty_strided(
+                value.shape,
+                value.stride(),
+                dtype=value.dtype,
+                device="cpu",
+            )
+            restored.copy_(value)
+            set_tensor_storage(target, restored)
+
+        for state in self._states:
+            targets = state["targets"]
+            for dtype, metas in state["metadata"].items():
+                if self.rank_local_mmap:
+                    for source_info, meta in zip(state["cpu_sources"][dtype], metas, strict=True):
+                        source = DistributedLayerwiseOffloadHook._resolve_mmap_source(source_info, meta, dtype)
+                        restore_target(targets[meta["name"]], source)
+                    continue
+
+                flat = state["cpu_shards"][dtype]
+                for meta in metas:
+                    source = torch.as_strided(
+                        flat[meta["offset"] : meta["offset"] + meta["numel"]],
+                        size=meta["shape"],
+                        stride=meta["stride"],
+                    )
+                    restore_target(targets[meta["name"]], source)
+
 
 # ---------------------------------------------------------------------- #
 #  Backend                                                                #
@@ -1506,7 +1544,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             raise ValueError(
                 f"Text encoder {name!r} cannot use DLO AllGather across the DiT offload group: "
                 "its loader-produced weights are not declared replicated across that group. "
-                "Set text_encoder.transfer='rank-local' in diffusion_offload_config "
+                "Set layer_options.text_encoder.transfer='rank-local' in diffusion_offload_config "
                 "for encoder-TP or rank-specific layouts."
             )
 
@@ -1804,7 +1842,9 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
 
         if plan is not None:
             for enc, enc_name in zip(modules.encoders, modules.encoder_names):
-                if self.config.offloads_encoder(enc_name, plan) and enc_name in plan.on_demand_component_paths:
+                if (
+                    not self.config.components_explicit or self.config.offloads_encoder(enc_name, plan)
+                ) and enc_name in plan.on_demand_component_paths:
                     validate_on_demand_component(enc, enc_name)
 
         if self.config.dlo_resident_layers and (plan is None or not plan.resident_dit_paths):
@@ -1870,9 +1910,10 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             logger.info("DLO is using host tensors materialized by the ordinary loader")
 
         # Apply the selected transfer independently to planned text-encoder
-        # stacks. Unselected encoders and all VAEs remain resident.
+        # stacks. Explicitly unselected encoders and all VAEs remain resident;
+        # deprecated selectors preserve the model's pre-existing stage plan.
         for enc, enc_name in zip(modules.encoders, modules.encoder_names):
-            selected = self.config.offloads_encoder(enc_name, plan)
+            selected = not self.config.components_explicit or self.config.offloads_encoder(enc_name, plan)
             blockwise = selected and self._try_layerwise_offload_encoder(enc, enc_name, plan)
             self._register_on_demand_hook(
                 enc,
@@ -1881,7 +1922,15 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 blockwise=blockwise,
             )
         for vae, vae_name in zip(modules.vaes, modules.vae_names):
-            self._register_on_demand_hook(vae, vae_name)
+            self._register_on_demand_hook(
+                vae,
+                vae_name,
+                stage_on_demand=bool(
+                    not self.config.components_explicit
+                    and plan is not None
+                    and vae_name in plan.on_demand_component_paths
+                ),
+            )
 
         # Move resident modules to GPU (small modules needed every forward)
         for name, module in zip(modules.resident_names, modules.resident_modules):
@@ -2216,7 +2265,8 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         self._on_demand_handles = []
         self._on_demand_shard_infos = []
 
-        self.offload_resident_layers()
+        if self._resident_layer_group is not None:
+            self._resident_layer_group.restore_to_cpu()
         self._blocks.clear()
         self._all_hook_groups.clear()
         self._resident_blocks.clear()

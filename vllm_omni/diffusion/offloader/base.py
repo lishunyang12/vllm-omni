@@ -173,9 +173,9 @@ class OffloadConfig:
         if public_config is not None:
             components = frozenset(public_config.components)
             dlo_transfers = {component: DLOTransfer.RANK_LOCAL for component in OFFLOAD_COMPONENTS}
-            for component, component_config in public_config.components.items():
-                dlo_transfers[component] = component_config.transfer or DLOTransfer.RANK_LOCAL
-            dit_config = public_config.components.get(DIT_COMPONENT)
+            for component, layer_options in public_config.layer_options.items():
+                dlo_transfers[component] = layer_options.transfer or DLOTransfer.RANK_LOCAL
+            dit_config = public_config.layer_options.get(DIT_COMPONENT)
             dlo_resident_layers = 0 if dit_config is None else dit_config.resident_layers
             components_explicit = True
         else:

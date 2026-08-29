@@ -31,7 +31,7 @@ omni = Omni(
     model="Wan-AI/Wan2.2-T2V-A14B-Diffusers",
     diffusion_offload_config={
         "mode": "layer",
-        "components": {"dit": {}},
+        "components": ["dit"],
     },
 )
 ```
@@ -39,29 +39,28 @@ omni = Omni(
 ```bash
 vllm serve Wan-AI/Wan2.2-T2V-A14B-Diffusers \
   --omni \
-  --diffusion-offload-config.mode layer \
-  --diffusion-offload-config.components.dit '{}'
+  --diffusion-offload-config '{"mode":"layer","components":["dit"]}'
 ```
 
 ## Component selection
 
-Add `dit`, `text_encoder`, or both under `components`. Presence selects a
-component; an empty mapping uses its safe rank-local defaults:
+Add `dit`, `text_encoder`, or both to the `components` list. Omitting
+`layer_options` uses safe rank-local defaults:
 
-- `{"dit": {}}` streams only DiT blocks.
-- `{"text_encoder": {}}` streams only declared text-encoder blocks.
+- `["dit"]` streams only DiT blocks.
+- `["text_encoder"]` streams only declared text-encoder blocks.
 - Listing both streams both components.
 
 ```bash
 # DiT-only layer offload
 vllm serve /path/to/model --omni \
   --diffusion-offload-config \
-  '{"mode":"layer","components":{"dit":{}}}'
+  '{"mode":"layer","components":["dit"]}'
 
 # Stream a model-declared text encoder while keeping the DiT resident
 vllm serve /path/to/model --omni \
   --diffusion-offload-config \
-  '{"mode":"layer","components":{"text_encoder":{}}}'
+  '{"mode":"layer","components":["text_encoder"]}'
 ```
 
 Encoder categories are resolved from `OffloadPlan.encoder_component_types`

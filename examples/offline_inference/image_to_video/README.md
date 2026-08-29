@@ -214,7 +214,7 @@ python image_to_video.py \
   --flow-shift 5.0 \
   --num-inference-steps 50 \
   --fps 24 \
-  --diffusion-offload-config '{"mode":"module","components":{"dit":{},"text_encoder":{}}}' \
+  --diffusion-offload-config '{"mode":"module","components":["dit","text_encoder"]}' \
   --vae-use-tiling \
   --vae-use-slicing \
   --output hunyuan_i2v.mp4
@@ -443,7 +443,7 @@ assets, see the [LoRA guide](../../../docs/user_guide/diffusion/lora.md#wan22-li
 
 ## FAQ
 
-**OOM errors**: Try using `--vae-use-slicing` and `--vae-use-tiling` to reduce memory usage. For very large models, add `--diffusion-offload-config '{"mode":"module","components":{"dit":{}}}'` or select `mode: "layer"`.
+**OOM errors**: Try using `--vae-use-slicing` and `--vae-use-tiling` to reduce memory usage. For very large models, add `--diffusion-offload-config '{"mode":"module","components":["dit"]}'` or select `mode: "layer"`.
 
 **Auto-calculated resolution**: If `--height` and `--width` are not provided, the script calculates output dimensions from the input image while maintaining aspect ratio and targeting 480 x 832 area (or 512 x 768 for LTX2).
 

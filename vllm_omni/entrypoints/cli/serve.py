@@ -708,11 +708,10 @@ class OmniServeCommand(CLISubcommand):
             type=json.loads,
             default=None,
             help="Diffusion CPU-offload config as JSON or vLLM-style dotted flags. "
-            "Set mode to module or layer, then select dit and/or text_encoder "
-            "under components. Layer settings are transfer (rank-local or "
-            "allgather) and resident_layers (DiT only). Example: "
-            "--diffusion-offload-config.mode layer "
-            "--diffusion-offload-config.components.dit.transfer rank-local.",
+            "Set mode to module or layer, list dit and/or text_encoder in "
+            "components, and put layer-only tuning under layer_options. "
+            "Layer settings are transfer (rank-local or allgather) and "
+            "resident_layers (DiT only).",
         )
         omni_config_group.add_argument(
             "--enable-cpu-offload",
@@ -755,7 +754,8 @@ class OmniServeCommand(CLISubcommand):
             "--dlo-resident-layers",
             type=int,
             default=0,
-            help="Deprecated; removed in v0.30. Use components.dit.resident_layers in --diffusion-offload-config.",
+            help="Deprecated; removed in v0.30. Use layer_options.dit.resident_layers "
+            "in --diffusion-offload-config.",
         )
         omni_config_group.add_argument(
             "--host-weight-runtime-mode",

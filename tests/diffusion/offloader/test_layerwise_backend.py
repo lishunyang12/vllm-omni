@@ -285,6 +285,9 @@ class _StagedVAE(nn.Module):
         self.offload_calls = 0
         self.to_calls = 0
 
+    def load_to_device(self):
+        return None
+
     def offload_to_cpu(self):
         self.offload_calls += 1
         return self.to("cpu")
@@ -314,7 +317,7 @@ class _ComponentPipeline(nn.Module):
     _offload_plan = OffloadPlan(
         encoder_component_types={"text_encoder": "text_encoder"},
         encoder_block_attrs={"text_encoder": ("vision.blocks", "text_model.layers")},
-        on_demand_component_paths=frozenset({"text_encoder"}),
+        on_demand_component_paths=frozenset({"text_encoder", "vae"}),
     )
 
     def __init__(self):
@@ -367,6 +370,7 @@ class TestLayerwiseComponentSelection:
                 strategy=OffloadStrategy.LAYER_WISE,
                 pin_cpu_memory=False,
                 components=frozenset({"text_encoder"}),
+                components_explicit=True,
             ),
             torch.device("cpu"),
         )
@@ -391,6 +395,7 @@ class TestLayerwiseComponentSelection:
                 strategy=OffloadStrategy.LAYER_WISE,
                 pin_cpu_memory=False,
                 components=frozenset({"dit"}),
+                components_explicit=True,
             ),
             torch.device("cpu"),
         )
@@ -415,6 +420,7 @@ class TestLayerwiseComponentSelection:
                 strategy=OffloadStrategy.LAYER_WISE,
                 pin_cpu_memory=False,
                 components=frozenset({"text_encoder"}),
+                components_explicit=True,
             ),
             torch.device("cpu"),
         )
@@ -443,6 +449,24 @@ class TestLayerwiseComponentSelection:
 
         backend.disable()
 
+    def test_legacy_selector_preserves_planned_encoder_and_vae_lifecycle(self, patched_offload_runtime):
+        pipeline = _ComponentPipeline()
+        backend = LayerWiseOffloadBackend(
+            OffloadConfig(
+                strategy=OffloadStrategy.LAYER_WISE,
+                pin_cpu_memory=False,
+            ),
+            torch.device("cpu"),
+        )
+
+        backend.enable(pipeline)
+
+        assert pipeline.text_encoder._omni_layerwise_enabled
+        assert pipeline.text_encoder.offload_calls == 1
+        assert pipeline.vae.offload_calls == 1
+
+        backend.disable()
+
     def test_standard_encoder_needs_only_declared_block_paths(self, patched_offload_runtime):
         pipeline = _GenericEncoderPipeline()
         backend = LayerWiseOffloadBackend(
@@ -450,6 +474,7 @@ class TestLayerwiseComponentSelection:
                 strategy=OffloadStrategy.LAYER_WISE,
                 pin_cpu_memory=False,
                 components=frozenset({"text_encoder"}),
+                components_explicit=True,
             ),
             torch.device("cpu"),
         )
@@ -475,6 +500,7 @@ class TestLayerwiseComponentSelection:
                 strategy=OffloadStrategy.LAYER_WISE,
                 pin_cpu_memory=False,
                 components=frozenset({"text_encoder"}),
+                components_explicit=True,
             ),
             torch.device("cpu"),
         )
@@ -518,7 +544,7 @@ class TestLayerwiseComponentConfig:
             _offload_od_config(
                 diffusion_offload_config={
                     "mode": "layer",
-                    "components": {"dit": {}, "text_encoder": {}},
+                    "components": ["dit", "text_encoder"],
                 }
             )
         )
@@ -534,27 +560,70 @@ class TestLayerwiseComponentConfig:
     def test_unknown_or_noncanonical_component_is_rejected(self, component):
         with pytest.raises(ValueError, match="Unknown diffusion offload component"):
             OffloadConfig.from_od_config(
-                _offload_od_config(diffusion_offload_config={"mode": "layer", "components": {component: {}}})
+                _offload_od_config(diffusion_offload_config={"mode": "layer", "components": [component]})
+            )
+
+    def test_components_is_selection_only_not_an_options_mapping(self):
+        with pytest.raises(TypeError, match="components must be a non-empty list"):
+            OffloadConfig.from_od_config(
+                _offload_od_config(
+                    diffusion_offload_config={
+                        "mode": "layer",
+                        "components": {"dit": {}},
+                    }
+                )
+            )
+
+    def test_layer_options_requires_component_name_keys(self):
+        with pytest.raises(TypeError, match="layer_options keys must be component names"):
+            OffloadConfig.from_od_config(
+                _offload_od_config(
+                    diffusion_offload_config={
+                        "mode": "layer",
+                        "components": ["dit"],
+                        "layer_options": {0: {}},
+                    }
+                )
             )
 
     @pytest.mark.parametrize(
         "config,match",
         [
-            ({"components": {"dit": {}}}, "requires 'mode'"),
+            ({"components": ["dit"]}, "requires 'mode'"),
             ({"mode": "layer"}, "requires 'components'"),
-            ({"mode": "layer", "components": {}}, "non-empty mapping"),
-            ({"mode": "layerwise", "components": {"dit": {}}}, "Unknown diffusion offload mode"),
+            ({"mode": "layer", "components": []}, "must not be empty"),
+            ({"mode": "layerwise", "components": ["dit"]}, "Unknown diffusion offload mode"),
             (
-                {"mode": "layer", "components": {"dit": {"transfer": "rank_local"}}},
+                {
+                    "mode": "layer",
+                    "components": ["dit"],
+                    "layer_options": {"dit": {"transfer": "rank_local"}},
+                },
                 "Unknown offload transfer",
             ),
             (
-                {"mode": "layer", "components": {"dit": {"prefetch": 2}}},
+                {
+                    "mode": "layer",
+                    "components": ["dit"],
+                    "layer_options": {"dit": {"prefetch": 2}},
+                },
                 "Unknown diffusion offload setting",
             ),
             (
-                {"mode": "layer", "components": {"text_encoder": {"resident_layers": 1}}},
+                {
+                    "mode": "layer",
+                    "components": ["text_encoder"],
+                    "layer_options": {"text_encoder": {"resident_layers": 1}},
+                },
                 "supports only the 'dit'",
+            ),
+            (
+                {
+                    "mode": "layer",
+                    "components": ["dit"],
+                    "layer_options": {"text_encoder": {}},
+                },
+                "requires selecting the same component",
             ),
         ],
     )
@@ -567,7 +636,7 @@ class TestLayerwiseComponentConfig:
             _offload_od_config(
                 diffusion_offload_config={
                     "mode": "module",
-                    "components": {"dit": {}, "text_encoder": {}},
+                    "components": ["dit", "text_encoder"],
                 }
             )
         )
@@ -578,9 +647,15 @@ class TestLayerwiseComponentConfig:
 
     @pytest.mark.parametrize("setting", [{"transfer": "rank-local"}, {"resident_layers": 1}])
     def test_module_mode_rejects_layer_settings(self, setting):
-        with pytest.raises(ValueError, match="require diffusion_offload_config.mode='layer'"):
+        with pytest.raises(ValueError, match="layer_options requires mode='layer'"):
             OffloadConfig.from_od_config(
-                _offload_od_config(diffusion_offload_config={"mode": "module", "components": {"dit": setting}})
+                _offload_od_config(
+                    diffusion_offload_config={
+                        "mode": "module",
+                        "components": ["dit"],
+                        "layer_options": {"dit": setting},
+                    }
+                )
             )
 
     def test_each_component_can_choose_its_transfer(self):
@@ -588,7 +663,8 @@ class TestLayerwiseComponentConfig:
             _offload_od_config(
                 diffusion_offload_config={
                     "mode": "layer",
-                    "components": {
+                    "components": ["dit", "text_encoder"],
+                    "layer_options": {
                         "dit": {"transfer": "rank-local"},
                         "text_encoder": {"transfer": "allgather"},
                     },
@@ -606,7 +682,8 @@ class TestLayerwiseComponentConfig:
             _offload_od_config(
                 diffusion_offload_config={
                     "mode": "layer",
-                    "components": {"dit": {"resident_layers": 20}},
+                    "components": ["dit"],
+                    "layer_options": {"dit": {"resident_layers": 20}},
                 }
             )
         )
@@ -621,7 +698,8 @@ class TestLayerwiseComponentConfig:
                 _offload_od_config(
                     diffusion_offload_config={
                         "mode": "layer",
-                        "components": {"dit": {"transfer": "allgather", "resident_layers": 1}},
+                        "components": ["dit"],
+                        "layer_options": {"dit": {"transfer": "allgather", "resident_layers": 1}},
                     }
                 )
             )
@@ -632,7 +710,7 @@ class TestLayerwiseComponentConfig:
                 pin_cpu_memory=True,
                 diffusion_offload_config={
                     "mode": "layer",
-                    "components": {"dit": {}},
+                    "components": ["dit"],
                     "pin_memory": False,
                 },
             )
@@ -688,7 +766,33 @@ class TestLayerwiseComponentConfig:
         with pytest.raises(ValueError, match="cannot be combined"):
             OffloadConfig.from_od_config(
                 _offload_od_config(
-                    diffusion_offload_config={"mode": "layer", "components": {"dit": {}}},
+                    diffusion_offload_config={"mode": "layer", "components": ["dit"]},
                     enable_cpu_offload=True,
+                )
+            )
+
+    @pytest.mark.parametrize(
+        "legacy_options",
+        [
+            {"dlo_use_allgather": False},
+            {"dlo_resident_layers": 12},
+        ],
+    )
+    def test_compact_config_cannot_mix_with_legacy_dlo_options(self, legacy_options):
+        with pytest.raises(ValueError, match="cannot be combined with legacy DLO option"):
+            OffloadConfig.from_od_config(
+                _offload_od_config(
+                    diffusion_offload_config={"mode": "layer", "components": ["dit"]},
+                    **legacy_options,
+                )
+            )
+
+    def test_legacy_allgather_resident_layers_fail_during_config_resolution(self):
+        with pytest.raises(ValueError, match="requires the DiT DLO transfer to be rank-local"):
+            OffloadConfig.from_od_config(
+                _offload_od_config(
+                    enable_distributed_layerwise_offload=True,
+                    dlo_use_allgather=True,
+                    dlo_resident_layers=12,
                 )
             )

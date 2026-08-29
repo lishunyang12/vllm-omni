@@ -8,6 +8,7 @@ import torch
 from torch import nn
 
 from vllm_omni.diffusion.offloader.base import OffloadConfig, OffloadStrategy
+from vllm_omni.diffusion.offloader.offload_plan import OffloadPlan
 from vllm_omni.diffusion.offloader.sequential_backend import (
     ModelLevelOffloadBackend,
     SequentialOffloadHook,
@@ -133,6 +134,40 @@ def test_sequential_offload_filters_cpu_eligible_components() -> None:
     assert resident_hook.offload_after_context is False
 
     remove_sequential_offload([dit, encoder, resident_stage])
+
+
+def test_model_level_backend_keeps_declared_image_encoder_resident() -> None:
+    class MixedEncoderPipeline(nn.Module):
+        _offload_plan = OffloadPlan(
+            encoder_component_types={
+                "text_encoder": "text_encoder",
+            }
+        )
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.transformer = _create_simple_module()
+            self.text_encoder = _create_simple_module()
+            self.image_encoder = _create_simple_module()
+
+    pipeline = MixedEncoderPipeline()
+    backend = ModelLevelOffloadBackend(
+        OffloadConfig(
+            strategy=OffloadStrategy.MODEL_LEVEL,
+            components=frozenset({"dit", "text_encoder"}),
+            components_explicit=True,
+        ),
+        torch.device("cpu"),
+    )
+
+    backend.enable(pipeline)
+
+    text_hook = pipeline.text_encoder._hook_registry.get_hook(SequentialOffloadHook._HOOK_NAME)
+    image_hook = pipeline.image_encoder._hook_registry.get_hook(SequentialOffloadHook._HOOK_NAME)
+    assert text_hook.offload_after_context is True
+    assert image_hook.offload_after_context is False
+
+    backend.disable()
 
 
 def test_sequential_offload_can_begin_with_dit_on_cpu(monkeypatch: pytest.MonkeyPatch) -> None:

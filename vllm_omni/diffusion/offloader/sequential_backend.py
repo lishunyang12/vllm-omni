@@ -14,6 +14,7 @@ from vllm_omni.platforms import current_omni_platform
 
 from .base import OffloadBackend, OffloadConfig, SupportsModelCpuOffload
 from .module_collector import ModuleDiscovery
+from .offload_plan import get_offload_plan
 
 logger = init_logger(__name__)
 
@@ -289,6 +290,12 @@ class ModelLevelOffloadBackend(OffloadBackend):
             return
 
         modules = ModuleDiscovery.discover(pipeline)
+        plan = get_offload_plan(pipeline)
+        selected_encoders = [
+            encoder
+            for encoder, name in zip(modules.encoders, modules.encoder_names)
+            if not self.config.components_explicit or self.config.offloads_encoder(name, plan)
+        ]
 
         # Move encoders to GPU
         for enc in modules.encoders:
@@ -330,7 +337,7 @@ class ModelLevelOffloadBackend(OffloadBackend):
                 modules.dits if not self.config.components_explicit or self.config.offloads("dit") else ()
             ),
             offload_encoder_modules=(
-                modules.encoders if not self.config.components_explicit or self.config.offloads("text_encoder") else ()
+                selected_encoders
             ),
         )
 

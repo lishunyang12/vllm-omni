@@ -779,11 +779,11 @@ class _DiffusionConfigProjection:
             validate_host_weight_runtime_options,
         )
         from vllm_omni.diffusion.diffusion_kv.config import parse_diffusion_kv_cache_mode
-        from vllm_omni.diffusion.offloader.config import materialize_legacy_offload_flags
         from vllm_omni.quantization import build_quant_config
 
-        materialize_legacy_offload_flags(self)
-
+        # Keep diffusion_offload_config canonical across this structured
+        # transport boundary. OmniDiffusionConfig materializes deprecated
+        # runtime fields only after the terminal config is reconstructed.
         if self.tf_model_config is None:
             self.tf_model_config = TransformerConfig()
         elif isinstance(self.tf_model_config, Mapping):

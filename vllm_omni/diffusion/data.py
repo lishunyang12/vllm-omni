@@ -804,8 +804,8 @@ class OmniDiffusionConfig:
 
     output_type: str = "pil"
 
-    # CPU offload parameters. Public policy, component selection, and
-    # component-specific layer settings live in one compact mapping.
+    # CPU offload parameters. The compact public mapping separates component
+    # selection from component-specific layer settings.
     diffusion_offload_config: dict[str, Any] | None = None
     # Deprecated compatibility aliases; removed in v0.30.
     # When enabled, DiT and encoders swap GPU access (mutual exclusion):

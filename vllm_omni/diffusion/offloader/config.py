@@ -17,6 +17,9 @@ DEFAULT_OFFLOAD_COMPONENTS = frozenset({DIT_COMPONENT})
 DLO_COMPONENTS = OFFLOAD_COMPONENTS
 
 LEGACY_OFFLOAD_REMOVAL_VERSION = "0.30"
+# Reserved transport marker stored in the existing ``extras`` mapping so a
+# structured config round trip can distinguish derived aliases from user input.
+_MATERIALIZED_EXTRAS_KEY = "_diffusion_offload_flags_materialized"
 
 
 class OffloadMode(str, Enum):
@@ -43,7 +46,7 @@ class DLOTransfer(str, Enum):
 
 
 @dataclass(frozen=True)
-class ComponentOffloadConfig:
+class LayerOffloadOptions:
     """Layer-mode settings for one selected diffusion component."""
 
     transfer: DLOTransfer | None = None
@@ -55,7 +58,8 @@ class DiffusionOffloadConfig:
     """Validated user-facing diffusion offload configuration."""
 
     mode: OffloadMode
-    components: dict[str, ComponentOffloadConfig]
+    components: frozenset[str]
+    layer_options: dict[str, LayerOffloadOptions]
     pin_memory: bool | None = None
 
 
@@ -69,6 +73,14 @@ _LEGACY_STRATEGY_PRIORITY = (
     OffloadStrategy.LAYER_WISE,
     OffloadStrategy.MODEL_LEVEL,
 )
+
+
+def _legacy_flags_materialized(config: Any) -> bool:
+    """Read materialization provenance across structured config transport."""
+    if bool(getattr(config, _MATERIALIZED_EXTRAS_KEY, False)):
+        return True
+    extras = getattr(config, "extras", None)
+    return isinstance(extras, Mapping) and bool(extras.get(_MATERIALIZED_EXTRAS_KEY, False))
 
 
 def _parse_mode(value: Any) -> OffloadMode:
@@ -95,13 +107,14 @@ def _parse_transfer(value: Any) -> DLOTransfer:
         raise ValueError(f"Unknown offload transfer {value!r}; choose from: {choices}") from exc
 
 
-def _parse_component_config(component: str, value: Any) -> ComponentOffloadConfig:
-    if isinstance(value, ComponentOffloadConfig):
+def _parse_layer_options(component: str, value: Any) -> LayerOffloadOptions:
+    if isinstance(value, LayerOffloadOptions):
         parsed = value
     else:
         if not isinstance(value, Mapping):
             raise TypeError(
-                f"diffusion_offload_config.components[{component!r}] must be a mapping, got {type(value).__name__}"
+                f"diffusion_offload_config.layer_options[{component!r}] must be a mapping, "
+                f"got {type(value).__name__}"
             )
         unknown = sorted(set(value) - {"transfer", "resident_layers"})
         if unknown:
@@ -113,7 +126,7 @@ def _parse_component_config(component: str, value: Any) -> ComponentOffloadConfi
         resident_layers = value.get("resident_layers", 0)
         if type(resident_layers) is not int or resident_layers < 0:
             raise ValueError(f"resident_layers for {component} must be a non-negative integer")
-        parsed = ComponentOffloadConfig(
+        parsed = LayerOffloadOptions(
             transfer=transfer,
             resident_layers=resident_layers,
         )
@@ -121,7 +134,7 @@ def _parse_component_config(component: str, value: Any) -> ComponentOffloadConfi
     transfer = _parse_transfer(parsed.transfer) if parsed.transfer is not None else None
     if type(parsed.resident_layers) is not int or parsed.resident_layers < 0:
         raise ValueError(f"resident_layers for {component} must be a non-negative integer")
-    parsed = ComponentOffloadConfig(
+    parsed = LayerOffloadOptions(
         transfer=transfer,
         resident_layers=parsed.resident_layers,
     )
@@ -138,16 +151,17 @@ def parse_diffusion_offload_config(value: Any) -> DiffusionOffloadConfig | None:
         value = {
             "mode": value.mode,
             "components": value.components,
+            "layer_options": value.layer_options,
             "pin_memory": value.pin_memory,
         }
     if not isinstance(value, Mapping):
         raise TypeError(f"diffusion_offload_config must be a mapping, got {type(value).__name__}")
 
-    unknown = sorted(set(value) - {"mode", "components", "pin_memory"})
+    unknown = sorted(set(value) - {"mode", "components", "layer_options", "pin_memory"})
     if unknown:
         raise ValueError(
             f"Unknown diffusion_offload_config field(s): {', '.join(unknown)}; "
-            "choose from: mode, components, pin_memory"
+            "choose from: mode, components, layer_options, pin_memory"
         )
     if "mode" not in value:
         raise ValueError("diffusion_offload_config requires 'mode'")
@@ -156,38 +170,43 @@ def parse_diffusion_offload_config(value: Any) -> DiffusionOffloadConfig | None:
 
     mode = _parse_mode(value["mode"])
     raw_components = value["components"]
-    if not isinstance(raw_components, Mapping) or not raw_components:
-        raise ValueError("diffusion_offload_config.components must be a non-empty mapping")
+    if isinstance(raw_components, (str, Mapping)) or not isinstance(raw_components, Collection):
+        raise TypeError("diffusion_offload_config.components must be a non-empty list of component names")
+    components = parse_offload_components(raw_components)
 
-    components: dict[str, ComponentOffloadConfig] = {}
-    for component, component_value in raw_components.items():
-        if not isinstance(component, str) or component not in OFFLOAD_COMPONENTS:
-            choices = ", ".join(sorted(OFFLOAD_COMPONENTS))
-            raise ValueError(f"Unknown diffusion offload component {component!r}; choose from: {choices}")
-        components[component] = _parse_component_config(component, component_value)
+    raw_layer_options = value.get("layer_options", {})
+    if not isinstance(raw_layer_options, Mapping):
+        raise TypeError("diffusion_offload_config.layer_options must be a mapping")
+    if any(not isinstance(component, str) for component in raw_layer_options):
+        raise TypeError("diffusion_offload_config.layer_options keys must be component names")
+    unselected_options = sorted(set(raw_layer_options) - components)
+    if unselected_options:
+        raise ValueError(
+            "diffusion_offload_config.layer_options requires selecting the same component(s): "
+            + ", ".join(unselected_options)
+        )
+    layer_options = {
+        component: _parse_layer_options(component, raw_layer_options.get(component, {})) for component in components
+    }
 
     pin_memory = value.get("pin_memory")
     if pin_memory is not None and type(pin_memory) is not bool:
         raise TypeError("diffusion_offload_config.pin_memory must be a bool")
 
     if mode is OffloadMode.MODULE:
-        configured_layer_options = [
-            component
-            for component, settings in components.items()
-            if settings.transfer is not None or settings.resident_layers
-        ]
-        if configured_layer_options:
+        if raw_layer_options:
             raise ValueError(
-                "transfer and resident_layers require diffusion_offload_config.mode='layer'; "
-                f"configured for: {', '.join(sorted(configured_layer_options))}"
+                "diffusion_offload_config.layer_options requires mode='layer'; "
+                f"configured for: {', '.join(sorted(raw_layer_options))}"
             )
-    dit = components.get(DIT_COMPONENT)
+    dit = layer_options.get(DIT_COMPONENT)
     if dit is not None and dit.resident_layers and dit.transfer is DLOTransfer.ALLGATHER:
         raise ValueError("resident_layers requires dit.transfer='rank-local'")
 
     return DiffusionOffloadConfig(
         mode=mode,
         components=components,
+        layer_options=layer_options,
         pin_memory=pin_memory,
     )
 
@@ -209,7 +228,7 @@ def _legacy_strategy(config: Any, *, warn: bool) -> OffloadStrategy:
         for candidate in _LEGACY_STRATEGY_PRIORITY
         if any(enabled_strategy is candidate for _, enabled_strategy in enabled_aliases)
     )
-    if warn and not bool(getattr(config, "_diffusion_offload_flags_materialized", False)):
+    if warn and not _legacy_flags_materialized(config):
         fields = ", ".join(field for field, _ in enabled_aliases)
         warnings.warn(
             f"{fields} {'are' if len(enabled_aliases) > 1 else 'is'} deprecated and will be removed in "
@@ -227,7 +246,7 @@ def _public_strategy(config: Any, public: DiffusionOffloadConfig) -> OffloadStra
 
     needs_distributed_backend = any(
         settings.transfer is DLOTransfer.ALLGATHER or settings.resident_layers
-        for settings in public.components.values()
+        for settings in public.layer_options.values()
     )
     needs_distributed_backend = needs_distributed_backend or (
         getattr(config, "host_weight_runtime_mode", "disabled") != "disabled"
@@ -236,16 +255,46 @@ def _public_strategy(config: Any, public: DiffusionOffloadConfig) -> OffloadStra
     return OffloadStrategy.DISTRIBUTED_LAYER_WISE if needs_distributed_backend else OffloadStrategy.LAYER_WISE
 
 
+def _validate_legacy_layer_options(config: Any, public: DiffusionOffloadConfig | None) -> None:
+    """Reject ambiguous or invalid deprecated DLO tuning before loading."""
+    resident_layers = getattr(config, "dlo_resident_layers", 0)
+    if type(resident_layers) is not int or resident_layers < 0:
+        raise ValueError(f"dlo_resident_layers must be a non-negative integer, got {resident_layers!r}")
+
+    materialized = _legacy_flags_materialized(config)
+    if public is not None:
+        if materialized:
+            return
+        conflicting_fields = []
+        if getattr(config, "dlo_use_allgather", True) is not True:
+            conflicting_fields.append("dlo_use_allgather")
+        if resident_layers:
+            conflicting_fields.append("dlo_resident_layers")
+        if conflicting_fields:
+            raise ValueError(
+                "diffusion_offload_config cannot be combined with legacy DLO option(s): "
+                + ", ".join(conflicting_fields)
+            )
+        return
+
+    if resident_layers and bool(getattr(config, "dlo_use_allgather", True)):
+        raise ValueError(
+            "dlo_resident_layers requires the DiT DLO transfer to be rank-local; "
+            "set dlo_use_allgather=False"
+        )
+
+
 def resolve_offload_strategy(config: Any) -> OffloadStrategy:
     """Resolve the compact config or the deprecated boolean entry points."""
     public = get_diffusion_offload_config(config)
+    _validate_legacy_layer_options(config, public)
     legacy = _legacy_strategy(config, warn=public is None)
     if public is None:
         return legacy
 
     strategy = _public_strategy(config, public)
     if legacy is not OffloadStrategy.NONE and (
-        not bool(getattr(config, "_diffusion_offload_flags_materialized", False)) or legacy is not strategy
+        not _legacy_flags_materialized(config) or legacy is not strategy
     ):
         raise ValueError("diffusion_offload_config cannot be combined with legacy enable_*_offload flags")
     return strategy
@@ -263,7 +312,7 @@ def materialize_legacy_offload_flags(config: Any) -> OffloadStrategy:
     for field, field_strategy in _LEGACY_STRATEGY_FIELDS.items():
         setattr(config, field, strategy is field_strategy)
     if public is not None:
-        dit = public.components.get(DIT_COMPONENT)
+        dit = public.layer_options.get(DIT_COMPONENT)
         setattr(
             config,
             "dlo_use_allgather",
@@ -272,7 +321,10 @@ def materialize_legacy_offload_flags(config: Any) -> OffloadStrategy:
         setattr(config, "dlo_resident_layers", 0 if dit is None else dit.resident_layers)
         if public.pin_memory is not None:
             setattr(config, "pin_cpu_memory", public.pin_memory)
-    setattr(config, "_diffusion_offload_flags_materialized", True)
+    setattr(config, _MATERIALIZED_EXTRAS_KEY, True)
+    extras = getattr(config, "extras", None)
+    if isinstance(extras, dict):
+        extras[_MATERIALIZED_EXTRAS_KEY] = True
     return strategy
 
 
@@ -294,7 +346,7 @@ def parse_offload_components(value: str | Collection[str] | None) -> frozenset[s
     unknown = sorted(set(components) - OFFLOAD_COMPONENTS)
     if unknown:
         choices = ", ".join(sorted(OFFLOAD_COMPONENTS))
-        raise ValueError(f"Unknown offload component(s): {', '.join(unknown)}; choose from: {choices}")
+        raise ValueError(f"Unknown diffusion offload component(s): {', '.join(unknown)}; choose from: {choices}")
     return frozenset(components)
 
 
@@ -326,7 +378,7 @@ def component_uses_allgather(config: Any, component: str = DIT_COMPONENT) -> boo
     public = get_diffusion_offload_config(config)
     if public is not None:
         try:
-            settings = public.components[component]
+            settings = public.layer_options[component]
         except KeyError as exc:
             raise ValueError(f"Offload component {component!r} is not selected") from exc
         return settings.transfer is DLOTransfer.ALLGATHER

@@ -24,7 +24,7 @@ omni = Omni(
     model="Wan-AI/Wan2.2-T2V-A14B-Diffusers",
     diffusion_offload_config={
         "mode": "module",
-        "components": {"dit": {}, "text_encoder": {}},
+        "components": ["dit", "text_encoder"],
     },
 )
 ```
@@ -33,11 +33,11 @@ omni = Omni(
 vllm serve Wan-AI/Wan2.2-T2V-A14B-Diffusers \
   --omni \
   --diffusion-offload-config \
-  '{"mode":"module","components":{"dit":{},"text_encoder":{}}}'
+  '{"mode":"module","components":["dit","text_encoder"]}'
 ```
 
-Component presence selects it for offload. Module mode rejects layer-only
-settings such as `transfer` and `resident_layers`. The legacy
+List a component to select it for offload. Module mode rejects `layer_options`
+such as `transfer` and `resident_layers`. The legacy
 `enable_cpu_offload=True` entry point remains supported with a migration
 warning until v0.30.
 

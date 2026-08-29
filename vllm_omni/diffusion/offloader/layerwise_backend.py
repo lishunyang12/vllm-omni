@@ -533,11 +533,13 @@ class LayerWiseOffloadBackend(OffloadBackend):
 
         if plan is not None:
             for enc, enc_name in zip(modules.encoders, modules.encoder_names):
-                if self.config.offloads_encoder(enc_name, plan) and enc_name in plan.on_demand_component_paths:
+                if (
+                    not self.config.components_explicit or self.config.offloads_encoder(enc_name, plan)
+                ) and enc_name in plan.on_demand_component_paths:
                     validate_on_demand_component(enc, enc_name)
 
         for enc, enc_name in zip(modules.encoders, modules.encoder_names):
-            selected = self.config.offloads_encoder(enc_name, plan)
+            selected = not self.config.components_explicit or self.config.offloads_encoder(enc_name, plan)
             blockwise = selected and enable_plan_encoder_layerwise_offload(
                 enc,
                 enc_name,
@@ -556,8 +558,19 @@ class LayerWiseOffloadBackend(OffloadBackend):
                 stage_on_demand=bool(selected and plan is not None and enc_name in plan.on_demand_component_paths),
             )
 
-        for vae in modules.vaes:
-            vae.to(self.device)
+        for vae, vae_name in zip(modules.vaes, modules.vae_names):
+            legacy_staged = (
+                not self.config.components_explicit
+                and plan is not None
+                and vae_name in plan.on_demand_component_paths
+            )
+            self._prepare_component(
+                vae,
+                vae_name,
+                selected=legacy_staged,
+                blockwise=False,
+                stage_on_demand=legacy_staged,
+            )
 
         # Move resident modules to GPU (small modules needed every forward)
         for name, module in zip(modules.resident_names, modules.resident_modules):

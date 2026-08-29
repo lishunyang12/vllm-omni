@@ -139,7 +139,7 @@ vllm serve "${MODEL}" \
   --task-type fl2va \
   --num-gpus 1 \
   --diffusion-offload-config \
-  '{"mode":"layer","components":{"dit":{},"text_encoder":{}}}' \
+  '{"mode":"layer","components":["dit","text_encoder"]}' \
   --enforce-eager \
   --diffusion-attention-backend FLASH_ATTN
 ```
@@ -158,7 +158,7 @@ denoise, and 4.503 seconds decode. These reduced-step numbers validate the
 execution path; they are not a quality or production-latency benchmark.
 
 To use whole-component behavior, change the config to
-`{"mode":"module","components":{"dit":{},"text_encoder":{}}}`. Module
+`{"mode":"module","components":["dit","text_encoder"]}`. Module
 offload swaps the complete encoder and DiT and therefore has a higher
 encode-phase peak than encoder blockwise offload.
 
@@ -193,7 +193,7 @@ vllm serve "${MODEL}" \
   --vae-parallel-mode tile \
   --vae-use-tiling \
   --diffusion-offload-config \
-  '{"mode":"layer","components":{"dit":{"transfer":"rank-local","resident_layers":20},"text_encoder":{"transfer":"rank-local"}}}' \
+  '{"mode":"layer","components":["dit","text_encoder"],"layer_options":{"dit":{"transfer":"rank-local","resident_layers":20},"text_encoder":{"transfer":"rank-local"}}}' \
   --enforce-eager \
   --diffusion-attention-backend CUDNN_ATTN
 ```
@@ -1127,7 +1127,7 @@ omni = Omni(
     trust_remote_code=True,
     diffusion_offload_config={
         "mode": "module",
-        "components": {"dit": {}, "text_encoder": {}},
+        "components": ["dit", "text_encoder"],
     },
 )
 outputs = omni.generate(

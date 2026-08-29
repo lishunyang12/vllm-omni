@@ -1350,9 +1350,7 @@ def test_layerwise_encoder_selection_releases_text_encoder(components):
         enable_distributed_layerwise_offload=False,
         diffusion_offload_config={
             "mode": "layer",
-            "components": {
-                name: {} for name in ({"text_encoder"} if components == "text_encoder" else {"dit", "text_encoder"})
-            },
+            "components": ["text_encoder"] if components == "text_encoder" else ["dit", "text_encoder"],
         },
     )
     pipeline.text_encoder = Mock()
@@ -1375,7 +1373,7 @@ def test_layerwise_dit_only_keeps_text_encoder_resident():
         enable_cpu_offload=False,
         enable_layerwise_offload=False,
         enable_distributed_layerwise_offload=False,
-        diffusion_offload_config={"mode": "layer", "components": {"dit": {}}},
+        diffusion_offload_config={"mode": "layer", "components": ["dit"]},
     )
     pipeline.text_encoder = Mock()
     expected = torch.ones(2, 3)
@@ -1386,7 +1384,6 @@ def test_layerwise_dit_only_keeps_text_encoder_resident():
     assert actual is expected
     pipeline.text_encoder.load_to_device.assert_called_once_with()
     pipeline.text_encoder.offload_to_cpu.assert_not_called()
-
 
 def test_standalone_audio_conditions_keep_audio_vae_resident(monkeypatch):
     from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
@@ -1403,7 +1400,7 @@ def test_standalone_audio_conditions_keep_audio_vae_resident(monkeypatch):
         enable_distributed_layerwise_offload=False,
         diffusion_offload_config={
             "mode": "layer",
-            "components": {"dit": {}, "text_encoder": {}},
+            "components": ["dit", "text_encoder"],
         },
     )
     pipeline.audio_vae = Mock()
@@ -1432,10 +1429,8 @@ def test_distributed_layerwise_all_keeps_vae_component_resident():
         enable_distributed_layerwise_offload=False,
         diffusion_offload_config={
             "mode": "layer",
-            "components": {
-                "dit": {"transfer": "allgather"},
-                "text_encoder": {},
-            },
+            "components": ["dit", "text_encoder"],
+            "layer_options": {"dit": {"transfer": "allgather"}},
         },
     )
     component = Mock()
@@ -1458,7 +1453,7 @@ def test_dit_encoder_selection_keeps_vae_resident():
         enable_distributed_layerwise_offload=False,
         diffusion_offload_config={
             "mode": "layer",
-            "components": {"dit": {}, "text_encoder": {}},
+            "components": ["dit", "text_encoder"],
         },
     )
     component = Mock()

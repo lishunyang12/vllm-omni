@@ -1390,3 +1390,34 @@ def test_diffusion_quantization_mapping_reaches_terminal_config(monkeypatch):
 
     assert cfg.quantization_config is not None
     assert cfg.quantization_config.get_name() == "int8"
+
+
+def test_compact_offload_config_reaches_terminal_config_without_legacy_conflict(monkeypatch):
+    from vllm_omni.diffusion.data import OmniDiffusionConfig
+    from vllm_omni.diffusion.offloader.config import OffloadStrategy, resolve_offload_strategy
+
+    compact_config = {
+        "mode": "layer",
+        "components": ["dit", "text_encoder"],
+        "layer_options": {
+            "dit": {"transfer": "rank-local", "resident_layers": 12},
+            "text_encoder": {"transfer": "allgather"},
+        },
+    }
+    cfg = omni_config_module._DiffusionConfigProjection.from_kwargs(
+        diffusion_offload_config=compact_config,
+    )
+
+    # The structured projection is a transport boundary. Keep the compact
+    # config canonical here instead of serializing derived deprecated flags.
+    assert cfg.enable_distributed_layerwise_offload is False
+    assert cfg.dlo_resident_layers == 0
+
+    monkeypatch.setattr(OmniDiffusionConfig, "_resolve_master_port", lambda _self: 29500)
+    monkeypatch.setattr(OmniDiffusionConfig, "enrich_config", lambda _self: None)
+    cfg.enrich_config()
+
+    assert cfg.diffusion_offload_config == compact_config
+    assert cfg.enable_distributed_layerwise_offload is True
+    assert cfg.dlo_resident_layers == 12
+    assert resolve_offload_strategy(cfg) is OffloadStrategy.DISTRIBUTED_LAYER_WISE

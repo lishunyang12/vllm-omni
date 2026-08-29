@@ -1596,6 +1596,7 @@ class TestOffloadPlan:
                 self.transformer = Transformer()
 
         pipeline = Pipeline()
+        expected_parameters = {name: parameter.detach().clone() for name, parameter in pipeline.named_parameters()}
         backend = DistributedLayerwiseOffloadBackend(
             OffloadConfig(
                 strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
@@ -1614,6 +1615,15 @@ class TestOffloadPlan:
         assert backend.enabled
 
         backend.disable()
+
+        for name, parameter in pipeline.named_parameters():
+            torch.testing.assert_close(parameter, expected_parameters[name])
+
+        backend.enable(pipeline)
+        assert len(backend._resident_blocks) == 2
+        backend.disable()
+        for name, parameter in pipeline.named_parameters():
+            torch.testing.assert_close(parameter, expected_parameters[name])
 
 
 class TestMmapValidation:
@@ -2528,7 +2538,7 @@ class _DistributedComponentPipeline(nn.Module):
     _offload_plan = OffloadPlan(
         encoder_component_types={"text_encoder": "text_encoder"},
         encoder_block_attrs={"text_encoder": ("vision.blocks", "text_model.layers")},
-        on_demand_component_paths=frozenset({"text_encoder"}),
+        on_demand_component_paths=frozenset({"text_encoder", "vae"}),
     )
 
     def __init__(self):
@@ -2570,6 +2580,7 @@ class TestDistributedComponentSelection:
                 pin_cpu_memory=False,
                 dlo_use_allgather=False,
                 components=frozenset({"dit", "text_encoder"}),
+                components_explicit=True,
             ),
             torch.device("cpu"),
         )
@@ -2601,6 +2612,7 @@ class TestDistributedComponentSelection:
                 pin_cpu_memory=False,
                 dlo_use_allgather=False,
                 components=frozenset({"dit"}),
+                components_explicit=True,
             ),
             torch.device("cpu"),
         )
@@ -2637,6 +2649,25 @@ class TestDistributedComponentSelection:
 
         backend.disable()
 
+    def test_legacy_selector_preserves_planned_encoder_and_vae_lifecycle(self, patched_offload_runtime):
+        pipeline = _DistributedComponentPipeline()
+        backend = DistributedLayerwiseOffloadBackend(
+            OffloadConfig(
+                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                pin_cpu_memory=False,
+                dlo_use_allgather=False,
+            ),
+            torch.device("cpu"),
+        )
+
+        backend.enable(pipeline)
+
+        assert pipeline.text_encoder._omni_layerwise_enabled
+        assert pipeline.text_encoder.offload_calls == 1
+        assert pipeline.vae.offload_calls == 1
+
+        backend.disable()
+
     def test_standard_encoder_needs_only_declared_block_paths(self, patched_offload_runtime):
         pipeline = _GenericDistributedEncoderPipeline()
         blocks = pipeline.text_encoder.encoder.block
@@ -2654,6 +2685,7 @@ class TestDistributedComponentSelection:
                 pin_cpu_memory=False,
                 dlo_use_allgather=False,
                 components=frozenset({"dit", "text_encoder"}),
+                components_explicit=True,
             ),
             torch.device("cpu"),
         )
@@ -2689,6 +2721,7 @@ class TestDistributedComponentSelection:
                 pin_cpu_memory=False,
                 dp_size=2,
                 components=frozenset({"dit", "text_encoder"}),
+                components_explicit=True,
                 dlo_transfers={"dit": "rank-local", "text_encoder": "allgather"},
             ),
             torch.device("cpu"),
@@ -2725,6 +2758,7 @@ class TestDistributedComponentSelection:
                 pin_cpu_memory=False,
                 dp_size=2,
                 components=frozenset({"text_encoder"}),
+                components_explicit=True,
                 dlo_transfers={"text_encoder": "allgather"},
             ),
             torch.device("cpu"),
@@ -2741,6 +2775,7 @@ class TestDistributedComponentSelection:
                 strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
                 pin_cpu_memory=False,
                 components=frozenset({"text_encoder"}),
+                components_explicit=True,
                 dlo_transfers={"text_encoder": "rank-local"},
             ),
             torch.device("cpu"),

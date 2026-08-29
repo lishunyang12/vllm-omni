@@ -30,8 +30,8 @@ The public API describes intent in one nested configuration:
 | Level | Setting | Question answered |
 | --- | --- | --- |
 | Granularity | `mode` | move a complete component (`module`) or stream its blocks (`layer`) |
-| Selection | `components` keys | whether `dit` and/or `text_encoder` may move to CPU |
-| Per-component layer options | `transfer`, `resident_layers` | use rank-local or AllGather transfer and optionally retain leading DiT blocks |
+| Selection | `components` list | whether `dit` and/or `text_encoder` may move to CPU |
+| Per-component layer options | `layer_options` | use rank-local or AllGather transfer and optionally retain leading DiT blocks |
 
 The historical `enable_cpu_offload`, `enable_layerwise_offload`, and
 `enable_distributed_layerwise_offload` fields remain compatibility aliases
@@ -48,19 +48,19 @@ legacy alias with `diffusion_offload_config` fails during configuration.
 # selected components can use AllGather safely.
 vllm serve Wan-AI/Wan2.2-T2V-A14B-Diffusers --omni \
   --diffusion-offload-config \
-  '{"mode":"layer","components":{"dit":{"transfer":"allgather"},"text_encoder":{"transfer":"allgather"}}}' \
+  '{"mode":"layer","components":["dit","text_encoder"],"layer_options":{"dit":{"transfer":"allgather"},"text_encoder":{"transfer":"allgather"}}}' \
   --usp 4
 
 # Mix transfers independently: sharded DiT, loader-produced encoder layout
 vllm serve /path/to/model --omni \
   --diffusion-offload-config \
-  '{"mode":"layer","components":{"dit":{"transfer":"allgather"},"text_encoder":{"transfer":"rank-local"}}}' \
+  '{"mode":"layer","components":["dit","text_encoder"],"layer_options":{"dit":{"transfer":"allgather"},"text_encoder":{"transfer":"rank-local"}}}' \
   --usp 4
 
 # Standard-loader rank-local weights for both components
 vllm serve /path/to/model --omni \
   --diffusion-offload-config \
-  '{"mode":"layer","components":{"dit":{},"text_encoder":{}}}' \
+  '{"mode":"layer","components":["dit","text_encoder"]}' \
   --usp 4
 ```
 
@@ -71,7 +71,8 @@ omni = Omni(
     model="/path/to/model",
     diffusion_offload_config={
         "mode": "layer",
-        "components": {
+        "components": ["dit", "text_encoder"],
+        "layer_options": {
             "dit": {
                 "transfer": "rank-local",
                 "resident_layers": 20,
@@ -90,9 +91,9 @@ omni = Omni(
 | Setting | Meaning | Default |
 | --- | --- | --- |
 | `diffusion_offload_config.mode` | `module` or `layer` granularity | required |
-| `diffusion_offload_config.components` | Non-empty mapping containing `dit`, `text_encoder`, or both | required |
-| `components.NAME.transfer` | `rank-local` or `allgather` | `rank-local` |
-| `components.dit.resident_layers` | Leading main-DiT blocks kept on device; requires `rank-local` and model-declared resident paths | `0` |
+| `diffusion_offload_config.components` | Non-empty list containing `dit`, `text_encoder`, or both | required |
+| `layer_options.NAME.transfer` | `rank-local` or `allgather` | `rank-local` |
+| `layer_options.dit.resident_layers` | Leading main-DiT blocks kept on device; requires `rank-local` and model-declared resident paths | `0` |
 | `diffusion_offload_config.pin_memory` | Pin streamed host memory for faster H2D copies | `true` |
 | `--data-parallel-size N` | DP ranks and AllGather weight-sharding group | `1` |
 | `--host-weight-runtime-mode {disabled,preferred,required}` | HWR policy: no interaction, populate on a miss, or require an exact hit | `disabled` |
@@ -154,8 +155,8 @@ through two bounded pinned staging slots. Processes mapping the same files on
 one node share the immutable pages; rank-local transfer still performs a
 complete-block H2D copy in each process.
 
-When a component's effective DLO group size is one, `allgather` performs no
-collective and has the same transfer behavior as `rank-local`.
+When the effective DLO group size is one, `transfer="allgather"` does not
+perform a collective and uses the same rank-local transfer behavior.
 
 ### Final-layout Host Weight Runtime
 
@@ -171,7 +172,7 @@ the validated scope.
 ```bash
 vllm serve /path/to/model --omni \
   --diffusion-offload-config \
-  '{"mode":"layer","components":{"dit":{"transfer":"rank-local"}}}' \
+  '{"mode":"layer","components":["dit"],"layer_options":{"dit":{"transfer":"rank-local"}}}' \
   --host-weight-runtime-mode preferred \
   --host-weight-runtime-root /var/cache/vllm-omni/hwr
 ```
@@ -213,14 +214,14 @@ For example:
 # First startup: canonically load and populate the exact artifacts.
 vllm serve /path/to/model --omni \
   --diffusion-offload-config \
-  '{"mode":"layer","components":{"dit":{"transfer":"rank-local"}}}' \
+  '{"mode":"layer","components":["dit"],"layer_options":{"dit":{"transfer":"rank-local"}}}' \
   --host-weight-runtime-mode preferred \
   --host-weight-runtime-root /var/cache/vllm-omni/hwr
 
 # After a healthy startup and clean shutdown, enforce cache hits.
 vllm serve /path/to/model --omni \
   --diffusion-offload-config \
-  '{"mode":"layer","components":{"dit":{"transfer":"rank-local"}}}' \
+  '{"mode":"layer","components":["dit"],"layer_options":{"dit":{"transfer":"rank-local"}}}' \
   --host-weight-runtime-mode required \
   --host-weight-runtime-root /var/cache/vllm-omni/hwr
 ```

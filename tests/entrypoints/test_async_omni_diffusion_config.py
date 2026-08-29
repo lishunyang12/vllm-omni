@@ -439,8 +439,9 @@ def test_serve_cli_forwards_compact_diffusion_offload_config():
             "MiniMaxAI/MiniMax-H3",
             "--omni",
             "--diffusion-offload-config",
-            '{"mode":"layer","components":{"dit":{"transfer":"rank-local",'
-            '"resident_layers":20},"text_encoder":{"transfer":"allgather"}},'
+            '{"mode":"layer","components":["dit","text_encoder"],'
+            '"layer_options":{"dit":{"transfer":"rank-local","resident_layers":20},'
+            '"text_encoder":{"transfer":"allgather"}},'
             '"pin_memory":true}',
         ]
     )
@@ -451,7 +452,8 @@ def test_serve_cli_forwards_compact_diffusion_offload_config():
 
     expected = {
         "mode": "layer",
-        "components": {
+        "components": ["dit", "text_encoder"],
+        "layer_options": {
             "dit": {"transfer": "rank-local", "resident_layers": 20},
             "text_encoder": {"transfer": "allgather"},
         },
@@ -471,12 +473,62 @@ def test_invalid_diffusion_offload_config_fails_before_model_loading(monkeypatch
             "model": "test",
             "diffusion_offload_config": {
                 "mode": "layerwise",
-                "components": {"dit": {}},
+                "components": ["dit"],
             },
         },
     )
 
     with pytest.raises(ValueError, match="Unknown diffusion offload mode"):
+        stage_init_utils.initialize_diffusion_stage(
+            stage_id=0,
+            model="test",
+            stage_cfg=object(),
+            metadata=mocker.Mock(),
+            stage_init_timeout=30,
+        )
+
+    create_client.assert_not_called()
+    load_model.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("offload_args", "match"),
+    [
+        (
+            {
+                "diffusion_offload_config": {
+                    "mode": "layer",
+                    "components": ["dit"],
+                },
+                "dlo_use_allgather": False,
+            },
+            "cannot be combined with legacy DLO option",
+        ),
+        (
+            {
+                "enable_distributed_layerwise_offload": True,
+                "dlo_use_allgather": True,
+                "dlo_resident_layers": 12,
+            },
+            "requires the DiT DLO transfer to be rank-local",
+        ),
+    ],
+)
+def test_conflicting_legacy_offload_options_fail_before_model_loading(
+    monkeypatch,
+    mocker,
+    offload_args,
+    match,
+):
+    load_model = mocker.patch("vllm_omni.diffusion.model_loader.diffusers_loader.DiffusersPipelineLoader.load_model")
+    create_client = mocker.patch("vllm_omni.diffusion.stage_diffusion_client.create_diffusion_client")
+    monkeypatch.setattr(
+        stage_init_utils,
+        "build_engine_args_dict",
+        lambda *_args, **_kwargs: {"model": "test", **offload_args},
+    )
+
+    with pytest.raises(ValueError, match=match):
         stage_init_utils.initialize_diffusion_stage(
             stage_id=0,
             model="test",
