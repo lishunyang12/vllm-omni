@@ -2451,16 +2451,6 @@ class _DistributedComponentPipeline(nn.Module):
         self.vae = _StagedVAE()
 
 
-class _LegacyDistributedComponentPipeline(nn.Module):
-    """Pipeline with DiT block metadata but no auxiliary OffloadPlan."""
-
-    def __init__(self):
-        super().__init__()
-        self.transformer = _SingleBlockModel(num_blocks=2)
-        self.text_encoder = _StagedEncoder()
-        self.vae = _StagedVAE()
-
-
 class _GenericDistributedEncoderPipeline(nn.Module):
     _offload_plan = OffloadPlan(
         encoder_component_types={"text_encoder": "text_encoder"},
@@ -2475,27 +2465,6 @@ class _GenericDistributedEncoderPipeline(nn.Module):
 
 
 class TestDistributedComponentSelection:
-    def test_shutdown_skips_weight_reconstruction(self, patched_offload_runtime, mocker):
-        backend = DistributedLayerwiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
-                pin_cpu_memory=False,
-                dp_size=2,
-            ),
-            torch.device("cpu"),
-        )
-        hook = mocker.Mock()
-        resident_group = mocker.Mock()
-        backend._all_hook_groups = [[hook]]
-        backend._resident_layer_group = resident_group
-        backend.enabled = True
-
-        backend.shutdown()
-
-        hook.restore_next_block_to_cpu.assert_not_called()
-        resident_group.restore_to_cpu.assert_not_called()
-        assert not backend.enabled
-
     def test_enable_defers_collectives_until_first_forward(self, patched_offload_runtime, monkeypatch):
         pipeline = _GenericDistributedEncoderPipeline()
         backend = DistributedLayerwiseOffloadBackend(
@@ -2618,109 +2587,6 @@ class TestDistributedComponentSelection:
         ]
         assert all(block._hook_registry.get_hook("distributed_layerwise_offload") is None for block in encoder_blocks)
 
-    def test_dit_only_keeps_encoder_and_vae_resident(self, patched_offload_runtime):
-        pipeline = _DistributedComponentPipeline()
-        backend = DistributedLayerwiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
-                pin_cpu_memory=False,
-                dlo_use_allgather=False,
-                components=frozenset({"dit"}),
-                components_explicit=True,
-            ),
-            torch.device("cpu"),
-        )
-
-        backend.enable(pipeline)
-
-        assert not hasattr(pipeline.text_encoder, "_omni_layerwise_enabled")
-        assert pipeline.text_encoder.offload_calls == 0
-        assert pipeline.text_encoder.to_calls == 1
-        assert pipeline.vae.offload_calls == 0
-        assert pipeline.vae.to_calls == 1
-
-        backend.disable()
-
-    def test_default_selection_preserves_unplanned_auxiliaries(self, patched_offload_runtime):
-        pipeline = _LegacyDistributedComponentPipeline()
-        backend = DistributedLayerwiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
-                pin_cpu_memory=False,
-                dlo_use_allgather=False,
-            ),
-            torch.device("cpu"),
-        )
-
-        backend.enable(pipeline)
-
-        assert hasattr(pipeline.transformer.blocks[0], "_hook_registry")
-        assert not hasattr(pipeline.text_encoder, "_omni_layerwise_enabled")
-        assert pipeline.text_encoder.to_calls == 1
-        assert pipeline.text_encoder.offload_calls == 0
-        assert pipeline.vae.to_calls == 1
-        assert pipeline.vae.offload_calls == 0
-
-        backend.disable()
-
-    def test_legacy_selector_preserves_planned_encoder_and_vae_lifecycle(self, patched_offload_runtime):
-        pipeline = _DistributedComponentPipeline()
-        backend = DistributedLayerwiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
-                pin_cpu_memory=False,
-                dlo_use_allgather=False,
-            ),
-            torch.device("cpu"),
-        )
-
-        backend.enable(pipeline)
-
-        assert pipeline.text_encoder._omni_layerwise_enabled
-        assert pipeline.text_encoder.offload_calls == 1
-        assert pipeline.vae.offload_calls == 1
-
-        backend.disable()
-
-    def test_standard_encoder_needs_only_declared_block_paths(self, patched_offload_runtime):
-        pipeline = _GenericDistributedEncoderPipeline()
-        blocks = pipeline.text_encoder.encoder.block
-        expected_parameters = {name: parameter.detach().clone() for name, parameter in pipeline.named_parameters()}
-
-        def assert_parameters_restored() -> None:
-            actual_parameters = dict(pipeline.named_parameters())
-            assert actual_parameters.keys() == expected_parameters.keys()
-            for name, expected in expected_parameters.items():
-                torch.testing.assert_close(actual_parameters[name], expected)
-
-        backend = DistributedLayerwiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
-                pin_cpu_memory=False,
-                dlo_use_allgather=False,
-                components=frozenset({"dit", "text_encoder"}),
-                components_explicit=True,
-            ),
-            torch.device("cpu"),
-        )
-
-        backend.enable(pipeline)
-
-        assert pipeline.text_encoder._omni_layerwise_enabled
-        assert all(block._hook_registry.get_hook("distributed_layerwise_offload") is not None for block in blocks)
-        assert pipeline.text_encoder.final_norm.weight.numel() == 4
-
-        backend.disable()
-
-        assert not pipeline.text_encoder._omni_layerwise_enabled
-        assert all(block._hook_registry.get_hook("distributed_layerwise_offload") is None for block in blocks)
-        assert_parameters_restored()
-
-        backend.enable(pipeline)
-        assert all(block._hook_registry.get_hook("distributed_layerwise_offload") is not None for block in blocks)
-        backend.disable()
-        assert_parameters_restored()
-
     def test_dit_and_encoder_choose_transfer_independently(self, patched_offload_runtime, monkeypatch):
         pipeline = _GenericDistributedEncoderPipeline()
         expected_parameters = {name: parameter.detach().clone() for name, parameter in pipeline.named_parameters()}
@@ -2780,20 +2646,4 @@ class TestDistributedComponentSelection:
         backend.dp_group = object()
 
         with pytest.raises(ValueError, match="not declared replicated"):
-            backend.enable(pipeline)
-
-    def test_encoder_only_requires_streamable_offload_plan(self, patched_offload_runtime):
-        pipeline = _LegacyDistributedComponentPipeline()
-        backend = DistributedLayerwiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
-                pin_cpu_memory=False,
-                components=frozenset({"text_encoder"}),
-                components_explicit=True,
-                dlo_transfers={"text_encoder": "rank-local"},
-            ),
-            torch.device("cpu"),
-        )
-
-        with pytest.raises(ValueError, match="Selected text_encoder layerwise offload requires"):
             backend.enable(pipeline)

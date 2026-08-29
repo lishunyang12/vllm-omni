@@ -10,7 +10,6 @@ import torch
 from torch import nn
 from torch.distributed.tensor import DeviceMesh, DTensor, Replicate
 
-import vllm_omni.diffusion.offloader.config as offload_config_module
 import vllm_omni.diffusion.offloader.layerwise_backend as layerwise_backend_module
 from tests.diffusion.offloader.helpers import (
     DummyStream,
@@ -258,18 +257,27 @@ class _GenericEncoderPipeline(nn.Module):
         self.text_encoder = _PlainEncoder()
 
 
+def _layer_backend(components: set[str] | None = None) -> LayerWiseOffloadBackend:
+    options = {}
+    if components is not None:
+        options = {
+            "components": frozenset(components),
+            "components_explicit": True,
+        }
+    return LayerWiseOffloadBackend(
+        OffloadConfig(
+            strategy=OffloadStrategy.LAYER_WISE,
+            pin_cpu_memory=False,
+            **options,
+        ),
+        torch.device("cpu"),
+    )
+
+
 class TestLayerwiseComponentSelection:
     def test_plan_block_attrs_drive_dit_discovery(self, patched_offload_runtime):
         pipeline = _PlannedDitPipeline()
-        backend = LayerWiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
-                pin_cpu_memory=False,
-                components=frozenset({"dit"}),
-                components_explicit=True,
-            ),
-            torch.device("cpu"),
-        )
+        backend = _layer_backend({"dit"})
 
         backend.enable(pipeline)
 
@@ -278,13 +286,7 @@ class TestLayerwiseComponentSelection:
 
     def test_legacy_missing_dit_preserves_noop(self, patched_offload_runtime):
         pipeline = _LegacyEncoderOnlyPipeline()
-        backend = LayerWiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
-                pin_cpu_memory=False,
-            ),
-            torch.device("cpu"),
-        )
+        backend = _layer_backend()
 
         backend.enable(pipeline)
 
@@ -294,15 +296,7 @@ class TestLayerwiseComponentSelection:
 
     def test_encoder_only_streams_planned_blocks(self, patched_offload_runtime):
         pipeline = _ComponentPipeline()
-        backend = LayerWiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
-                pin_cpu_memory=False,
-                components=frozenset({"text_encoder"}),
-                components_explicit=True,
-            ),
-            torch.device("cpu"),
-        )
+        backend = _layer_backend({"text_encoder"})
 
         backend.enable(pipeline)
 
@@ -317,38 +311,10 @@ class TestLayerwiseComponentSelection:
         backend.disable()
         assert not pipeline.text_encoder._omni_layerwise_enabled
 
-    def test_shutdown_skips_encoder_weight_reconstruction(self, patched_offload_runtime, mocker):
-        pipeline = _ComponentPipeline()
-        backend = LayerWiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
-                pin_cpu_memory=False,
-                components=frozenset({"text_encoder"}),
-                components_explicit=True,
-            ),
-            torch.device("cpu"),
-        )
-        backend.enable(pipeline)
-        for hook in pipeline.text_encoder._omni_layerwise_hooks:
-            hook.prefetch_layer = mocker.Mock(side_effect=AssertionError("shutdown rebuilt encoder weights"))
-
-        backend.shutdown()
-
-        assert not pipeline.text_encoder._omni_layerwise_enabled
-        assert not backend.enabled
-
     def test_single_gpu_dit_only_keeps_encoder_and_vae_resident(self, patched_offload_runtime):
         pipeline = _ComponentPipeline()
         expected_weights = [block.weight.detach().clone() for block in pipeline.transformer.blocks]
-        backend = LayerWiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
-                pin_cpu_memory=False,
-                components=frozenset({"dit"}),
-                components_explicit=True,
-            ),
-            torch.device("cpu"),
-        )
+        backend = _layer_backend({"dit"})
 
         backend.enable(pipeline)
 
@@ -372,15 +338,7 @@ class TestLayerwiseComponentSelection:
     def test_partial_dit_enable_failure_restores_weights_and_hooks(self, patched_offload_runtime, monkeypatch):
         pipeline = _ComponentPipeline()
         expected_weights = [block.weight.detach().clone() for block in pipeline.transformer.blocks]
-        backend = LayerWiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
-                pin_cpu_memory=False,
-                components=frozenset({"dit"}),
-                components_explicit=True,
-            ),
-            torch.device("cpu"),
-        )
+        backend = _layer_backend({"dit"})
         original_apply = layerwise_backend_module.apply_block_hook
         calls = 0
 
@@ -406,28 +364,14 @@ class TestLayerwiseComponentSelection:
         pipeline = nn.Module()
         pipeline.transformer = _SingleBlockModel()
         pipeline.text_encoder = _StagedEncoder()
-        backend = LayerWiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
-                pin_cpu_memory=False,
-                components=frozenset({"text_encoder"}),
-                components_explicit=True,
-            ),
-            torch.device("cpu"),
-        )
+        backend = _layer_backend({"text_encoder"})
 
         with pytest.raises(ValueError, match="Selected text_encoder layerwise offload requires"):
             backend.enable(pipeline)
 
     def test_default_selection_preserves_unplanned_auxiliaries(self, patched_offload_runtime):
         pipeline = _LegacyComponentPipeline()
-        backend = LayerWiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
-                pin_cpu_memory=False,
-            ),
-            torch.device("cpu"),
-        )
+        backend = _layer_backend()
 
         backend.enable(pipeline)
 
@@ -442,13 +386,7 @@ class TestLayerwiseComponentSelection:
 
     def test_legacy_selector_preserves_planned_encoder_and_vae_lifecycle(self, patched_offload_runtime):
         pipeline = _ComponentPipeline()
-        backend = LayerWiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
-                pin_cpu_memory=False,
-            ),
-            torch.device("cpu"),
-        )
+        backend = _layer_backend()
 
         backend.enable(pipeline)
 
@@ -460,15 +398,7 @@ class TestLayerwiseComponentSelection:
 
     def test_standard_encoder_needs_only_declared_block_paths(self, patched_offload_runtime):
         pipeline = _GenericEncoderPipeline()
-        backend = LayerWiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
-                pin_cpu_memory=False,
-                components=frozenset({"text_encoder"}),
-                components_explicit=True,
-            ),
-            torch.device("cpu"),
-        )
+        backend = _layer_backend({"text_encoder"})
 
         backend.enable(pipeline)
 
@@ -500,56 +430,17 @@ def _offload_od_config(**overrides):
     return SimpleNamespace(**values)
 
 
+def _resolve_offload_config(public=None, **overrides) -> OffloadConfig:
+    return OffloadConfig.from_od_config(_offload_od_config(diffusion_offload_config=public, **overrides))
+
+
 class TestLayerwiseComponentConfig:
-    def test_public_config_is_parsed_once_per_config_object(self, monkeypatch):
-        od_config = _offload_od_config(
-            diffusion_offload_config={
+    def test_layer_mode_selects_components_without_backend_jargon(self):
+        config = _resolve_offload_config(
+            {
                 "mode": "layer",
                 "components": ["dit", "text_encoder"],
             }
-        )
-        parse = offload_config_module.parse_diffusion_offload_config
-        calls = 0
-
-        def counted_parse(value):
-            nonlocal calls
-            calls += 1
-            return parse(value)
-
-        monkeypatch.setattr(offload_config_module, "parse_diffusion_offload_config", counted_parse)
-
-        assert offload_config_module.selected_offload_components(od_config) == {"dit", "text_encoder"}
-        assert not offload_config_module.component_uses_allgather(od_config, "dit")
-        assert offload_config_module.resolve_offload_strategy(od_config) is OffloadStrategy.LAYER_WISE
-        assert calls == 1
-
-    def test_replacing_public_config_invalidates_parsed_cache(self):
-        od_config = _offload_od_config(
-            diffusion_offload_config={
-                "mode": "layer",
-                "components": ["dit"],
-            }
-        )
-
-        first = offload_config_module.get_diffusion_offload_config(od_config)
-        od_config.diffusion_offload_config = {
-            "mode": "layer",
-            "components": ["text_encoder"],
-        }
-        second = offload_config_module.get_diffusion_offload_config(od_config)
-
-        assert first is not second
-        assert second is not None
-        assert second.components == {"text_encoder"}
-
-    def test_layer_mode_selects_components_without_backend_jargon(self):
-        config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                diffusion_offload_config={
-                    "mode": "layer",
-                    "components": ["dit", "text_encoder"],
-                }
-            )
         )
 
         assert config.strategy is OffloadStrategy.LAYER_WISE
@@ -635,13 +526,11 @@ class TestLayerwiseComponentConfig:
             OffloadConfig.from_od_config(_offload_od_config(diffusion_offload_config=config))
 
     def test_module_mode_accepts_component_selection(self):
-        config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                diffusion_offload_config={
-                    "mode": "module",
-                    "components": ["dit", "text_encoder"],
-                }
-            )
+        config = _resolve_offload_config(
+            {
+                "mode": "module",
+                "components": ["dit", "text_encoder"],
+            }
         )
 
         assert config.strategy is OffloadStrategy.MODEL_LEVEL
@@ -662,17 +551,15 @@ class TestLayerwiseComponentConfig:
             )
 
     def test_each_component_can_choose_its_transfer(self):
-        config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                diffusion_offload_config={
-                    "mode": "layer",
-                    "components": ["dit", "text_encoder"],
-                    "layer_options": {
-                        "dit": {"weight_transfer": "rank-local"},
-                        "text_encoder": {"weight_transfer": "allgather"},
-                    },
-                }
-            )
+        config = _resolve_offload_config(
+            {
+                "mode": "layer",
+                "components": ["dit", "text_encoder"],
+                "layer_options": {
+                    "dit": {"weight_transfer": "rank-local"},
+                    "text_encoder": {"weight_transfer": "allgather"},
+                },
+            }
         )
 
         assert config.strategy is OffloadStrategy.DISTRIBUTED_LAYER_WISE
@@ -681,14 +568,12 @@ class TestLayerwiseComponentConfig:
         assert config.dlo_use_allgather is False
 
     def test_dit_residency_selects_capable_backend(self):
-        config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                diffusion_offload_config={
-                    "mode": "layer",
-                    "components": ["dit"],
-                    "layer_options": {"dit": {"resident_layers": 20}},
-                }
-            )
+        config = _resolve_offload_config(
+            {
+                "mode": "layer",
+                "components": ["dit"],
+                "layer_options": {"dit": {"resident_layers": 20}},
+            }
         )
 
         assert config.strategy is OffloadStrategy.DISTRIBUTED_LAYER_WISE
@@ -707,69 +592,38 @@ class TestLayerwiseComponentConfig:
                 )
             )
 
-    @pytest.mark.parametrize(
-        "offload_config",
-        [
-            {"mode": "module", "components": ["dit"]},
-            {"mode": "layer", "components": ["text_encoder"]},
-            {
-                "mode": "layer",
-                "components": ["dit"],
-                "layer_options": {"dit": {"weight_transfer": "allgather"}},
-            },
-        ],
-    )
-    def test_host_weight_runtime_rejects_ineligible_offload_config(self, offload_config):
-        with pytest.raises(ValueError, match="Host Weight Runtime requires"):
+    def test_host_weight_runtime_remains_separate_from_compact_config(self):
+        with pytest.raises(ValueError, match="cannot be combined with Host Weight Runtime"):
             OffloadConfig.from_od_config(
                 _offload_od_config(
-                    diffusion_offload_config=offload_config,
+                    diffusion_offload_config={"mode": "layer", "components": ["dit"]},
                     host_weight_runtime_mode="preferred",
                 )
             )
 
-    def test_host_weight_runtime_selects_rank_local_dlo_backend(self):
-        config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                diffusion_offload_config={
-                    "mode": "layer",
-                    "components": ["dit"],
-                    "layer_options": {"dit": {"weight_transfer": "rank-local"}},
-                },
-                host_weight_runtime_mode="preferred",
-            )
-        )
-
-        assert config.strategy is OffloadStrategy.DISTRIBUTED_LAYER_WISE
-        assert not config.uses_allgather("dit")
-
     def test_pin_memory_override_is_scoped_to_offload_config(self):
-        config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                pin_cpu_memory=True,
-                diffusion_offload_config={
-                    "mode": "layer",
-                    "components": ["dit"],
-                    "pin_memory": False,
-                },
-            )
+        config = _resolve_offload_config(
+            {
+                "mode": "layer",
+                "components": ["dit"],
+                "pin_memory": False,
+            },
+            pin_cpu_memory=True,
         )
 
         assert config.pin_cpu_memory is False
 
     def test_legacy_omitted_selector_preserves_dit_only_behavior(self):
-        config = OffloadConfig.from_od_config(_offload_od_config(enable_layerwise_offload=True))
+        config = _resolve_offload_config(enable_layerwise_offload=True)
 
         assert config.strategy is OffloadStrategy.LAYER_WISE
         assert config.components == frozenset({"dit"})
 
     def test_legacy_distributed_settings_still_work(self):
-        config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                enable_distributed_layerwise_offload=True,
-                dlo_use_allgather=False,
-                dlo_resident_layers=3,
-            )
+        config = _resolve_offload_config(
+            enable_distributed_layerwise_offload=True,
+            dlo_use_allgather=False,
+            dlo_resident_layers=3,
         )
 
         assert config.strategy is OffloadStrategy.DISTRIBUTED_LAYER_WISE
@@ -778,11 +632,9 @@ class TestLayerwiseComponentConfig:
         assert not config.uses_allgather("text_encoder")
 
     def test_legacy_allgather_remains_dit_only(self):
-        config = OffloadConfig.from_od_config(
-            _offload_od_config(
-                enable_distributed_layerwise_offload=True,
-                dlo_use_allgather=True,
-            )
+        config = _resolve_offload_config(
+            enable_distributed_layerwise_offload=True,
+            dlo_use_allgather=True,
         )
 
         assert config.uses_allgather("dit")
@@ -806,7 +658,7 @@ class TestLayerwiseComponentConfig:
         ],
     )
     def test_legacy_aliases_preserve_existing_priority(self, legacy_flags, expected_strategy):
-        config = OffloadConfig.from_od_config(_offload_od_config(**legacy_flags))
+        config = _resolve_offload_config(**legacy_flags)
 
         assert config.strategy is expected_strategy
 

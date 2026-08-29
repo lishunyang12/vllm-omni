@@ -223,10 +223,14 @@ def parse_args() -> argparse.Namespace:
         help="Enable VAE tiling for memory optimization.",
     )
     parser.add_argument(
-        "--diffusion-offload-config",
-        type=json.loads,
-        default=None,
-        help="Diffusion CPU-offload JSON config with mode and components.",
+        "--enable-cpu-offload",
+        action="store_true",
+        help="Enable CPU offloading for diffusion models.",
+    )
+    parser.add_argument(
+        "--enable-layerwise-offload",
+        action="store_true",
+        help="Enable layerwise (blockwise) offloading on DiT modules.",
     )
     parser.add_argument(
         "--enable-distributed-layerwise-offload",
@@ -571,13 +575,14 @@ def main():
     profiler_enabled = args.profiler_config is not None
     omni_kwargs = dict(
         model=args.model,
-        diffusion_offload_config=args.diffusion_offload_config,
+        enable_layerwise_offload=args.enable_layerwise_offload,
         vae_use_slicing=args.vae_use_slicing,
         vae_use_tiling=args.vae_use_tiling,
         boundary_ratio=args.boundary_ratio,
         diffusion_kv_cache_dtype=args.diffusion_kv_cache_dtype,
         diffusion_kv_cache_skip_steps=args.diffusion_kv_cache_skip_steps,
         diffusion_kv_cache_skip_layers=args.diffusion_kv_cache_skip_layers,
+        enable_cpu_offload=args.enable_cpu_offload,
         ulysses_degree=args.ulysses_degree,
         ring_degree=args.ring_degree,
         cfg_parallel_size=args.cfg_parallel_size,

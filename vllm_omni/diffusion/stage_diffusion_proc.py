@@ -730,7 +730,6 @@ class StageDiffusionProcManager:
         proc.start()
         self.proc = proc
         self.addresses = addresses
-        self.num_workers = int(od_config.num_gpus or 1)
         self.manager_stopped = False
         self.failed_proc_name: str | None = None
 
@@ -768,7 +767,6 @@ class StageDiffusionProcManager:
         proc.start()
         self.proc = proc
         self.addresses = addresses
-        self.num_workers = int(od_config.num_gpus or 1)
         self.manager_stopped = False
         self.failed_proc_name = None
         return self

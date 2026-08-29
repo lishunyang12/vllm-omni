@@ -2019,9 +2019,6 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
     def disable(self) -> None:
         self._disable(restore_weights=True)
 
-    def shutdown(self) -> None:
-        self._disable(restore_weights=False)
-
     @staticmethod
     def _allocate_shared_buffers(
         hooks: list[DistributedLayerwiseOffloadHook],

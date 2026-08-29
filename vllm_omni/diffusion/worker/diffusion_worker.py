@@ -971,7 +971,7 @@ class DiffusionWorker:
                 try:
                     offload_backend = getattr(self.model_runner, "offload_backend", None)
                     if offload_backend is not None:
-                        offload_backend.shutdown()
+                        offload_backend.disable()
                 finally:
                     if mgr is not None:
                         mgr.shutdown_prefetch()

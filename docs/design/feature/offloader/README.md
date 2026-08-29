@@ -18,14 +18,14 @@ policy:
 - `mode="module"` selects model-level offload;
 - `mode="layer"` with rank-local transfers selects ordinary layerwise
   offload; and
-- AllGather transfer, resident layers, or Host Weight Runtime selects the
-  distributed layerwise backend that implements those capabilities.
+- AllGather transfer or resident layers selects the distributed layerwise
+  backend that implements those capabilities.
 
 The compatibility boolean flags retain their historical priority (distributed
-layerwise, layerwise, then model-level). Mixing them with
-`diffusion_offload_config` is rejected. The factory derives parallel and HSDP
-state from `DiffusionParallelConfig`; callers do not provide a separate
-offload group size.
+layerwise, layerwise, then model-level). A compact config rejects a conflicting
+legacy strategy or non-default legacy DLO tuning. The factory derives parallel
+and HSDP state from `DiffusionParallelConfig`; callers do not provide a
+separate offload group size.
 
 `get_offload_backend()` then validates platform offload support, resolves the
 device, and creates exactly one backend. Returning `None` means offloading is

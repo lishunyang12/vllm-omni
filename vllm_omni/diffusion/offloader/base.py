@@ -10,7 +10,7 @@ import torch
 from torch import nn
 from vllm.logger import init_logger
 
-from vllm_omni.diffusion.data import OmniDiffusionConfig
+from vllm_omni.diffusion.data import OmniDiffusionConfig, validate_dlo_host_registration_options
 
 from .config import (
     DEFAULT_OFFLOAD_COMPONENTS,
@@ -23,7 +23,6 @@ from .config import (
     parse_dlo_transfer,
     parse_offload_components,
     resolve_offload_strategy,
-    validate_offload_host_registration,
 )
 from .offload_plan import OffloadPlan
 
@@ -187,7 +186,12 @@ class OffloadConfig:
             components_explicit = False
 
         dit_uses_allgather = dlo_transfers[DIT_COMPONENT] is DLOTransfer.ALLGATHER
-        dlo_host_registration_limit_gib = validate_offload_host_registration(od_config)
+        dlo_host_registration_limit_gib = validate_dlo_host_registration_options(
+            limit_gib=getattr(od_config, "dlo_host_registration_limit_gib", 0.0),
+            enable_dlo=enable_distributed_layerwise_offload,
+            use_allgather=dit_uses_allgather,
+            hwr_mode=getattr(od_config, "host_weight_runtime_mode", "disabled"),
+        )
 
         if enable_distributed_layerwise_offload and all(
             transfer is DLOTransfer.RANK_LOCAL
@@ -275,15 +279,6 @@ class OffloadBackend(ABC):
         original devices (caller responsible for that).
         """
         raise NotImplementedError
-
-    def shutdown(self) -> None:
-        """Release backend resources during final process teardown.
-
-        Backends that support a later re-enable may override this to avoid
-        rebuilding ordinary model weights that the exiting process will never
-        use. The default preserves the regular disable behavior.
-        """
-        self.disable()
 
     def is_enabled(self) -> bool:
         return self.enabled

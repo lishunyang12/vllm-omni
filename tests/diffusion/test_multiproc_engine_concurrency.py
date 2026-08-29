@@ -4,7 +4,6 @@
 import asyncio
 import multiprocessing as mp
 import queue
-import subprocess
 import threading
 import time
 from types import SimpleNamespace
@@ -18,10 +17,7 @@ from vllm.v1.engine.exceptions import EngineDeadError
 import vllm_omni.diffusion.worker.diffusion_worker as diffusion_worker_module
 from vllm_omni.diffusion.data import DiffusionOutput
 from vllm_omni.diffusion.diffusion_engine import DiffusionEngine
-from vllm_omni.diffusion.executor.multiproc_executor import (
-    MultiprocDiffusionExecutor,
-    stage_shutdown_timeout_s,
-)
+from vllm_omni.diffusion.executor.multiproc_executor import MultiprocDiffusionExecutor
 from vllm_omni.diffusion.ipc import DIFFUSION_RPC_RESULT_ENVELOPE
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.sched import RequestScheduler
@@ -1085,7 +1081,7 @@ class TestStageDiffusionClientErrorPropagation:
             is_alive=MagicMock(return_value=proc_alive),
             exitcode=1,
         )
-        client._proc_manager = SimpleNamespace(proc=proc, num_workers=2)
+        client._proc_manager = SimpleNamespace(proc=proc)
         client._request_socket = MagicMock()
         client._response_socket = MagicMock()
         client._encoder = MagicMock()
@@ -1109,114 +1105,6 @@ class TestStageDiffusionClientErrorPropagation:
     def test_check_health_ok_when_alive(self):
         client = self._make_client()
         client.check_health()
-
-    def test_shutdown_waits_for_protocol_exit_before_forcing(self):
-        client = self._make_client()
-        client.replica_id = 0
-        client._zmq_ctx = MagicMock()
-        client._proc_manager.manager_stopped = False
-        client._proc_manager.shutdown = MagicMock()
-        client._proc_manager.proc.is_alive.side_effect = [True, False]
-        events = []
-        client._request_socket.send.side_effect = lambda *_: events.append("send")
-        client._proc_manager.proc.join.side_effect = lambda *_: events.append("join")
-        client._proc_manager.shutdown.side_effect = lambda *_args, **_kwargs: events.append("force")
-
-        client.shutdown()
-
-        assert events == ["send", "join"]
-        assert client._proc_manager.manager_stopped is True
-        client._proc_manager.proc.join.assert_called_once_with(stage_shutdown_timeout_s(2))
-        client._proc_manager.shutdown.assert_not_called()
-
-    def test_shutdown_forces_process_after_graceful_timeout(self):
-        client = self._make_client()
-        client.replica_id = 0
-        client._zmq_ctx = MagicMock()
-        client._proc_manager.manager_stopped = False
-        client._proc_manager.shutdown = MagicMock()
-        client._proc_manager.proc.is_alive.side_effect = [True, True]
-        events = []
-        client._request_socket.send.side_effect = lambda *_: events.append("send")
-        client._proc_manager.proc.join.side_effect = lambda *_: events.append("join")
-        client._proc_manager.shutdown.side_effect = lambda *_args, **_kwargs: events.append("force")
-
-        client.shutdown()
-
-        assert events == ["send", "join", "force"]
-        client._proc_manager.shutdown.assert_called_once_with(timeout=10.0)
-
-    def test_stage_shutdown_budget_covers_eight_worker_executor_cleanup(self):
-        # 8 enqueue attempts + 25s worker grace + 5s terminate grace +
-        # 8 serial result-pump joins + 5s for remaining stage finalizers.
-        assert stage_shutdown_timeout_s(8) == 59.0
-
-    def test_shutdown_wait_covers_real_nested_cleanup_boundary(self, monkeypatch):
-        from vllm_omni.diffusion.executor import multiproc_executor as executor_module
-
-        monkeypatch.setattr(executor_module, "_SHUTDOWN_ENQUEUE_TIMEOUT_S", 0.01)
-        monkeypatch.setattr(executor_module, "_WORKER_SHUTDOWN_GRACE_S", 0.05)
-        monkeypatch.setattr(executor_module, "_WORKER_TERMINATE_GRACE_S", 0.02)
-        monkeypatch.setattr(executor_module, "_RESULT_PUMP_JOIN_TIMEOUT_S", 0.01)
-        monkeypatch.setattr(executor_module, "_STAGE_FINALIZER_MARGIN_S", 0.30)
-
-        num_workers = 2
-        simulated_inner_cleanup_s = 0.20
-        assert stage_shutdown_timeout_s(num_workers) > simulated_inner_cleanup_s
-
-        child = subprocess.Popen(
-            ["/bin/sh", "-c", f"read trigger; sleep {simulated_inner_cleanup_s}"],
-            stdin=subprocess.PIPE,
-            text=True,
-        )
-
-        class ProcessAdapter:
-            @property
-            def exitcode(self):
-                return child.poll()
-
-            def is_alive(self):
-                return child.poll() is None
-
-            def join(self, timeout=None):
-                try:
-                    child.wait(timeout=timeout)
-                except subprocess.TimeoutExpired:
-                    pass
-
-            def terminate(self):
-                child.terminate()
-
-        proc = ProcessAdapter()
-        client = self._make_client()
-        client.replica_id = 0
-        client._zmq_ctx = MagicMock()
-        force_shutdown = Mock(side_effect=lambda **_kwargs: proc.terminate())
-        client._proc_manager = SimpleNamespace(
-            proc=proc,
-            num_workers=num_workers,
-            manager_stopped=False,
-            shutdown=force_shutdown,
-        )
-
-        def begin_cleanup(*_args):
-            assert child.stdin is not None
-            child.stdin.write("shutdown\n")
-            child.stdin.flush()
-
-        client._request_socket.send.side_effect = begin_cleanup
-        try:
-            started = time.monotonic()
-            client.shutdown()
-            elapsed = time.monotonic() - started
-        finally:
-            if proc.is_alive():
-                proc.terminate()
-            proc.join(timeout=1.0)
-
-        assert elapsed >= simulated_inner_cleanup_s * 0.75
-        assert proc.exitcode == 0
-        force_shutdown.assert_not_called()
 
     def test_get_output_raises_engine_dead_when_dead(self):
         """When ``_engine_dead`` is True and the output queue is empty,
@@ -1393,8 +1281,8 @@ class TestExecutorShutdownCleaner:
 
         cleaner()
 
-        assert first.join_timeouts == [25.0, 5.0]
-        assert second.join_timeouts == [15.0, 1.0]
+        assert first.join_timeouts == [15.0, 5.0]
+        assert second.join_timeouts == [5.0, 1.0]
         assert first.terminated and second.terminated
         assert not first.is_alive() and not second.is_alive()
 

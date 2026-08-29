@@ -776,14 +776,12 @@ class _DiffusionConfigProjection:
             TransformerConfig,
             build_attention_config,
             parse_kv_cache_skip_selector,
+            validate_dlo_host_registration_options,
             validate_host_weight_runtime_options,
         )
         from vllm_omni.diffusion.diffusion_kv.config import parse_diffusion_kv_cache_mode
         from vllm_omni.quantization import build_quant_config
 
-        # Keep diffusion_offload_config canonical across this structured
-        # transport boundary. OmniDiffusionConfig materializes compatibility
-        # runtime fields only after the terminal config is reconstructed.
         if self.tf_model_config is None:
             self.tf_model_config = TransformerConfig()
         elif isinstance(self.tf_model_config, Mapping):
@@ -861,9 +859,12 @@ class _DiffusionConfigProjection:
             mode=self.host_weight_runtime_mode,
             root=self.host_weight_runtime_root,
         )
-        from vllm_omni.diffusion.offloader.config import validate_offload_host_registration
-
-        self.dlo_host_registration_limit_gib = validate_offload_host_registration(self)
+        self.dlo_host_registration_limit_gib = validate_dlo_host_registration_options(
+            limit_gib=self.dlo_host_registration_limit_gib,
+            enable_dlo=self.enable_distributed_layerwise_offload,
+            use_allgather=self.dlo_use_allgather,
+            hwr_mode=self.host_weight_runtime_mode,
+        )
 
         if self.diffusion_load_format != "diffusers" and (self.diffusers_load_kwargs or self.diffusers_call_kwargs):
             raise ValueError(
@@ -923,24 +924,8 @@ class _DiffusionConfigProjection:
         }
         omni_diffusion_config = OmniDiffusionConfig(**kwargs)
         omni_diffusion_config.enrich_config()
-        # Keep the compact offload object canonical at this structured
-        # transport boundary. The terminal OmniDiffusionConfig derives these
-        # compatibility fields again after reconstruction. Copying them back
-        # would either require leaking provenance through public ``extras`` or
-        # make the next reconstruction look like a user supplied both APIs.
-        derived_offload_aliases = (
-            {
-                "enable_cpu_offload",
-                "enable_layerwise_offload",
-                "enable_distributed_layerwise_offload",
-                "dlo_use_allgather",
-                "dlo_resident_layers",
-            }
-            if self.diffusion_offload_config is not None
-            else set()
-        )
         for name in _DIFFUSION_CONFIG_FIELDS:
-            if name not in derived_offload_aliases and hasattr(omni_diffusion_config, name):
+            if hasattr(omni_diffusion_config, name):
                 setattr(self, name, _copy_value(getattr(omni_diffusion_config, name)))
 
 

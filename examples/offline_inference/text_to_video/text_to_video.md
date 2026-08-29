@@ -267,9 +267,9 @@ python text_to_video.py \
 - `--vae-use-tiling`: enable VAE tiling for memory optimization.
 - `--cfg-parallel-size`: set it to 2 to enable CFG Parallel. See more examples in [`user_guide`](../../../docs/user_guide/diffusion/parallelism_acceleration.md#cfg-parallel).
 - `--tensor-parallel-size`: tensor parallel size (effective for models that support TP, e.g. LTX2).
-- `--diffusion-offload-config`: JSON config selecting `module` or `layer`
-  mode and `dit` and/or `text_encoder`, with optional per-component
-  `weight_transfer` and DiT `resident_layers` settings.
+- `--enable-cpu-offload`: enable CPU offloading for diffusion models.
+- `--enable-layerwise-offload`: enable layerwise offloading on DiT modules.
+- `--diffusion-offload-config`: component-selective offload JSON; do not combine it with the legacy flags above.
 - `--frame-rate`: generation FPS for pipelines that require it (e.g., LTX2).
 - `--audio-sample-rate`: fallback audio sample rate when the pipeline returns audio.
 - `--quantization`: quantization method (such as `fp8` for FP8).

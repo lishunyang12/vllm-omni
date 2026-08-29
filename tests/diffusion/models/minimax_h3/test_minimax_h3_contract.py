@@ -1338,8 +1338,7 @@ def test_legacy_layer_offload_preserves_minimax_stage_lifecycle(enable_layerwise
     vae.offload_to_cpu.assert_called_once_with()
 
 
-@pytest.mark.parametrize("components", ["text_encoder", "all"])
-def test_layerwise_encoder_selection_releases_text_encoder(components):
+def test_layerwise_encoder_selection_releases_text_encoder():
     from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
 
     pipeline = object.__new__(MiniMaxH3Pipeline)
@@ -1350,7 +1349,7 @@ def test_layerwise_encoder_selection_releases_text_encoder(components):
         enable_distributed_layerwise_offload=False,
         diffusion_offload_config={
             "mode": "layer",
-            "components": ["text_encoder"] if components == "text_encoder" else ["dit", "text_encoder"],
+            "components": ["text_encoder"],
         },
     )
     pipeline.text_encoder = Mock()
@@ -1384,39 +1383,6 @@ def test_layerwise_dit_only_keeps_text_encoder_resident():
     assert actual is expected
     pipeline.text_encoder.load_to_device.assert_called_once_with()
     pipeline.text_encoder.offload_to_cpu.assert_not_called()
-
-
-def test_standalone_audio_conditions_keep_audio_vae_resident(monkeypatch):
-    from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
-    from vllm_omni.diffusion.models.minimax_h3 import (
-        pipeline_minimax_h3 as pipeline_module,
-    )
-
-    pipeline = object.__new__(MiniMaxH3Pipeline)
-    torch.nn.Module.__init__(pipeline)
-    pipeline.device = torch.device("cpu")
-    pipeline.od_config = SimpleNamespace(
-        enable_cpu_offload=False,
-        enable_layerwise_offload=False,
-        enable_distributed_layerwise_offload=False,
-        diffusion_offload_config={
-            "mode": "layer",
-            "components": ["dit", "text_encoder"],
-        },
-    )
-    pipeline.audio_vae = Mock()
-    pipeline.audio_vae.encode_waveform.side_effect = [
-        (torch.ones(2, 3), 4),
-        (torch.full((1, 3), 2.0), 5),
-    ]
-    monkeypatch.setattr(pipeline_module, "_dit_rank_world", lambda: (None, 0, 1))
-
-    rows, lengths = pipeline._encode_audio_conditions([(torch.ones(8), 16_000), (torch.ones(12), 24_000)])
-
-    pipeline.audio_vae.load_to_device.assert_not_called()
-    pipeline.audio_vae.offload_to_cpu.assert_not_called()
-    assert rows.shape == (3, 3)
-    assert lengths == [4, 5]
 
 
 def test_dit_encoder_selection_keeps_vae_resident():

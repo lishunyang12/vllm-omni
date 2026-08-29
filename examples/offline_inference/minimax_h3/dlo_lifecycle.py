@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Validate MiniMax-H3 request-mode and DLO lifecycle behavior.
 
 The DLO modes accept any positive data-parallel size.  With AllGather enabled,
@@ -21,21 +21,6 @@ Examples:
     CUDA_VISIBLE_DEVICES=0,1 \
     python examples/offline_inference/minimax_h3/dlo_lifecycle.py \
         --model /path/to/MiniMax-H3/FL2VA --mode dlo-no-allgather --dp-size 2
-
-    # Override the compact public API to exercise another offload policy.
-    VLLM_WORKER_MULTIPROC_METHOD=spawn \
-    VLLM_OMNI_VIDEO_SYNC_TIMEOUT=14400 \
-    CUDA_VISIBLE_DEVICES=0 \
-    python examples/offline_inference/minimax_h3/dlo_lifecycle.py \
-        --model /path/to/MiniMax-H3/FL2VA --mode dlo-no-allgather --dp-size 1 \
-        --offload-config '{"mode":"module","components":["text_encoder"]}'
-
-    # Use SP as the DLO weight-sharding group.
-    VLLM_WORKER_MULTIPROC_METHOD=spawn \
-    VLLM_OMNI_VIDEO_SYNC_TIMEOUT=14400 \
-    CUDA_VISIBLE_DEVICES=0,1 \
-    python examples/offline_inference/minimax_h3/dlo_lifecycle.py \
-        --model /path/to/MiniMax-H3/FL2VA --mode dlo --dp-size 1 --sp-size 2
 
     VLLM_WORKER_MULTIPROC_METHOD=spawn \
     VLLM_OMNI_VIDEO_SYNC_TIMEOUT=14400 \
@@ -73,16 +58,6 @@ def positive_int(value: str) -> int:
     return parsed
 
 
-def json_object(value: str) -> dict[str, Any]:
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError as exc:
-        raise argparse.ArgumentTypeError(f"must be valid JSON: {exc}") from exc
-    if not isinstance(parsed, dict):
-        raise argparse.ArgumentTypeError("must be a JSON object")
-    return parsed
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", required=True, help="Path to MiniMax-H3/FL2VA")
@@ -99,12 +74,6 @@ def parse_args() -> argparse.Namespace:
         help="DLO data-parallel size (for example 1, 2, 4, or 8; default: 2)",
     )
     parser.add_argument(
-        "--sp-size",
-        type=positive_int,
-        default=1,
-        help="DLO sequence-parallel size (default: 1)",
-    )
-    parser.add_argument(
         "--tp-size",
         type=positive_int,
         default=2,
@@ -116,30 +85,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--height", type=int, default=768)
     parser.add_argument("--batch-wait-ms", type=float, default=500.0)
     parser.add_argument("--init-timeout", type=float, default=1800.0)
-    parser.add_argument(
-        "--offload-config",
-        type=json_object,
-        help=(
-            "JSON diffusion_offload_config override for DLO modes; useful for "
-            "exercising component, module/layer, weight-transfer, and resident-layer policies"
-        ),
-    )
-    parser.add_argument(
-        "--legacy",
-        action="store_true",
-        help="Use compatibility DLO flags instead of diffusion_offload_config",
-    )
     parser.add_argument("--output", type=Path)
-    args = parser.parse_args()
-    if args.mode == "request" and args.offload_config is not None:
-        parser.error("--offload-config is available only with a DLO mode")
-    if args.mode == "request" and args.sp_size != 1:
-        parser.error("--sp-size is available only with a DLO mode")
-    if args.mode == "request" and args.legacy:
-        parser.error("--legacy is available only with a DLO mode")
-    if args.legacy and args.offload_config is not None:
-        parser.error("--legacy and --offload-config are mutually exclusive")
-    return args
+    return parser.parse_args()
 
 
 def engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
@@ -147,9 +94,9 @@ def engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     common: dict[str, Any] = {
         "model": args.model,
         "trust_remote_code": True,
-        "num_gpus": args.dp_size * args.sp_size if is_dlo else args.tp_size,
-        "ulysses_degree": args.sp_size if is_dlo else 1,
-        "ring_degree": 1,
+        "num_gpus": args.dp_size if is_dlo else args.tp_size,
+        "usp": 1,
+        "ring": 1,
         "vae_parallel_mode": "tile",
         "vae_use_tiling": True,
         "diffusion_attention_backend": "CUDNN_ATTN",
@@ -166,20 +113,14 @@ def engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             text_encoder_tp_size=1,
             vae_patch_parallel_size=1,
         )
-        if args.legacy:
-            common.update(
-                enable_distributed_layerwise_offload=True,
-                dlo_use_allgather=dit_transfer == "allgather",
-            )
-        else:
-            common["diffusion_offload_config"] = args.offload_config or {
-                "mode": "layer",
-                "components": ["dit", "text_encoder"],
-                "layer_options": {
-                    "dit": {"weight_transfer": dit_transfer},
-                    "text_encoder": {"weight_transfer": "rank-local"},
-                },
-            }
+        common["diffusion_offload_config"] = {
+            "mode": "layer",
+            "components": ["dit", "text_encoder"],
+            "layer_options": {
+                "dit": {"weight_transfer": dit_transfer},
+                "text_encoder": {"weight_transfer": "rank-local"},
+            },
+        }
     else:
         common.update(
             tensor_parallel_size=args.tp_size,

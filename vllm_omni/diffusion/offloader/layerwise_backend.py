@@ -517,9 +517,6 @@ class LayerWiseOffloadBackend(OffloadBackend):
     def disable(self) -> None:
         self._disable(restore_weights=True)
 
-    def shutdown(self) -> None:
-        self._disable(restore_weights=False)
-
     # Compatibility aliases for existing model integrations.
     get_blocks_attr_names = staticmethod(get_blocks_attr_names)
     set_blocks_attr_names = staticmethod(set_blocks_attr_names)

@@ -43,8 +43,8 @@ The historical `enable_cpu_offload`, `enable_layerwise_offload`, and
 `enable_distributed_layerwise_offload` fields remain compatibility aliases
 for existing callers and model-specific stage lifecycles. Existing
 combinations retain their priority (`distributed layerwise` > `layerwise` >
-`module`), while mixing a compatibility alias with
-`diffusion_offload_config` fails during configuration.
+`module`). A compact config rejects conflicting compatibility strategies and
+non-default legacy DLO tuning.
 `distributed-layerwise` remains an internal backend name; users select
 `mode="layer"`, and the runtime chooses the capable backend.
 
@@ -106,6 +106,9 @@ omni = Omni(
 | `--host-weight-runtime-mode {disabled,preferred,required}` | HWR policy: no interaction, populate on a miss, or require an exact hit | `disabled` |
 | `--host-weight-runtime-root PATH` | Writable node-local HWR store shared by workers in one storage domain; required for `preferred` and `required` | unset |
 | `--dlo-host-registration-limit-gib N` | Optional per-worker ceiling for registering an HWR mmap; zero adds no ceiling | `0` |
+
+HWR and host-registration tuning remain on the compatibility DLO interface and
+cannot be combined with `diffusion_offload_config` in this release.
 
 ## Component and weight-transfer matrix
 
@@ -178,8 +181,8 @@ the validated scope.
 
 ```bash
 vllm serve /path/to/model --omni \
-  --diffusion-offload-config \
-  '{"mode":"layer","components":["dit"],"layer_options":{"dit":{"weight_transfer":"rank-local"}}}' \
+  --enable-distributed-layerwise-offload \
+  --dlo-no-use-allgather \
   --host-weight-runtime-mode preferred \
   --host-weight-runtime-root /var/cache/vllm-omni/hwr
 ```
@@ -220,15 +223,15 @@ For example:
 ```bash
 # First startup: canonically load and populate the exact artifacts.
 vllm serve /path/to/model --omni \
-  --diffusion-offload-config \
-  '{"mode":"layer","components":["dit"],"layer_options":{"dit":{"weight_transfer":"rank-local"}}}' \
+  --enable-distributed-layerwise-offload \
+  --dlo-no-use-allgather \
   --host-weight-runtime-mode preferred \
   --host-weight-runtime-root /var/cache/vllm-omni/hwr
 
 # After a healthy startup and clean shutdown, enforce cache hits.
 vllm serve /path/to/model --omni \
-  --diffusion-offload-config \
-  '{"mode":"layer","components":["dit"],"layer_options":{"dit":{"weight_transfer":"rank-local"}}}' \
+  --enable-distributed-layerwise-offload \
+  --dlo-no-use-allgather \
   --host-weight-runtime-mode required \
   --host-weight-runtime-root /var/cache/vllm-omni/hwr
 ```

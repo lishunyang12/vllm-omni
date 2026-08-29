@@ -1063,7 +1063,6 @@ class OmniDiffusionConfig:
         from vllm_omni.diffusion.offloader.config import (
             OffloadStrategy,
             materialize_legacy_offload_flags,
-            validate_offload_host_registration,
         )
 
         offload_strategy = materialize_legacy_offload_flags(self)
@@ -1224,7 +1223,12 @@ class OmniDiffusionConfig:
             mode=self.host_weight_runtime_mode,
             root=self.host_weight_runtime_root,
         )
-        self.dlo_host_registration_limit_gib = validate_offload_host_registration(self)
+        self.dlo_host_registration_limit_gib = validate_dlo_host_registration_options(
+            limit_gib=self.dlo_host_registration_limit_gib,
+            enable_dlo=self.enable_distributed_layerwise_offload,
+            use_allgather=self.dlo_use_allgather,
+            hwr_mode=self.host_weight_runtime_mode,
+        )
 
         if self.diffusion_load_format != "diffusers" and (self.diffusers_load_kwargs or self.diffusers_call_kwargs):
             raise ValueError(

@@ -49,29 +49,6 @@ def get_encoder_block_groups(
     return groups
 
 
-def get_streamable_dit_blocks(
-    module: nn.Module,
-    name: str,
-    config: OffloadConfig,
-    device: torch.device,
-    plan: OffloadPlan | None,
-) -> tuple[list[str], list[nn.Module]] | None:
-    """Resolve one selected DiT's blocks with shared compatibility behavior."""
-    planned_attrs = None if plan is None else plan.block_attrs.get(name)
-    block_attrs, blocks = get_blocks_from_dit(module, planned_attrs)
-    if blocks:
-        return block_attrs, blocks
-    if config.components_explicit:
-        raise ValueError(f"Selected DiT {name!r} has no streamable layerwise-offload blocks")
-    logger.warning(
-        "Target layers (blocks) not found. Skipping offloading on %s (%s)",
-        name,
-        module.__class__.__name__,
-    )
-    module.to(device)
-    return None
-
-
 def iter_streamable_dits(
     modules: PipelineModules,
     config: OffloadConfig,
@@ -83,10 +60,15 @@ def iter_streamable_dits(
         return
     for name, module in zip(modules.dit_names, modules.dits):
         logger.info("Applying hooks on %s (%s)", name, module.__class__.__name__)
-        resolved = get_streamable_dit_blocks(module, name, config, device, plan)
-        if resolved is not None:
-            block_attrs, blocks = resolved
+        planned_attrs = None if plan is None else plan.block_attrs.get(name)
+        block_attrs, blocks = get_blocks_from_dit(module, planned_attrs)
+        if blocks:
             yield name, module, block_attrs, blocks
+            continue
+        if config.components_explicit:
+            raise ValueError(f"Selected DiT {name!r} has no streamable layerwise-offload blocks")
+        logger.warning("Target layers (blocks) not found. Skipping offloading on %s (%s)", name, type(module).__name__)
+        module.to(device)
 
 
 def move_non_block_state_to_device(

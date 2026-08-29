@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 """Unit tests for SequentialOffloadBackend."""
 
@@ -50,20 +50,21 @@ def _track_pin_memory_calls():
     return tracker, mock
 
 
+class _CustomPipeline(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.enable_args: dict[str, object] | None = None
+        self.disable_called = False
+
+    def enable_omni_model_cpu_offload(self, **kwargs) -> None:
+        self.enable_args = kwargs
+
+    def disable_omni_model_cpu_offload(self) -> None:
+        self.disable_called = True
+
+
 def test_model_level_backend_delegates_to_custom_pipeline_offload() -> None:
-    class CustomPipeline(nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.enable_args: dict[str, object] | None = None
-            self.disable_called = False
-
-        def enable_omni_model_cpu_offload(self, **kwargs) -> None:
-            self.enable_args = kwargs
-
-        def disable_omni_model_cpu_offload(self) -> None:
-            self.disable_called = True
-
-    pipeline = CustomPipeline()
+    pipeline = _CustomPipeline()
     backend = ModelLevelOffloadBackend(
         OffloadConfig(strategy=OffloadStrategy.MODEL_LEVEL, pin_cpu_memory=False),
         torch.device("cpu"),
@@ -85,18 +86,7 @@ def test_model_level_backend_delegates_to_custom_pipeline_offload() -> None:
 
 
 def test_model_level_backend_passes_explicit_component_selection() -> None:
-    class CustomPipeline(nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.enable_args: dict[str, object] | None = None
-
-        def enable_omni_model_cpu_offload(self, **kwargs) -> None:
-            self.enable_args = kwargs
-
-        def disable_omni_model_cpu_offload(self) -> None:
-            pass
-
-    pipeline = CustomPipeline()
+    pipeline = _CustomPipeline()
     backend = ModelLevelOffloadBackend(
         OffloadConfig(
             strategy=OffloadStrategy.MODEL_LEVEL,
