@@ -52,7 +52,7 @@ from vllm_omni.diffusion.offloader import (
     remove_sequential_offload,
     sequential_offload_component,
 )
-from vllm_omni.diffusion.offloader.base import (
+from vllm_omni.diffusion.offloader.config import (
     DIT_COMPONENT,
     TEXT_ENCODER_COMPONENT,
     should_offload_component,
@@ -1567,28 +1567,23 @@ class MiniMaxH3Pipeline(
         dits = components.dits
         stages = [*components.encoders, *components.vaes]
         modules = [*dits, *stages]
-        if offload_components is None:
-            apply_sequential_offload(
-                dit_modules=dits,
-                encoder_modules=stages,
-                device=device,
-                pin_memory=pin_memory,
-                use_hsdp=use_hsdp,
-                offload_initial_dits=True,
-            )
-        else:
-            selected_dits = dits if DIT_COMPONENT in offload_components else ()
-            selected_encoders = components.encoders if TEXT_ENCODER_COMPONENT in offload_components else ()
-            apply_sequential_offload(
-                dit_modules=dits,
-                encoder_modules=stages,
-                device=device,
-                pin_memory=pin_memory,
-                use_hsdp=use_hsdp,
-                offload_initial_dits=bool(selected_dits),
-                offload_dit_modules=selected_dits,
-                offload_encoder_modules=selected_encoders,
-            )
+        selection_options: dict[str, Any] = {}
+        if offload_components is not None:
+            selection_options = {
+                "offload_dit_modules": dits if DIT_COMPONENT in offload_components else (),
+                "offload_encoder_modules": (
+                    components.encoders if TEXT_ENCODER_COMPONENT in offload_components else ()
+                ),
+            }
+        apply_sequential_offload(
+            dit_modules=dits,
+            encoder_modules=stages,
+            device=device,
+            pin_memory=pin_memory,
+            use_hsdp=use_hsdp,
+            offload_initial_dits=offload_components is None or DIT_COMPONENT in offload_components,
+            **selection_options,
+        )
 
         self._model_cpu_offload_modules = modules
         logger.info(

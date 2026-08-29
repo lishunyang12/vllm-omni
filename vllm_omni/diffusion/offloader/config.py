@@ -13,7 +13,6 @@ DIT_COMPONENT = "dit"
 TEXT_ENCODER_COMPONENT = "text_encoder"
 OFFLOAD_COMPONENTS = frozenset({DIT_COMPONENT, TEXT_ENCODER_COMPONENT})
 DEFAULT_OFFLOAD_COMPONENTS = frozenset({DIT_COMPONENT})
-DLO_COMPONENTS = OFFLOAD_COMPONENTS
 
 # Private runtime marker distinguishing derived aliases from user input on an
 # already-materialized terminal config. Structured projections keep the compact
@@ -358,17 +357,17 @@ def parse_dlo_transfer(
 ) -> dict[str, DLOTransfer]:
     """Resolve an internal scalar or per-component transfer mapping."""
     fallback = DLOTransfer.ALLGATHER if legacy_use_allgather else DLOTransfer.RANK_LOCAL
-    resolved = {component: fallback for component in DLO_COMPONENTS}
+    resolved = {component: fallback for component in OFFLOAD_COMPONENTS}
     if value is None:
         return resolved
     if isinstance(value, str):
         transfer = _parse_transfer(value)
-        return {component: transfer for component in DLO_COMPONENTS}
+        return {component: transfer for component in OFFLOAD_COMPONENTS}
     if not isinstance(value, Mapping):
         raise TypeError(f"offload transfers must be a string or mapping, got {type(value).__name__}")
     for component, raw_transfer in value.items():
-        if component not in DLO_COMPONENTS:
-            choices = ", ".join(sorted(DLO_COMPONENTS))
+        if component not in OFFLOAD_COMPONENTS:
+            choices = ", ".join(sorted(OFFLOAD_COMPONENTS))
             raise ValueError(f"Unknown offload transfer component {component!r}; choose from: {choices}")
         resolved[component] = _parse_transfer(raw_transfer)
     return resolved
@@ -383,7 +382,7 @@ def component_uses_allgather(config: Any, component: str = DIT_COMPONENT) -> boo
         except KeyError as exc:
             raise ValueError(f"Offload component {component!r} is not selected") from exc
         return settings.weight_transfer is DLOTransfer.ALLGATHER
-    if component not in DLO_COMPONENTS:
+    if component not in OFFLOAD_COMPONENTS:
         raise ValueError(f"Unknown offload component {component!r}")
     # The legacy scalar is a DiT-only compatibility view; legacy
     # auxiliary component hooks always use rank-local transfer.
@@ -398,8 +397,34 @@ def selected_offload_components(config: Any) -> frozenset[str]:
     return DEFAULT_OFFLOAD_COMPONENTS
 
 
+def should_offload_component(config: Any, component: str) -> bool:
+    """Return whether an active layer policy selects ``component``."""
+    if component not in OFFLOAD_COMPONENTS:
+        raise ValueError(f"Unknown offload component: {component}")
+    if resolve_offload_strategy(config) not in {
+        OffloadStrategy.LAYER_WISE,
+        OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+    }:
+        return False
+    return component in selected_offload_components(config)
+
+
 def any_selected_component_uses_allgather(config: Any) -> bool:
     """Return whether an enabled layer backend requires weight collectives."""
     if not uses_offload_strategy(config, OffloadStrategy.DISTRIBUTED_LAYER_WISE):
         return False
     return any(component_uses_allgather(config, component) for component in selected_offload_components(config))
+
+
+def validate_offload_host_registration(config: Any) -> float:
+    """Validate the DiT-only host-registration optimization consistently."""
+    from vllm_omni.diffusion.data import validate_dlo_host_registration_options
+
+    components = selected_offload_components(config)
+    return validate_dlo_host_registration_options(
+        limit_gib=getattr(config, "dlo_host_registration_limit_gib", 0.0),
+        enable_dlo=uses_offload_strategy(config, OffloadStrategy.DISTRIBUTED_LAYER_WISE),
+        # Encoder-only policies have no DiT host mapping to register.
+        use_allgather=DIT_COMPONENT not in components or component_uses_allgather(config, DIT_COMPONENT),
+        hwr_mode=getattr(config, "host_weight_runtime_mode", "disabled"),
+    )

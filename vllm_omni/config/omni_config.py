@@ -776,7 +776,6 @@ class _DiffusionConfigProjection:
             TransformerConfig,
             build_attention_config,
             parse_kv_cache_skip_selector,
-            validate_dlo_host_registration_options,
             validate_host_weight_runtime_options,
         )
         from vllm_omni.diffusion.diffusion_kv.config import parse_diffusion_kv_cache_mode
@@ -862,22 +861,9 @@ class _DiffusionConfigProjection:
             mode=self.host_weight_runtime_mode,
             root=self.host_weight_runtime_root,
         )
-        from vllm_omni.diffusion.offloader.config import (
-            DIT_COMPONENT,
-            OffloadStrategy,
-            component_uses_allgather,
-            selected_offload_components,
-            uses_offload_strategy,
-        )
+        from vllm_omni.diffusion.offloader.config import validate_offload_host_registration
 
-        selected_components = selected_offload_components(self)
-
-        self.dlo_host_registration_limit_gib = validate_dlo_host_registration_options(
-            limit_gib=self.dlo_host_registration_limit_gib,
-            enable_dlo=uses_offload_strategy(self, OffloadStrategy.DISTRIBUTED_LAYER_WISE),
-            use_allgather=(DIT_COMPONENT not in selected_components or component_uses_allgather(self, DIT_COMPONENT)),
-            hwr_mode=self.host_weight_runtime_mode,
-        )
+        self.dlo_host_registration_limit_gib = validate_offload_host_registration(self)
 
         if self.diffusion_load_format != "diffusers" and (self.diffusers_load_kwargs or self.diffusers_call_kwargs):
             raise ValueError(

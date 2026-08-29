@@ -14,7 +14,7 @@ import time
 from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import PIL.Image
@@ -127,25 +127,12 @@ __all__ = [
 
 
 def _func_accepts_parameter(func: object | None, parameter_name: str) -> bool:
-    if not callable(func):
+    if func is None:
         return False
     parameters = inspect.signature(func).parameters
     return parameter_name in parameters or any(
         parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
     )
-
-
-def _wait_output_ready(
-    executor: DiffusionExecutor,
-    async_output_id: str,
-) -> concurrent.futures.Future[DiffusionOutput]:
-    wait = getattr(executor, "wait_output_ready", None)
-    if not callable(wait):
-        raise RuntimeError(f"{type(executor).__name__} returned an async output without wait_output_ready()")
-    future = wait(async_output_id)
-    if not isinstance(future, concurrent.futures.Future):
-        raise TypeError("wait_output_ready() must return concurrent.futures.Future")
-    return future
 
 
 def _resolve_custom_pipeline_cls(custom_pipeline_args: dict[str, Any] | None) -> type | None:
@@ -454,7 +441,7 @@ class DiffusionEngine:
             exec_total_time = time.perf_counter() - exec_start_time
             # Async mode: wait for background D2H/SHM to complete.
             if output.async_output_id:
-                fut = _wait_output_ready(self.executor, output.async_output_id)
+                fut = self.executor.wait_output_ready(output.async_output_id)
                 timeout = _async_output_timeout()
                 try:
                     output = await asyncio.wait_for(asyncio.wrap_future(fut), timeout=timeout)
@@ -573,10 +560,7 @@ class DiffusionEngine:
         )
 
     def _busy_loop(self):
-        stop_event = self.stop_event
-        if stop_event is None:
-            raise RuntimeError("Diffusion engine stop event is not initialized")
-        while not stop_event.is_set():
+        while not self.stop_event.is_set():
             self._process_aborts_queue()
             self._process_rpc_queue()
 
@@ -585,11 +569,11 @@ class DiffusionEngine:
                     not self.scheduler.has_requests()
                     and self._rpc_queue.empty()
                     and self.abort_queue.empty()
-                    and not stop_event.is_set()
+                    and not self.stop_event.is_set()
                 ):
                     self._cv.wait(timeout=1.0)
 
-                if stop_event.is_set():
+                if self.stop_event.is_set():
                     break
 
                 if not self.scheduler.has_requests():
@@ -625,7 +609,7 @@ class DiffusionEngine:
 
             self._process_aborts_queue()
             self._process_rpc_queue()
-            finished_req_ids = self.scheduler.update_from_output(sched_output, cast(Any, runner_output))
+            finished_req_ids = self.scheduler.update_from_output(sched_output, runner_output)
             self._emit_outputs(finished_req_ids, sched_output.scheduled_request_ids, runner_output)
 
         # Engine is stopping: fail any RPCs still queued so callers don't hang.
@@ -647,10 +631,7 @@ class DiffusionEngine:
         last_waiting = -1
         stable_since = start
 
-        stop_event = self.stop_event
-        if stop_event is None:
-            raise RuntimeError("Diffusion engine stop event is not initialized")
-        while not stop_event.is_set():
+        while not self.stop_event.is_set():
             waiting = self.scheduler.num_waiting_requests()
             now = time.monotonic()
 
@@ -987,12 +968,11 @@ class DiffusionEngine:
 
                 self._process_aborts_queue()
 
-                finished_req_ids = self.scheduler.update_from_output(sched_output, cast(Any, runner_output))
+                finished_req_ids = self.scheduler.update_from_output(sched_output, runner_output)
 
                 # sync func should receive one result
-                if not isinstance(runner_output, RunnerOutput):
-                    if not isinstance(runner_output, BatchRunnerOutput) or len(runner_output) != 1:
-                        raise ValueError("Sync func should receive one result at one time")
+                if not isinstance(runner_output, RunnerOutput) and not len(runner_output) == 1:
+                    raise ValueError("Sync func should receive one result at one time")
                 if target_request_id in finished_req_ids:
                     self._remove_diffusion_kv_requests([target_request_id])
                     req_output = runner_output.get_request_output(target_request_id)
@@ -1002,7 +982,7 @@ class DiffusionEngine:
                         missing_result_error="Diffusion execution finished without a final output.",
                     )
                     if output.async_output_id:
-                        fut = _wait_output_ready(self.executor, output.async_output_id)
+                        fut = self.executor.wait_output_ready(output.async_output_id)
                         output = fut.result(timeout=_async_output_timeout())
                     return output
 

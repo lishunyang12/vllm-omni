@@ -3,74 +3,37 @@
 
 """Unit tests for LayerwiseOffloadHook and LayerWiseOffloadBackend utilities."""
 
-import gc
-from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
 import torch
-import torch.distributed as dist
 from torch import nn
 from torch.distributed.tensor import DeviceMesh, DTensor, Replicate
 
 import vllm_omni.diffusion.offloader.config as offload_config_module
 import vllm_omni.diffusion.offloader.layerwise_backend as layerwise_backend_module
-from tests.diffusion.offloader.helpers import _DummyBlock, _PlainEncoder, _SingleBlockModel, _StagedEncoder, _StagedVAE
-from tests.helpers.runtime import get_distributed_init_method
+from tests.diffusion.offloader.helpers import (
+    DummyStream,
+    _DummyBlock,
+    _PlainEncoder,
+    _SingleBlockModel,
+    _StagedEncoder,
+    _StagedVAE,
+    patch_offload_runtime,
+)
 from vllm_omni.diffusion.offloader.base import OffloadConfig, OffloadStrategy
 from vllm_omni.diffusion.offloader.layerwise_backend import (
     LayerWiseOffloadBackend,
     LayerwiseOffloadHook,
 )
 from vllm_omni.diffusion.offloader.offload_plan import OffloadPlan
-from vllm_omni.platforms import current_omni_platform
 
 pytestmark = [pytest.mark.diffusion, pytest.mark.cpu, pytest.mark.core_model]
 
 
-class DummyStream:
-    def wait_stream(self, _stream) -> None:
-        return None
-
-    def wait_event(self, _event) -> None:
-        return None
-
-
-class DummyEvent:
-    def record(self, _stream) -> None:
-        return None
-
-
-@contextmanager
-def dummy_stream(_stream):
-    yield None
-
-
-def _cleanup_distributed() -> None:
-    if dist.is_initialized():
-        dist.destroy_process_group()
-
-    gc.collect()
-    if current_omni_platform.is_available():
-        current_omni_platform.empty_cache()
-        current_omni_platform.synchronize()
-
-
-@pytest.fixture(scope="module")
-def dist_group():
-    dist.init_process_group("gloo", rank=0, world_size=1, init_method=get_distributed_init_method())
-    try:
-        yield
-    finally:
-        _cleanup_distributed()
-
-
 @pytest.fixture
 def patched_offload_runtime(monkeypatch):
-    monkeypatch.setattr(layerwise_backend_module.current_omni_platform, "Stream", DummyStream)
-    monkeypatch.setattr(layerwise_backend_module.current_omni_platform, "Event", DummyEvent)
-    monkeypatch.setattr(layerwise_backend_module.current_omni_platform, "current_stream", lambda: DummyStream())
-    monkeypatch.setattr(layerwise_backend_module.current_omni_platform, "stream", dummy_stream)
+    patch_offload_runtime(monkeypatch, layerwise_backend_module.current_omni_platform)
 
 
 class TinyBlock(nn.Module):
@@ -275,6 +238,14 @@ class _LegacyEncoderOnlyPipeline(nn.Module):
         self.vae = _StagedVAE()
 
 
+class _PlannedDitPipeline(nn.Module):
+    _offload_plan = OffloadPlan(block_attrs={"transformer": ("blocks",)})
+
+    def __init__(self):
+        super().__init__()
+        self.transformer = _NoAttrsModel()
+
+
 class _GenericEncoderPipeline(nn.Module):
     _offload_plan = OffloadPlan(
         encoder_component_types={"text_encoder": "text_encoder"},
@@ -288,6 +259,23 @@ class _GenericEncoderPipeline(nn.Module):
 
 
 class TestLayerwiseComponentSelection:
+    def test_plan_block_attrs_drive_dit_discovery(self, patched_offload_runtime):
+        pipeline = _PlannedDitPipeline()
+        backend = LayerWiseOffloadBackend(
+            OffloadConfig(
+                strategy=OffloadStrategy.LAYER_WISE,
+                pin_cpu_memory=False,
+                components=frozenset({"dit"}),
+                components_explicit=True,
+            ),
+            torch.device("cpu"),
+        )
+
+        backend.enable(pipeline)
+
+        assert hasattr(pipeline.transformer.blocks[0], "_hook_registry")
+        backend.disable()
+
     def test_legacy_missing_dit_preserves_noop(self, patched_offload_runtime):
         pipeline = _LegacyEncoderOnlyPipeline()
         backend = LayerWiseOffloadBackend(

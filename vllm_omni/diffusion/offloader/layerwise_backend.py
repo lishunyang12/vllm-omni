@@ -3,20 +3,41 @@
 from __future__ import annotations
 
 from itertools import chain
-from operator import attrgetter
 from typing import Any
 
 import torch
 from torch import nn
-from torch.distributed.tensor import DTensor
 from vllm.logger import init_logger
 
 from vllm_omni.diffusion.hooks import HookRegistry, ModelHook
 from vllm_omni.platforms import current_omni_platform
 
-from .base import DIT_COMPONENT, TEXT_ENCODER_COMPONENT, OffloadBackend, OffloadConfig
+from .base import OffloadBackend, OffloadConfig
+from .block_discovery import (
+    get_blocks_attr_names,
+    get_blocks_from_dit,
+    set_blocks_attr_names,
+)
+from .component_utils import (
+    get_encoder_block_groups,
+    iter_streamable_dits,
+    move_non_block_state_to_device,
+    prepare_pipeline_components,
+)
+from .config import DIT_COMPONENT
 from .module_collector import ModuleDiscovery
 from .offload_plan import OffloadPlan, get_offload_plan
+from .tensor_utils import (
+    clear_block_storage,
+    clear_tensor_storage,
+    describe_tensor_storage,
+    flatten_physical_storage,
+    group_named_tensors_by_dtype,
+    is_materialized_tensor,
+    restore_tensor_storage,
+    set_tensor_storage,
+    tensor_storage_metadata,
+)
 
 logger = init_logger(__name__)
 
@@ -62,31 +83,6 @@ class LayerwiseOffloadHook(ModelHook):
         self.dtype_cpu_flattened_weights: dict[torch.dtype, torch.Tensor] = {}
         self.dtype_metadata: dict[torch.dtype, list[dict[str, Any]]] = {}
 
-    @staticmethod
-    def _is_dtensor(t: torch.Tensor) -> bool:
-        return isinstance(t, DTensor)
-
-    @staticmethod
-    def _set_tensor_storage(target: torch.Tensor, value: torch.Tensor) -> None:
-        if LayerwiseOffloadHook._is_dtensor(target):
-            target._local_tensor = value
-        else:
-            target.data = value
-
-    @staticmethod
-    def _make_offload_placeholder(tensor: torch.Tensor) -> torch.Tensor:
-        if LayerwiseOffloadHook._is_dtensor(tensor):
-            local_shape = tuple(tensor.to_local().shape)
-            return torch.empty(local_shape, device="meta", dtype=tensor.dtype)
-        return torch.empty((0,), device=tensor.device, dtype=tensor.dtype)
-
-    @staticmethod
-    def _is_materialized_tensor(t: torch.Tensor) -> bool:
-        if LayerwiseOffloadHook._is_dtensor(t):
-            local_t = t.to_local()
-            return not local_t.is_meta
-        return not t.is_meta and t.data.numel() > 0
-
     def initialize_hook(self, module: nn.Module) -> nn.Module:
         # This all happen during the hook instance being registered to hook registry;
         # the input module is kept intact
@@ -125,82 +121,32 @@ class LayerwiseOffloadHook(ModelHook):
                 flattened CPU tensors by dtype,
                 metadata for reconstruction by dtype
         """
-        dtype_grouped_weights: dict[torch.dtype, dict[str, torch.Tensor]] = {}
         dtype_cpu_flattened_weights: dict[torch.dtype, torch.Tensor] = {}
         # NOTE: order does matter
         dtype_metadata: dict[torch.dtype, list[dict[str, Any]]] = {}
         targets_to_offload: list[torch.Tensor] = []
 
-        for name, param_or_buf in chain(params.items(), bufs.items()):
-            dtype = param_or_buf.dtype
-            if dtype not in dtype_grouped_weights:
-                dtype_grouped_weights[dtype] = {}
-            dtype_grouped_weights[dtype][name] = param_or_buf
-
-        for dtype, name2weights in dtype_grouped_weights.items():
+        for dtype, named_weights in group_named_tensors_by_dtype(params, bufs).items():
             # total # of parameters + buffers
-            weights_with_local = []
-            for name, t in name2weights.items():
-                local_t = t.to_local() if hasattr(t, "to_local") else t
-                stride = local_t.stride()
-                storage_numel = (
-                    0
-                    if local_t.numel() == 0
-                    else 1 + sum((size - 1) * axis_stride for size, axis_stride in zip(local_t.shape, stride))
-                )
-                weights_with_local.append((name, t, local_t, storage_numel, stride))
-            total_numel = sum(storage_numel for _, _, _, storage_numel, _ in weights_with_local)
+            specs = describe_tensor_storage(named_weights)
+            total_numel = sum(spec.storage_numel for spec in specs)
             cpu_tensor = torch.empty(total_numel, dtype=dtype, device="cpu", pin_memory=pin_memory)
 
             current_offset = 0
-            for (
-                name,
-                original_tensor,
-                local_tensor,
-                storage_numel,
-                stride,
-            ) in weights_with_local:
-                if local_tensor.is_contiguous():
-                    flat_storage = local_tensor.flatten()
-                else:
-                    # Cutlass FP8 weights use a transposed physical layout.
-                    # Preserve it across the flattened CPU staging buffer.
-                    flat_storage = torch.zeros(
-                        storage_numel,
-                        dtype=dtype,
-                        device=local_tensor.device,
-                    )
-                    physical_view = torch.as_strided(
-                        flat_storage,
-                        size=local_tensor.shape,
-                        stride=stride,
-                    )
-                    physical_view.copy_(local_tensor)
-                cpu_tensor[current_offset : current_offset + storage_numel].copy_(flat_storage)
-                if dtype not in dtype_metadata:
-                    dtype_metadata[dtype] = []
-                dtype_metadata[dtype].append(
-                    {
-                        "name": name,
-                        "offset": current_offset,
-                        "numel": storage_numel,
-                        "shape": local_tensor.shape,
-                        "stride": stride,
-                        "device": local_tensor.device,
-                    }
+            for spec in specs:
+                flat_storage = flatten_physical_storage(spec.value, spec.storage_numel)
+                cpu_tensor[current_offset : current_offset + spec.storage_numel].copy_(flat_storage)
+                dtype_metadata.setdefault(dtype, []).append(
+                    tensor_storage_metadata(spec, current_offset, include_device=True)
                 )
-                targets_to_offload.append(original_tensor)
-                current_offset += storage_numel
+                targets_to_offload.append(spec.target)
+                current_offset += spec.storage_numel
 
             dtype_cpu_flattened_weights[dtype] = cpu_tensor
 
         # Do not mutate the module until every host master has been built.
         # Allocation/copy failures therefore leave the input module intact.
-        for target in targets_to_offload:
-            LayerwiseOffloadHook._set_tensor_storage(
-                target,
-                LayerwiseOffloadHook._make_offload_placeholder(target),
-            )
+        clear_tensor_storage(targets_to_offload)
 
         return dtype_cpu_flattened_weights, dtype_metadata
 
@@ -208,7 +154,7 @@ class LayerwiseOffloadHook(ModelHook):
     def is_materialized(self) -> bool:
         """Check whether this block's parameters hold real data on device."""
         for param in self.block_parameters.values():
-            return LayerwiseOffloadHook._is_materialized_tensor(param)
+            return is_materialized_tensor(param)
 
         return True
 
@@ -245,7 +191,7 @@ class LayerwiseOffloadHook(ModelHook):
                     layer_params[target_name] if target_name in layer_params else layer_bufs[target_name]
                 )
 
-                LayerwiseOffloadHook._set_tensor_storage(
+                set_tensor_storage(
                     target_param_or_buf,
                     torch.as_strided(
                         gpu_weight[metadata["offset"] : metadata["offset"] + metadata["numel"]],
@@ -261,17 +207,8 @@ class LayerwiseOffloadHook(ModelHook):
         """Free GPU memory for layer by replacing tensors with empty placeholders.
         This function does not actually offload weights from GPU back to CPU.
         """
-        evt = self._prefetch_done
-        if evt is not None:
-            current_omni_platform.current_stream().wait_event(evt)
-
+        clear_block_storage(self.block_parameters, self.block_buffers, self._prefetch_done)
         self._prefetch_done = None
-
-        # free GPU residency
-        for _, param in self.block_parameters.items():
-            LayerwiseOffloadHook._set_tensor_storage(param, LayerwiseOffloadHook._make_offload_placeholder(param))
-        for _, buf in self.block_buffers.items():
-            LayerwiseOffloadHook._set_tensor_storage(buf, LayerwiseOffloadHook._make_offload_placeholder(buf))
 
     @torch.compiler.disable
     def restore_next_block(self) -> None:
@@ -284,20 +221,13 @@ class LayerwiseOffloadHook(ModelHook):
                     size=metadata["shape"],
                     stride=metadata["stride"],
                 )
-                restored = torch.empty_strided(
-                    value.shape,
-                    value.stride(),
-                    dtype=value.dtype,
-                    device=metadata["device"],
-                )
-                restored.copy_(value)
                 target_name = metadata["name"]
                 target = (
                     self.next_block_parameters[target_name]
                     if target_name in self.next_block_parameters
                     else self.next_block_buffers[target_name]
                 )
-                LayerwiseOffloadHook._set_tensor_storage(target, restored)
+                restore_tensor_storage(target, value, device=metadata["device"])
 
     def pre_forward(self, module: nn.Module, *args: Any, **kwargs: Any) -> tuple[tuple, dict]:
         # if the previous hook was skipped and the weights are not on device,
@@ -337,28 +267,37 @@ def remove_block_hook(module: nn.Module) -> None:
         logger.debug("Removed offload hook from %s", module.__class__.__name__)
 
 
-def _move_encoder_non_block_state_to_device(
-    module: nn.Module,
-    block_groups: list[nn.ModuleList],
+def _install_layerwise_hook_group(
+    blocks: list[nn.Module] | nn.ModuleList,
     device: torch.device,
-) -> None:
-    """Keep encoder state outside streamed block lists resident on device."""
-    block_tensors = {
-        id(tensor)
-        for blocks in block_groups
-        for block in blocks
-        for tensor in chain(block.parameters(), block.buffers())
-    }
-    for tensor in chain(module.parameters(), module.buffers()):
-        if id(tensor) in block_tensors:
-            continue
-        local = tensor.to_local() if isinstance(tensor, DTensor) else tensor
-        if local.device == device:
-            continue
-        LayerwiseOffloadHook._set_tensor_storage(
-            tensor,
-            local.to(device, non_blocking=True),
-        )
+    stream: Any,
+    pin_memory: bool,
+) -> list[LayerwiseOffloadHook]:
+    """Install one circular hook ring and roll it back transactionally."""
+    block_list = list(blocks)
+    if len(block_list) <= 1:
+        raise ValueError("A layerwise hook group requires at least two blocks")
+
+    hooks: list[LayerwiseOffloadHook] = []
+    hooked_blocks: list[nn.Module] = []
+    try:
+        for block, next_block in zip(
+            chain((block_list[-1],), block_list[:-1]),
+            block_list,
+            strict=True,
+        ):
+            hooks.append(apply_block_hook(block, next_block, device, stream, pin_memory))
+            hooked_blocks.append(block)
+    except BaseException:
+        for hook in hooks:
+            hook.restore_next_block()
+        for block in hooked_blocks:
+            remove_block_hook(block)
+        raise
+
+    for index, hook in enumerate(hooks):
+        hook._prev_hook = hooks[index - 1]
+    return hooks
 
 
 def enable_plan_encoder_layerwise_offload(
@@ -371,41 +310,20 @@ def enable_plan_encoder_layerwise_offload(
     pin_memory: bool,
 ) -> bool:
     """Apply rank-local layerwise hooks to plan-declared encoder stacks."""
-    if plan is None or name not in plan.encoder_block_attrs:
-        return False
     if getattr(module, "_omni_layerwise_enabled", False):
         return True
 
     hooks: list[LayerwiseOffloadHook] = []
     hooked_blocks: list[nn.Module] = []
-    block_groups: list[nn.ModuleList] = []
+    block_groups = get_encoder_block_groups(module, name, plan)
+    if not block_groups:
+        return False
     try:
-        for block_path in plan.encoder_block_attrs[name]:
-            try:
-                blocks = attrgetter(block_path)(module)
-            except AttributeError:
-                logger.warning("Encoder offload path %s.%s was not found", name, block_path)
-                continue
-            if not isinstance(blocks, nn.ModuleList) or len(blocks) <= 1:
-                logger.warning(
-                    "Encoder offload path %s.%s is not a streamable block list",
-                    name,
-                    block_path,
-                )
-                continue
-            group_hooks = []
-            for block, next_block in [(blocks[-1], blocks[0]), *zip(blocks[:-1], blocks[1:])]:
-                hook = apply_block_hook(block, next_block, device, stream, pin_memory)
-                group_hooks.append(hook)
-                hooks.append(hook)
-                hooked_blocks.append(block)
-            for index, hook in enumerate(group_hooks):
-                hook._prev_hook = group_hooks[index - 1]
-            block_groups.append(blocks)
-
-        if not hooks:
-            return False
-        _move_encoder_non_block_state_to_device(
+        for blocks in block_groups:
+            group_hooks = _install_layerwise_hook_group(blocks, device, stream, pin_memory)
+            hooks.extend(group_hooks)
+            hooked_blocks.extend(blocks)
+        move_non_block_state_to_device(
             module,
             block_groups,
             device,
@@ -448,14 +366,6 @@ def disable_plan_encoder_layerwise_offload(
     module._omni_layerwise_enabled = False
 
 
-def validate_on_demand_component(module: nn.Module, name: str) -> None:
-    """Fail before hook installation when a declared lifecycle is incomplete."""
-    if not callable(getattr(module, "load_to_device", None)) or not callable(getattr(module, "offload_to_cpu", None)):
-        raise ValueError(
-            f"Component {name!r} declares on-demand offload but must implement load_to_device() and offload_to_cpu()"
-        )
-
-
 class LayerWiseOffloadBackend(OffloadBackend):
     """Layer-wise (block-level) offloading backend.
 
@@ -473,25 +383,6 @@ class LayerWiseOffloadBackend(OffloadBackend):
         self._hooked_dit_blocks: list[nn.Module] = []
         self._encoder_modules: list[nn.Module] = []
         self._staged_components: list[nn.Module] = []
-
-    def _prepare_component(
-        self,
-        module: nn.Module,
-        name: str,
-        *,
-        selected: bool,
-        blockwise: bool,
-        stage_on_demand: bool,
-    ) -> None:
-        if selected and stage_on_demand:
-            validate_on_demand_component(module, name)
-            getattr(module, "offload_to_cpu")()
-            self._staged_components.append(module)
-            logger.info("Prepared %s for pipeline-managed staged offload", name)
-            return
-        if blockwise:
-            return
-        module.to(self.device)
 
     def enable(self, pipeline: nn.Module) -> None:
         try:
@@ -517,61 +408,26 @@ class LayerWiseOffloadBackend(OffloadBackend):
             logger.warning(message)
             return
 
-        if plan is not None:
-            for enc, enc_name in zip(modules.encoders, modules.encoder_names):
-                if (
-                    not self.config.components_explicit or self.config.offloads_encoder(enc_name, plan)
-                ) and enc_name in plan.on_demand_component_paths:
-                    validate_on_demand_component(enc, enc_name)
-
-        for enc, enc_name in zip(modules.encoders, modules.encoder_names):
-            selected = not self.config.components_explicit or self.config.offloads_encoder(enc_name, plan)
-            blockwise = selected and enable_plan_encoder_layerwise_offload(
-                enc,
-                enc_name,
-                plan,
+        prepare_pipeline_components(
+            modules,
+            self.config,
+            plan,
+            device=self.device,
+            staged_components=self._staged_components,
+            enable_encoder_blocks=lambda module, name, component_plan: enable_plan_encoder_layerwise_offload(
+                module,
+                name,
+                component_plan,
                 device=self.device,
                 stream=self.copy_stream,
                 pin_memory=self.config.pin_cpu_memory,
-            )
-            if blockwise:
-                self._encoder_modules.append(enc)
-            self._prepare_component(
-                enc,
-                enc_name,
-                selected=selected,
-                blockwise=blockwise,
-                stage_on_demand=bool(selected and plan is not None and enc_name in plan.on_demand_component_paths),
-            )
-
-        if self.config.components_explicit and self.config.offloads(TEXT_ENCODER_COMPONENT):
-            if not (self._encoder_modules or self._staged_components):
-                raise ValueError(
-                    "Selected text_encoder layerwise offload requires a model-declared streamable or on-demand plan"
-                )
-
-        for vae, vae_name in zip(modules.vaes, modules.vae_names):
-            legacy_staged = (
-                not self.config.components_explicit and plan is not None and vae_name in plan.on_demand_component_paths
-            )
-            self._prepare_component(
-                vae,
-                vae_name,
-                selected=legacy_staged,
-                blockwise=False,
-                stage_on_demand=legacy_staged,
-            )
-
-        # Move resident modules to GPU (small modules needed every forward)
-        for name, module in zip(modules.resident_names, modules.resident_modules):
-            try:
-                module.to(self.device)
-            except Exception as exc:
-                logger.debug("Failed to move resident module %s to GPU: %s", name, exc)
+            ),
+        )
+        self._encoder_modules = [
+            encoder for encoder in modules.encoders if getattr(encoder, "_omni_layerwise_enabled", False)
+        ]
 
         if not self.config.offloads(DIT_COMPONENT):
-            for dit_module in modules.dits:
-                dit_module.to(self.device)
             self.enabled = bool(self._encoder_modules or self._staged_components)
             if not self.enabled:
                 raise ValueError(
@@ -584,23 +440,9 @@ class LayerWiseOffloadBackend(OffloadBackend):
 
         # Apply block-wise offloading hook for each of the blocks in DiT model(s)
         # Note that there might exist multiple DiT models in specific pipelines
-        for i, dit_module in enumerate(modules.dits):
-            dit_name = modules.dit_names[i]
-            logger.info(f"Applying hooks on {dit_name} ({dit_module.__class__.__name__})")
-
-            blocks_attr_names, blocks = LayerWiseOffloadBackend.get_blocks_from_dit(dit_module)
-
-            if not blocks:
-                if self.config.components_explicit:
-                    raise ValueError(f"Selected DiT {dit_name!r} has no streamable layerwise-offload blocks")
-                logger.warning(
-                    "Target layers (blocks) not found. Skipping offloading on %s (%s)",
-                    dit_name,
-                    dit_module.__class__.__name__,
-                )
-                dit_module.to(self.device)
-                continue
-
+        for dit_name, dit_module, blocks_attr_names, blocks in iter_streamable_dits(
+            modules, self.config, self.device, plan
+        ):
             num_blocks = len(blocks)
             if num_blocks <= 1:
                 if self.config.components_explicit:
@@ -632,41 +474,18 @@ class LayerWiseOffloadBackend(OffloadBackend):
                 if buffer is not None:
                     buffer.data = buffer.data.to(self.device, non_blocking=True)
 
-            # Pre-fetch the first layer by manually calling the hook function on the last layer;
-            # For subsequent requests, the first layer/block will be pre-fetched
-            # during the last layer compute of the previous request.
-            last_block, first_block = blocks[-1], blocks[0]
-            last_hook = apply_block_hook(
-                last_block,
-                first_block,
+            block_hooks = _install_layerwise_hook_group(
+                blocks,
                 self.device,
                 self.copy_stream,
                 self.config.pin_cpu_memory,
             )
-            self._dit_hooks.append(last_hook)
-            self._hooked_dit_blocks.append(last_block)
-            last_hook.prefetch_layer(non_blocking=False)
+            self._dit_hooks.extend(block_hooks)
+            self._hooked_dit_blocks.extend(blocks)
 
-            block_hooks: list[LayerwiseOffloadHook] = [last_hook]
-            # Register hook for each of blocks
-            for i, block in enumerate(blocks[:-1]):
-                next_block = blocks[(i + 1) % num_blocks]
-                hook = apply_block_hook(
-                    block,
-                    next_block,
-                    self.device,
-                    self.copy_stream,
-                    self.config.pin_cpu_memory,
-                )
-                block_hooks.append(hook)
-                self._dit_hooks.append(hook)
-                self._hooked_dit_blocks.append(block)
-
-            # NOTE(yuanheng-zhao): We make each hook gets a backward reference to the hook
-            # that is responsible for prefetching its block's weights. This is specifically a
-            # workaround for that arbitrary blocks are skipped by caching systems (e.g., cache-dit)
-            for i in range(len(block_hooks)):
-                block_hooks[i]._prev_hook = block_hooks[i - 1]
+            # The last block owns block zero's host backing. Materialize block
+            # zero once; later denoising iterations prefetch it from the ring.
+            block_hooks[0].prefetch_layer(non_blocking=False)
 
             logger.info(f"Layer-wise offloading enabled on {num_blocks} layers (blocks)")
 
@@ -706,85 +525,7 @@ class LayerWiseOffloadBackend(OffloadBackend):
     def shutdown(self) -> None:
         self._disable(restore_weights=False)
 
-    @staticmethod
-    def get_blocks_attr_names(model: nn.Module) -> list[str]:
-        """Get block attribute names from model class."""
-        attrs: list[str] = getattr(model.__class__, "_layerwise_offload_blocks_attrs", [])
-
-        if not attrs:
-            old_attr = getattr(model.__class__, "_layerwise_offload_blocks_attr", None)
-            if old_attr is not None:
-                logger.warning(
-                    "'_layerwise_offload_blocks_attr' is deprecated, "
-                    "please use '_layerwise_offload_blocks_attrs' instead. "
-                    "Example: _layerwise_offload_blocks_attrs = ['blocks']"
-                )
-                attrs = [old_attr] if isinstance(old_attr, str) else list(old_attr)
-
-        return attrs
-
-    @staticmethod
-    def set_blocks_attr_names(model: nn.Module, names: list[str]) -> None:
-        if not hasattr(model.__class__, "_layerwise_offload_blocks_attrs"):
-            setattr(model.__class__, "_layerwise_offload_blocks_attrs", names)
-
-    @staticmethod
-    def get_blocks_from_dit(model: nn.Module) -> tuple[list[str], list[nn.Module]]:
-        """
-        Retrieve blocks and attribute names from provided DiT model. Blocks attribute names
-        are found by `_layerwise_offload_blocks_attrs` set to DiT models. For example,
-
-        ```
-        class WanTransformer3DModel(nn.Module):
-            _layerwise_offload_blocks_attrs = ["blocks"]
-        ```
-
-        Returns:
-            Tuple of (blocks_attr_names, blocks)
-        """
-        blocks_attr_names = LayerWiseOffloadBackend.get_blocks_attr_names(model)
-        if not blocks_attr_names:
-            logger.warning(
-                f"No _layerwise_offload_blocks_attrs defined for {model.__class__.__name__}, "
-                "skipping layerwise offloading"
-            )
-            return [], []
-
-        blocks = []
-        for name in blocks_attr_names:
-            attr = getattr(model, name, None)
-            if attr is None:
-                raise AttributeError(
-                    f"Attribute '{name}' declared in _layerwise_offload_blocks_attrs "
-                    f"does not exist on model {model.__class__.__name__}"
-                )
-            try:
-                attr_iter = iter(attr)
-            except TypeError:
-                if isinstance(attr, nn.Module):
-                    logger.warning(
-                        "Attribute '%s' on %s is not iterable; treating it as one block.",
-                        name,
-                        model.__class__.__name__,
-                    )
-                    blocks.append(attr)
-                    continue
-
-                logger.warning(
-                    "Attribute '%s' on %s is not iterable (got %s); skipping it.",
-                    name,
-                    model.__class__.__name__,
-                    type(attr).__name__,
-                )
-            else:
-                blocks.extend(attr_iter)
-
-        if not blocks:
-            logger.warning(
-                "No blocks found in %s for %s, skipping layerwise offloading",
-                blocks_attr_names,
-                model.__class__.__name__,
-            )
-            return [], []
-
-        return blocks_attr_names, blocks
+    # Compatibility aliases for existing model integrations.
+    get_blocks_attr_names = staticmethod(get_blocks_attr_names)
+    set_blocks_attr_names = staticmethod(set_blocks_attr_names)
+    get_blocks_from_dit = staticmethod(get_blocks_from_dit)

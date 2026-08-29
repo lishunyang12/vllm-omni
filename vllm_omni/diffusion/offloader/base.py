@@ -9,7 +9,7 @@ import torch
 from torch import nn
 from vllm.logger import init_logger
 
-from vllm_omni.diffusion.data import OmniDiffusionConfig, validate_dlo_host_registration_options
+from vllm_omni.diffusion.data import OmniDiffusionConfig
 
 from .config import (
     DEFAULT_OFFLOAD_COMPONENTS,
@@ -22,23 +22,11 @@ from .config import (
     parse_dlo_transfer,
     parse_offload_components,
     resolve_offload_strategy,
-    selected_offload_components,
+    validate_offload_host_registration,
 )
 from .offload_plan import OffloadPlan
 
 logger = init_logger(__name__)
-
-
-def should_offload_component(od_config: OmniDiffusionConfig, component: str) -> bool:
-    """Return whether an active layerwise strategy selected ``component``."""
-    if component not in OFFLOAD_COMPONENTS:
-        raise ValueError(f"Unknown offload component: {component}")
-    if resolve_offload_strategy(od_config) not in {
-        OffloadStrategy.LAYER_WISE,
-        OffloadStrategy.DISTRIBUTED_LAYER_WISE,
-    }:
-        return False
-    return component in selected_offload_components(od_config)
 
 
 @runtime_checkable
@@ -120,6 +108,10 @@ class OffloadConfig:
             return self.offloads(TEXT_ENCODER_COMPONENT)
         return False
 
+    def should_offload_encoder(self, name: str, plan: OffloadPlan | None = None) -> bool:
+        """Apply explicit selection while preserving the legacy encoder topology."""
+        return not self.components_explicit or self.offloads_encoder(name, plan)
+
     @classmethod
     def from_od_config(cls, od_config: OmniDiffusionConfig) -> "OffloadConfig":
         """Extract and validate offload settings from OmniDiffusionConfig.
@@ -194,21 +186,7 @@ class OffloadConfig:
             components_explicit = False
 
         dit_uses_allgather = dlo_transfers[DIT_COMPONENT] is DLOTransfer.ALLGATHER
-        dlo_host_registration_limit_gib = validate_dlo_host_registration_options(
-            limit_gib=getattr(od_config, "dlo_host_registration_limit_gib", 0.0),
-            enable_dlo=enable_distributed_layerwise_offload,
-            use_allgather=dit_uses_allgather,
-            hwr_mode=getattr(od_config, "host_weight_runtime_mode", "disabled"),
-        )
-        if dlo_resident_layers < 0:
-            raise ValueError(f"dlo_resident_layers must be >= 0, got {dlo_resident_layers}")
-        if dlo_resident_layers and DIT_COMPONENT not in components:
-            raise ValueError("dlo_resident_layers requires the 'dit' component to be selected")
-        if dlo_resident_layers and dit_uses_allgather:
-            raise ValueError(
-                "dlo_resident_layers requires the DiT DLO transfer to be rank-local so "
-                "resident blocks use weights prepared by the standard TP-aware loader"
-            )
+        dlo_host_registration_limit_gib = validate_offload_host_registration(od_config)
 
         if enable_distributed_layerwise_offload and all(
             transfer is DLOTransfer.RANK_LOCAL

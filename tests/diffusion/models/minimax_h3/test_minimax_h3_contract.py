@@ -1419,30 +1419,6 @@ def test_standalone_audio_conditions_keep_audio_vae_resident(monkeypatch):
     assert lengths == [4, 5]
 
 
-def test_distributed_layerwise_all_keeps_vae_component_resident():
-    from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
-
-    pipeline = object.__new__(MiniMaxH3Pipeline)
-    torch.nn.Module.__init__(pipeline)
-    pipeline.od_config = SimpleNamespace(
-        enable_cpu_offload=False,
-        enable_layerwise_offload=False,
-        enable_distributed_layerwise_offload=False,
-        diffusion_offload_config={
-            "mode": "layer",
-            "components": ["dit", "text_encoder"],
-            "layer_options": {"dit": {"weight_transfer": "allgather"}},
-        },
-    )
-    component = Mock()
-
-    with pipeline._component_on_device(component):
-        component.load_to_device.assert_not_called()
-        component.offload_to_cpu.assert_not_called()
-
-    component.offload_to_cpu.assert_not_called()
-
-
 def test_dit_encoder_selection_keeps_vae_resident():
     from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
 

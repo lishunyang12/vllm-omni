@@ -3,8 +3,40 @@
 
 """Shared model fixtures for diffusion offloader tests."""
 
+from contextlib import contextmanager
+
 import torch
 from torch import nn
+
+
+class DummyStream:
+    def wait_stream(self, _stream) -> None:
+        return None
+
+    def wait_event(self, _event) -> None:
+        return None
+
+
+class DummyEvent:
+    def record(self, _stream) -> None:
+        return None
+
+    def synchronize(self) -> None:
+        return None
+
+
+@contextmanager
+def dummy_stream(_stream):
+    yield None
+
+
+def patch_offload_runtime(monkeypatch, platform, *, synchronize: bool = False) -> None:
+    monkeypatch.setattr(platform, "Stream", DummyStream)
+    monkeypatch.setattr(platform, "Event", DummyEvent)
+    monkeypatch.setattr(platform, "current_stream", lambda: DummyStream())
+    monkeypatch.setattr(platform, "stream", dummy_stream)
+    if synchronize:
+        monkeypatch.setattr(platform, "synchronize", lambda: None)
 
 
 class _DummyBlock(nn.Module):

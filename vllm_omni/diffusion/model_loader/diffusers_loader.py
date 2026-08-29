@@ -286,7 +286,7 @@ class DiffusersPipelineLoader(HWRLoaderMixin):
                 ignore_patterns=self.load_config.ignore_patterns,
             )
         else:
-            hf_folder = str(model_name_or_path)
+            hf_folder = model_name_or_path
 
         if subfolder is not None:
             hf_folder = os.path.join(hf_folder, subfolder)
@@ -363,7 +363,7 @@ class DiffusersPipelineLoader(HWRLoaderMixin):
     def _get_source_quant_config(self, source: "ComponentSource") -> object | None:
         quant_config = self.quant_config
         resolve = getattr(quant_config, "resolve", None)
-        if callable(resolve):
+        if resolve is not None:
             return resolve(source.prefix.rstrip("."))
         return quant_config
 
@@ -692,10 +692,10 @@ class DiffusersPipelineLoader(HWRLoaderMixin):
         marked = 0
         for module in model.modules():
             quant_method = getattr(module, "quant_method", None)
-            enable_offload = getattr(quant_method, "enable_offload_after_quant", None)
-            if getattr(quant_method, "supports_offload_after_quant", False) and callable(enable_offload):
-                enable_offload()
-                marked += 1
+            if quant_method is None or not getattr(quant_method, "supports_offload_after_quant", False):
+                continue
+            quant_method.enable_offload_after_quant()
+            marked += 1
         return marked
 
     @staticmethod

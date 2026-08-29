@@ -309,6 +309,13 @@ def get_wan22_pre_process_func(
     return pre_process_func
 
 
+_WAN_TEXT_ENCODER_OFFLOAD_PLAN = OffloadPlan(
+    encoder_component_types={"text_encoder": "text_encoder"},
+    encoder_block_attrs={"text_encoder": ("encoder.block",)},
+    encoder_dlo_weight_replication=frozenset({"text_encoder"}),
+)
+
+
 class Wan22Pipeline(
     nn.Module,
     PipelineParallelMixin,
@@ -323,11 +330,7 @@ class Wan22Pipeline(
     _dit_modules: ClassVar[list[str]] = ["transformer", "transformer_2"]
     _encoder_modules: ClassVar[list[str]] = ["text_encoder"]
     _vae_modules: ClassVar[list[str]] = ["vae"]
-    _offload_plan = OffloadPlan(
-        encoder_component_types={"text_encoder": "text_encoder"},
-        encoder_block_attrs={"text_encoder": ("encoder.block",)},
-        encoder_dlo_weight_replication=frozenset({"text_encoder"}),
-    )
+    _offload_plan = _WAN_TEXT_ENCODER_OFFLOAD_PLAN
 
     def __init__(
         self,

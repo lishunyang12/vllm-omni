@@ -43,8 +43,10 @@ Every backend implements `OffloadBackend`:
 `disable()` does not promise to restore the pipeline's original device
 placement. The caller owns any subsequent rematerialization.
 
-An enable failure must remove every partially installed hook and leave model
-weights materialized so the pipeline can be retried or safely discarded.
+An enable failure must remove every partially installed hook. Rank-local
+backends restore ordinary tensors so the pipeline can be retried. A failed
+multi-rank AllGather startup must not enter unmatched recovery collectives;
+that worker is safely discarded after local resource cleanup.
 
 Hooks are registered through `HookRegistry` and `ModelHook`; offload backends
 must use distinct hook names and remove only hooks they own.
@@ -62,13 +64,13 @@ Dotted paths are supported. Legacy pipelines may use the fallback scan of
 well-known attribute names, but new integrations should declare components
 explicitly.
 
-Ordinary layerwise offload obtains topology from declared
-`_layerwise_offload_blocks_attrs` (with a deprecated singular-name
-compatibility path). Distributed layerwise offload may instead use a pipeline
-`OffloadPlan`, then falls back to declared block attributes and its documented
-compatibility discovery. Discovery metadata describes structure only; the
-backend remains responsible for transfer, synchronization, and storage
-ownership.
+Both layerwise backends first consume pipeline `OffloadPlan` metadata. A
+plan's `block_attrs` maps each DiT path to its ordered block containers, while
+`encoder_block_attrs` declares streamable encoder stacks. DiTs absent from the
+plan fall back to `_layerwise_offload_blocks_attrs` (including the deprecated
+singular-name compatibility path). Discovery metadata describes structure
+only; the backend remains responsible for transfer, synchronization, and
+storage ownership.
 
 ## Cross-strategy invariants
 

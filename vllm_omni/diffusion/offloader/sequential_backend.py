@@ -13,6 +13,7 @@ from vllm_omni.diffusion.hooks import HookRegistry, ModelHook
 from vllm_omni.platforms import current_omni_platform
 
 from .base import OffloadBackend, OffloadConfig, SupportsModelCpuOffload
+from .config import DIT_COMPONENT, TEXT_ENCODER_COMPONENT
 from .module_collector import ModuleDiscovery
 from .offload_plan import get_offload_plan
 
@@ -166,10 +167,10 @@ def apply_sequential_offload(
 
     all_modules = [*dit_modules, *encoder_modules]
     try:
+        selected_encoders = [encoder for encoder in encoder_modules if id(encoder) in selected_encoder_ids]
         # Register hooks on DiT modules (offload selected encoders and other selected DiTs).
         for i, dit_mod in enumerate(dit_modules):
             other_dits = [d for j, d in enumerate(dit_modules) if j != i and id(d) in selected_dit_ids]
-            selected_encoders = [encoder for encoder in encoder_modules if id(encoder) in selected_encoder_ids]
             registry = HookRegistry.get_or_create(dit_mod)
             hook = SequentialOffloadHook(
                 offload_targets=selected_encoders + other_dits,
@@ -302,12 +303,12 @@ class ModelLevelOffloadBackend(OffloadBackend):
         selected_encoders = [
             encoder
             for encoder, name in zip(modules.encoders, modules.encoder_names)
-            if not self.config.components_explicit or self.config.offloads_encoder(name, plan)
+            if self.config.should_offload_encoder(name, plan)
         ]
         if self.config.components_explicit:
-            if self.config.offloads("dit") and not modules.dits:
+            if self.config.offloads(DIT_COMPONENT) and not modules.dits:
                 raise ValueError("No DiT/transformer modules found for selected DiT module offload")
-            if self.config.offloads("text_encoder") and not selected_encoders:
+            if self.config.offloads(TEXT_ENCODER_COMPONENT) and not selected_encoders:
                 raise ValueError("No text encoder modules found for selected text_encoder module offload")
 
         # Move encoders to GPU
@@ -347,7 +348,7 @@ class ModelLevelOffloadBackend(OffloadBackend):
             pin_memory=self.config.pin_cpu_memory,
             use_hsdp=self.config.use_hsdp,
             offload_dit_modules=(
-                modules.dits if not self.config.components_explicit or self.config.offloads("dit") else ()
+                modules.dits if not self.config.components_explicit or self.config.offloads(DIT_COMPONENT) else ()
             ),
             offload_encoder_modules=selected_encoders,
         )

@@ -1061,12 +1061,9 @@ class OmniDiffusionConfig:
 
     def __post_init__(self):
         from vllm_omni.diffusion.offloader.config import (
-            DIT_COMPONENT,
             OffloadStrategy,
-            component_uses_allgather,
             materialize_legacy_offload_flags,
-            selected_offload_components,
-            uses_offload_strategy,
+            validate_offload_host_registration,
         )
 
         offload_strategy = materialize_legacy_offload_flags(self)
@@ -1227,17 +1224,7 @@ class OmniDiffusionConfig:
             mode=self.host_weight_runtime_mode,
             root=self.host_weight_runtime_root,
         )
-        selected_components = selected_offload_components(self)
-
-        self.dlo_host_registration_limit_gib = validate_dlo_host_registration_options(
-            limit_gib=self.dlo_host_registration_limit_gib,
-            enable_dlo=uses_offload_strategy(self, OffloadStrategy.DISTRIBUTED_LAYER_WISE),
-            # Registration is a DiT host-storage optimization. Treat an
-            # encoder-only selection as ineligible rather than accepting a
-            # budget that no loader path will consume.
-            use_allgather=(DIT_COMPONENT not in selected_components or component_uses_allgather(self, DIT_COMPONENT)),
-            hwr_mode=self.host_weight_runtime_mode,
-        )
+        self.dlo_host_registration_limit_gib = validate_offload_host_registration(self)
 
         if self.diffusion_load_format != "diffusers" and (self.diffusers_load_kwargs or self.diffusers_call_kwargs):
             raise ValueError(

@@ -1,10 +1,11 @@
 # Distributed Layerwise Offload
 
 This document describes distributed layerwise offload (DLO) for diffusion
-models. DLO keeps only a small number of DiT blocks on the accelerator and
-streams the remaining blocks from host memory. The distributed backend can
-either shard those host-side weights across an existing parallel group or keep
-complete rank-local block sources and avoid an additional collective.
+models. DLO keeps only a small number of selected DiT or text-encoder blocks
+on the accelerator and streams the remaining blocks from host memory. The
+distributed backend can either shard those host-side weights across an
+existing parallel group or keep complete rank-local block sources and avoid
+an additional collective.
 
 For user-facing commands, see the
 [distributed layerwise offloading guide](../../../user_guide/diffusion/offloader/distributed_layerwise_offload.md)

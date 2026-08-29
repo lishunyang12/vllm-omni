@@ -36,17 +36,20 @@ from vllm_omni.diffusion.model_loader.host_weight_plan import (
 from vllm_omni.host_weight_runtime import HostWeightLease
 from vllm_omni.platforms import current_omni_platform
 
-from .base import DIT_COMPONENT, TEXT_ENCODER_COMPONENT, OffloadBackend, OffloadConfig
-from .block_discovery import get_blocks_from_dit
+from .base import OffloadBackend, OffloadConfig
+from .component_utils import (
+    get_encoder_block_groups,
+    iter_streamable_dits,
+    move_non_block_state_to_device,
+    prepare_component,
+    prepare_pipeline_components,
+)
+from .config import DIT_COMPONENT, TEXT_ENCODER_COMPONENT
 from .host_registration import (
     HostRegistration,
     HostRegistrationCleanupError,
     HostRegistrationError,
     register_host_mappings,
-)
-from .layerwise_backend import (
-    _move_encoder_non_block_state_to_device,
-    validate_on_demand_component,
 )
 from .module_collector import ModuleDiscovery
 from .offload_plan import (
@@ -54,12 +57,19 @@ from .offload_plan import (
     get_offload_plan,
 )
 from .tensor_utils import (
-    dtype_size as _dtype_size,
-)
-from .tensor_utils import (
+    clear_block_storage,
+    clear_tensor_storage,
+    describe_tensor_storage,
+    flatten_physical_storage,
+    group_named_tensors_by_dtype,
     is_materialized_tensor,
     make_offload_placeholder,
+    restore_tensor_storage,
     set_tensor_storage,
+    tensor_storage_metadata,
+)
+from .tensor_utils import (
+    dtype_size as _dtype_size,
 )
 
 logger = init_logger(__name__)
@@ -205,8 +215,6 @@ class DistributedLayerwiseOffloadHook(ModelHook):
         # Shared shard (AllGather input) buffers — assigned by backend.
         self.gpu_shard_buffers: list[dict[torch.dtype, torch.Tensor] | None] = [None, None]
 
-        # Pending async AllGather work (prevent GC before completion).
-        self._pending_work: Any | None = None
         self._cached_repoint: list | None = None
 
     # ------------------------------------------------------------------ #
@@ -341,8 +349,7 @@ class DistributedLayerwiseOffloadHook(ModelHook):
 
         # The detached sources above keep mmap storage alive after rebinding.
         # Mutate only after every source validates so failure is transactional.
-        for target in targets_to_offload:
-            set_tensor_storage(target, make_offload_placeholder(target))
+        clear_tensor_storage(targets_to_offload)
 
         return cpu_sources, metadata
 
@@ -360,41 +367,16 @@ class DistributedLayerwiseOffloadHook(ModelHook):
         Each rank stores only ``1/dp_size`` of the total weights. The full
         tensor is reconstructed at runtime via AllGather.
         """
-        dtype_grouped: dict[torch.dtype, dict[str, torch.Tensor]] = {}
         dtype_metadata: dict[torch.dtype, list[dict[str, Any]]] = {}
         targets_to_offload: list[torch.Tensor] = []
 
-        for name, param_or_buf in chain(params.items(), bufs.items()):
-            dtype = param_or_buf.dtype
-            if dtype not in dtype_grouped:
-                dtype_grouped[dtype] = {}
-            dtype_grouped[dtype][name] = param_or_buf
-
         cpu_shards: dict[torch.dtype, torch.Tensor] = {}
 
-        for dtype, name2weights in dtype_grouped.items():
-            # Resolve local tensors (handle DTensor via to_local)
-            weights_with_local = []
-            for name, t in name2weights.items():
-                local_t = t.to_local() if hasattr(t, "to_local") else t
-                mmap_transform = (tensor_transforms or {}).get(id(t))
-                if callable(mmap_transform):
-                    # Some checkpoints use a layout that is converted by the
-                    # regular weight loader (for example MiniMax-H3 grouped
-                    # QKV).  Apply that conversion one block at a time while
-                    # copying the rank-local CPU shard.  Keeping the raw
-                    # parameter as an mmap view avoids a private full-model
-                    # copy in every worker.
-                    local_t = mmap_transform(local_t)
-                stride = local_t.stride()
-                storage_numel = (
-                    0
-                    if local_t.numel() == 0
-                    else 1 + sum((size - 1) * axis_stride for size, axis_stride in zip(local_t.shape, stride))
-                )
-                weights_with_local.append((name, t, local_t, storage_numel, stride))
-
-            total_numel = sum(storage_numel for _, _, _, storage_numel, _ in weights_with_local)
+        for dtype, named_weights in group_named_tensors_by_dtype(params, bufs).items():
+            # Apply loader-declared layout conversions block by block while
+            # preserving the physical tensor layout used by the kernels.
+            specs = describe_tensor_storage(named_weights, tensor_transforms)
+            total_numel = sum(spec.storage_numel for spec in specs)
 
             # Equal-sized shards (ceil division) for all_gather_into_tensor
             shard_size = (total_numel + dp_size - 1) // dp_size  # ceil
@@ -406,59 +388,24 @@ class DistributedLayerwiseOffloadHook(ModelHook):
             shard = torch.zeros(shard_size, dtype=dtype, device="cpu")
 
             current_offset = 0
-            for (
-                name,
-                original_tensor,
-                local_tensor,
-                storage_numel,
-                stride,
-            ) in weights_with_local:
-                if dtype not in dtype_metadata:
-                    dtype_metadata[dtype] = []
+            for spec in specs:
                 # Offsets remain relative to the FULL flattened buffer
                 # (needed for correct AllGather reconstruction).
-                dtype_metadata[dtype].append(
-                    {
-                        "name": name,
-                        "offset": current_offset,
-                        "numel": storage_numel,
-                        "shape": local_tensor.shape,
-                        "stride": stride,
-                    }
-                )
+                dtype_metadata.setdefault(dtype, []).append(tensor_storage_metadata(spec, current_offset))
 
                 # Copy ONLY the portion within [shard_start, shard_end)
                 overlap_start = max(current_offset, shard_start)
-                overlap_end = min(current_offset + storage_numel, shard_end)
+                overlap_end = min(current_offset + spec.storage_numel, shard_end)
                 if overlap_start < overlap_end:
-                    if local_tensor.is_contiguous():
-                        flat_storage = local_tensor.flatten()
-                    else:
-                        # Online FP8 stores Cutlass weights as transposed views
-                        # (e.g. stride=(1, K)). Flattening such a tensor in
-                        # logical order and later rebuilding it with .view()
-                        # changes its layout and makes scaled_mm reject it.
-                        # Pack the physical storage order and preserve the
-                        # original stride for zero-copy reconstruction.
-                        flat_storage = torch.zeros(
-                            storage_numel,
-                            dtype=dtype,
-                            device=local_tensor.device,
-                        )
-                        physical_view = torch.as_strided(
-                            flat_storage,
-                            size=local_tensor.shape,
-                            stride=stride,
-                        )
-                        physical_view.copy_(local_tensor)
+                    flat_storage = flatten_physical_storage(spec.value, spec.storage_numel)
                     src_start = overlap_start - current_offset
                     src_end = overlap_end - current_offset
                     dst_start = overlap_start - shard_start
                     dst_end = overlap_end - shard_start
                     shard[dst_start:dst_end].copy_(flat_storage[src_start:src_end])
 
-                targets_to_offload.append(original_tensor)
-                current_offset += storage_numel
+                targets_to_offload.append(spec.target)
+                current_offset += spec.storage_numel
 
             if pin_memory:
                 shard = shard.pin_memory()
@@ -467,8 +414,7 @@ class DistributedLayerwiseOffloadHook(ModelHook):
 
         # Build and optionally pin every shard before mutating model storage.
         # A failed allocation leaves the input module fully materialized.
-        for target in targets_to_offload:
-            set_tensor_storage(target, make_offload_placeholder(target))
+        clear_tensor_storage(targets_to_offload)
 
         return cpu_shards, dtype_metadata
 
@@ -696,15 +642,8 @@ class DistributedLayerwiseOffloadHook(ModelHook):
     @torch.compiler.disable
     def offload_layer(self) -> None:
         """Free GPU memory for current block by replacing tensors with placeholders."""
-        evt = self._prefetch_done
-        if evt is not None:
-            current_omni_platform.current_stream().wait_event(evt)
+        clear_block_storage(self.block_parameters, self.block_buffers, self._prefetch_done)
         self._prefetch_done = None
-
-        for _, param in self.block_parameters.items():
-            set_tensor_storage(param, make_offload_placeholder(param))
-        for _, buf in self.block_buffers.items():
-            set_tensor_storage(buf, make_offload_placeholder(buf))
 
     @torch.compiler.disable
     def restore_next_block_to_cpu(self) -> None:
@@ -715,16 +654,6 @@ class DistributedLayerwiseOffloadHook(ModelHook):
         or placeholders would make a later enable shard invalid tensors.
         """
 
-        def restore_target(target: torch.Tensor, value: torch.Tensor) -> None:
-            restored = torch.empty_strided(
-                value.shape,
-                value.stride(),
-                dtype=value.dtype,
-                device="cpu",
-            )
-            restored.copy_(value)
-            set_tensor_storage(target, restored)
-
         if self.rank_local_mmap:
             for dtype, metas in self.metadata.items():
                 for source_info, meta in zip(self.cpu_sources[dtype], metas, strict=True):
@@ -734,7 +663,7 @@ class DistributedLayerwiseOffloadHook(ModelHook):
                         if meta["name"] in self.next_block_parameters
                         else self.next_block_buffers[meta["name"]]
                     )
-                    restore_target(target, source)
+                    restore_tensor_storage(target, source, device="cpu")
             return
 
         if self.dp_size <= 1:
@@ -751,7 +680,7 @@ class DistributedLayerwiseOffloadHook(ModelHook):
                         if meta["name"] in self.next_block_parameters
                         else self.next_block_buffers[meta["name"]]
                     )
-                    restore_target(target, value)
+                    restore_tensor_storage(target, value, device="cpu")
             return
 
         if self.dp_group is None:
@@ -760,7 +689,7 @@ class DistributedLayerwiseOffloadHook(ModelHook):
         current_omni_platform.synchronize()
         for target in chain(self.next_block_parameters.values(), self.next_block_buffers.values()):
             local = target.to_local() if hasattr(target, "to_local") else target
-            restore_target(target, local)
+            restore_tensor_storage(target, local, device="cpu")
 
     # ------------------------------------------------------------------ #
     #  ModelHook interface                                                #
@@ -1037,23 +966,13 @@ class PinnedResidentLayerGroup:
         """
         self.offload()
 
-        def restore_target(target: torch.Tensor, value: torch.Tensor) -> None:
-            restored = torch.empty_strided(
-                value.shape,
-                value.stride(),
-                dtype=value.dtype,
-                device="cpu",
-            )
-            restored.copy_(value)
-            set_tensor_storage(target, restored)
-
         for state in self._states:
             targets = state["targets"]
             for dtype, metas in state["metadata"].items():
                 if self.rank_local_mmap:
                     for source_info, meta in zip(state["cpu_sources"][dtype], metas, strict=True):
                         source = DistributedLayerwiseOffloadHook._resolve_mmap_source(source_info, meta, dtype)
-                        restore_target(targets[meta["name"]], source)
+                        restore_tensor_storage(targets[meta["name"]], source, device="cpu")
                     continue
 
                 flat = state["cpu_shards"][dtype]
@@ -1063,7 +982,7 @@ class PinnedResidentLayerGroup:
                         size=meta["shape"],
                         stride=meta["stride"],
                     )
-                    restore_target(targets[meta["name"]], source)
+                    restore_tensor_storage(targets[meta["name"]], source, device="cpu")
 
 
 # ---------------------------------------------------------------------- #
@@ -1499,32 +1418,6 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             coord.ranks,
         )
 
-    def _register_on_demand_hook(
-        self,
-        module: nn.Module,
-        label: str,
-        *,
-        stage_on_demand: bool = False,
-        blockwise: bool = False,
-    ) -> None:
-        """Prepare a pipeline-managed stage component or keep it resident.
-
-        Components that expose an explicit stage lifecycle are initially
-        offloaded and loaded by their pipeline only around encode/decode.
-        Other models retain the conservative resident behavior because a
-        generic post-forward hook can disrupt the DiT prefetch streams.
-        """
-        if stage_on_demand:
-            validate_on_demand_component(module, label)
-            getattr(module, "offload_to_cpu")()
-            self._staged_components.append(module)
-            logger.info("Prepared %s (%s) for pipeline-managed staged offload", label, module.__class__.__name__)
-            return
-        if blockwise:
-            return
-        module.to(self.device)
-        logger.info("Moved %s (%s) to GPU (resident)", label, module.__class__.__name__)
-
     def _component_transport(
         self,
         component: str,
@@ -1532,6 +1425,52 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         if self.config.uses_allgather(component):
             return self.dp_group, self.dp_size, self.rank
         return None, 1, 0
+
+    def _install_hook_group(
+        self,
+        blocks: list[nn.Module] | nn.ModuleList,
+        component: str,
+        *,
+        use_dit_mmap: bool = False,
+    ) -> list[DistributedLayerwiseOffloadHook]:
+        """Install one circular block ring with the shared slot protocol."""
+        block_list = list(blocks)
+        if len(block_list) <= 1:
+            raise ValueError("A distributed layerwise hook group requires at least two blocks")
+
+        group, group_size, group_rank = self._component_transport(component)
+        hooks: list[DistributedLayerwiseOffloadHook] = []
+        self._all_hook_groups.append(hooks)
+        self._blocks.append(block_list)
+        for block, next_block in zip(
+            chain((block_list[-1],), block_list[:-1]),
+            block_list,
+            strict=True,
+        ):
+            hooks.append(
+                apply_distributed_block_hook(
+                    block,
+                    next_block,
+                    self.device,
+                    group,
+                    group_size,
+                    group_rank,
+                    self.copy_stream,
+                    self.comm_stream,
+                    self.config.pin_cpu_memory,
+                    shared_buffers=[None, None],
+                    rank_local_mmap=self._using_rank_local_mmap if use_dit_mmap else False,
+                    tensor_transforms=self._mmap_transforms_by_tensor_id if use_dit_mmap else None,
+                )
+            )
+
+        # hooks = [last -> first, block0 -> block1, ...]. Alternating slots
+        # keep a prefetch from overwriting the current block for any ring size.
+        for index, hook in enumerate(hooks):
+            hook._prev_hook = hooks[index - 1]
+            hook.current_slot = index % 2
+        hooks[1]._is_group_first = True
+        return hooks
 
     def _try_layerwise_offload_encoder(
         self,
@@ -1547,12 +1486,13 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         selected DLO group; encoder TP groups contain different shards and
         are deliberately not used for this transport.
         """
-        from operator import attrgetter
-
-        if plan is None or name not in plan.encoder_block_attrs:
+        if plan is None:
+            return False
+        block_groups = get_encoder_block_groups(module, name, plan)
+        if not block_groups:
             return False
 
-        group, group_size, group_rank = self._component_transport(TEXT_ENCODER_COMPONENT)
+        group_size = self._component_transport(TEXT_ENCODER_COMPONENT)[1]
         if group_size > 1 and name not in plan.encoder_dlo_weight_replication:
             raise ValueError(
                 f"Text encoder {name!r} cannot use DLO AllGather across the DiT offload group: "
@@ -1561,62 +1501,13 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 "for encoder-TP or rank-specific layouts."
             )
 
-        block_groups: list[nn.ModuleList] = []
         encoder_hooks: list[DistributedLayerwiseOffloadHook] = []
-        for block_path in plan.encoder_block_attrs[name]:
-            try:
-                blocks = attrgetter(block_path)(module)
-            except AttributeError:
-                logger.warning("Encoder offload path %s.%s was not found", name, block_path)
-                continue
-            if not isinstance(blocks, nn.ModuleList) or len(blocks) <= 1:
-                logger.warning("Encoder offload path %s.%s is not a streamable block list", name, block_path)
-                continue
-
-            group_hooks: list[DistributedLayerwiseOffloadHook] = []
-            self._all_hook_groups.append(group_hooks)
-            self._blocks.append(blocks)
-            last_hook = apply_distributed_block_hook(
-                blocks[-1],
-                blocks[0],
-                self.device,
-                group,
-                group_size,
-                group_rank,
-                self.copy_stream,
-                self.comm_stream,
-                self.config.pin_cpu_memory,
-                shared_buffers=[None, None],
-            )
-            group_hooks.append(last_hook)
-            for index, block in enumerate(blocks[:-1]):
-                group_hooks.append(
-                    apply_distributed_block_hook(
-                        block,
-                        blocks[index + 1],
-                        self.device,
-                        group,
-                        group_size,
-                        group_rank,
-                        self.copy_stream,
-                        self.comm_stream,
-                        self.config.pin_cpu_memory,
-                        shared_buffers=[None, None],
-                    )
-                )
-            for index, hook in enumerate(group_hooks):
-                hook._prev_hook = group_hooks[index - 1]
-                hook.current_slot = index % 2
-            group_hooks[1]._is_group_first = True
-            block_groups.append(blocks)
-            encoder_hooks.extend(group_hooks)
-
-        if not block_groups:
-            return False
+        for blocks in block_groups:
+            encoder_hooks.extend(self._install_hook_group(blocks, TEXT_ENCODER_COMPONENT))
         # Track the module before placement, which may fail, so outer rollback
         # also removes its partially-installed block hooks and marker state.
         self._encoder_modules.append(module)
-        _move_encoder_non_block_state_to_device(
+        move_non_block_state_to_device(
             module,
             block_groups,
             self.device,
@@ -1679,12 +1570,11 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         if blocks is None:
             return False
 
-        num_blocks = len(blocks)
         logger.info(
             "Distributed layerwise offload for submodule '%s.%s' (%d blocks, %.0f MB total, group_size=%d)",
             name,
             blocks_attr,
-            num_blocks,
+            len(blocks),
             sum(p.nelement() * p.element_size() for p in module.parameters()) / 1048576,
             self._component_transport(DIT_COMPONENT)[1],
         )
@@ -1694,62 +1584,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             if child_name != blocks_attr:
                 child.to(self.device)
 
-        # Apply distributed hooks (1/4 sharding + AllGather, same as DiT)
-        # Pass shared_buffers=[None,None] to defer per-hook allocation
-        # (prevents OOM on large models where N hooks × 2 buffers >> HBM)
-        last_block, first_block = blocks[-1], blocks[0]
-        group, group_size, group_rank = self._component_transport(DIT_COMPONENT)
-        sub_hooks: list[DistributedLayerwiseOffloadHook] = []
-        self._all_hook_groups.append(sub_hooks)
-        self._blocks.append(blocks)
-        last_hook = apply_distributed_block_hook(
-            last_block,
-            first_block,
-            self.device,
-            group,
-            group_size,
-            group_rank,
-            self.copy_stream,
-            self.comm_stream,
-            self.config.pin_cpu_memory,
-            shared_buffers=[None, None],
-            rank_local_mmap=self._using_rank_local_mmap,
-            tensor_transforms=self._mmap_transforms_by_tensor_id,
-        )
-        sub_hooks.append(last_hook)
-        for i, block in enumerate(blocks[:-1]):
-            next_block = blocks[(i + 1) % num_blocks]
-            hook = apply_distributed_block_hook(
-                block,
-                next_block,
-                self.device,
-                group,
-                group_size,
-                group_rank,
-                self.copy_stream,
-                self.comm_stream,
-                self.config.pin_cpu_memory,
-                shared_buffers=[None, None],
-                rank_local_mmap=self._using_rank_local_mmap,
-                tensor_transforms=self._mmap_transforms_by_tensor_id,
-            )
-            sub_hooks.append(hook)
-
-        # Wire backward references + slot alternation
-        for i in range(len(sub_hooks)):
-            sub_hooks[i]._prev_hook = sub_hooks[i - 1]
-        # Assign slots in list order: sub_hooks = [last_hook, block0, ..., blockN-2]
-        # This ensures last_hook.current_slot != block0_hook.current_slot,
-        # so the circular prefetch (last_hook -> block0) writes to a
-        # different slot than block0 reads from.  Correct for ALL N.
-        for i, hook in enumerate(sub_hooks):
-            hook.current_slot = i % 2
-        # Mark block0_hook (index 1) as group-first — it must sync-prefetch
-        # on entry because another group may have overwritten the shared slot.
-        if len(sub_hooks) > 1:
-            sub_hooks[1]._is_group_first = True
-
-        # Defer buffer allocation and prefetch to enable() unified allocation
+        self._install_hook_group(blocks, DIT_COMPONENT, use_dit_mmap=True)
         return True
 
     def _prepare_dit_non_block_modules(
@@ -1786,7 +1621,14 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 elif self._try_layerwise_offload_submodule(module, name, plan):
                     pass
                 else:
-                    self._register_on_demand_hook(module, name)
+                    prepare_component(
+                        module,
+                        name,
+                        device=self.device,
+                        stage_on_demand=True,
+                        blockwise=False,
+                        staged_components=self._staged_components,
+                    )
                 continue
 
             try:
@@ -1845,9 +1687,6 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             logger.warning("DistributedLayerwiseOffloadBackend already enabled")
             return
 
-        self._on_demand_shard_infos: list[dict] = []
-        self._on_demand_handles: list[Any] = []
-
         # Initialize DP group (if not already done by early init)
         if self.dp_group is None and self.dp_size > 1:
             self._init_dp_group()
@@ -1866,13 +1705,6 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         # Retrieve optional declarative OffloadPlan from the pipeline.
         # When present, replaces heuristic block discovery.
         plan = get_offload_plan(pipeline)
-
-        if plan is not None:
-            for enc, enc_name in zip(modules.encoders, modules.encoder_names):
-                if (
-                    not self.config.components_explicit or self.config.offloads_encoder(enc_name, plan)
-                ) and enc_name in plan.on_demand_component_paths:
-                    validate_on_demand_component(enc, enc_name)
 
         if self.config.dlo_resident_layers:
             resident_paths = frozenset() if plan is None else plan.resident_dit_paths
@@ -1940,45 +1772,18 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 )
             logger.info("DLO is using host tensors materialized by the ordinary loader")
 
-        # Apply the selected transfer independently to planned text-encoder
-        # stacks. Explicitly unselected encoders and all VAEs remain resident;
-        # compatibility selectors preserve the model's pre-existing stage plan.
-        for enc, enc_name in zip(modules.encoders, modules.encoder_names):
-            selected = not self.config.components_explicit or self.config.offloads_encoder(enc_name, plan)
-            blockwise = selected and self._try_layerwise_offload_encoder(enc, enc_name, plan)
-            self._register_on_demand_hook(
-                enc,
-                enc_name,
-                stage_on_demand=bool(selected and plan is not None and enc_name in plan.on_demand_component_paths),
-                blockwise=blockwise,
-            )
-        if self.config.components_explicit and self.config.offloads(TEXT_ENCODER_COMPONENT):
-            if not (self._encoder_modules or self._staged_components):
-                raise ValueError(
-                    "Selected text_encoder layerwise offload requires a model-declared streamable or on-demand plan"
-                )
-        for vae, vae_name in zip(modules.vaes, modules.vae_names):
-            self._register_on_demand_hook(
-                vae,
-                vae_name,
-                stage_on_demand=bool(
-                    not self.config.components_explicit
-                    and plan is not None
-                    and vae_name in plan.on_demand_component_paths
-                ),
-            )
+        # Apply each selected encoder transfer while keeping explicit VAEs and
+        # unselected components resident.
+        prepare_pipeline_components(
+            modules,
+            self.config,
+            plan,
+            device=self.device,
+            staged_components=self._staged_components,
+            enable_encoder_blocks=self._try_layerwise_offload_encoder,
+        )
 
-        # Move resident modules to GPU (small modules needed every forward)
-        for name, module in zip(modules.resident_names, modules.resident_modules):
-            try:
-                module.to(self.device)
-            except Exception as exc:
-                logger.debug("Failed to move resident module %s to GPU: %s", name, exc)
-
-        if not self.config.offloads(DIT_COMPONENT):
-            for dit_module in modules.dits:
-                dit_module.to(self.device)
-        else:
+        if self.config.offloads(DIT_COMPONENT):
             logger.info("Applying distributed layer-wise offloading on %s", modules.dit_names)
 
         # Collect all DiT module objects to detect submodules that are
@@ -1986,23 +1791,9 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         all_dit_modules = set(id(m) for m in modules.dits)
 
         # Apply hooks for each DiT module
-        for i, dit_module in enumerate(modules.dits if self.config.offloads(DIT_COMPONENT) else []):
-            dit_name = modules.dit_names[i]
-            logger.info(f"Applying hooks on {dit_name} ({dit_module.__class__.__name__})")
-
-            blocks_attr_names, blocks = get_blocks_from_dit(dit_module)
-
-            if not blocks:
-                if self.config.components_explicit:
-                    raise ValueError(f"Selected DiT {dit_name!r} has no streamable layerwise-offload blocks")
-                logger.warning(
-                    "Target layers (blocks) not found. Skipping offloading on %s (%s)",
-                    dit_name,
-                    dit_module.__class__.__name__,
-                )
-                dit_module.to(self.device)
-                continue
-
+        for dit_name, dit_module, blocks_attr_names, blocks in iter_streamable_dits(
+            modules, self.config, self.device, plan
+        ):
             resident_count = 0
             if plan is not None and dit_name in plan.resident_dit_paths:
                 resident_count = min(self.config.dlo_resident_layers, len(blocks))
@@ -2038,67 +1829,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 self._resident_blocks.extend(blocks)
                 continue
 
-            # Register hooks in a circular sliding window:
-            # last block prefetches first block, block i prefetches block (i+1)
-            # All hooks share 2 global device buffers (RFC: "exactly two layers on device")
-            last_block, first_block = blocks[-1], blocks[0]
-
-            # Pass 1: create hooks with deferred buffer allocation
-            # (shared_buffers=[None,None] prevents per-hook OOM on large models)
-            group, group_size, group_rank = self._component_transport(DIT_COMPONENT)
-            block_hooks: list[DistributedLayerwiseOffloadHook] = []
-            self._all_hook_groups.append(block_hooks)
-            self._blocks.append(blocks)
-            last_hook = apply_distributed_block_hook(
-                last_block,
-                first_block,
-                self.device,
-                group,
-                group_size,
-                group_rank,
-                self.copy_stream,
-                self.comm_stream,
-                self.config.pin_cpu_memory,
-                shared_buffers=[None, None],
-                rank_local_mmap=self._using_rank_local_mmap,
-                tensor_transforms=self._mmap_transforms_by_tensor_id,
-            )
-
-            block_hooks.append(last_hook)
-            for i, block in enumerate(blocks[:-1]):
-                next_block = blocks[(i + 1) % num_blocks]
-                hook = apply_distributed_block_hook(
-                    block,
-                    next_block,
-                    self.device,
-                    group,
-                    group_size,
-                    group_rank,
-                    self.copy_stream,
-                    self.comm_stream,
-                    self.config.pin_cpu_memory,
-                    shared_buffers=[None, None],
-                    rank_local_mmap=self._using_rank_local_mmap,
-                    tensor_transforms=self._mmap_transforms_by_tensor_id,
-                )
-                block_hooks.append(hook)
-
-            # Wire backward references for cache-dit fallback
-            for i in range(len(block_hooks)):
-                block_hooks[i]._prev_hook = block_hooks[i - 1]
-
-            # Assign slots in list order: block_hooks = [last_hook, block0, ..., blockN-2]
-            # This ensures last_hook.current_slot != block0_hook.current_slot,
-            # so the circular prefetch (last_hook -> block0) writes to a
-            # different slot than block0 reads from.  Correct for ALL N.
-            for i, hook in enumerate(block_hooks):
-                hook.current_slot = i % 2
-
-            # Mark block0_hook (index 1) as group-first
-            if len(block_hooks) > 1:
-                block_hooks[1]._is_group_first = True
-
-            # Defer buffer allocation — collected for unified allocation below
+            self._install_hook_group(blocks, DIT_COMPONENT, use_dit_mmap=True)
         if self._resident_blocks:
             self._resident_layer_group = PinnedResidentLayerGroup(
                 self._resident_blocks,
@@ -2193,23 +1924,6 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             # the node-shared host master until disable().
             self._release_mmap_handles()
 
-        # Assign GPU buffers to sharded on-demand modules (VAE/encoders).
-        # Each module gets a dedicated input (shard-sized) and output
-        # (full-sized) buffer.  VAE/encoders run before/after DiT, never
-        # concurrently, so peak HBM = max(DiT, VAE) not sum.
-        for si in self._on_demand_shard_infos:
-            out_bufs: dict[torch.dtype, torch.Tensor] = {}
-            in_bufs: dict[torch.dtype, torch.Tensor] = {}
-            for dtype, shard in si["cpu_shards"].items():
-                # AllGather output = dp_size * shard_size
-                full_size = shard.numel() * self.dp_size if self.dp_size > 1 else shard.numel()
-                out_bufs[dtype] = torch.empty(full_size, dtype=dtype, device=self.device)
-                in_bufs[dtype] = torch.empty(shard.shape, dtype=dtype, device=self.device)
-            si["gpu_output"] = out_bufs
-            si["gpu_input"] = in_bufs
-            _mb = sum(t.nelement() * t.element_size() for t in out_bufs.values()) / 1048576
-            logger.info("Allocated %.0f MB GPU buffer for sharded on-demand module", _mb)
-
         self._cleanup_after_loading()
 
     def _release_mmap_handles(self) -> None:
@@ -2255,7 +1969,6 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             or self._all_hook_groups
             or self._encoder_modules
             or self._staged_components
-            or getattr(self, "_on_demand_handles", [])
             or self._resident_layer_group is not None
             or self._residency_pipeline_ref is not None
         )
@@ -2295,11 +2008,6 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             module._omni_distributed_layerwise_enabled = False
         self._encoder_modules.clear()
         self._staged_components.clear()
-
-        for h in getattr(self, "_on_demand_handles", []):
-            h.remove()
-        self._on_demand_handles = []
-        self._on_demand_shard_infos = []
 
         if restore_weights and self._resident_layer_group is not None:
             self._resident_layer_group.restore_to_cpu()

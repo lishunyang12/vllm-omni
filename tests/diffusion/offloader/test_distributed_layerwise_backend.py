@@ -6,7 +6,6 @@
 import gc
 import json
 import weakref
-from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -17,8 +16,15 @@ from torch import nn
 from torch.distributed.tensor import DeviceMesh, DTensor, Replicate
 
 import vllm_omni.diffusion.offloader.distributed_layerwise_backend as dist_backend_module
-from tests.diffusion.offloader.helpers import _DummyBlock, _PlainEncoder, _SingleBlockModel, _StagedEncoder, _StagedVAE
-from tests.helpers.runtime import get_distributed_init_method
+from tests.diffusion.offloader.helpers import (
+    DummyStream,
+    _DummyBlock,
+    _PlainEncoder,
+    _SingleBlockModel,
+    _StagedEncoder,
+    _StagedVAE,
+    patch_offload_runtime,
+)
 from vllm_omni.diffusion.data import validate_dlo_host_registration_options
 from vllm_omni.diffusion.model_loader.host_weight_plan import (
     HostWeightPlan,
@@ -52,53 +58,9 @@ from vllm_omni.platforms import current_omni_platform
 pytestmark = [pytest.mark.diffusion, pytest.mark.cpu, pytest.mark.core_model]
 
 
-class DummyStream:
-    def wait_stream(self, _stream) -> None:
-        return None
-
-    def wait_event(self, _event) -> None:
-        return None
-
-
-class DummyEvent:
-    def record(self, _stream) -> None:
-        return None
-
-    def synchronize(self) -> None:
-        return None
-
-
-@contextmanager
-def dummy_stream(_stream):
-    yield None
-
-
-def _cleanup_distributed() -> None:
-    if dist.is_initialized():
-        dist.destroy_process_group()
-
-    gc.collect()
-    if current_omni_platform.is_available():
-        current_omni_platform.empty_cache()
-        current_omni_platform.synchronize()
-
-
-@pytest.fixture(scope="module")
-def dist_group():
-    dist.init_process_group("gloo", rank=0, world_size=1, init_method=get_distributed_init_method())
-    try:
-        yield
-    finally:
-        _cleanup_distributed()
-
-
 @pytest.fixture
 def patched_offload_runtime(monkeypatch):
-    monkeypatch.setattr(dist_backend_module.current_omni_platform, "Stream", DummyStream)
-    monkeypatch.setattr(dist_backend_module.current_omni_platform, "Event", DummyEvent)
-    monkeypatch.setattr(dist_backend_module.current_omni_platform, "current_stream", lambda: DummyStream())
-    monkeypatch.setattr(dist_backend_module.current_omni_platform, "stream", dummy_stream)
-    monkeypatch.setattr(dist_backend_module.current_omni_platform, "synchronize", lambda: None)
+    patch_offload_runtime(monkeypatch, dist_backend_module.current_omni_platform, synchronize=True)
 
 
 class TinyBlock(nn.Module):
