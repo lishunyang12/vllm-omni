@@ -17,6 +17,7 @@ from torch import nn
 from torch.distributed.tensor import DeviceMesh, DTensor, Replicate
 
 import vllm_omni.diffusion.offloader.distributed_layerwise_backend as dist_backend_module
+from tests.diffusion.offloader.helpers import _DummyBlock, _PlainEncoder, _SingleBlockModel, _StagedEncoder, _StagedVAE
 from tests.helpers.runtime import get_distributed_init_method
 from vllm_omni.diffusion.data import validate_dlo_host_registration_options
 from vllm_omni.diffusion.model_loader.host_weight_plan import (
@@ -841,20 +842,6 @@ class TestPinnedModuleStager:
         assert torch.equal(module.weight, expected_weight)
         assert torch.equal(module.bias, expected_bias)
         stager.offload()
-
-
-class _DummyBlock(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.weight = nn.Parameter(torch.randn(10, 10))
-
-
-class _SingleBlockModel(nn.Module):
-    _layerwise_offload_blocks_attrs = ["blocks"]
-
-    def __init__(self, num_blocks: int = 3):
-        super().__init__()
-        self.blocks = nn.ModuleList([_DummyBlock() for _ in range(num_blocks)])
 
 
 class _HWRPipeline(nn.Module):
@@ -2488,55 +2475,6 @@ class TestDynamicSlotTracking:
         assert hook_b.current_slot == 1, "pre_forward should read _prev_hook._prefetched_slot=1, not keep initial 0"
 
 
-class _ComponentEncoder(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.vision = nn.Module()
-        self.vision.blocks = nn.ModuleList([_DummyBlock(), _DummyBlock()])
-        self.text_model = nn.Module()
-        self.text_model.layers = nn.ModuleList([_DummyBlock(), _DummyBlock()])
-        self.offload_calls = 0
-        self.to_calls = 0
-
-    def load_to_device(self):
-        return None
-
-    def offload_to_cpu(self):
-        self.offload_calls += 1
-        for hook in getattr(self, "_omni_layerwise_hooks", []):
-            hook.offload_layer()
-
-    def to(self, *args, **kwargs):
-        self.to_calls += 1
-        return super().to(*args, **kwargs)
-
-
-class _ComponentVAE(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.proj = nn.Linear(2, 2)
-        self.offload_calls = 0
-        self.to_calls = 0
-
-    def offload_to_cpu(self):
-        self.offload_calls += 1
-        return self.to("cpu")
-
-    def to(self, *args, **kwargs):
-        self.to_calls += 1
-        return super().to(*args, **kwargs)
-
-
-class _PlainComponentEncoder(nn.Module):
-    """Standard encoder with no offload-specific lifecycle methods."""
-
-    def __init__(self):
-        super().__init__()
-        self.encoder = nn.Module()
-        self.encoder.block = nn.ModuleList([_DummyBlock(), _DummyBlock()])
-        self.final_norm = nn.Linear(2, 2)
-
-
 class _DistributedComponentPipeline(nn.Module):
     _offload_plan = OffloadPlan(
         encoder_component_types={"text_encoder": "text_encoder"},
@@ -2547,8 +2485,8 @@ class _DistributedComponentPipeline(nn.Module):
     def __init__(self):
         super().__init__()
         self.transformer = _SingleBlockModel(num_blocks=2)
-        self.text_encoder = _ComponentEncoder()
-        self.vae = _ComponentVAE()
+        self.text_encoder = _StagedEncoder()
+        self.vae = _StagedVAE()
 
 
 class _LegacyDistributedComponentPipeline(nn.Module):
@@ -2557,8 +2495,8 @@ class _LegacyDistributedComponentPipeline(nn.Module):
     def __init__(self):
         super().__init__()
         self.transformer = _SingleBlockModel(num_blocks=2)
-        self.text_encoder = _ComponentEncoder()
-        self.vae = _ComponentVAE()
+        self.text_encoder = _StagedEncoder()
+        self.vae = _StagedVAE()
 
 
 class _GenericDistributedEncoderPipeline(nn.Module):
@@ -2571,7 +2509,7 @@ class _GenericDistributedEncoderPipeline(nn.Module):
     def __init__(self):
         super().__init__()
         self.transformer = _SingleBlockModel(num_blocks=2)
-        self.text_encoder = _PlainComponentEncoder()
+        self.text_encoder = _PlainEncoder()
 
 
 class TestDistributedComponentSelection:

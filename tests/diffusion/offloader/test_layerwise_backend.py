@@ -15,6 +15,7 @@ from torch.distributed.tensor import DeviceMesh, DTensor, Replicate
 
 import vllm_omni.diffusion.offloader.config as offload_config_module
 import vllm_omni.diffusion.offloader.layerwise_backend as layerwise_backend_module
+from tests.diffusion.offloader.helpers import _DummyBlock, _PlainEncoder, _SingleBlockModel, _StagedEncoder, _StagedVAE
 from tests.helpers.runtime import get_distributed_init_method
 from vllm_omni.diffusion.offloader.base import OffloadConfig, OffloadStrategy
 from vllm_omni.diffusion.offloader.layerwise_backend import (
@@ -142,20 +143,6 @@ class TestLayerwiseOffloadHook:
         assert torch.equal(next_block.weight, expected)
 
 
-class _DummyBlock(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.weight = nn.Parameter(torch.randn(10, 10))
-
-
-class _SingleBlockModel(nn.Module):
-    _layerwise_offload_blocks_attrs = ["blocks"]
-
-    def __init__(self, num_blocks: int = 3):
-        super().__init__()
-        self.blocks = nn.ModuleList([_DummyBlock() for _ in range(num_blocks)])
-
-
 class _MultiBlockModel(nn.Module):
     _layerwise_offload_blocks_attrs = ["transformer_blocks", "single_transformer_blocks"]
 
@@ -255,59 +242,6 @@ class TestGetBlocksAttrNames:
         assert model.__class__._layerwise_offload_blocks_attrs == ["new_blocks"]
 
 
-class _StagedEncoder(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.vision = nn.Module()
-        self.vision.blocks = nn.ModuleList([_DummyBlock(), _DummyBlock()])
-        self.text_model = nn.Module()
-        self.text_model.layers = nn.ModuleList([_DummyBlock(), _DummyBlock()])
-        self.load_calls = 0
-        self.offload_calls = 0
-        self.to_calls = 0
-
-    def load_to_device(self):
-        self.load_calls += 1
-
-    def offload_to_cpu(self):
-        self.offload_calls += 1
-        for hook in getattr(self, "_omni_layerwise_hooks", []):
-            hook.offload_layer()
-
-    def to(self, *args, **kwargs):
-        self.to_calls += 1
-        return super().to(*args, **kwargs)
-
-
-class _StagedVAE(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.proj = nn.Linear(2, 2)
-        self.offload_calls = 0
-        self.to_calls = 0
-
-    def load_to_device(self):
-        return None
-
-    def offload_to_cpu(self):
-        self.offload_calls += 1
-        return self.to("cpu")
-
-    def to(self, *args, **kwargs):
-        self.to_calls += 1
-        return super().to(*args, **kwargs)
-
-
-class _PlainEncoder(nn.Module):
-    """Standard encoder with no offload-specific lifecycle methods."""
-
-    def __init__(self):
-        super().__init__()
-        self.encoder = nn.Module()
-        self.encoder.block = nn.ModuleList([_DummyBlock(), _DummyBlock()])
-        self.final_norm = nn.Linear(2, 2)
-
-
 class _ComponentPipeline(nn.Module):
     _offload_plan = OffloadPlan(
         encoder_component_types={"text_encoder": "text_encoder"},
@@ -332,6 +266,15 @@ class _LegacyComponentPipeline(nn.Module):
         self.vae = _StagedVAE()
 
 
+class _LegacyEncoderOnlyPipeline(nn.Module):
+    _offload_plan = _ComponentPipeline._offload_plan
+
+    def __init__(self):
+        super().__init__()
+        self.text_encoder = _StagedEncoder()
+        self.vae = _StagedVAE()
+
+
 class _GenericEncoderPipeline(nn.Module):
     _offload_plan = OffloadPlan(
         encoder_component_types={"text_encoder": "text_encoder"},
@@ -345,6 +288,22 @@ class _GenericEncoderPipeline(nn.Module):
 
 
 class TestLayerwiseComponentSelection:
+    def test_legacy_missing_dit_preserves_noop(self, patched_offload_runtime):
+        pipeline = _LegacyEncoderOnlyPipeline()
+        backend = LayerWiseOffloadBackend(
+            OffloadConfig(
+                strategy=OffloadStrategy.LAYER_WISE,
+                pin_cpu_memory=False,
+            ),
+            torch.device("cpu"),
+        )
+
+        backend.enable(pipeline)
+
+        assert not backend.enabled
+        assert pipeline.text_encoder.offload_calls == 0
+        assert pipeline.vae.offload_calls == 0
+
     def test_encoder_only_streams_planned_blocks(self, patched_offload_runtime):
         pipeline = _ComponentPipeline()
         backend = LayerWiseOffloadBackend(

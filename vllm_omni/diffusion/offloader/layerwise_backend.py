@@ -515,6 +515,7 @@ class LayerWiseOffloadBackend(OffloadBackend):
             if self.config.components_explicit:
                 raise ValueError(message)
             logger.warning(message)
+            return
 
         if plan is not None:
             for enc, enc_name in zip(modules.encoders, modules.encoder_names):
