@@ -164,45 +164,46 @@ def apply_sequential_offload(
         id(module) for module in (encoder_modules if offload_encoder_modules is None else offload_encoder_modules)
     }
 
-    # Register hooks on DiT modules (offload selected encoders and other selected DiTs).
-    for i, dit_mod in enumerate(dit_modules):
-        other_dits = [d for j, d in enumerate(dit_modules) if j != i and id(d) in selected_dit_ids]
-        selected_encoders = [encoder for encoder in encoder_modules if id(encoder) in selected_encoder_ids]
-        registry = HookRegistry.get_or_create(dit_mod)
-        hook = SequentialOffloadHook(
-            offload_targets=selected_encoders + other_dits,
-            device=device,
-            pin_memory=pin_memory,
-            use_hsdp=use_hsdp,
-            offload_after_context=id(dit_mod) in selected_dit_ids,
-        )
-        registry.register_hook(SequentialOffloadHook._HOOK_NAME, hook)
-        logger.debug("Registered offload hook for %s", dit_mod.__class__.__name__)
+    all_modules = [*dit_modules, *encoder_modules]
+    try:
+        # Register hooks on DiT modules (offload selected encoders and other selected DiTs).
+        for i, dit_mod in enumerate(dit_modules):
+            other_dits = [d for j, d in enumerate(dit_modules) if j != i and id(d) in selected_dit_ids]
+            selected_encoders = [encoder for encoder in encoder_modules if id(encoder) in selected_encoder_ids]
+            registry = HookRegistry.get_or_create(dit_mod)
+            hook = SequentialOffloadHook(
+                offload_targets=selected_encoders + other_dits,
+                device=device,
+                pin_memory=pin_memory,
+                use_hsdp=use_hsdp,
+                offload_after_context=id(dit_mod) in selected_dit_ids,
+            )
+            registry.register_hook(SequentialOffloadHook._HOOK_NAME, hook)
+            logger.debug("Registered offload hook for %s", dit_mod.__class__.__name__)
 
-    # Register hooks on all execution stages so unselected resident modules can
-    # still evict selected DiTs before they run.
-    selected_dits = [dit for dit in dit_modules if id(dit) in selected_dit_ids]
-    for enc in encoder_modules:
-        registry = HookRegistry.get_or_create(enc)
-        hook = SequentialOffloadHook(
-            offload_targets=selected_dits,
-            device=device,
-            pin_memory=pin_memory,
-            use_hsdp=use_hsdp,
-            offload_after_context=id(enc) in selected_encoder_ids,
-        )
-        registry.register_hook(SequentialOffloadHook._HOOK_NAME, hook)
-        logger.debug("Registered offload hook for %s", enc.__class__.__name__)
+        # Register hooks on all execution stages so unselected resident modules can
+        # still evict selected DiTs before they run.
+        selected_dits = [dit for dit in dit_modules if id(dit) in selected_dit_ids]
+        for enc in encoder_modules:
+            registry = HookRegistry.get_or_create(enc)
+            hook = SequentialOffloadHook(
+                offload_targets=selected_dits,
+                device=device,
+                pin_memory=pin_memory,
+                use_hsdp=use_hsdp,
+                offload_after_context=id(enc) in selected_encoder_ids,
+            )
+            registry.register_hook(SequentialOffloadHook._HOOK_NAME, hook)
+            logger.debug("Registered offload hook for %s", enc.__class__.__name__)
 
-    if offload_initial_dits:
-        try:
+        if offload_initial_dits:
             for dit_mod in dit_modules:
                 if id(dit_mod) not in selected_dit_ids:
                     continue
                 _get_sequential_offload_hook(dit_mod)._to_cpu(dit_mod)
-        except Exception:
-            remove_sequential_offload([*dit_modules, *encoder_modules])
-            raise
+    except BaseException:
+        remove_sequential_offload(all_modules)
+        raise
 
 
 def remove_sequential_offload(modules: list[nn.Module]) -> None:
@@ -268,19 +269,26 @@ class ModelLevelOffloadBackend(OffloadBackend):
         # Pipelines with non-forward component entry points own their complete
         # mutual-exclusion lifecycle. Delegate through the explicit protocol.
         if isinstance(pipeline, SupportsModelCpuOffload):
-            if self.config.components_explicit:
-                pipeline.enable_omni_model_cpu_offload(
-                    device=self.device,
-                    pin_memory=self.config.pin_cpu_memory,
-                    use_hsdp=self.config.use_hsdp,
-                    offload_components=self.config.components,
-                )
-            else:
-                pipeline.enable_omni_model_cpu_offload(
-                    device=self.device,
-                    pin_memory=self.config.pin_cpu_memory,
-                    use_hsdp=self.config.use_hsdp,
-                )
+            try:
+                if self.config.components_explicit:
+                    pipeline.enable_omni_model_cpu_offload(
+                        device=self.device,
+                        pin_memory=self.config.pin_cpu_memory,
+                        use_hsdp=self.config.use_hsdp,
+                        offload_components=self.config.components,
+                    )
+                else:
+                    pipeline.enable_omni_model_cpu_offload(
+                        device=self.device,
+                        pin_memory=self.config.pin_cpu_memory,
+                        use_hsdp=self.config.use_hsdp,
+                    )
+            except BaseException:
+                try:
+                    pipeline.disable_omni_model_cpu_offload()
+                except BaseException:
+                    logger.exception("Model-level cleanup failed while handling an enable failure")
+                raise
             self._custom_pipeline = pipeline
             self.enabled = True
             logger.info(
@@ -296,6 +304,11 @@ class ModelLevelOffloadBackend(OffloadBackend):
             for encoder, name in zip(modules.encoders, modules.encoder_names)
             if not self.config.components_explicit or self.config.offloads_encoder(name, plan)
         ]
+        if self.config.components_explicit:
+            if self.config.offloads("dit") and not modules.dits:
+                raise ValueError("No DiT/transformer modules found for selected DiT module offload")
+            if self.config.offloads("text_encoder") and not selected_encoders:
+                raise ValueError("No text encoder modules found for selected text_encoder module offload")
 
         # Move encoders to GPU
         for enc in modules.encoders:

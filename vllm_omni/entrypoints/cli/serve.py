@@ -707,34 +707,36 @@ class OmniServeCommand(CLISubcommand):
             "--diffusion-offload-config",
             type=json.loads,
             default=None,
-            help="Diffusion CPU-offload config as JSON or vLLM-style dotted flags. "
+            help="Diffusion CPU-offload config as JSON. "
             "Set mode to module or layer, list dit and/or text_encoder in "
             "components, and put layer-only tuning under layer_options. "
-            "Layer settings are transfer (rank-local or allgather) and "
+            "Layer settings are weight_transfer (rank-local or allgather) and "
             "resident_layers (DiT only).",
         )
         omni_config_group.add_argument(
             "--enable-cpu-offload",
             action="store_true",
-            help="Deprecated; removed in v0.30. Use --diffusion-offload-config.mode module and select components.",
+            help="Compatibility alias for model-level CPU offload. New integrations should use "
+            "--diffusion-offload-config with mode=module and explicit components.",
         )
         omni_config_group.add_argument(
             "--enable-layerwise-offload",
             action="store_true",
-            help="Deprecated; removed in v0.30. Use --diffusion-offload-config.mode layer and select components.",
+            help="Compatibility alias for layerwise CPU offload. New integrations should use "
+            "--diffusion-offload-config with mode=layer and explicit components.",
         )
         omni_config_group.add_argument(
             "--enable-distributed-layerwise-offload",
             action="store_true",
-            help="Deprecated; removed in v0.30. Use mode=layer and configure "
-            "transfer per component in --diffusion-offload-config.",
+            help="Compatibility alias for distributed layerwise CPU offload. "
+            "New integrations should use mode=layer and configure weight transfer per component.",
         )
         omni_config_group.add_argument(
             "--dlo-use-allgather",
             dest="dlo_use_allgather",
             action="store_true",
             default=True,
-            help="Deprecated; removed in v0.30. Use component transfer=allgather. "
+            help="Compatibility option; use component weight_transfer=allgather in new configurations. "
             "Use shard + AllGather for weight reconstruction (default: True). "
             "When disabled (--dlo-no-use-allgather), each rank streams the "
             "standard loader's rank-local tensors via H2D only — no additional "
@@ -745,7 +747,7 @@ class OmniServeCommand(CLISubcommand):
             dest="dlo_use_allgather",
             action="store_false",
             help=(
-                "Deprecated; removed in v0.30. Use component transfer=rank-local. "
+                "Compatibility option; use component weight_transfer=rank-local in new configurations. "
                 "Disable AllGather and stream standard-loader rank-local weights "
                 "independently (including existing TP shards)."
             ),
@@ -754,7 +756,7 @@ class OmniServeCommand(CLISubcommand):
             "--dlo-resident-layers",
             type=int,
             default=0,
-            help="Deprecated; removed in v0.30. Use layer_options.dit.resident_layers in --diffusion-offload-config.",
+            help="Compatibility option; use layer_options.dit.resident_layers in new configurations.",
         )
         omni_config_group.add_argument(
             "--host-weight-runtime-mode",

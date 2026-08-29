@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from enum import Enum
@@ -16,7 +15,6 @@ OFFLOAD_COMPONENTS = frozenset({DIT_COMPONENT, TEXT_ENCODER_COMPONENT})
 DEFAULT_OFFLOAD_COMPONENTS = frozenset({DIT_COMPONENT})
 DLO_COMPONENTS = OFFLOAD_COMPONENTS
 
-LEGACY_OFFLOAD_REMOVAL_VERSION = "0.30"
 # Private runtime marker distinguishing derived aliases from user input on an
 # already-materialized terminal config. Structured projections keep the compact
 # config canonical instead of transporting this implementation detail.
@@ -34,9 +32,9 @@ class OffloadStrategy(str, Enum):
     """Resolved internal backend strategy."""
 
     NONE = "none"
-    MODEL_LEVEL = "model"
-    LAYER_WISE = "layerwise"
-    DISTRIBUTED_LAYER_WISE = "distributed-layerwise"
+    MODEL_LEVEL = "model_level"
+    LAYER_WISE = "layer_wise"
+    DISTRIBUTED_LAYER_WISE = "distributed_layer_wise"
 
 
 class DLOTransfer(str, Enum):
@@ -50,7 +48,7 @@ class DLOTransfer(str, Enum):
 class LayerOffloadOptions:
     """Layer-mode settings for one selected diffusion component."""
 
-    transfer: DLOTransfer | None = None
+    weight_transfer: DLOTransfer | None = None
     resident_layers: int = 0
 
 
@@ -113,26 +111,26 @@ def _parse_layer_options(component: str, value: Any) -> LayerOffloadOptions:
             raise TypeError(
                 f"diffusion_offload_config.layer_options[{component!r}] must be a mapping, got {type(value).__name__}"
             )
-        unknown = sorted(set(value) - {"transfer", "resident_layers"})
+        unknown = sorted(set(value) - {"weight_transfer", "resident_layers"})
         if unknown:
             raise ValueError(
                 f"Unknown diffusion offload setting(s) for {component}: {', '.join(unknown)}; "
-                "choose from: transfer, resident_layers"
+                "choose from: weight_transfer, resident_layers"
             )
-        transfer = _parse_transfer(value["transfer"]) if "transfer" in value else None
+        weight_transfer = _parse_transfer(value["weight_transfer"]) if "weight_transfer" in value else None
         resident_layers = value.get("resident_layers", 0)
         if type(resident_layers) is not int or resident_layers < 0:
             raise ValueError(f"resident_layers for {component} must be a non-negative integer")
         parsed = LayerOffloadOptions(
-            transfer=transfer,
+            weight_transfer=weight_transfer,
             resident_layers=resident_layers,
         )
 
-    transfer = _parse_transfer(parsed.transfer) if parsed.transfer is not None else None
+    weight_transfer = _parse_transfer(parsed.weight_transfer) if parsed.weight_transfer is not None else None
     if type(parsed.resident_layers) is not int or parsed.resident_layers < 0:
         raise ValueError(f"resident_layers for {component} must be a non-negative integer")
     parsed = LayerOffloadOptions(
-        transfer=transfer,
+        weight_transfer=weight_transfer,
         resident_layers=parsed.resident_layers,
     )
     if component != DIT_COMPONENT and parsed.resident_layers:
@@ -197,8 +195,8 @@ def parse_diffusion_offload_config(value: Any) -> DiffusionOffloadConfig | None:
                 f"configured for: {', '.join(sorted(raw_layer_options))}"
             )
     dit = layer_options.get(DIT_COMPONENT)
-    if dit is not None and dit.resident_layers and dit.transfer is DLOTransfer.ALLGATHER:
-        raise ValueError("resident_layers requires dit.transfer='rank-local'")
+    if dit is not None and dit.resident_layers and dit.weight_transfer is DLOTransfer.ALLGATHER:
+        raise ValueError("resident_layers requires dit.weight_transfer='rank-local'")
 
     return DiffusionOffloadConfig(
         mode=mode,
@@ -213,7 +211,7 @@ def get_diffusion_offload_config(config: Any) -> DiffusionOffloadConfig | None:
     return parse_diffusion_offload_config(getattr(config, "diffusion_offload_config", None))
 
 
-def _legacy_strategy(config: Any, *, warn: bool) -> OffloadStrategy:
+def _legacy_strategy(config: Any) -> OffloadStrategy:
     enabled_aliases = [
         (field, strategy) for field, strategy in _LEGACY_STRATEGY_FIELDS.items() if bool(getattr(config, field, False))
     ]
@@ -225,35 +223,32 @@ def _legacy_strategy(config: Any, *, warn: bool) -> OffloadStrategy:
         for candidate in _LEGACY_STRATEGY_PRIORITY
         if any(enabled_strategy is candidate for _, enabled_strategy in enabled_aliases)
     )
-    if warn and not _legacy_flags_materialized(config):
-        fields = ", ".join(field for field, _ in enabled_aliases)
-        warnings.warn(
-            f"{fields} {'are' if len(enabled_aliases) > 1 else 'is'} deprecated and will be removed in "
-            f"v{LEGACY_OFFLOAD_REMOVAL_VERSION}; "
-            "use diffusion_offload_config instead",
-            FutureWarning,
-            stacklevel=3,
-        )
     return strategy
 
 
 def _public_strategy(config: Any, public: DiffusionOffloadConfig) -> OffloadStrategy:
+    hwr_enabled = getattr(config, "host_weight_runtime_mode", "disabled") != "disabled"
+    if hwr_enabled:
+        dit = public.layer_options.get(DIT_COMPONENT)
+        if public.mode is not OffloadMode.LAYER or dit is None or dit.weight_transfer is DLOTransfer.ALLGATHER:
+            raise ValueError(
+                "Host Weight Runtime requires mode='layer' with the 'dit' component using weight_transfer='rank-local'"
+            )
     if public.mode is OffloadMode.MODULE:
         return OffloadStrategy.MODEL_LEVEL
 
     needs_distributed_backend = any(
-        settings.transfer is DLOTransfer.ALLGATHER or settings.resident_layers
+        settings.weight_transfer is DLOTransfer.ALLGATHER or settings.resident_layers
         for settings in public.layer_options.values()
     )
-    needs_distributed_backend = needs_distributed_backend or (
-        getattr(config, "host_weight_runtime_mode", "disabled") != "disabled"
-        or float(getattr(config, "dlo_host_registration_limit_gib", 0.0)) > 0
+    needs_distributed_backend = (
+        needs_distributed_backend or hwr_enabled or float(getattr(config, "dlo_host_registration_limit_gib", 0.0)) > 0
     )
     return OffloadStrategy.DISTRIBUTED_LAYER_WISE if needs_distributed_backend else OffloadStrategy.LAYER_WISE
 
 
 def _validate_legacy_layer_options(config: Any, public: DiffusionOffloadConfig | None) -> None:
-    """Reject ambiguous or invalid deprecated DLO tuning before loading."""
+    """Reject ambiguous or invalid compatibility DLO tuning before loading."""
     resident_layers = getattr(config, "dlo_resident_layers", 0)
     if type(resident_layers) is not int or resident_layers < 0:
         raise ValueError(f"dlo_resident_layers must be a non-negative integer, got {resident_layers!r}")
@@ -281,10 +276,10 @@ def _validate_legacy_layer_options(config: Any, public: DiffusionOffloadConfig |
 
 
 def resolve_offload_strategy(config: Any) -> OffloadStrategy:
-    """Resolve the compact config or the deprecated boolean entry points."""
+    """Resolve the compact config or compatibility boolean entry points."""
     public = get_diffusion_offload_config(config)
     _validate_legacy_layer_options(config, public)
-    legacy = _legacy_strategy(config, warn=public is None)
+    legacy = _legacy_strategy(config)
     if public is None:
         return legacy
 
@@ -310,7 +305,7 @@ def materialize_legacy_offload_flags(config: Any) -> OffloadStrategy:
         setattr(
             config,
             "dlo_use_allgather",
-            bool(dit is not None and dit.transfer is DLOTransfer.ALLGATHER),
+            bool(dit is not None and dit.weight_transfer is DLOTransfer.ALLGATHER),
         )
         setattr(config, "dlo_resident_layers", 0 if dit is None else dit.resident_layers)
         if public.pin_memory is not None:
@@ -372,10 +367,10 @@ def component_uses_allgather(config: Any, component: str = DIT_COMPONENT) -> boo
             settings = public.layer_options[component]
         except KeyError as exc:
             raise ValueError(f"Offload component {component!r} is not selected") from exc
-        return settings.transfer is DLOTransfer.ALLGATHER
+        return settings.weight_transfer is DLOTransfer.ALLGATHER
     if component not in DLO_COMPONENTS:
         raise ValueError(f"Unknown offload component {component!r}")
-    # The deprecated scalar is a DiT-only compatibility view; legacy
+    # The legacy scalar is a DiT-only compatibility view; legacy
     # auxiliary component hooks always use rank-local transfer.
     return component == DIT_COMPONENT and bool(getattr(config, "dlo_use_allgather", True))
 

@@ -36,9 +36,6 @@ def test_i2v_pipeline_declares_text_encoder_offload_blocks() -> None:
     assert plan.encoder_component_types == {"text_encoder": "text_encoder"}
     assert plan.encoder_block_attrs == {"text_encoder": ("encoder.block",)}
     assert plan.encoder_dlo_weight_replication == frozenset({"text_encoder"})
-    # UMT5 shared/embed_tokens are tied aliases, so this optimization is
-    # deliberately rejected and both remain in encoder non-block state.
-    assert plan.encoder_host_resident_table_attrs == {}
     assert plan.on_demand_component_paths == frozenset()
 
 

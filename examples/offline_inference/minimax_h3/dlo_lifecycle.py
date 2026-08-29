@@ -127,7 +127,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--legacy",
         action="store_true",
-        help="Use deprecated DLO flags instead of diffusion_offload_config",
+        help="Use compatibility DLO flags instead of diffusion_offload_config",
     )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -176,8 +176,8 @@ def engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
                 "mode": "layer",
                 "components": ["dit", "text_encoder"],
                 "layer_options": {
-                    "dit": {"transfer": dit_transfer},
-                    "text_encoder": {"transfer": "rank-local"},
+                    "dit": {"weight_transfer": dit_transfer},
+                    "text_encoder": {"weight_transfer": "rank-local"},
                 },
             }
     else:

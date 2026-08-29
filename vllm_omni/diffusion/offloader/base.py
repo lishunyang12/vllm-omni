@@ -174,13 +174,13 @@ class OffloadConfig:
             components = frozenset(public_config.components)
             dlo_transfers = {component: DLOTransfer.RANK_LOCAL for component in OFFLOAD_COMPONENTS}
             for component, layer_options in public_config.layer_options.items():
-                dlo_transfers[component] = layer_options.transfer or DLOTransfer.RANK_LOCAL
+                dlo_transfers[component] = layer_options.weight_transfer or DLOTransfer.RANK_LOCAL
             dit_config = public_config.layer_options.get(DIT_COMPONENT)
             dlo_resident_layers = 0 if dit_config is None else dit_config.resident_layers
             components_explicit = True
         else:
             components = DEFAULT_OFFLOAD_COMPONENTS
-            # The deprecated scalar controlled DiT sharding only. Auxiliary
+            # The compatibility scalar controlled DiT sharding only. Auxiliary
             # components in the legacy topology were always streamed from
             # each rank's loader-produced weights, so preserve that behavior
             # instead of applying the scalar to the text encoder as well.
@@ -231,7 +231,7 @@ class OffloadConfig:
             raise ValueError(
                 "Distributed layerwise offload with AllGather is incompatible with "
                 "HSDP: HSDP parameters are already sharded DTensors, and the offloader "
-                "would double-shard them. Set transfer='rank-local' for the affected "
+                "would double-shard them. Set weight_transfer='rank-local' for the affected "
                 "component in diffusion_offload_config, or disable HSDP."
             )
 

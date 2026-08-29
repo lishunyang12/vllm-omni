@@ -23,6 +23,7 @@ import zmq.asyncio
 from vllm.logger import init_logger
 from vllm.v1.engine.exceptions import EngineDeadError
 
+from vllm_omni.diffusion.executor.multiproc_executor import stage_shutdown_timeout_s
 from vllm_omni.diffusion.stage_diffusion_proc import (
     StageDiffusionProc,
     StageDiffusionProcManager,
@@ -42,7 +43,6 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 _MISSING_RPC_RESULT = object()
-_GRACEFUL_SHUTDOWN_TIMEOUT_S = 30.0
 _FORCED_SHUTDOWN_TIMEOUT_S = 10.0
 
 
@@ -517,13 +517,14 @@ class StageDiffusionClient(StageClientBase):
             # resources.  Fall back to signal-based shutdown only if the
             # subprocess does not exit on its own.
             self._proc_manager.manager_stopped = True
-            self._proc_manager.proc.join(_GRACEFUL_SHUTDOWN_TIMEOUT_S)
+            graceful_timeout = stage_shutdown_timeout_s(self._proc_manager.num_workers)
+            self._proc_manager.proc.join(graceful_timeout)
             if self._proc_manager.proc.is_alive():
                 logger.warning(
                     "[StageDiffusionClient] stage-%s [rep-%s] did not exit within %.1fs; forcing shutdown.",
                     self.stage_id,
                     self.replica_id,
-                    _GRACEFUL_SHUTDOWN_TIMEOUT_S,
+                    graceful_timeout,
                 )
                 self._proc_manager.shutdown(timeout=_FORCED_SHUTDOWN_TIMEOUT_S)
 

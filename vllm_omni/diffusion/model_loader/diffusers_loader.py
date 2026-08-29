@@ -605,8 +605,9 @@ class DiffusersPipelineLoader(HWRLoaderMixin):
                             raise ValueError(
                                 "DLO+AllGather supports online quantization only for "
                                 "per-tensor FP8, INT8, and MXFP8 linears; unsupported online "
-                                f"methods: {', '.join(unsupported_methods)}. Please use "
-                                "--dlo-no-use-allgather or disable online quantization."
+                                f"{', '.join(unsupported_methods)}. Set "
+                                "layer_options.dit.weight_transfer='rank-local' in "
+                                "diffusion_offload_config or disable online quantization."
                             )
                         logger.info(
                             "Validated online methods (per-tensor FP8, INT8, MXFP8) with "

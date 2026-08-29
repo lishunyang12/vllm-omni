@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
@@ -52,6 +53,30 @@ def _make_vace_sampling(**overrides):
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+def test_vace_default_flow_shift_preserves_runtime_config_provenance(monkeypatch) -> None:
+    @dataclass
+    class StubConfig:
+        flow_shift: float | None = None
+
+    config = StubConfig()
+    setattr(config, "_diffusion_offload_flags_materialized", True)
+    captured = {}
+
+    def capture_config(_self, *, od_config, prefix=""):
+        captured["config"] = od_config
+        captured["prefix"] = prefix
+
+    monkeypatch.setattr(Wan22VACEPipeline.__mro__[1], "__init__", capture_config)
+
+    Wan22VACEPipeline(od_config=config, prefix="stage")  # type: ignore[arg-type]
+
+    resolved = captured["config"]
+    assert resolved is not config
+    assert resolved.flow_shift == 3.0
+    assert getattr(resolved, "_diffusion_offload_flags_materialized") is True
+    assert captured["prefix"] == "stage"
 
 
 def test_vace_preprocess_collects_reference_video_and_mask_inputs() -> None:

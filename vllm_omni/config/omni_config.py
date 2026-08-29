@@ -708,7 +708,8 @@ class _DiffusionConfigProjection:
     max_cpu_loras: int | None = None
     output_type: str = "pil"
     diffusion_offload_config: dict[str, Any] | None = None
-    # Deprecated compatibility aliases; removed in v0.30.
+    # Compatibility aliases for existing callers and model-specific stage
+    # lifecycles that are broader than the compact dit/text_encoder selector.
     enable_cpu_offload: bool = False
     enable_layerwise_offload: bool = False
     enable_distributed_layerwise_offload: bool = False
@@ -782,7 +783,7 @@ class _DiffusionConfigProjection:
         from vllm_omni.quantization import build_quant_config
 
         # Keep diffusion_offload_config canonical across this structured
-        # transport boundary. OmniDiffusionConfig materializes deprecated
+        # transport boundary. OmniDiffusionConfig materializes compatibility
         # runtime fields only after the terminal config is reconstructed.
         if self.tf_model_config is None:
             self.tf_model_config = TransformerConfig()

@@ -37,9 +37,12 @@ vllm serve Wan-AI/Wan2.2-T2V-A14B-Diffusers \
 ```
 
 List a component to select it for offload. Module mode rejects `layer_options`
-such as `transfer` and `resident_layers`. The legacy
-`enable_cpu_offload=True` entry point remains supported with a migration
-warning until v0.30.
+such as `weight_transfer` and `resident_layers`. The
+`enable_cpu_offload=True` compatibility entry point remains supported. New
+integrations should prefer the explicit config; existing model-specific stage
+lifecycles do not need to migrate until equivalent component coverage exists.
+For example, MiniMax-H3's compatibility lifecycle also stages its VAEs, while
+the compact selector intentionally covers only `dit` and `text_encoder`.
 
 ## Model integration
 
@@ -83,7 +86,8 @@ while reusing sequential `.to()` movers.
 
 ## Limitations
 
-- Single device only.
+- Transfers are rank-local; module mode does not shard host payloads or add a
+  weight AllGather across ranks.
 - Higher cold-start latency.
 - Transfers between encoder and denoising phases add latency.
 

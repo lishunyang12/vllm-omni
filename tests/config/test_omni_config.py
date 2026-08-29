@@ -1400,8 +1400,8 @@ def test_compact_offload_config_reaches_terminal_config_without_legacy_conflict(
         "mode": "layer",
         "components": ["dit", "text_encoder"],
         "layer_options": {
-            "dit": {"transfer": "rank-local", "resident_layers": 12},
-            "text_encoder": {"transfer": "allgather"},
+            "dit": {"weight_transfer": "rank-local", "resident_layers": 12},
+            "text_encoder": {"weight_transfer": "allgather"},
         },
     }
     cfg = omni_config_module._DiffusionConfigProjection.from_kwargs(

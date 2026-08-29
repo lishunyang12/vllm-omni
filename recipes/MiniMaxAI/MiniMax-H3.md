@@ -106,7 +106,7 @@ service downloads both; `--task-type fl2va` or `--task-type ref2va` downloads
 only the selected partition.
 
 CPU offload and distributed layerwise offload reduce GPU residency; they do
-not make the model weights disappear. With `--dlo-no-use-allgather`, each
+not make the model weights disappear. With `weight_transfer="rank-local"`, each
 worker retains its standard-loader rank-local weights in host memory, including
 pinned CPU buffers used for H2D streaming. Use at least **200 GiB available
 system RAM** before starting the two-GPU recipe; a **384 GiB host is
@@ -193,7 +193,7 @@ vllm serve "${MODEL}" \
   --vae-parallel-mode tile \
   --vae-use-tiling \
   --diffusion-offload-config \
-  '{"mode":"layer","components":["dit","text_encoder"],"layer_options":{"dit":{"transfer":"rank-local","resident_layers":20},"text_encoder":{"transfer":"rank-local"}}}' \
+  '{"mode":"layer","components":["dit","text_encoder"],"layer_options":{"dit":{"weight_transfer":"rank-local","resident_layers":20},"text_encoder":{"weight_transfer":"rank-local"}}}' \
   --enforce-eager \
   --diffusion-attention-backend CUDNN_ATTN
 ```
@@ -206,7 +206,7 @@ Use the profile that matches the per-GPU memory capacity:
 | `rtx4090` | 2 x 24 GB | 1024x576 | 12 | cuDNN attention | eager | Capacity-proxy starting point |
 
 This topology uses all available parallel capacity: TP2 shards both the DiT
-and text encoder, `transfer="rank-local"` streams each rank's local TP shard
+and text encoder, `weight_transfer="rank-local"` streams each rank's local TP shard
 without reconstructing full blocks, and VAE patch parallelism splits tiled
 decode across both GPUs. cuDNN attention is selected explicitly for the RTX
 consumer path; the server stays eager to avoid an unqualified compile path.
@@ -584,11 +584,12 @@ vllm serve "${MODEL}" \
   --diffusion-attention-backend FLASH_ATTN
 ```
 
-This validated ROCm capacity recipe intentionally retains the deprecated
+This validated ROCm capacity recipe intentionally retains the compatibility
 full-topology alias because MiniMax-H3 also stages its VAEs on that path. The
 compact API in this release selects only `dit` and `text_encoder`, so replacing
 the flag would change residency rather than perform a mechanical migration.
-The alias emits a migration warning and remains supported until v0.30.
+No removal deadline is assigned until the compact API offers equivalent
+component coverage.
 
 ### ROCm four GPUs
 

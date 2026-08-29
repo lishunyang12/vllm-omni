@@ -7,6 +7,7 @@ import pytest
 import torch
 from torch import nn
 
+from vllm_omni.diffusion.hooks import HookRegistry
 from vllm_omni.diffusion.offloader.base import OffloadConfig, OffloadStrategy
 from vllm_omni.diffusion.offloader.offload_plan import OffloadPlan
 from vllm_omni.diffusion.offloader.sequential_backend import (
@@ -109,6 +110,59 @@ def test_model_level_backend_passes_explicit_component_selection() -> None:
 
     assert pipeline.enable_args is not None
     assert pipeline.enable_args["offload_components"] == frozenset({"dit", "text_encoder"})
+
+
+def test_model_level_backend_rolls_back_partial_custom_enable() -> None:
+    class CustomPipeline(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.disable_called = False
+
+        def enable_omni_model_cpu_offload(self, **kwargs) -> None:
+            del kwargs
+            raise RuntimeError("injected custom enable failure")
+
+        def disable_omni_model_cpu_offload(self) -> None:
+            self.disable_called = True
+
+    pipeline = CustomPipeline()
+    backend = ModelLevelOffloadBackend(
+        OffloadConfig(strategy=OffloadStrategy.MODEL_LEVEL),
+        torch.device("cpu"),
+    )
+
+    with pytest.raises(RuntimeError, match="injected custom enable failure"):
+        backend.enable(pipeline)
+
+    assert pipeline.disable_called
+    assert not backend.enabled
+
+
+def test_sequential_offload_rolls_back_partial_hook_registration(monkeypatch: pytest.MonkeyPatch) -> None:
+    dit = _create_simple_module()
+    encoder = _create_simple_module()
+    original_register = HookRegistry.register_hook
+    calls = 0
+
+    def fail_second_registration(self, name, hook):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("injected registration failure")
+        return original_register(self, name, hook)
+
+    monkeypatch.setattr(HookRegistry, "register_hook", fail_second_registration)
+
+    with pytest.raises(RuntimeError, match="injected registration failure"):
+        apply_sequential_offload(
+            dit_modules=[dit],
+            encoder_modules=[encoder],
+            device=torch.device("cpu"),
+        )
+
+    for module in (dit, encoder):
+        registry = getattr(module, "_hook_registry", None)
+        assert registry is None or registry.get_hook(SequentialOffloadHook._HOOK_NAME) is None
 
 
 def test_sequential_offload_filters_cpu_eligible_components() -> None:

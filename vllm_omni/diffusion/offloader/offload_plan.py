@@ -46,11 +46,6 @@ class OffloadPlan:
             block tensors are identical across the DiT DLO group. Only these
             encoders may use multi-rank AllGather transfer; this must not be
             declared for encoder-TP shards.
-        encoder_host_resident_table_attrs: Maps encoder paths to gather-only
-            table paths that may remain on CPU while their lookup result is
-            copied to the target device. This must be declared only when the
-            table weight is not tied or accessed directly outside its module
-            forward.
     """
 
     on_demand_component_paths: frozenset[str] = field(default_factory=frozenset)
@@ -61,7 +56,6 @@ class OffloadPlan:
     encoder_component_types: dict[str, str] = field(default_factory=dict)
     encoder_block_attrs: dict[str, tuple[str, ...]] = field(default_factory=dict)
     encoder_dlo_weight_replication: frozenset[str] = field(default_factory=frozenset)
-    encoder_host_resident_table_attrs: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 def get_offload_plan(pipeline: nn.Module) -> OffloadPlan | None:

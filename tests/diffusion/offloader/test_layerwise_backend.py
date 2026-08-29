@@ -307,12 +307,6 @@ class _PlainEncoder(nn.Module):
         self.final_norm = nn.Linear(2, 2)
 
 
-class _HostTableEncoder(_PlainEncoder):
-    def __init__(self):
-        super().__init__()
-        self.shared = nn.Embedding(32, 4)
-
-
 class _ComponentPipeline(nn.Module):
     _offload_plan = OffloadPlan(
         encoder_component_types={"text_encoder": "text_encoder"},
@@ -347,19 +341,6 @@ class _GenericEncoderPipeline(nn.Module):
         super().__init__()
         self.transformer = _SingleBlockModel()
         self.text_encoder = _PlainEncoder()
-
-
-class _HostTableEncoderPipeline(nn.Module):
-    _offload_plan = OffloadPlan(
-        encoder_component_types={"text_encoder": "text_encoder"},
-        encoder_block_attrs={"text_encoder": ("encoder.block",)},
-        encoder_host_resident_table_attrs={"text_encoder": ("shared",)},
-    )
-
-    def __init__(self):
-        super().__init__()
-        self.transformer = _SingleBlockModel()
-        self.text_encoder = _HostTableEncoder()
 
 
 class TestLayerwiseComponentSelection:
@@ -410,6 +391,7 @@ class TestLayerwiseComponentSelection:
 
     def test_single_gpu_dit_only_keeps_encoder_and_vae_resident(self, patched_offload_runtime):
         pipeline = _ComponentPipeline()
+        expected_weights = [block.weight.detach().clone() for block in pipeline.transformer.blocks]
         backend = LayerWiseOffloadBackend(
             OffloadConfig(
                 strategy=OffloadStrategy.LAYER_WISE,
@@ -431,6 +413,47 @@ class TestLayerwiseComponentSelection:
 
         backend.disable()
 
+        for block, expected in zip(pipeline.transformer.blocks, expected_weights, strict=True):
+            torch.testing.assert_close(block.weight, expected)
+
+        backend.enable(pipeline)
+        backend.disable()
+        for block, expected in zip(pipeline.transformer.blocks, expected_weights, strict=True):
+            torch.testing.assert_close(block.weight, expected)
+
+    def test_partial_dit_enable_failure_restores_weights_and_hooks(self, patched_offload_runtime, monkeypatch):
+        pipeline = _ComponentPipeline()
+        expected_weights = [block.weight.detach().clone() for block in pipeline.transformer.blocks]
+        backend = LayerWiseOffloadBackend(
+            OffloadConfig(
+                strategy=OffloadStrategy.LAYER_WISE,
+                pin_cpu_memory=False,
+                components=frozenset({"dit"}),
+                components_explicit=True,
+            ),
+            torch.device("cpu"),
+        )
+        original_apply = layerwise_backend_module.apply_block_hook
+        calls = 0
+
+        def fail_second_hook(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("injected hook failure")
+            return original_apply(*args, **kwargs)
+
+        monkeypatch.setattr(layerwise_backend_module, "apply_block_hook", fail_second_hook)
+
+        with pytest.raises(RuntimeError, match="injected hook failure"):
+            backend.enable(pipeline)
+
+        assert not backend.enabled
+        for block, expected in zip(pipeline.transformer.blocks, expected_weights, strict=True):
+            registry = getattr(block, "_hook_registry", None)
+            assert registry is None or registry.get_hook("layerwise_offload") is None
+            torch.testing.assert_close(block.weight, expected)
+
     def test_encoder_only_requires_streamable_offload_plan(self, patched_offload_runtime):
         pipeline = nn.Module()
         pipeline.transformer = _SingleBlockModel()
@@ -445,7 +468,7 @@ class TestLayerwiseComponentSelection:
             torch.device("cpu"),
         )
 
-        with pytest.raises(ValueError, match="None of the selected layerwise offload components"):
+        with pytest.raises(ValueError, match="Selected text_encoder layerwise offload requires"):
             backend.enable(pipeline)
 
     def test_default_selection_preserves_unplanned_auxiliaries(self, patched_offload_runtime):
@@ -511,35 +534,6 @@ class TestLayerwiseComponentSelection:
         assert not pipeline.text_encoder._omni_layerwise_enabled
         assert all(block._hook_registry.get_hook("layerwise_offload") is None for block in blocks)
         assert all(block.weight.numel() == 100 for block in blocks)
-
-    def test_declared_vocab_table_stays_on_host_and_hooks_are_reentrant(self, patched_offload_runtime):
-        pipeline = _HostTableEncoderPipeline()
-        expected_weight = pipeline.text_encoder.shared.weight.detach().clone()
-        backend = LayerWiseOffloadBackend(
-            OffloadConfig(
-                strategy=OffloadStrategy.LAYER_WISE,
-                pin_cpu_memory=False,
-                components=frozenset({"text_encoder"}),
-                components_explicit=True,
-            ),
-            torch.device("cpu"),
-        )
-
-        backend.enable(pipeline)
-
-        table = pipeline.text_encoder.shared
-        assert table.weight.device.type == "cpu"
-        assert len(pipeline.text_encoder._omni_host_resident_table_handles) == 2
-        token_ids = torch.tensor([[1, 3, 5]])
-        assert torch.equal(table(token_ids), torch.nn.functional.embedding(token_ids, expected_weight))
-
-        backend.disable()
-        assert not table._forward_pre_hooks
-        assert not table._forward_hooks
-
-        backend.enable(pipeline)
-        assert len(pipeline.text_encoder._omni_host_resident_table_handles) == 2
-        backend.disable()
 
 
 def _offload_od_config(**overrides):
@@ -617,7 +611,7 @@ class TestLayerwiseComponentConfig:
                 {
                     "mode": "layer",
                     "components": ["dit"],
-                    "layer_options": {"dit": {"transfer": "rank_local"}},
+                    "layer_options": {"dit": {"weight_transfer": "rank_local"}},
                 },
                 "Unknown offload transfer",
             ),
@@ -665,7 +659,7 @@ class TestLayerwiseComponentConfig:
         assert config.components == frozenset({"dit", "text_encoder"})
         assert config.components_explicit is True
 
-    @pytest.mark.parametrize("setting", [{"transfer": "rank-local"}, {"resident_layers": 1}])
+    @pytest.mark.parametrize("setting", [{"weight_transfer": "rank-local"}, {"resident_layers": 1}])
     def test_module_mode_rejects_layer_settings(self, setting):
         with pytest.raises(ValueError, match="layer_options requires mode='layer'"):
             OffloadConfig.from_od_config(
@@ -685,8 +679,8 @@ class TestLayerwiseComponentConfig:
                     "mode": "layer",
                     "components": ["dit", "text_encoder"],
                     "layer_options": {
-                        "dit": {"transfer": "rank-local"},
-                        "text_encoder": {"transfer": "allgather"},
+                        "dit": {"weight_transfer": "rank-local"},
+                        "text_encoder": {"weight_transfer": "allgather"},
                     },
                 }
             )
@@ -713,16 +707,52 @@ class TestLayerwiseComponentConfig:
         assert not config.uses_allgather("dit")
 
     def test_dit_residency_rejects_allgather(self):
-        with pytest.raises(ValueError, match="resident_layers requires dit.transfer='rank-local'"):
+        with pytest.raises(ValueError, match="resident_layers requires dit.weight_transfer='rank-local'"):
             OffloadConfig.from_od_config(
                 _offload_od_config(
                     diffusion_offload_config={
                         "mode": "layer",
                         "components": ["dit"],
-                        "layer_options": {"dit": {"transfer": "allgather", "resident_layers": 1}},
+                        "layer_options": {"dit": {"weight_transfer": "allgather", "resident_layers": 1}},
                     }
                 )
             )
+
+    @pytest.mark.parametrize(
+        "offload_config",
+        [
+            {"mode": "module", "components": ["dit"]},
+            {"mode": "layer", "components": ["text_encoder"]},
+            {
+                "mode": "layer",
+                "components": ["dit"],
+                "layer_options": {"dit": {"weight_transfer": "allgather"}},
+            },
+        ],
+    )
+    def test_host_weight_runtime_rejects_ineligible_offload_config(self, offload_config):
+        with pytest.raises(ValueError, match="Host Weight Runtime requires"):
+            OffloadConfig.from_od_config(
+                _offload_od_config(
+                    diffusion_offload_config=offload_config,
+                    host_weight_runtime_mode="preferred",
+                )
+            )
+
+    def test_host_weight_runtime_selects_rank_local_dlo_backend(self):
+        config = OffloadConfig.from_od_config(
+            _offload_od_config(
+                diffusion_offload_config={
+                    "mode": "layer",
+                    "components": ["dit"],
+                    "layer_options": {"dit": {"weight_transfer": "rank-local"}},
+                },
+                host_weight_runtime_mode="preferred",
+            )
+        )
+
+        assert config.strategy is OffloadStrategy.DISTRIBUTED_LAYER_WISE
+        assert not config.uses_allgather("dit")
 
     def test_pin_memory_override_is_scoped_to_offload_config(self):
         config = OffloadConfig.from_od_config(
@@ -739,21 +769,19 @@ class TestLayerwiseComponentConfig:
         assert config.pin_cpu_memory is False
 
     def test_legacy_omitted_selector_preserves_dit_only_behavior(self):
-        with pytest.warns(FutureWarning, match="removed in v0.30"):
-            config = OffloadConfig.from_od_config(_offload_od_config(enable_layerwise_offload=True))
+        config = OffloadConfig.from_od_config(_offload_od_config(enable_layerwise_offload=True))
 
         assert config.strategy is OffloadStrategy.LAYER_WISE
         assert config.components == frozenset({"dit"})
 
     def test_legacy_distributed_settings_still_work(self):
-        with pytest.warns(FutureWarning, match="removed in v0.30"):
-            config = OffloadConfig.from_od_config(
-                _offload_od_config(
-                    enable_distributed_layerwise_offload=True,
-                    dlo_use_allgather=False,
-                    dlo_resident_layers=3,
-                )
+        config = OffloadConfig.from_od_config(
+            _offload_od_config(
+                enable_distributed_layerwise_offload=True,
+                dlo_use_allgather=False,
+                dlo_resident_layers=3,
             )
+        )
 
         assert config.strategy is OffloadStrategy.DISTRIBUTED_LAYER_WISE
         assert config.dlo_resident_layers == 3
@@ -761,13 +789,12 @@ class TestLayerwiseComponentConfig:
         assert not config.uses_allgather("text_encoder")
 
     def test_legacy_allgather_remains_dit_only(self):
-        with pytest.warns(FutureWarning, match="removed in v0.30"):
-            config = OffloadConfig.from_od_config(
-                _offload_od_config(
-                    enable_distributed_layerwise_offload=True,
-                    dlo_use_allgather=True,
-                )
+        config = OffloadConfig.from_od_config(
+            _offload_od_config(
+                enable_distributed_layerwise_offload=True,
+                dlo_use_allgather=True,
             )
+        )
 
         assert config.uses_allgather("dit")
         assert not config.uses_allgather("text_encoder")
@@ -790,8 +817,7 @@ class TestLayerwiseComponentConfig:
         ],
     )
     def test_legacy_aliases_preserve_existing_priority(self, legacy_flags, expected_strategy):
-        with pytest.warns(FutureWarning, match="removed in v0.30"):
-            config = OffloadConfig.from_od_config(_offload_od_config(**legacy_flags))
+        config = OffloadConfig.from_od_config(_offload_od_config(**legacy_flags))
 
         assert config.strategy is expected_strategy
 

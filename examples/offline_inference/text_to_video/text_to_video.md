@@ -269,7 +269,7 @@ python text_to_video.py \
 - `--tensor-parallel-size`: tensor parallel size (effective for models that support TP, e.g. LTX2).
 - `--diffusion-offload-config`: JSON config selecting `module` or `layer`
   mode and `dit` and/or `text_encoder`, with optional per-component
-  `transfer` and DiT `resident_layers` settings.
+  `weight_transfer` and DiT `resident_layers` settings.
 - `--frame-rate`: generation FPS for pipelines that require it (e.g., LTX2).
 - `--audio-sample-rate`: fallback audio sample rate when the pipeline returns audio.
 - `--quantization`: quantization method (such as `fp8` for FP8).

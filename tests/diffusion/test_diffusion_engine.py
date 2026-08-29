@@ -623,7 +623,7 @@ class TestDiffusionCompileConfig:
                     "diffusion_offload_config": {
                         "mode": "layer",
                         "components": ["dit"],
-                        "layer_options": {"dit": {"transfer": "allgather"}},
+                        "layer_options": {"dit": {"weight_transfer": "allgather"}},
                     }
                 },
                 "distributed layerwise offload",

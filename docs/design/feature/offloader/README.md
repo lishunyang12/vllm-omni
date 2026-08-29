@@ -12,16 +12,20 @@ The three strategies have separate user and design pages:
 ## Strategy selection
 
 `OffloadConfig.from_od_config()` converts diffusion configuration into one
-`OffloadStrategy`. If callers set multiple flags, selection is deterministic:
+`OffloadStrategy`. The public config separates component selection from
+policy:
 
-1. `DISTRIBUTED_LAYERWISE`;
-2. `LAYERWISE`;
-3. `MODEL_LEVEL`; and
-4. `NONE`.
+- `mode="module"` selects model-level offload;
+- `mode="layer"` with rank-local transfers selects ordinary layerwise
+  offload; and
+- AllGather transfer, resident layers, or Host Weight Runtime selects the
+  distributed layerwise backend that implements those capabilities.
 
-The factory logs when a higher-priority strategy disables another. It derives
-parallel and HSDP state from `DiffusionParallelConfig`; callers do not provide
-a separate offload group size.
+The compatibility boolean flags retain their historical priority (distributed
+layerwise, layerwise, then model-level). Mixing them with
+`diffusion_offload_config` is rejected. The factory derives parallel and HSDP
+state from `DiffusionParallelConfig`; callers do not provide a separate
+offload group size.
 
 `get_offload_backend()` then validates platform offload support, resolves the
 device, and creates exactly one backend. Returning `None` means offloading is
@@ -38,6 +42,9 @@ Every backend implements `OffloadBackend`:
 
 `disable()` does not promise to restore the pipeline's original device
 placement. The caller owns any subsequent rematerialization.
+
+An enable failure must remove every partially installed hook and leave model
+weights materialized so the pipeline can be retried or safely discarded.
 
 Hooks are registered through `HookRegistry` and `ModelHook`; offload backends
 must use distinct hook names and remove only hooks they own.

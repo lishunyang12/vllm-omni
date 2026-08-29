@@ -42,11 +42,12 @@ encoder's BF16 configuration and the video/audio VAEs' FP32 precision. Select
 one offload strategy per deployment:
 
 ```bash
-# Stage 1 model-level CPU offload.
---stage-overrides '{"1":{"diffusion_offload_config":{"mode":"module","components":["dit"]}}}'
+# Stage 1 full-topology model offload, including MiniMax-H3's VAEs. Keep the
+# compatibility alias because the compact selector covers only DiT/text encoder.
+--stage-overrides '{"1":{"enable_cpu_offload":true}}'
 
 # Stage 1 distributed layerwise offload. Tune resident layers for available RAM.
---stage-overrides '{"1":{"diffusion_offload_config":{"mode":"layer","components":["dit"],"layer_options":{"dit":{"transfer":"rank-local","resident_layers":20}}}}}'
+--stage-overrides '{"1":{"diffusion_offload_config":{"mode":"layer","components":["dit"],"layer_options":{"dit":{"weight_transfer":"rank-local","resident_layers":20}}}}}'
 
 # Stage 1 online FP8 quantization of the DiT only.
 --stage-overrides '{"1":{"diffusion_quantization_config":"{\"transformer\":{\"method\":\"fp8\"}}"}}'

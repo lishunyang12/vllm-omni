@@ -94,7 +94,6 @@ class MyPipeline(nn.Module):
     _offload_plan = OffloadPlan(
         encoder_component_types={"prompt_model": "text_encoder"},
         encoder_block_attrs={"prompt_model": ("encoder.layers",)},
-        encoder_host_resident_table_attrs={"prompt_model": ("shared",)},
     )
 ```
 
@@ -104,9 +103,9 @@ offload consume the same `OffloadPlan` metadata.
 
 ## Limitations
 
-- The default transfer is `rank-local`. Set a selected component's `transfer`
-  to `allgather` to shard its host weights across a compatible multi-device
-  group; backend selection is automatic.
+- The default weight transfer is `rank-local`. Set a selected component's
+  `weight_transfer` to `allgather` to shard its host weights across a
+  compatible multi-device group; backend selection is automatic.
 - Setup consolidates and pins block parameters, increasing cold-start time.
 - Performance depends on block compute time and host-to-device bandwidth;
   lightweight blocks may not hide transfers.

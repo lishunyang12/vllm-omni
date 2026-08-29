@@ -39,11 +39,26 @@ logger = init_logger(__name__)
 
 _DEQUEUE_TIMEOUT_S = 5.0
 _DLO_DP_WAVE_TIMEOUT_S = float(os.environ.get("VLLM_OMNI_DLO_DP_WAVE_TIMEOUT", 600.0))
+_SHUTDOWN_ENQUEUE_TIMEOUT_S = 1.0
 # Large diffusion workers can spend more than 15 seconds in interpreter and
 # CUDA finalizers after their explicit model/IPC cleanup has completed.
 _WORKER_SHUTDOWN_GRACE_S = 25.0
 _WORKER_TERMINATE_GRACE_S = 5.0
 _RESULT_PUMP_JOIN_TIMEOUT_S = 2.0
+_STAGE_FINALIZER_MARGIN_S = 5.0
+
+
+def stage_shutdown_timeout_s(num_workers: int) -> float:
+    """Bound the outer stage wait around the executor's serial cleanup."""
+    if num_workers < 1:
+        raise ValueError(f"num_workers must be positive, got {num_workers}")
+    return (
+        num_workers * _SHUTDOWN_ENQUEUE_TIMEOUT_S
+        + _WORKER_SHUTDOWN_GRACE_S
+        + _WORKER_TERMINATE_GRACE_S
+        + num_workers * _RESULT_PUMP_JOIN_TIMEOUT_S
+        + _STAGE_FINALIZER_MARGIN_S
+    )
 
 
 def _is_empty_dp_prompt(prompt: object) -> bool:
@@ -70,7 +85,7 @@ class _ExecutorShutdownCleaner:
         if self.broadcast_mq is not None:
             try:
                 for _ in range(self.num_workers):
-                    self.broadcast_mq.enqueue(SHUTDOWN_MESSAGE, timeout=1.0)
+                    self.broadcast_mq.enqueue(SHUTDOWN_MESSAGE, timeout=_SHUTDOWN_ENQUEUE_TIMEOUT_S)
 
                 self.broadcast_mq = None
             except Exception as exc:

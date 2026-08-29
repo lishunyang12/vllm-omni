@@ -1385,6 +1385,7 @@ def test_layerwise_dit_only_keeps_text_encoder_resident():
     pipeline.text_encoder.load_to_device.assert_called_once_with()
     pipeline.text_encoder.offload_to_cpu.assert_not_called()
 
+
 def test_standalone_audio_conditions_keep_audio_vae_resident(monkeypatch):
     from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
     from vllm_omni.diffusion.models.minimax_h3 import (
@@ -1430,7 +1431,7 @@ def test_distributed_layerwise_all_keeps_vae_component_resident():
         diffusion_offload_config={
             "mode": "layer",
             "components": ["dit", "text_encoder"],
-            "layer_options": {"dit": {"transfer": "allgather"}},
+            "layer_options": {"dit": {"weight_transfer": "allgather"}},
         },
     )
     component = Mock()

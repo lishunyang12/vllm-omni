@@ -1612,9 +1612,12 @@ class TestOffloadPlan:
         assert len(backend._resident_blocks) == 2
         assert len(backend._all_hook_groups) == 1
         assert len(backend._all_hook_groups[0]) == 2
+        assert pipeline._dlo_residency_controller is backend
         assert backend.enabled
 
         backend.disable()
+
+        assert pipeline._dlo_residency_controller is None
 
         for name, parameter in pipeline.named_parameters():
             torch.testing.assert_close(parameter, expected_parameters[name])
@@ -2624,6 +2627,65 @@ class TestDistributedComponentSelection:
         )
         backend.disable()
 
+    def test_partial_dit_enable_failure_restores_weights_and_hooks(
+        self,
+        patched_offload_runtime,
+        monkeypatch,
+    ):
+        pipeline = _DistributedComponentPipeline()
+        expected_weights = [block.weight.detach().clone() for block in pipeline.transformer.blocks]
+        backend = DistributedLayerwiseOffloadBackend(
+            OffloadConfig(
+                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                pin_cpu_memory=False,
+                dlo_use_allgather=False,
+                components=frozenset({"dit"}),
+                components_explicit=True,
+            ),
+            torch.device("cpu"),
+        )
+        original_apply = dist_backend_module.apply_distributed_block_hook
+        calls = 0
+
+        def fail_second_hook(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("injected DLO hook failure")
+            return original_apply(*args, **kwargs)
+
+        monkeypatch.setattr(dist_backend_module, "apply_distributed_block_hook", fail_second_hook)
+
+        with pytest.raises(RuntimeError, match="injected DLO hook failure"):
+            backend.enable(pipeline)
+
+        assert not backend.enabled
+        for block, expected in zip(pipeline.transformer.blocks, expected_weights, strict=True):
+            registry = getattr(block, "_hook_registry", None)
+            assert registry is None or registry.get_hook("distributed_layerwise_offload") is None
+            torch.testing.assert_close(block.weight, expected)
+
+    def test_multirank_enable_failure_cleanup_skips_restore_collective(self, monkeypatch, mocker):
+        backend = DistributedLayerwiseOffloadBackend(
+            OffloadConfig(
+                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                pin_cpu_memory=False,
+                dp_size=2,
+                dlo_use_allgather=True,
+                components=frozenset({"dit"}),
+                components_explicit=True,
+            ),
+            torch.device("cpu"),
+        )
+        monkeypatch.setattr(backend, "_enable", mocker.Mock(side_effect=RuntimeError("injected startup failure")))
+        cleanup = mocker.Mock()
+        monkeypatch.setattr(backend, "_disable", cleanup)
+
+        with pytest.raises(RuntimeError, match="injected startup failure"):
+            backend.enable(_DistributedComponentPipeline())
+
+        cleanup.assert_called_once_with(restore_weights=False)
+
     def test_all_streams_encoder_and_keeps_vae_resident(self, patched_offload_runtime):
         pipeline = _DistributedComponentPipeline()
         backend = DistributedLayerwiseOffloadBackend(
@@ -2833,5 +2895,5 @@ class TestDistributedComponentSelection:
             torch.device("cpu"),
         )
 
-        with pytest.raises(ValueError, match="None of the selected distributed layerwise offload components"):
+        with pytest.raises(ValueError, match="Selected text_encoder layerwise offload requires"):
             backend.enable(pipeline)

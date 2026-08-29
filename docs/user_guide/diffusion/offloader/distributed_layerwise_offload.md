@@ -31,13 +31,20 @@ The public API describes intent in one nested configuration:
 | --- | --- | --- |
 | Granularity | `mode` | move a complete component (`module`) or stream its blocks (`layer`) |
 | Selection | `components` list | whether `dit` and/or `text_encoder` may move to CPU |
-| Per-component layer options | `layer_options` | use rank-local or AllGather transfer and optionally retain leading DiT blocks |
+| Per-component layer options | `layer_options` | choose rank-local or AllGather weight transfer and optionally retain leading DiT blocks |
+
+`weight_transfer` applies only to model weights. It does not change encoder
+activations or the encoder's compute parallelism. `rank-local` copies each
+rank's loader-produced block to its device. `allgather` stores one shard of
+that block per rank, copies each shard to its device, and reconstructs the
+complete block with a device-side AllGather before compute.
 
 The historical `enable_cpu_offload`, `enable_layerwise_offload`, and
 `enable_distributed_layerwise_offload` fields remain compatibility aliases
-until v0.30 and emit migration warnings. Existing combinations retain their
-priority (`distributed layerwise` > `layerwise` > `module`), while mixing a
-legacy alias with `diffusion_offload_config` fails during configuration.
+for existing callers and model-specific stage lifecycles. Existing
+combinations retain their priority (`distributed layerwise` > `layerwise` >
+`module`), while mixing a compatibility alias with
+`diffusion_offload_config` fails during configuration.
 `distributed-layerwise` remains an internal backend name; users select
 `mode="layer"`, and the runtime chooses the capable backend.
 
@@ -48,13 +55,13 @@ legacy alias with `diffusion_offload_config` fails during configuration.
 # selected components can use AllGather safely.
 vllm serve Wan-AI/Wan2.2-T2V-A14B-Diffusers --omni \
   --diffusion-offload-config \
-  '{"mode":"layer","components":["dit","text_encoder"],"layer_options":{"dit":{"transfer":"allgather"},"text_encoder":{"transfer":"allgather"}}}' \
+  '{"mode":"layer","components":["dit","text_encoder"],"layer_options":{"dit":{"weight_transfer":"allgather"},"text_encoder":{"weight_transfer":"allgather"}}}' \
   --usp 4
 
 # Mix transfers independently: sharded DiT, loader-produced encoder layout
 vllm serve /path/to/model --omni \
   --diffusion-offload-config \
-  '{"mode":"layer","components":["dit","text_encoder"],"layer_options":{"dit":{"transfer":"allgather"},"text_encoder":{"transfer":"rank-local"}}}' \
+  '{"mode":"layer","components":["dit","text_encoder"],"layer_options":{"dit":{"weight_transfer":"allgather"},"text_encoder":{"weight_transfer":"rank-local"}}}' \
   --usp 4
 
 # Standard-loader rank-local weights for both components
@@ -74,11 +81,11 @@ omni = Omni(
         "components": ["dit", "text_encoder"],
         "layer_options": {
             "dit": {
-                "transfer": "rank-local",
+                "weight_transfer": "rank-local",
                 "resident_layers": 20,
             },
             "text_encoder": {
-                "transfer": "allgather",
+                "weight_transfer": "allgather",
             },
         },
         "pin_memory": True,
@@ -92,7 +99,7 @@ omni = Omni(
 | --- | --- | --- |
 | `diffusion_offload_config.mode` | `module` or `layer` granularity | required |
 | `diffusion_offload_config.components` | Non-empty list containing `dit`, `text_encoder`, or both | required |
-| `layer_options.NAME.transfer` | `rank-local` or `allgather` | `rank-local` |
+| `layer_options.NAME.weight_transfer` | `rank-local` or `allgather` | `rank-local` |
 | `layer_options.dit.resident_layers` | Leading main-DiT blocks kept on device; requires `rank-local` and model-declared resident paths | `0` |
 | `diffusion_offload_config.pin_memory` | Pin streamed host memory for faster H2D copies | `true` |
 | `--data-parallel-size N` | DP ranks and AllGather weight-sharding group | `1` |
@@ -100,7 +107,7 @@ omni = Omni(
 | `--host-weight-runtime-root PATH` | Writable node-local HWR store shared by workers in one storage domain; required for `preferred` and `required` | unset |
 | `--dlo-host-registration-limit-gib N` | Optional per-worker ceiling for registering an HWR mmap; zero adds no ceiling | `0` |
 
-## Component and transfer matrix
+## Component and weight-transfer matrix
 
 | Component | `allgather` | `rank-local` |
 | --- | --- | --- |
@@ -155,7 +162,7 @@ through two bounded pinned staging slots. Processes mapping the same files on
 one node share the immutable pages; rank-local transfer still performs a
 complete-block H2D copy in each process.
 
-When the effective DLO group size is one, `transfer="allgather"` does not
+When the effective DLO group size is one, `weight_transfer="allgather"` does not
 perform a collective and uses the same rank-local transfer behavior.
 
 ### Final-layout Host Weight Runtime
@@ -172,7 +179,7 @@ the validated scope.
 ```bash
 vllm serve /path/to/model --omni \
   --diffusion-offload-config \
-  '{"mode":"layer","components":["dit"],"layer_options":{"dit":{"transfer":"rank-local"}}}' \
+  '{"mode":"layer","components":["dit"],"layer_options":{"dit":{"weight_transfer":"rank-local"}}}' \
   --host-weight-runtime-mode preferred \
   --host-weight-runtime-root /var/cache/vllm-omni/hwr
 ```
@@ -214,14 +221,14 @@ For example:
 # First startup: canonically load and populate the exact artifacts.
 vllm serve /path/to/model --omni \
   --diffusion-offload-config \
-  '{"mode":"layer","components":["dit"],"layer_options":{"dit":{"transfer":"rank-local"}}}' \
+  '{"mode":"layer","components":["dit"],"layer_options":{"dit":{"weight_transfer":"rank-local"}}}' \
   --host-weight-runtime-mode preferred \
   --host-weight-runtime-root /var/cache/vllm-omni/hwr
 
 # After a healthy startup and clean shutdown, enforce cache hits.
 vllm serve /path/to/model --omni \
   --diffusion-offload-config \
-  '{"mode":"layer","components":["dit"],"layer_options":{"dit":{"transfer":"rank-local"}}}' \
+  '{"mode":"layer","components":["dit"],"layer_options":{"dit":{"weight_transfer":"rank-local"}}}' \
   --host-weight-runtime-mode required \
   --host-weight-runtime-root /var/cache/vllm-omni/hwr
 ```
@@ -299,7 +306,6 @@ class MyPipeline(nn.Module):
         encoder_component_types={"prompt_model": "text_encoder"},
         encoder_block_attrs={"prompt_model": ("encoder.layers",)},
         encoder_dlo_weight_replication=frozenset({"prompt_model"}),
-        encoder_host_resident_table_attrs={"prompt_model": ("shared",)},
         on_demand_component_paths=frozenset({"prompt_model"}),
     )
 ```
@@ -307,9 +313,7 @@ class MyPipeline(nn.Module):
 `encoder_component_types` maps arbitrary encoder paths to the public
 `text_encoder` selector. `encoder_dlo_weight_replication` is the explicit
 safety declaration for reusing the DiT DLO group. On-demand encoder non-block
-state is loaded and offloaded by its pipeline phase. Explicitly declared
-gather-only encoder tables may remain on CPU while only lookup results move to
-the target device; tied or directly accessed weights must not use that path.
+state is loaded and offloaded by its pipeline phase.
 
 When no plan exists, DiT discovery falls back to
 `_layerwise_offload_blocks_attrs` and then heuristic attribute lookup;
@@ -317,11 +321,11 @@ undeclared auxiliary components remain resident.
 
 ## Data-parallel concurrency
 
-With `data_parallel_size > 1` and any selected component using multi-rank
-`allgather`, the scheduler can process up to `dp_size` requests per denoising
-step. Every concurrent request must set the same explicit
-`num_inference_steps`; `None` is rejected because every rank must enter each
-collective.
+With `data_parallel_size > 1` and AllGather enabled, the scheduler can process
+up to `dp_size` requests per denoising step. Concurrent requests must resolve
+to the same denoise schedule. A shared default (`num_inference_steps=None`) is
+valid; mixing different explicit step counts is rejected because every rank
+must enter each collective in the same order.
 
 ## Limitations
 

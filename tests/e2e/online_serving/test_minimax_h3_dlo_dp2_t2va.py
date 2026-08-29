@@ -57,8 +57,8 @@ SERVER_ARGS = [
             "mode": "layer",
             "components": ["dit", "text_encoder"],
             "layer_options": {
-                "dit": {"transfer": "allgather"},
-                "text_encoder": {"transfer": "rank-local"},
+                "dit": {"weight_transfer": "allgather"},
+                "text_encoder": {"weight_transfer": "rank-local"},
             },
         },
         separators=(",", ":"),

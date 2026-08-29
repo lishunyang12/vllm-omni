@@ -440,8 +440,8 @@ def test_serve_cli_forwards_compact_diffusion_offload_config():
             "--omni",
             "--diffusion-offload-config",
             '{"mode":"layer","components":["dit","text_encoder"],'
-            '"layer_options":{"dit":{"transfer":"rank-local","resident_layers":20},'
-            '"text_encoder":{"transfer":"allgather"}},'
+            '"layer_options":{"dit":{"weight_transfer":"rank-local","resident_layers":20},'
+            '"text_encoder":{"weight_transfer":"allgather"}},'
             '"pin_memory":true}',
         ]
     )
@@ -454,8 +454,8 @@ def test_serve_cli_forwards_compact_diffusion_offload_config():
         "mode": "layer",
         "components": ["dit", "text_encoder"],
         "layer_options": {
-            "dit": {"transfer": "rank-local", "resident_layers": 20},
-            "text_encoder": {"transfer": "allgather"},
+            "dit": {"weight_transfer": "rank-local", "resident_layers": 20},
+            "text_encoder": {"weight_transfer": "allgather"},
         },
         "pin_memory": True,
     }

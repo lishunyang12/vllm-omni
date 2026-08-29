@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import threading
 import time
+import weakref
 from itertools import chain
 from typing import Any
 
@@ -44,8 +45,6 @@ from .host_registration import (
     register_host_mappings,
 )
 from .layerwise_backend import (
-    _disable_host_resident_encoder_tables,
-    _enable_host_resident_encoder_tables,
     _move_encoder_non_block_state_to_device,
     validate_on_demand_component,
 )
@@ -294,6 +293,7 @@ class DistributedLayerwiseOffloadHook(ModelHook):
         cpu_sources: dict[torch.dtype, list[dict[str, Any]]] = {}
         metadata: dict[torch.dtype, list[dict[str, Any]]] = {}
         offsets: dict[torch.dtype, int] = {}
+        targets_to_offload: list[torch.Tensor] = []
 
         for name, target in chain(params.items(), bufs.items()):
             source = target.to_local() if hasattr(target, "to_local") else target
@@ -337,8 +337,11 @@ class DistributedLayerwiseOffloadHook(ModelHook):
             )
             offsets[dtype] = offset + storage_numel
 
-            # The detached source above keeps the mmap storage alive while the
-            # module parameter/buffer is rebound to the rotating device slot.
+            targets_to_offload.append(target)
+
+        # The detached sources above keep mmap storage alive after rebinding.
+        # Mutate only after every source validates so failure is transactional.
+        for target in targets_to_offload:
             set_tensor_storage(target, make_offload_placeholder(target))
 
         return cpu_sources, metadata
@@ -359,6 +362,7 @@ class DistributedLayerwiseOffloadHook(ModelHook):
         """
         dtype_grouped: dict[torch.dtype, dict[str, torch.Tensor]] = {}
         dtype_metadata: dict[torch.dtype, list[dict[str, Any]]] = {}
+        targets_to_offload: list[torch.Tensor] = []
 
         for name, param_or_buf in chain(params.items(), bufs.items()):
             dtype = param_or_buf.dtype
@@ -453,17 +457,18 @@ class DistributedLayerwiseOffloadHook(ModelHook):
                     dst_end = overlap_end - shard_start
                     shard[dst_start:dst_end].copy_(flat_storage[src_start:src_end])
 
-                # Replace original tensor with placeholder (frees CPU storage)
-                set_tensor_storage(
-                    original_tensor,
-                    make_offload_placeholder(original_tensor),
-                )
+                targets_to_offload.append(original_tensor)
                 current_offset += storage_numel
 
             if pin_memory:
                 shard = shard.pin_memory()
 
             cpu_shards[dtype] = shard
+
+        # Build and optionally pin every shard before mutating model storage.
+        # A failed allocation leaves the input module fully materialized.
+        for target in targets_to_offload:
+            set_tensor_storage(target, make_offload_placeholder(target))
 
         return cpu_shards, dtype_metadata
 
@@ -1095,6 +1100,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         self._all_hook_groups: list[list[DistributedLayerwiseOffloadHook]] = []
         self._resident_blocks: list[nn.Module] = []
         self._resident_layer_group: PinnedResidentLayerGroup | None = None
+        self._residency_pipeline_ref: weakref.ReferenceType[nn.Module] | None = None
         self._encoder_modules: list[nn.Module] = []
         self._staged_components: list[nn.Module] = []
         self._using_mmap = False
@@ -1114,6 +1120,13 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         """Release leading blocks before VAE decode to bound peak HBM."""
         if self._resident_layer_group is not None:
             self._resident_layer_group.offload()
+
+    def _clear_residency_controller(self) -> None:
+        pipeline_ref = self._residency_pipeline_ref
+        self._residency_pipeline_ref = None
+        pipeline = None if pipeline_ref is None else pipeline_ref()
+        if pipeline is not None and getattr(pipeline, "_dlo_residency_controller", None) is self:
+            pipeline._dlo_residency_controller = None
 
     def _rank_local_source_tensors(
         self,
@@ -1544,7 +1557,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             raise ValueError(
                 f"Text encoder {name!r} cannot use DLO AllGather across the DiT offload group: "
                 "its loader-produced weights are not declared replicated across that group. "
-                "Set layer_options.text_encoder.transfer='rank-local' in diffusion_offload_config "
+                "Set layer_options.text_encoder.weight_transfer='rank-local' in diffusion_offload_config "
                 "for encoder-TP or rank-specific layouts."
             )
 
@@ -1560,6 +1573,9 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 logger.warning("Encoder offload path %s.%s is not a streamable block list", name, block_path)
                 continue
 
+            group_hooks: list[DistributedLayerwiseOffloadHook] = []
+            self._all_hook_groups.append(group_hooks)
+            self._blocks.append(blocks)
             last_hook = apply_distributed_block_hook(
                 blocks[-1],
                 blocks[0],
@@ -1572,45 +1588,43 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 self.config.pin_cpu_memory,
                 shared_buffers=[None, None],
             )
-            group_hooks = [last_hook]
-            group_hooks.extend(
-                apply_distributed_block_hook(
-                    block,
-                    blocks[index + 1],
-                    self.device,
-                    group,
-                    group_size,
-                    group_rank,
-                    self.copy_stream,
-                    self.comm_stream,
-                    self.config.pin_cpu_memory,
-                    shared_buffers=[None, None],
+            group_hooks.append(last_hook)
+            for index, block in enumerate(blocks[:-1]):
+                group_hooks.append(
+                    apply_distributed_block_hook(
+                        block,
+                        blocks[index + 1],
+                        self.device,
+                        group,
+                        group_size,
+                        group_rank,
+                        self.copy_stream,
+                        self.comm_stream,
+                        self.config.pin_cpu_memory,
+                        shared_buffers=[None, None],
+                    )
                 )
-                for index, block in enumerate(blocks[:-1])
-            )
             for index, hook in enumerate(group_hooks):
                 hook._prev_hook = group_hooks[index - 1]
                 hook.current_slot = index % 2
             group_hooks[1]._is_group_first = True
-            self._all_hook_groups.append(group_hooks)
-            self._blocks.append(blocks)
             block_groups.append(blocks)
             encoder_hooks.extend(group_hooks)
 
         if not block_groups:
             return False
-        excluded_tensors = _enable_host_resident_encoder_tables(module, name, plan, self.device)
+        # Track the module before placement, which may fail, so outer rollback
+        # also removes its partially-installed block hooks and marker state.
+        self._encoder_modules.append(module)
         _move_encoder_non_block_state_to_device(
             module,
             block_groups,
             self.device,
-            excluded_tensors=excluded_tensors,
         )
         module._omni_layerwise_hooks = encoder_hooks
         module._omni_layerwise_block_groups = block_groups
         module._omni_layerwise_enabled = True
         module._omni_distributed_layerwise_enabled = True
-        self._encoder_modules.append(module)
         logger.info(
             "Enabled %s DLO transfer for text encoder %s (%d blocks across %d stacks, group_size=%d)",
             self.config.transfer_for(TEXT_ENCODER_COMPONENT).value,
@@ -1685,6 +1699,9 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         # (prevents OOM on large models where N hooks × 2 buffers >> HBM)
         last_block, first_block = blocks[-1], blocks[0]
         group, group_size, group_rank = self._component_transport(DIT_COMPONENT)
+        sub_hooks: list[DistributedLayerwiseOffloadHook] = []
+        self._all_hook_groups.append(sub_hooks)
+        self._blocks.append(blocks)
         last_hook = apply_distributed_block_hook(
             last_block,
             first_block,
@@ -1699,7 +1716,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             rank_local_mmap=self._using_rank_local_mmap,
             tensor_transforms=self._mmap_transforms_by_tensor_id,
         )
-        sub_hooks = [last_hook]
+        sub_hooks.append(last_hook)
         for i, block in enumerate(blocks[:-1]):
             next_block = blocks[(i + 1) % num_blocks]
             hook = apply_distributed_block_hook(
@@ -1733,8 +1750,6 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             sub_hooks[1]._is_group_first = True
 
         # Defer buffer allocation and prefetch to enable() unified allocation
-        self._all_hook_groups.append(sub_hooks)
-        self._blocks.append(blocks)
         return True
 
     def _prepare_dit_non_block_modules(
@@ -1810,8 +1825,17 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         try:
             self._enable(pipeline)
         except BaseException:
+            # A rank-local rollback can reconstruct ordinary tensors from its
+            # host masters. A multi-rank AllGather rollback is unsafe here:
+            # another rank may still be initializing (or may have failed at a
+            # different point) and never enter the matching collective. The
+            # failed worker is torn down, or the loader-owned recovery path
+            # builds a fresh model, so resource cleanup is sufficient.
+            restore_weights = not (
+                self.dp_size > 1 and any(self.config.uses_allgather(component) for component in self.config.components)
+            )
             try:
-                self.disable()
+                self._disable(restore_weights=restore_weights)
             except BaseException:
                 logger.exception("DLO cleanup failed while handling an enable failure")
             raise
@@ -1834,7 +1858,10 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 raise RuntimeError(
                     "DLO received a loader-owned host-weight plan, but no DiT modules were discovered to consume it"
                 )
-            logger.warning("No DiT/transformer modules found for selected DiT offload")
+            message = "No DiT/transformer modules found for selected DiT offload"
+            if self.config.components_explicit:
+                raise ValueError(message)
+            logger.warning(message)
 
         # Retrieve optional declarative OffloadPlan from the pipeline.
         # When present, replaces heuristic block discovery.
@@ -1847,12 +1874,16 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 ) and enc_name in plan.on_demand_component_paths:
                     validate_on_demand_component(enc, enc_name)
 
-        if self.config.dlo_resident_layers and (plan is None or not plan.resident_dit_paths):
-            logger.warning(
-                "dlo_resident_layers=%d was requested, but this model declares no "
-                "resident_dit_paths; all blocks will be streamed.",
-                self.config.dlo_resident_layers,
-            )
+        if self.config.dlo_resident_layers:
+            resident_paths = frozenset() if plan is None else plan.resident_dit_paths
+            if not resident_paths.intersection(modules.dit_names):
+                message = (
+                    f"resident_layers={self.config.dlo_resident_layers} was requested, but this model declares "
+                    "no matching resident_dit_paths"
+                )
+                if self.config.components_explicit:
+                    raise ValueError(message)
+                logger.warning("%s; all blocks will be streamed.", message)
 
         # Storage selection belongs to the loader.  DLO consumes the exact
         # prevalidated plan that caused the loader to skip materialization;
@@ -1911,7 +1942,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
 
         # Apply the selected transfer independently to planned text-encoder
         # stacks. Explicitly unselected encoders and all VAEs remain resident;
-        # deprecated selectors preserve the model's pre-existing stage plan.
+        # compatibility selectors preserve the model's pre-existing stage plan.
         for enc, enc_name in zip(modules.encoders, modules.encoder_names):
             selected = not self.config.components_explicit or self.config.offloads_encoder(enc_name, plan)
             blockwise = selected and self._try_layerwise_offload_encoder(enc, enc_name, plan)
@@ -1921,6 +1952,11 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 stage_on_demand=bool(selected and plan is not None and enc_name in plan.on_demand_component_paths),
                 blockwise=blockwise,
             )
+        if self.config.components_explicit and self.config.offloads(TEXT_ENCODER_COMPONENT):
+            if not (self._encoder_modules or self._staged_components):
+                raise ValueError(
+                    "Selected text_encoder layerwise offload requires a model-declared streamable or on-demand plan"
+                )
         for vae, vae_name in zip(modules.vaes, modules.vae_names):
             self._register_on_demand_hook(
                 vae,
@@ -1957,6 +1993,8 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             blocks_attr_names, blocks = get_blocks_from_dit(dit_module)
 
             if not blocks:
+                if self.config.components_explicit:
+                    raise ValueError(f"Selected DiT {dit_name!r} has no streamable layerwise-offload blocks")
                 logger.warning(
                     "Target layers (blocks) not found. Skipping offloading on %s (%s)",
                     dit_name,
@@ -2008,6 +2046,9 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             # Pass 1: create hooks with deferred buffer allocation
             # (shared_buffers=[None,None] prevents per-hook OOM on large models)
             group, group_size, group_rank = self._component_transport(DIT_COMPONENT)
+            block_hooks: list[DistributedLayerwiseOffloadHook] = []
+            self._all_hook_groups.append(block_hooks)
+            self._blocks.append(blocks)
             last_hook = apply_distributed_block_hook(
                 last_block,
                 first_block,
@@ -2023,7 +2064,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 tensor_transforms=self._mmap_transforms_by_tensor_id,
             )
 
-            block_hooks: list[DistributedLayerwiseOffloadHook] = [last_hook]
+            block_hooks.append(last_hook)
             for i, block in enumerate(blocks[:-1]):
                 next_block = blocks[(i + 1) % num_blocks]
                 hook = apply_distributed_block_hook(
@@ -2058,9 +2099,6 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 block_hooks[1]._is_group_first = True
 
             # Defer buffer allocation — collected for unified allocation below
-            self._all_hook_groups.append(block_hooks)
-            self._blocks.append(blocks)
-
         if self._resident_blocks:
             self._resident_layer_group = PinnedResidentLayerGroup(
                 self._resident_blocks,
@@ -2072,6 +2110,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 tensor_transforms=self._mmap_transforms_by_tensor_id,
             )
             pipeline._dlo_residency_controller = self
+            self._residency_pipeline_ref = weakref.ref(pipeline)
 
         all_hooks = [hook for group in self._all_hook_groups for hook in group]
         self._configure_hwr_transfer(all_hooks)
@@ -2218,6 +2257,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             or self._staged_components
             or getattr(self, "_on_demand_handles", [])
             or self._resident_layer_group is not None
+            or self._residency_pipeline_ref is not None
         )
         if (
             not self.enabled
@@ -2228,6 +2268,8 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             and not has_partial_hooks
         ):
             return
+
+        self._clear_residency_controller()
 
         if self._using_rank_local_mmap or has_registration:
             current_omni_platform.synchronize()
@@ -2247,10 +2289,6 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 remove_distributed_block_hook(block)
 
         for module in self._encoder_modules:
-            _disable_host_resident_encoder_tables(
-                module,
-                restore_to_device=restore_weights,
-            )
             module._omni_layerwise_hooks = []
             module._omni_layerwise_block_groups = []
             module._omni_layerwise_enabled = False

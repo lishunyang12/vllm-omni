@@ -569,7 +569,8 @@ class OrchestratorArgs:
     enable_multithread_weight_load: bool = True
     num_weight_load_threads: int = 4
     diffusion_offload_config: dict[str, Any] | None = None
-    # Deprecated compatibility aliases; removed in v0.30.
+    # Compatibility aliases for existing callers and model-specific stage
+    # lifecycles that are broader than the compact dit/text_encoder selector.
     enable_cpu_offload: bool = False
     enable_layerwise_offload: bool = False
     enable_distributed_layerwise_offload: bool = False

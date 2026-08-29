@@ -807,7 +807,8 @@ class OmniDiffusionConfig:
     # CPU offload parameters. The compact public mapping separates component
     # selection from component-specific layer settings.
     diffusion_offload_config: dict[str, Any] | None = None
-    # Deprecated compatibility aliases; removed in v0.30.
+    # Compatibility aliases. Some model-specific legacy stage lifecycles are
+    # intentionally broader than the compact dit/text_encoder selector.
     # When enabled, DiT and encoders swap GPU access (mutual exclusion):
     # - Text encoders run on GPU while DiT is on CPU
     # - DiT runs on GPU while encoders are on CPU
@@ -1059,7 +1060,14 @@ class OmniDiffusionConfig:
         )
 
     def __post_init__(self):
-        from vllm_omni.diffusion.offloader.config import materialize_legacy_offload_flags
+        from vllm_omni.diffusion.offloader.config import (
+            DIT_COMPONENT,
+            OffloadStrategy,
+            component_uses_allgather,
+            materialize_legacy_offload_flags,
+            selected_offload_components,
+            uses_offload_strategy,
+        )
 
         offload_strategy = materialize_legacy_offload_flags(self)
         if self.diffusion_compile_granularity not in {"regional", "full"}:
@@ -1142,13 +1150,13 @@ class OmniDiffusionConfig:
                 incompatible_features.append("HSDP")
             if self.parallel_config.sequence_parallel_size > 1:
                 incompatible_features.append("sequence parallelism")
-            if offload_strategy.value != "none":
+            if offload_strategy is not OffloadStrategy.NONE:
                 incompatible_features.append(
                     {
-                        "model": "CPU offload",
-                        "layerwise": "layerwise offload",
-                        "distributed-layerwise": "distributed layerwise offload",
-                    }[offload_strategy.value]
+                        OffloadStrategy.MODEL_LEVEL: "CPU offload",
+                        OffloadStrategy.LAYER_WISE: "layerwise offload",
+                        OffloadStrategy.DISTRIBUTED_LAYER_WISE: "distributed layerwise offload",
+                    }[offload_strategy]
                 )
             if incompatible_features:
                 features = ", ".join(incompatible_features)
@@ -1219,14 +1227,6 @@ class OmniDiffusionConfig:
             mode=self.host_weight_runtime_mode,
             root=self.host_weight_runtime_root,
         )
-        from vllm_omni.diffusion.offloader.config import (
-            DIT_COMPONENT,
-            OffloadStrategy,
-            component_uses_allgather,
-            selected_offload_components,
-            uses_offload_strategy,
-        )
-
         selected_components = selected_offload_components(self)
 
         self.dlo_host_registration_limit_gib = validate_dlo_host_registration_options(
