@@ -19,10 +19,12 @@ from .block_discovery import (
     set_blocks_attr_names,
 )
 from .component_utils import (
+    clear_encoder_layerwise_state,
     get_encoder_block_groups,
     iter_streamable_dits,
     move_non_block_state_to_device,
     prepare_pipeline_components,
+    set_encoder_layerwise_state,
 )
 from .config import DIT_COMPONENT
 from .module_collector import ModuleDiscovery
@@ -334,9 +336,11 @@ def enable_plan_encoder_layerwise_offload(
         for block in hooked_blocks:
             remove_block_hook(block)
         raise
-    module._omni_layerwise_hooks = hooks
-    module._omni_layerwise_block_groups = block_groups
-    module._omni_layerwise_enabled = True
+    set_encoder_layerwise_state(
+        module,
+        hooks,
+        block_groups,
+    )
     logger.info(
         "Enabled rank-local layerwise offload for encoder %s (%d blocks across %d stacks)",
         name,
@@ -361,9 +365,7 @@ def disable_plan_encoder_layerwise_offload(
     for blocks in getattr(module, "_omni_layerwise_block_groups", []):
         for block in blocks:
             remove_block_hook(block)
-    module._omni_layerwise_hooks = []
-    module._omni_layerwise_block_groups = []
-    module._omni_layerwise_enabled = False
+    clear_encoder_layerwise_state(module)
 
 
 class LayerWiseOffloadBackend(OffloadBackend):
@@ -385,14 +387,7 @@ class LayerWiseOffloadBackend(OffloadBackend):
         self._staged_components: list[nn.Module] = []
 
     def enable(self, pipeline: nn.Module) -> None:
-        try:
-            self._enable(pipeline)
-        except BaseException:
-            try:
-                self.disable()
-            except BaseException:
-                logger.exception("Layerwise cleanup failed while handling an enable failure")
-            raise
+        self._enable_transactionally(lambda: self._enable(pipeline), self.disable)
 
     def _enable(self, pipeline: nn.Module) -> None:
         if self.enabled:

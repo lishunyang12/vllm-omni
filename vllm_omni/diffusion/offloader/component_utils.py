@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from itertools import chain
 from operator import attrgetter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import nn
@@ -107,6 +107,24 @@ def move_non_block_state_to_device(
         local = tensor.to_local() if isinstance(tensor, DTensor) else tensor
         if local.device != device:
             set_tensor_storage(tensor, local.to(device, non_blocking=True))
+
+
+def set_encoder_layerwise_state(
+    module: nn.Module,
+    hooks: list[Any],
+    block_groups: list[nn.ModuleList],
+) -> None:
+    """Publish the backend-neutral state used by encoder stage lifecycles."""
+    module._omni_layerwise_hooks = hooks
+    module._omni_layerwise_block_groups = block_groups
+    module._omni_layerwise_enabled = True
+
+
+def clear_encoder_layerwise_state(module: nn.Module) -> None:
+    """Clear encoder layerwise state after its backend hooks are removed."""
+    module._omni_layerwise_hooks = []
+    module._omni_layerwise_block_groups = []
+    module._omni_layerwise_enabled = False
 
 
 def validate_on_demand_component(module: nn.Module, name: str) -> None:

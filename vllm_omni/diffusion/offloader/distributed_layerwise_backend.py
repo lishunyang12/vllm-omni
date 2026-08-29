@@ -38,11 +38,13 @@ from vllm_omni.platforms import current_omni_platform
 
 from .base import OffloadBackend, OffloadConfig
 from .component_utils import (
+    clear_encoder_layerwise_state,
     get_encoder_block_groups,
     iter_streamable_dits,
     move_non_block_state_to_device,
     prepare_component,
     prepare_pipeline_components,
+    set_encoder_layerwise_state,
 )
 from .config import DIT_COMPONENT, TEXT_ENCODER_COMPONENT
 from .host_registration import (
@@ -1512,10 +1514,11 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             block_groups,
             self.device,
         )
-        module._omni_layerwise_hooks = encoder_hooks
-        module._omni_layerwise_block_groups = block_groups
-        module._omni_layerwise_enabled = True
-        module._omni_distributed_layerwise_enabled = True
+        set_encoder_layerwise_state(
+            module,
+            encoder_hooks,
+            block_groups,
+        )
         logger.info(
             "Enabled %s DLO transfer for text encoder %s (%d blocks across %d stacks, group_size=%d)",
             self.config.transfer_for(TEXT_ENCODER_COMPONENT).value,
@@ -1664,23 +1667,16 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
 
     def enable(self, pipeline: nn.Module) -> None:
         """Enable DLO and make partial startup failures transactional."""
-        try:
-            self._enable(pipeline)
-        except BaseException:
-            # A rank-local rollback can reconstruct ordinary tensors from its
-            # host masters. A multi-rank AllGather rollback is unsafe here:
-            # another rank may still be initializing (or may have failed at a
-            # different point) and never enter the matching collective. The
-            # failed worker is torn down, or the loader-owned recovery path
-            # builds a fresh model, so resource cleanup is sufficient.
-            restore_weights = not (
-                self.dp_size > 1 and any(self.config.uses_allgather(component) for component in self.config.components)
-            )
-            try:
-                self._disable(restore_weights=restore_weights)
-            except BaseException:
-                logger.exception("DLO cleanup failed while handling an enable failure")
-            raise
+        # A rank-local rollback can reconstruct ordinary tensors from its host
+        # masters. A multi-rank AllGather rollback is unsafe: another rank may
+        # never enter the matching restoration collective after startup fails.
+        restore_weights = not (
+            self.dp_size > 1 and any(self.config.uses_allgather(component) for component in self.config.components)
+        )
+        self._enable_transactionally(
+            lambda: self._enable(pipeline),
+            lambda: self._disable(restore_weights=restore_weights),
+        )
 
     def _enable(self, pipeline: nn.Module) -> None:
         if self.enabled:
@@ -2002,10 +1998,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 remove_distributed_block_hook(block)
 
         for module in self._encoder_modules:
-            module._omni_layerwise_hooks = []
-            module._omni_layerwise_block_groups = []
-            module._omni_layerwise_enabled = False
-            module._omni_distributed_layerwise_enabled = False
+            clear_encoder_layerwise_state(module)
         self._encoder_modules.clear()
         self._staged_components.clear()
 

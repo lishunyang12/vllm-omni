@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -235,6 +236,24 @@ class OffloadBackend(ABC):
         self.config = config
         self.device = device
         self.enabled = False
+
+    def _enable_transactionally(
+        self,
+        enable: Callable[[], None],
+        rollback: Callable[[], None],
+    ) -> None:
+        """Run backend setup and clean up every partially-installed resource."""
+        try:
+            enable()
+        except BaseException:
+            try:
+                rollback()
+            except BaseException:
+                logger.exception(
+                    "%s cleanup failed while handling an enable failure",
+                    type(self).__name__,
+                )
+            raise
 
     @abstractmethod
     def enable(self, pipeline: nn.Module) -> None:
