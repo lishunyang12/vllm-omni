@@ -2127,19 +2127,13 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 hook._group_id = group_idx
                 hook._shared_slot_group = shared_slot_group
 
-        # Prefetch first block of the FIRST module group only.
-        # Subsequent groups share the same 2 device buffers; prefetching
-        # them now would overwrite the first group's data in the shared
-        # buffer (both groups default to slot 0).  Instead, subsequent
-        # groups' first blocks remain as meta placeholders, and their
-        # pre_forward will sync-prefetch on-demand via the is_materialized
-        # check — by which point the first group's forward has completed
-        # and its buffer slots are free.
-        if self._all_hook_groups:
-            group = self._all_hook_groups[0]
-            first_slot = group[0].current_slot
-            group[-1].prefetch_layer(slot=first_slot, non_blocking=False)
-            group[-1].get_weights(first_slot)
+        # Defer every group's first prefetch until its first forward. DP ranks
+        # may intentionally own different rank-local groups (for example only
+        # rank 0 owns the text encoder) while sharing DiT AllGather groups.
+        # Entering a collective for each rank's locally first group here would
+        # give the ranks different collective orders and deadlock startup. The
+        # group-first hook treats the initially unowned slot as contaminated
+        # and performs the required synchronous prefetch on first use.
 
         total_blocks = sum(len(b) for b in self._blocks)
         transfer_summary = ", ".join(
@@ -2209,7 +2203,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         except Exception:
             pass
 
-    def disable(self) -> None:
+    def _disable(self, *, restore_weights: bool) -> None:
         has_open_lease = self._host_weight_lease is not None and not self._host_weight_lease.closed
         has_registration = self._host_registration is not None
         has_carrier = (
@@ -2238,21 +2232,25 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         if self._using_rank_local_mmap or has_registration:
             current_omni_platform.synchronize()
 
-        restored_blocks: set[int] = set()
-        for group in self._all_hook_groups:
-            for hook in group:
-                block_id = id(hook.next_block)
-                if block_id in restored_blocks:
-                    continue
-                hook.restore_next_block_to_cpu()
-                restored_blocks.add(block_id)
+        if restore_weights:
+            restored_blocks: set[int] = set()
+            for group in self._all_hook_groups:
+                for hook in group:
+                    block_id = id(hook.next_block)
+                    if block_id in restored_blocks:
+                        continue
+                    hook.restore_next_block_to_cpu()
+                    restored_blocks.add(block_id)
 
         for blocks in self._blocks:
             for block in blocks:
                 remove_distributed_block_hook(block)
 
         for module in self._encoder_modules:
-            _disable_host_resident_encoder_tables(module)
+            _disable_host_resident_encoder_tables(
+                module,
+                restore_to_device=restore_weights,
+            )
             module._omni_layerwise_hooks = []
             module._omni_layerwise_block_groups = []
             module._omni_layerwise_enabled = False
@@ -2265,7 +2263,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         self._on_demand_handles = []
         self._on_demand_shard_infos = []
 
-        if self._resident_layer_group is not None:
+        if restore_weights and self._resident_layer_group is not None:
             self._resident_layer_group.restore_to_cpu()
         self._blocks.clear()
         self._all_hook_groups.clear()
@@ -2278,6 +2276,12 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         self._using_registered_mmap = False
         self.enabled = False
         logger.info("Distributed layer-wise offloading disabled")
+
+    def disable(self) -> None:
+        self._disable(restore_weights=True)
+
+    def shutdown(self) -> None:
+        self._disable(restore_weights=False)
 
     @staticmethod
     def _allocate_shared_buffers(

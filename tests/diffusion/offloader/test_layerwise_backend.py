@@ -388,6 +388,26 @@ class TestLayerwiseComponentSelection:
         backend.disable()
         assert not pipeline.text_encoder._omni_layerwise_enabled
 
+    def test_shutdown_skips_encoder_weight_reconstruction(self, patched_offload_runtime, mocker):
+        pipeline = _ComponentPipeline()
+        backend = LayerWiseOffloadBackend(
+            OffloadConfig(
+                strategy=OffloadStrategy.LAYER_WISE,
+                pin_cpu_memory=False,
+                components=frozenset({"text_encoder"}),
+                components_explicit=True,
+            ),
+            torch.device("cpu"),
+        )
+        backend.enable(pipeline)
+        for hook in pipeline.text_encoder._omni_layerwise_hooks:
+            hook.prefetch_layer = mocker.Mock(side_effect=AssertionError("shutdown rebuilt encoder weights"))
+
+        backend.shutdown()
+
+        assert not pipeline.text_encoder._omni_layerwise_enabled
+        assert not backend.enabled
+
     def test_single_gpu_dit_only_keeps_encoder_and_vae_resident(self, patched_offload_runtime):
         pipeline = _ComponentPipeline()
         backend = LayerWiseOffloadBackend(
@@ -738,6 +758,19 @@ class TestLayerwiseComponentConfig:
         assert config.strategy is OffloadStrategy.DISTRIBUTED_LAYER_WISE
         assert config.dlo_resident_layers == 3
         assert not config.uses_allgather("dit")
+        assert not config.uses_allgather("text_encoder")
+
+    def test_legacy_allgather_remains_dit_only(self):
+        with pytest.warns(FutureWarning, match="removed in v0.30"):
+            config = OffloadConfig.from_od_config(
+                _offload_od_config(
+                    enable_distributed_layerwise_offload=True,
+                    dlo_use_allgather=True,
+                )
+            )
+
+        assert config.uses_allgather("dit")
+        assert not config.uses_allgather("text_encoder")
 
     @pytest.mark.parametrize(
         ("legacy_flags", "expected_strategy"),

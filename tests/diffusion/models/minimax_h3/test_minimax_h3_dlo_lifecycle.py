@@ -61,6 +61,7 @@ def test_manual_component_failure_forces_retained_cache_release(mocker):
     pipeline = object.__new__(MiniMaxH3Pipeline)
     torch.nn.Module.__init__(pipeline)
     pipeline.od_config = mocker.Mock()
+    pipeline.od_config.diffusion_offload_config = None
     pipeline.od_config.enable_layerwise_offload = False
     pipeline.od_config.enable_distributed_layerwise_offload = True
     pipeline._model_cpu_offload_modules = []
@@ -83,6 +84,7 @@ def test_manual_component_offload_failure_forces_retained_cache_release(mocker):
     pipeline = object.__new__(MiniMaxH3Pipeline)
     torch.nn.Module.__init__(pipeline)
     pipeline.od_config = mocker.Mock()
+    pipeline.od_config.diffusion_offload_config = None
     pipeline.od_config.enable_layerwise_offload = False
     pipeline.od_config.enable_distributed_layerwise_offload = True
     pipeline._model_cpu_offload_modules = []

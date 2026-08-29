@@ -17,8 +17,9 @@ DEFAULT_OFFLOAD_COMPONENTS = frozenset({DIT_COMPONENT})
 DLO_COMPONENTS = OFFLOAD_COMPONENTS
 
 LEGACY_OFFLOAD_REMOVAL_VERSION = "0.30"
-# Reserved transport marker stored in the existing ``extras`` mapping so a
-# structured config round trip can distinguish derived aliases from user input.
+# Private runtime marker distinguishing derived aliases from user input on an
+# already-materialized terminal config. Structured projections keep the compact
+# config canonical instead of transporting this implementation detail.
 _MATERIALIZED_EXTRAS_KEY = "_diffusion_offload_flags_materialized"
 
 
@@ -76,11 +77,8 @@ _LEGACY_STRATEGY_PRIORITY = (
 
 
 def _legacy_flags_materialized(config: Any) -> bool:
-    """Read materialization provenance across structured config transport."""
-    if bool(getattr(config, _MATERIALIZED_EXTRAS_KEY, False)):
-        return True
-    extras = getattr(config, "extras", None)
-    return isinstance(extras, Mapping) and bool(extras.get(_MATERIALIZED_EXTRAS_KEY, False))
+    """Read provenance from an already-materialized terminal config."""
+    return bool(getattr(config, _MATERIALIZED_EXTRAS_KEY, False))
 
 
 def _parse_mode(value: Any) -> OffloadMode:
@@ -318,9 +316,6 @@ def materialize_legacy_offload_flags(config: Any) -> OffloadStrategy:
         if public.pin_memory is not None:
             setattr(config, "pin_cpu_memory", public.pin_memory)
     setattr(config, _MATERIALIZED_EXTRAS_KEY, True)
-    extras = getattr(config, "extras", None)
-    if isinstance(extras, dict):
-        extras[_MATERIALIZED_EXTRAS_KEY] = True
     return strategy
 
 
@@ -380,7 +375,9 @@ def component_uses_allgather(config: Any, component: str = DIT_COMPONENT) -> boo
         return settings.transfer is DLOTransfer.ALLGATHER
     if component not in DLO_COMPONENTS:
         raise ValueError(f"Unknown offload component {component!r}")
-    return bool(getattr(config, "dlo_use_allgather", True))
+    # The deprecated scalar is a DiT-only compatibility view; legacy
+    # auxiliary component hooks always use rank-local transfer.
+    return component == DIT_COMPONENT and bool(getattr(config, "dlo_use_allgather", True))
 
 
 def selected_offload_components(config: Any) -> frozenset[str]:

@@ -600,6 +600,34 @@ class TestDiffusionCompileConfig:
             ),
             ({"enable_cpu_offload": True}, "CPU offload"),
             ({"enable_layerwise_offload": True}, "layerwise offload"),
+            (
+                {
+                    "diffusion_offload_config": {
+                        "mode": "module",
+                        "components": ["dit"],
+                    }
+                },
+                "CPU offload",
+            ),
+            (
+                {
+                    "diffusion_offload_config": {
+                        "mode": "layer",
+                        "components": ["dit"],
+                    }
+                },
+                "layerwise offload",
+            ),
+            (
+                {
+                    "diffusion_offload_config": {
+                        "mode": "layer",
+                        "components": ["dit"],
+                        "layer_options": {"dit": {"transfer": "allgather"}},
+                    }
+                },
+                "distributed layerwise offload",
+            ),
         ],
     )
     def test_full_compile_rejects_incompatible_features(self, kwargs, feature) -> None:

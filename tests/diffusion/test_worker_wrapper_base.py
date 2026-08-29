@@ -208,7 +208,7 @@ class TestWorkerWrapperBaseDelegation:
     def test_worker_shutdown_disables_offloader_before_distributed_teardown(self, mocker: MockerFixture):
         events: list[str] = []
         offload_backend = mocker.Mock()
-        offload_backend.disable.side_effect = lambda: events.append("offload")
+        offload_backend.shutdown.side_effect = lambda: events.append("offload")
         kv_manager = mocker.Mock()
         kv_manager.shutdown_prefetch.side_effect = lambda: events.append("kv")
         destroy = mocker.patch(

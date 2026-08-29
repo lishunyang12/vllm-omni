@@ -1418,6 +1418,7 @@ def test_compact_offload_config_reaches_terminal_config_without_legacy_conflict(
     cfg.enrich_config()
 
     assert cfg.diffusion_offload_config == compact_config
-    assert cfg.enable_distributed_layerwise_offload is True
-    assert cfg.dlo_resident_layers == 12
+    assert cfg.enable_distributed_layerwise_offload is False
+    assert cfg.dlo_resident_layers == 0
+    assert cfg.extras == {}
     assert resolve_offload_strategy(cfg) is OffloadStrategy.DISTRIBUTED_LAYER_WISE

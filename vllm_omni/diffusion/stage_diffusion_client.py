@@ -42,6 +42,8 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 _MISSING_RPC_RESULT = object()
+_GRACEFUL_SHUTDOWN_TIMEOUT_S = 30.0
+_FORCED_SHUTDOWN_TIMEOUT_S = 10.0
 
 
 def create_diffusion_client(
@@ -508,7 +510,22 @@ class StageDiffusionClient(StageClientBase):
             pass
 
         if self._proc_manager is not None and self._proc_manager.proc.is_alive():
-            self._proc_manager.shutdown(timeout=10)
+            # Give the protocol-level shutdown above time to close the engine,
+            # its worker processes, and their shared-memory queues.  The
+            # generic vLLM shutdown helper sends SIGTERM immediately, so using
+            # it as the first step bypasses graceful cleanup and can leak IPC
+            # resources.  Fall back to signal-based shutdown only if the
+            # subprocess does not exit on its own.
+            self._proc_manager.manager_stopped = True
+            self._proc_manager.proc.join(_GRACEFUL_SHUTDOWN_TIMEOUT_S)
+            if self._proc_manager.proc.is_alive():
+                logger.warning(
+                    "[StageDiffusionClient] stage-%s [rep-%s] did not exit within %.1fs; forcing shutdown.",
+                    self.stage_id,
+                    self.replica_id,
+                    _GRACEFUL_SHUTDOWN_TIMEOUT_S,
+                )
+                self._proc_manager.shutdown(timeout=_FORCED_SHUTDOWN_TIMEOUT_S)
 
         self._request_socket.close(linger=0)
         self._response_socket.close(linger=0)

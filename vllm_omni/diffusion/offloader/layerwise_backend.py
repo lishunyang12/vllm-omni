@@ -388,11 +388,15 @@ def _enable_host_resident_encoder_tables(
     return excluded_tensors
 
 
-def _disable_host_resident_encoder_tables(module: nn.Module) -> None:
+def _disable_host_resident_encoder_tables(
+    module: nn.Module,
+    *,
+    restore_to_device: bool = True,
+) -> None:
     for handle in getattr(module, "_omni_host_resident_table_handles", []):
         handle.remove()
     device = getattr(module, "_omni_host_resident_table_device", None)
-    if device is not None:
+    if restore_to_device and device is not None:
         for table in getattr(module, "_omni_host_resident_tables", []):
             table.to(device)
     module._omni_host_resident_tables = []
@@ -461,18 +465,26 @@ def enable_plan_encoder_layerwise_offload(
     return True
 
 
-def disable_plan_encoder_layerwise_offload(module: nn.Module) -> None:
+def disable_plan_encoder_layerwise_offload(
+    module: nn.Module,
+    *,
+    restore_weights: bool = True,
+) -> None:
     """Remove hooks installed by :func:`enable_plan_encoder_layerwise_offload`."""
     if not getattr(module, "_omni_layerwise_enabled", False):
         return
-    for hook in getattr(module, "_omni_layerwise_hooks", []):
-        hook.prefetch_layer(non_blocking=False)
-    current_omni_platform.synchronize()
+    if restore_weights:
+        for hook in getattr(module, "_omni_layerwise_hooks", []):
+            hook.prefetch_layer(non_blocking=False)
+        current_omni_platform.synchronize()
 
     for blocks in getattr(module, "_omni_layerwise_block_groups", []):
         for block in blocks:
             remove_block_hook(block)
-    _disable_host_resident_encoder_tables(module)
+    _disable_host_resident_encoder_tables(
+        module,
+        restore_to_device=restore_weights,
+    )
     module._omni_layerwise_hooks = []
     module._omni_layerwise_block_groups = []
     module._omni_layerwise_enabled = False
@@ -673,7 +685,7 @@ class LayerWiseOffloadBackend(OffloadBackend):
 
         self.enabled = bool(self._blocks or self._encoder_modules or self._staged_components)
 
-    def disable(self) -> None:
+    def _disable(self, *, restore_weights: bool) -> None:
         if not self.enabled:
             return
 
@@ -682,12 +694,21 @@ class LayerWiseOffloadBackend(OffloadBackend):
                 remove_block_hook(block)
 
         for module in self._encoder_modules:
-            disable_plan_encoder_layerwise_offload(module)
+            disable_plan_encoder_layerwise_offload(
+                module,
+                restore_weights=restore_weights,
+            )
         self._blocks.clear()
         self._encoder_modules.clear()
         self._staged_components.clear()
         self.enabled = False
         logger.info("Layer-wise offloading disabled")
+
+    def disable(self) -> None:
+        self._disable(restore_weights=True)
+
+    def shutdown(self) -> None:
+        self._disable(restore_weights=False)
 
     @staticmethod
     def get_blocks_attr_names(model: nn.Module) -> list[str]:

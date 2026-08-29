@@ -2572,6 +2572,58 @@ class _GenericDistributedEncoderPipeline(nn.Module):
 
 
 class TestDistributedComponentSelection:
+    def test_shutdown_skips_weight_reconstruction(self, patched_offload_runtime, mocker):
+        backend = DistributedLayerwiseOffloadBackend(
+            OffloadConfig(
+                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                pin_cpu_memory=False,
+                dp_size=2,
+            ),
+            torch.device("cpu"),
+        )
+        hook = mocker.Mock()
+        resident_group = mocker.Mock()
+        backend._all_hook_groups = [[hook]]
+        backend._resident_layer_group = resident_group
+        backend.enabled = True
+
+        backend.shutdown()
+
+        hook.restore_next_block_to_cpu.assert_not_called()
+        resident_group.restore_to_cpu.assert_not_called()
+        assert not backend.enabled
+
+    def test_enable_defers_collectives_until_first_forward(self, patched_offload_runtime, monkeypatch):
+        pipeline = _GenericDistributedEncoderPipeline()
+        backend = DistributedLayerwiseOffloadBackend(
+            OffloadConfig(
+                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                pin_cpu_memory=False,
+                dp_size=2,
+                components=frozenset({"dit", "text_encoder"}),
+                components_explicit=True,
+                dlo_transfers={"dit": "allgather", "text_encoder": "rank-local"},
+            ),
+            torch.device("cpu"),
+        )
+        backend.dp_group = object()
+
+        def reject_startup_collective(*_args, **_kwargs):
+            raise AssertionError("enable() entered a rank-asymmetric collective")
+
+        monkeypatch.setattr(torch.distributed, "all_gather_into_tensor", reject_startup_collective)
+
+        backend.enable(pipeline)
+
+        assert all(hook._prefetched_slot is None for group in backend._all_hook_groups for hook in group)
+
+        monkeypatch.setattr(
+            torch.distributed,
+            "all_gather_into_tensor",
+            lambda output, local, group: output.copy_(local.repeat(2)),
+        )
+        backend.disable()
+
     def test_all_streams_encoder_and_keeps_vae_resident(self, patched_offload_runtime):
         pipeline = _DistributedComponentPipeline()
         backend = DistributedLayerwiseOffloadBackend(

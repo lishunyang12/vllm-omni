@@ -39,7 +39,9 @@ logger = init_logger(__name__)
 
 _DEQUEUE_TIMEOUT_S = 5.0
 _DLO_DP_WAVE_TIMEOUT_S = float(os.environ.get("VLLM_OMNI_DLO_DP_WAVE_TIMEOUT", 600.0))
-_WORKER_SHUTDOWN_GRACE_S = 15.0
+# Large diffusion workers can spend more than 15 seconds in interpreter and
+# CUDA finalizers after their explicit model/IPC cleanup has completed.
+_WORKER_SHUTDOWN_GRACE_S = 25.0
 _WORKER_TERMINATE_GRACE_S = 5.0
 _RESULT_PUMP_JOIN_TIMEOUT_S = 2.0
 

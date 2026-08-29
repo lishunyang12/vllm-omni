@@ -180,10 +180,16 @@ class OffloadConfig:
             components_explicit = True
         else:
             components = DEFAULT_OFFLOAD_COMPONENTS
-            dlo_transfers = parse_dlo_transfer(
-                None,
-                legacy_use_allgather=getattr(od_config, "dlo_use_allgather", True),
-            )
+            # The deprecated scalar controlled DiT sharding only. Auxiliary
+            # components in the legacy topology were always streamed from
+            # each rank's loader-produced weights, so preserve that behavior
+            # instead of applying the scalar to the text encoder as well.
+            dlo_transfers = {
+                DIT_COMPONENT: (
+                    DLOTransfer.ALLGATHER if getattr(od_config, "dlo_use_allgather", True) else DLOTransfer.RANK_LOCAL
+                ),
+                TEXT_ENCODER_COMPONENT: DLOTransfer.RANK_LOCAL,
+            }
             dlo_resident_layers = int(getattr(od_config, "dlo_resident_layers", 0))
             components_explicit = False
 
@@ -272,6 +278,15 @@ class OffloadBackend(ABC):
         original devices (caller responsible for that).
         """
         raise NotImplementedError
+
+    def shutdown(self) -> None:
+        """Release backend resources during final process teardown.
+
+        Backends that support a later re-enable may override this to avoid
+        rebuilding ordinary model weights that the exiting process will never
+        use. The default preserves the regular disable behavior.
+        """
+        self.disable()
 
     def is_enabled(self) -> bool:
         return self.enabled

@@ -936,8 +936,24 @@ class _DiffusionConfigProjection:
         }
         omni_diffusion_config = OmniDiffusionConfig(**kwargs)
         omni_diffusion_config.enrich_config()
+        # Keep the compact offload object canonical at this structured
+        # transport boundary. The terminal OmniDiffusionConfig derives these
+        # compatibility fields again after reconstruction. Copying them back
+        # would either require leaking provenance through public ``extras`` or
+        # make the next reconstruction look like a user supplied both APIs.
+        derived_offload_aliases = (
+            {
+                "enable_cpu_offload",
+                "enable_layerwise_offload",
+                "enable_distributed_layerwise_offload",
+                "dlo_use_allgather",
+                "dlo_resident_layers",
+            }
+            if self.diffusion_offload_config is not None
+            else set()
+        )
         for name in _DIFFUSION_CONFIG_FIELDS:
-            if hasattr(omni_diffusion_config, name):
+            if name not in derived_offload_aliases and hasattr(omni_diffusion_config, name):
                 setattr(self, name, _copy_value(getattr(omni_diffusion_config, name)))
 
 

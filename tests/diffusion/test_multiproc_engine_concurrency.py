@@ -1106,6 +1106,41 @@ class TestStageDiffusionClientErrorPropagation:
         client = self._make_client()
         client.check_health()
 
+    def test_shutdown_waits_for_protocol_exit_before_forcing(self):
+        client = self._make_client()
+        client.replica_id = 0
+        client._zmq_ctx = MagicMock()
+        client._proc_manager.manager_stopped = False
+        client._proc_manager.shutdown = MagicMock()
+        client._proc_manager.proc.is_alive.side_effect = [True, False]
+        events = []
+        client._request_socket.send.side_effect = lambda *_: events.append("send")
+        client._proc_manager.proc.join.side_effect = lambda *_: events.append("join")
+        client._proc_manager.shutdown.side_effect = lambda *_args, **_kwargs: events.append("force")
+
+        client.shutdown()
+
+        assert events == ["send", "join"]
+        assert client._proc_manager.manager_stopped is True
+        client._proc_manager.shutdown.assert_not_called()
+
+    def test_shutdown_forces_process_after_graceful_timeout(self):
+        client = self._make_client()
+        client.replica_id = 0
+        client._zmq_ctx = MagicMock()
+        client._proc_manager.manager_stopped = False
+        client._proc_manager.shutdown = MagicMock()
+        client._proc_manager.proc.is_alive.side_effect = [True, True]
+        events = []
+        client._request_socket.send.side_effect = lambda *_: events.append("send")
+        client._proc_manager.proc.join.side_effect = lambda *_: events.append("join")
+        client._proc_manager.shutdown.side_effect = lambda *_args, **_kwargs: events.append("force")
+
+        client.shutdown()
+
+        assert events == ["send", "join", "force"]
+        client._proc_manager.shutdown.assert_called_once_with(timeout=10.0)
+
     def test_get_output_raises_engine_dead_when_dead(self):
         """When ``_engine_dead`` is True and the output queue is empty,
         ``get_diffusion_output_nowait`` must raise ``EngineDeadError``."""
@@ -1281,8 +1316,8 @@ class TestExecutorShutdownCleaner:
 
         cleaner()
 
-        assert first.join_timeouts == [15.0, 5.0]
-        assert second.join_timeouts == [5.0, 1.0]
+        assert first.join_timeouts == [25.0, 5.0]
+        assert second.join_timeouts == [15.0, 1.0]
         assert first.terminated and second.terminated
         assert not first.is_alive() and not second.is_alive()
 

@@ -1143,7 +1143,13 @@ class OmniDiffusionConfig:
             if self.parallel_config.sequence_parallel_size > 1:
                 incompatible_features.append("sequence parallelism")
             if offload_strategy.value != "none":
-                incompatible_features.append(f"{offload_strategy.value} offload")
+                incompatible_features.append(
+                    {
+                        "model": "CPU offload",
+                        "layerwise": "layerwise offload",
+                        "distributed-layerwise": "distributed layerwise offload",
+                    }[offload_strategy.value]
+                )
             if incompatible_features:
                 features = ", ".join(incompatible_features)
                 raise ValueError(
