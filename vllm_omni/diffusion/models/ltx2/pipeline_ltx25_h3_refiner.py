@@ -17,6 +17,7 @@ from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img impo
 from vllm_omni.diffusion.data import DiffusionOutput
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
 
+from . import ltx2_latents as latent_ops
 from .ltx2_components import LTX25_TWO_STAGE_COMPONENT_PROFILE
 from .ltx2_conditioning import LTXI2VConditioningMixin
 from .ltx2_recipes import LTX25_H3_REFINER_RECIPE
@@ -345,6 +346,33 @@ class LTX25H3RefinerPipeline(LTXI2VConditioningMixin, LTXRuntime):
             return super()._forward_request(req, **kwargs)
         finally:
             self._h3_source_audio = None
+
+    def _unpack_and_denormalize_stage(
+        self,
+        forward_ctx: Any,
+        latents: torch.Tensor,
+        audio_latents: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Keep the video state normalized because the released TAEHV consumes diffusion latents."""
+        latents = latent_ops.unpack_latents(
+            latents,
+            forward_ctx.latent_num_frames,
+            forward_ctx.latent_height,
+            forward_ctx.latent_width,
+            self.transformer_spatial_patch_size,
+            self.transformer_temporal_patch_size,
+        )
+        audio_latents = latent_ops.unpad_audio_latents(audio_latents, forward_ctx.original_audio_num_frames)
+        audio_latents = latent_ops.denormalize_audio_latents(
+            audio_latents,
+            self.audio_vae.latents_mean,
+            self.audio_vae.latents_std,
+        )
+        audio_latents = latent_ops.unpack_audio_latents(
+            audio_latents,
+            num_mel_bins=forward_ctx.latent_mel_bins,
+        )
+        return latents, audio_latents
 
     def _decode_output(
         self,

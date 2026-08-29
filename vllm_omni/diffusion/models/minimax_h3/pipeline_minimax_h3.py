@@ -117,7 +117,11 @@ from .denoise_loop import (
     minimax_h3_publish_denoise_progress,
 )
 from .encoder import MiniMaxH3Qwen3VLEncoder
-from .lora import load_minimax_h3_turbo_lora
+from .lora import (
+    MINIMAX_H3_SUPER_TURBO_SCALE,
+    is_minimax_h3_super_turbo_lora,
+    load_minimax_h3_turbo_lora,
+)
 from .minimax_h3_transformer import (
     MiniMaxH3Attention,
     MiniMaxH3DiTModel,
@@ -182,6 +186,7 @@ MINIMAX_H3_MIN_OUTPUT_SECONDS = 4.0
 MINIMAX_H3_MAX_OUTPUT_SECONDS = 15.0
 MINIMAX_H3_TURBO_SIGMA_POINTS = 5
 MINIMAX_H3_TURBO_VIDEO_SHIFT = 6.0
+MINIMAX_H3_SUPER_TURBO_VIDEO_SHIFT = 12.0
 MINIMAX_H3_TURBO_AUDIO_SHIFT = 3.0
 MINIMAX_H3_DOWNLOAD_PATTERNS = [
     "FL2VA/**",
@@ -678,6 +683,10 @@ class MiniMaxH3Pipeline(
         self._turbo_lora_adapter_ids.discard(lora_request.lora_int_id)
         self._native_lora_adapter_ids.discard(lora_request.lora_int_id)
         self._lora_sigma_schedules.pop(lora_request.lora_int_id, None)
+        turbo_v01_ids = getattr(self, "_turbo_v01_lora_adapter_ids", None)
+        if turbo_v01_ids is None:
+            turbo_v01_ids = self._turbo_v01_lora_adapter_ids = set()
+        turbo_v01_ids.discard(lora_request.lora_int_id)
         od_config = getattr(self, "od_config", None)
         offload_modes = []
         if getattr(od_config, "enable_cpu_offload", False):
@@ -693,6 +702,8 @@ class MiniMaxH3Pipeline(
         )
         if loaded is not None:
             self._turbo_lora_adapter_ids.add(lora_request.lora_int_id)
+            if is_minimax_h3_super_turbo_lora(lora_request=lora_request, lora_path=lora_path):
+                turbo_v01_ids.add(lora_request.lora_int_id)
             return loaded
 
         # Selection is by the artifact's safetensors ``key_format``, not by the
@@ -803,6 +814,14 @@ class MiniMaxH3Pipeline(
             return adapter_schedule
         return self._base_schedule_for_task(task)
 
+    def _has_active_v01_turbo_lora(self, sampling: Any) -> bool:
+        lora_request = getattr(sampling, "lora_request", None)
+        return (
+            lora_request is not None
+            and not math.isclose(0.0, float(sampling.lora_scale))
+            and lora_request.lora_int_id in getattr(self, "_turbo_v01_lora_adapter_ids", set())
+        )
+
     def _validate_turbo_sampling(self, sampling: Any) -> None:
         extra = sampling.extra_args or {}
         sigma_points = sampling.num_inference_steps
@@ -810,12 +829,16 @@ class MiniMaxH3Pipeline(
             raise OmniClientError(
                 "MiniMax-H3 Turbo requires num_inference_steps=5 (five sigma points produce four denoiser evaluations)"
             )
+        is_super_v01 = self._has_active_v01_turbo_lora(sampling)
+        expected_video_shift = MINIMAX_H3_SUPER_TURBO_VIDEO_SHIFT if is_super_v01 else MINIMAX_H3_TURBO_VIDEO_SHIFT
+        if is_super_v01 and not math.isclose(float(sampling.lora_scale), MINIMAX_H3_SUPER_TURBO_SCALE):
+            raise OmniClientError(f"MiniMax-H3 Super Turbo v0.1 requires lora_scale={MINIMAX_H3_SUPER_TURBO_SCALE:g}")
         try:
             video_shift = float(extra.get("flow_shift", self.default_video_shift))
         except (TypeError, ValueError) as exc:
-            raise OmniClientError(f"MiniMax-H3 Turbo requires flow_shift={MINIMAX_H3_TURBO_VIDEO_SHIFT:g}") from exc
-        if not math.isclose(video_shift, MINIMAX_H3_TURBO_VIDEO_SHIFT):
-            raise OmniClientError(f"MiniMax-H3 Turbo requires flow_shift={MINIMAX_H3_TURBO_VIDEO_SHIFT:g}")
+            raise OmniClientError(f"MiniMax-H3 Turbo requires flow_shift={expected_video_shift:g}") from exc
+        if not math.isclose(video_shift, expected_video_shift):
+            raise OmniClientError(f"MiniMax-H3 Turbo requires flow_shift={expected_video_shift:g}")
         try:
             audio_shift = float(extra.get("audio_flow_shift", self.default_audio_shift))
         except (TypeError, ValueError) as exc:
@@ -859,6 +882,7 @@ class MiniMaxH3Pipeline(
         self._turbo_lora_adapter_ids: set[int] = set()
         self._native_lora_adapter_ids: set[int] = set()
         self._lora_sigma_schedules: dict[int, DMD2SigmaSchedule] = {}
+        self._turbo_v01_lora_adapter_ids: set[int] = set()
         model_root = _resolve_minimax_h3_model_root(
             str(od_config.model),
             od_config.revision,

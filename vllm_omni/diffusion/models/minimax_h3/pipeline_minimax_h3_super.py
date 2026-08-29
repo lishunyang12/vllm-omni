@@ -14,6 +14,7 @@ from vllm_omni.diffusion.data import DiffusionOutput
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
 from vllm_omni.errors import OmniClientError
 
+from .lora import MINIMAX_H3_SUPER_TURBO_SCALE
 from .pipeline_minimax_h3 import MINIMAX_H3_AUDIO_SAMPLE_RATE, MINIMAX_H3_FPS, MiniMaxH3Pipeline
 from .taeh3 import TAEH3_CHECKPOINT_URL, TAEH3Decoder
 
@@ -143,8 +144,10 @@ class MiniMaxH3SuperDraftPipeline(MiniMaxH3Pipeline):
     @torch.no_grad()
     def forward(self, request: DiffusionRequestBatch) -> DiffusionOutput:
         sampling = request.sampling_params
-        if sampling.lora_request is None:
-            raise OmniClientError("MiniMax H3 Super requires the 4-step Turbo v1.0 LoRA")
+        if not self._has_active_v01_turbo_lora(sampling):
+            raise OmniClientError("MiniMax H3 Super requires the published 4-step Turbo v0.1 LoRA")
+        if not math.isclose(float(sampling.lora_scale), MINIMAX_H3_SUPER_TURBO_SCALE):
+            raise OmniClientError(f"MiniMax H3 Super requires lora_scale={MINIMAX_H3_SUPER_TURBO_SCALE:g}")
 
         extra_args = dict(sampling.extra_args or {})
         duration = self._resolve_super_duration(extra_args)
@@ -152,7 +155,7 @@ class MiniMaxH3SuperDraftPipeline(MiniMaxH3Pipeline):
             {
                 "task": "fl2va",
                 "duration": duration,
-                "flow_shift": 6.0,
+                "flow_shift": 12.0,
                 "audio_flow_shift": 3.0,
             }
         )

@@ -27,7 +27,10 @@ _TURBO_ALPHA = 128
 _TURBO_HIDDEN_SIZE = 5376
 _TURBO_ATTENTION_INNER_SIZE = 7168
 _TURBO_FFN_HIDDEN_SIZE = 14336
-_TURBO_FILENAME = "minimax_h3_fl2v_turbo_4step_v1.0_768p_bf16.safetensors"
+MINIMAX_H3_TURBO_V1_FILENAME = "minimax_h3_fl2v_turbo_4step_v1.0_768p_bf16.safetensors"
+MINIMAX_H3_SUPER_TURBO_PROFILE = "lx2v_4s_v01_544p"
+MINIMAX_H3_SUPER_TURBO_FILENAME = "minimax_h3_fl2v_turbo_4step_v0.1.safetensors"
+MINIMAX_H3_SUPER_TURBO_SCALE = 8.0 / _TURBO_RANK
 _LORA_A_SUFFIX = ".lora_A.default.weight"
 _LORA_B_SUFFIX = ".lora_B.default.weight"
 _TURBO_TARGETS = frozenset({"to_q", "to_k", "to_v", "out_proj", "fc1", "fc2"})
@@ -74,15 +77,25 @@ _TURBO_WEIGHTS_MAPPER = WeightsMapper(
 )
 
 
-def _select_turbo_file(artifact_path: str | Path) -> Path | None:
+def _select_turbo_file(artifact_path: str | Path, *, lora_name: str) -> Path | None:
     path = Path(artifact_path)
     if path.is_file():
         return path if path.suffix == ".safetensors" else None
     if not path.is_dir():
         return None
 
-    candidate = path / _TURBO_FILENAME
+    filename = (
+        MINIMAX_H3_SUPER_TURBO_FILENAME if lora_name == MINIMAX_H3_SUPER_TURBO_PROFILE else MINIMAX_H3_TURBO_V1_FILENAME
+    )
+    candidate = path / filename
     return candidate if candidate.is_file() else None
+
+
+def is_minimax_h3_super_turbo_lora(*, lora_request: LoRARequest, lora_path: str | Path) -> bool:
+    """Identify the exact public v0.1 adapter used by H3 Super Acceleration."""
+
+    lora_file = _select_turbo_file(lora_path, lora_name=lora_request.lora_name)
+    return lora_file is not None and lora_file.name == MINIMAX_H3_SUPER_TURBO_FILENAME
 
 
 def _validate_and_convert_tensors(checkpoint) -> dict[str, torch.Tensor]:
@@ -134,7 +147,7 @@ def _validate_and_convert_tensors(checkpoint) -> dict[str, torch.Tensor]:
     unexpected = sorted(raw_targets - _TURBO_EXPECTED_RAW_TARGETS)
     if missing or unexpected:
         raise ValueError(
-            "MiniMax-H3 Turbo target set does not match the supported v1.0 artifact: "
+            "MiniMax-H3 Turbo target set does not match a supported artifact: "
             f"missing={len(missing)} {missing[:5]}, unexpected={len(unexpected)} {unexpected[:5]}"
         )
     return tensors
@@ -165,28 +178,39 @@ def load_minimax_h3_turbo_lora(
     dtype: torch.dtype,
     unsupported_offload_mode: str | None = None,
 ) -> tuple[LoRAModel, PEFTHelper] | None:
-    """Load the published LightX2V Turbo v1.0 through the legacy manager."""
+    """Load a published LightX2V Turbo adapter through the legacy manager."""
 
-    lora_file = _select_turbo_file(lora_path)
+    lora_file = _select_turbo_file(lora_path, lora_name=lora_request.lora_name)
     if lora_file is None:
         return None
     with safe_open(lora_file, framework="pt", device="cpu") as checkpoint:
         metadata = checkpoint.metadata() or {}
-        if metadata.get("key_format") != "minimax-h3-diffusers":
-            if lora_file.name == _TURBO_FILENAME:
+        if lora_file.name == MINIMAX_H3_TURBO_V1_FILENAME:
+            if metadata.get("key_format") != "minimax-h3-diffusers":
                 raise ValueError(
                     "MiniMax-H3 Turbo v1.0 requires safetensors metadata key_format='minimax-h3-diffusers'"
                 )
-            return None
-        if lora_file.name != _TURBO_FILENAME:
-            raise ValueError(f"MiniMax-H3 Turbo supports only {_TURBO_FILENAME!r}, got {lora_file.name!r}")
-        raw_alpha = metadata.get("alpha")
-        try:
-            alpha = float(raw_alpha) if raw_alpha is not None else math.nan
-        except ValueError as exc:
-            raise ValueError(f"MiniMax-H3 Turbo alpha must be numeric, got {raw_alpha!r}") from exc
-        if alpha != _TURBO_ALPHA:
-            raise ValueError(f"MiniMax-H3 Turbo v1.0 requires alpha={_TURBO_ALPHA}, got {raw_alpha!r}")
+            raw_alpha = metadata.get("alpha")
+            try:
+                alpha = float(raw_alpha) if raw_alpha is not None else math.nan
+            except ValueError as exc:
+                raise ValueError(f"MiniMax-H3 Turbo alpha must be numeric, got {raw_alpha!r}") from exc
+            if alpha != _TURBO_ALPHA:
+                raise ValueError(f"MiniMax-H3 Turbo v1.0 requires alpha={_TURBO_ALPHA}, got {raw_alpha!r}")
+        elif lora_file.name == MINIMAX_H3_SUPER_TURBO_FILENAME:
+            if metadata.get("format") != "pt" or metadata.get("floating_dtype") != "bfloat16":
+                raise ValueError(
+                    "MiniMax-H3 Super Turbo v0.1 requires safetensors metadata "
+                    "format='pt' and floating_dtype='bfloat16'"
+                )
+        else:
+            if metadata.get("key_format") != "minimax-h3-diffusers":
+                return None
+            raise ValueError(
+                "MiniMax-H3 Turbo supports only "
+                f"{MINIMAX_H3_TURBO_V1_FILENAME!r} and {MINIMAX_H3_SUPER_TURBO_FILENAME!r}, "
+                f"got {lora_file.name!r}"
+            )
         if partition == "ref2va":
             raise ValueError("MiniMax-H3 Turbo LoRA supports FL2VA/T2VA only")
         if unsupported_offload_mode is not None:

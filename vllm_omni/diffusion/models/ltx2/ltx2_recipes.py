@@ -3,6 +3,7 @@
 
 """Declarative execution recipes for the LTX model family."""
 
+import math
 from dataclasses import dataclass, replace
 from typing import Literal
 
@@ -43,6 +44,7 @@ class LTXPhaseRecipe:
     noise_scale: float = 0.0
     input_transform: Literal["initial", "spatial_upsample"] = "initial"
     adapter_slot: str | None = None
+    adapter_scale: float = 1.0
     sampler: Literal["euler", "euler_ancestral"] = "euler"
     allow_guidance_override: bool = True
     use_official_sigma_schedule: bool = True
@@ -54,6 +56,8 @@ class LTXPhaseRecipe:
             raise ValueError("An explicit LTX sigma schedule must contain at least two denoise sigmas.")
         if self.sampler not in ("euler", "euler_ancestral"):
             raise ValueError(f"Unsupported LTX sampler: {self.sampler!r}.")
+        if not math.isfinite(self.adapter_scale) or self.adapter_scale < 0:
+            raise ValueError("LTX phase adapter_scale must be finite and non-negative.")
 
     @property
     def num_inference_steps(self) -> int | None:
@@ -317,6 +321,7 @@ LTX25_H3_REFINER_RECIPE = LTXPipelineRecipe(
             sigmas=LTX_STAGE_2_DISTILLED_SIGMAS,
             noise_scale=LTX_STAGE_2_DISTILLED_SIGMAS[0],
             adapter_slot=LTX_DISTILLED_ADAPTER_SLOT,
+            adapter_scale=0.8,
             allow_guidance_override=False,
             use_official_sigma_schedule=False,
         ),

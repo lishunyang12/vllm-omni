@@ -53,6 +53,7 @@ def _wrap(
     module="proj",
     target_slice=None,
     layer_fused=False,
+    scale=1.0,
 ):
     target = _target(
         lora_a,
@@ -68,7 +69,7 @@ def _wrap(
         layer_fused=layer_fused,
     )
     wrapper.load_target(target, lora_a, lora_b)
-    wrapper.set_enabled(True)
+    wrapper.set_active(True, scale)
     return wrapper
 
 
@@ -259,6 +260,22 @@ def test_ltx_layer_fused_adapter_matches_official_bf16_weight_fusion():
 
     assert torch.equal(wrapper(x), expected)
     assert torch.equal(layer.weight, base_weight)
+
+
+def test_ltx_layer_fused_adapter_applies_release_scale_before_base_add():
+    layer = torch.nn.Linear(2, 2, bias=False, dtype=torch.bfloat16)
+    with torch.no_grad():
+        layer.weight.copy_(torch.eye(2, dtype=torch.bfloat16))
+    lora_a = torch.tensor([[1.0, 2.0]], dtype=torch.bfloat16)
+    lora_b = torch.tensor([[3.0], [4.0]], dtype=torch.bfloat16)
+    wrapper = _wrap(layer, lora_a, lora_b, layer_fused=True, scale=0.8)
+
+    expected_weight = torch.matmul(lora_b, lora_a)
+    expected_weight.mul_(0.8)
+    expected_weight.add_(layer.weight)
+    value = torch.tensor([[1.0, 1.0]], dtype=torch.bfloat16)
+
+    assert torch.equal(wrapper(value), torch.nn.functional.linear(value, expected_weight))
 
 
 def test_ltx_layer_fused_row_parallel_uses_one_collective(monkeypatch):

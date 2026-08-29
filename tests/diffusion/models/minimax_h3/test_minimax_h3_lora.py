@@ -7,12 +7,15 @@ from types import SimpleNamespace
 
 import pytest
 import torch
+from safetensors import safe_open
 from safetensors.torch import save_file
 from vllm.lora.lora_weights import PackedLoRALayerWeights
 
 from vllm_omni.diffusion.lora.manager import DiffusionLoRAManager
 from vllm_omni.diffusion.models.minimax_h3 import lora as lora_module
 from vllm_omni.diffusion.models.minimax_h3.lora import (
+    MINIMAX_H3_SUPER_TURBO_FILENAME,
+    MINIMAX_H3_SUPER_TURBO_PROFILE,
     load_minimax_h3_turbo_lora,
 )
 from vllm_omni.errors import OmniClientError
@@ -35,9 +38,9 @@ def _use_tiny_h3_dimensions(monkeypatch):
     monkeypatch.setattr(lora_module, "_TURBO_TARGET_DIMS", _TINY_TARGET_DIMS)
 
 
-def _request(path) -> LoRARequest:
+def _request(path, *, name="turbo") -> LoRARequest:
     return LoRARequest(
-        lora_name="turbo",
+        lora_name=name,
         lora_int_id=1,
         lora_path=str(path),
     )
@@ -95,6 +98,17 @@ def _write_tiny_turbo(
     )
 
 
+def _write_tiny_super_turbo(path, *, metadata: dict[str, str] | None = None) -> None:
+    _write_tiny_turbo(path)
+    with safe_open(path, framework="pt", device="cpu") as checkpoint:
+        tensors = {name: checkpoint.get_tensor(name) for name in checkpoint.keys()}
+    save_file(
+        tensors,
+        str(path),
+        metadata=metadata or {"format": "pt", "floating_dtype": "bfloat16"},
+    )
+
+
 def test_h3_turbo_loads_through_legacy_lora_model_and_swaps_ffn(tmp_path):
     path = tmp_path / "minimax_h3_fl2v_turbo_4step_v1.0_768p_bf16.safetensors"
     _write_tiny_turbo(path)
@@ -121,6 +135,39 @@ def test_h3_turbo_loads_through_legacy_lora_model_and_swaps_ffn(tmp_path):
     torch.testing.assert_close(fc1.lora_a[1], torch.ones(128, 2))
     torch.testing.assert_close(fc1.lora_b[0], torch.full((2, 128), 2.0))
     torch.testing.assert_close(fc1.lora_b[1], torch.ones(2, 128))
+
+
+def test_h3_super_turbo_v01_loads_with_official_profile_and_metadata(tmp_path):
+    path = tmp_path / MINIMAX_H3_SUPER_TURBO_FILENAME
+    _write_tiny_super_turbo(path)
+    request = _request(path, name=MINIMAX_H3_SUPER_TURBO_PROFILE)
+
+    loaded = load_minimax_h3_turbo_lora(
+        partition="fl2va",
+        lora_request=request,
+        lora_path=tmp_path,
+        dtype=torch.float32,
+    )
+
+    assert loaded is not None
+    lora_model, peft_helper = loaded
+    assert len(lora_model.loras) == 312
+    # Runtime lora_scale=8/128 supplies the release's effective alpha=8.
+    assert peft_helper.r == 128
+    assert peft_helper.lora_alpha == 128
+
+
+def test_h3_super_turbo_v01_rejects_unofficial_metadata(tmp_path):
+    path = tmp_path / MINIMAX_H3_SUPER_TURBO_FILENAME
+    _write_tiny_super_turbo(path, metadata={"format": "pt", "floating_dtype": "float16"})
+
+    with pytest.raises(ValueError, match="floating_dtype='bfloat16'"):
+        load_minimax_h3_turbo_lora(
+            partition="fl2va",
+            lora_request=_request(path, name=MINIMAX_H3_SUPER_TURBO_PROFILE),
+            lora_path=path,
+            dtype=torch.float32,
+        )
 
 
 @pytest.mark.parametrize(
@@ -414,3 +461,40 @@ def test_h3_turbo_accepts_five_sigma_points_for_four_nfe():
             extra_args={"flow_shift": 6.0, "audio_flow_shift": 3.0},
         )
     )
+
+
+def test_h3_super_turbo_v01_requires_release_scale_and_shift():
+    from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
+
+    pipeline = object.__new__(MiniMaxH3Pipeline)
+    pipeline.default_video_shift = 12.0
+    pipeline.default_audio_shift = 3.0
+    pipeline._turbo_v01_lora_adapter_ids = {1}
+    request = _request("turbo", name=MINIMAX_H3_SUPER_TURBO_PROFILE)
+
+    pipeline._validate_turbo_sampling(
+        SimpleNamespace(
+            lora_request=request,
+            lora_scale=0.0625,
+            num_inference_steps=5,
+            extra_args={"flow_shift": 12.0, "audio_flow_shift": 3.0},
+        )
+    )
+    with pytest.raises(OmniClientError, match="lora_scale=0.0625"):
+        pipeline._validate_turbo_sampling(
+            SimpleNamespace(
+                lora_request=request,
+                lora_scale=1.0,
+                num_inference_steps=5,
+                extra_args={"flow_shift": 12.0, "audio_flow_shift": 3.0},
+            )
+        )
+    with pytest.raises(OmniClientError, match="flow_shift=12"):
+        pipeline._validate_turbo_sampling(
+            SimpleNamespace(
+                lora_request=request,
+                lora_scale=0.0625,
+                num_inference_steps=5,
+                extra_args={"flow_shift": 6.0, "audio_flow_shift": 3.0},
+            )
+        )

@@ -20,6 +20,7 @@ from vllm_omni.diffusion.models.ltx2.ltx2_components import (
     resolve_ltx_checkpoint_kind,
     resolve_ltx_component_profile,
 )
+from vllm_omni.diffusion.models.ltx2.ltx2_latents import pack_audio_latents, pack_latents
 from vllm_omni.diffusion.models.ltx2.ltx2_recipes import (
     LTX25_H3_REFINER_RECIPE,
     LTX_STAGE_2_DISTILLED_SIGMAS,
@@ -63,6 +64,7 @@ def test_h3_refiner_recipe_enters_only_fixed_three_step_phase():
     assert recipe.num_inference_steps == 3
     assert recipe.phases[0].sigmas == LTX_STAGE_2_DISTILLED_SIGMAS
     assert recipe.phases[0].adapter_slot == "ltx_distilled"
+    assert recipe.phases[0].adapter_scale == 0.8
     assert not recipe.phases[0].guidance.do_cfg
     assert not recipe.phases[0].guidance.do_stg
     assert not recipe.phases[0].guidance.do_modality_guidance
@@ -139,6 +141,36 @@ def test_h3_refiner_returns_encoder_ready_video_and_reuses_source_audio():
     assert output.output[1] is source_audio
 
 
+def test_h3_refiner_keeps_normalized_video_latents_for_taehv():
+    normalized_video = torch.arange(8, dtype=torch.float32).reshape(1, 2, 1, 2, 2)
+    raw_audio = torch.arange(8, dtype=torch.float32).reshape(1, 2, 2, 2)
+    pipeline = SimpleNamespace(
+        transformer_spatial_patch_size=1,
+        transformer_temporal_patch_size=1,
+        audio_vae=SimpleNamespace(
+            latents_mean=torch.tensor(10.0),
+            latents_std=torch.tensor(2.0),
+        ),
+    )
+    context = SimpleNamespace(
+        latent_num_frames=1,
+        latent_height=2,
+        latent_width=2,
+        original_audio_num_frames=2,
+        latent_mel_bins=2,
+    )
+
+    video, audio = LTX25H3RefinerPipeline._unpack_and_denormalize_stage(
+        pipeline,
+        context,
+        pack_latents(normalized_video),
+        pack_audio_latents(raw_audio),
+    )
+
+    torch.testing.assert_close(video, normalized_video)
+    torch.testing.assert_close(audio, raw_audio * 2.0 + 10.0)
+
+
 def test_h3_refiner_encodes_media_before_worker_ipc(monkeypatch):
     captured: dict[str, Any] = {}
 
@@ -195,6 +227,36 @@ def test_h3_super_duration_contract(value, expected):
 def test_h3_super_duration_rejects_unpublished_shape():
     with pytest.raises(ValueError, match="5 or 10"):
         MiniMaxH3SuperDraftPipeline._resolve_super_duration({"duration": 8})
+
+
+def test_h3_super_forward_pins_official_v01_sampling(monkeypatch):
+    from vllm_omni.diffusion.models.minimax_h3 import pipeline_minimax_h3_super as super_module
+
+    pipeline = object.__new__(MiniMaxH3SuperDraftPipeline)
+    pipeline._turbo_v01_lora_adapter_ids = {1}
+    sampling = SimpleNamespace(
+        lora_request=SimpleNamespace(lora_int_id=1),
+        lora_scale=0.0625,
+        extra_args={"duration": 5.0, "flow_shift": 6.0},
+        height=None,
+        width=None,
+        fps=None,
+        frame_rate=None,
+        num_inference_steps=None,
+    )
+    request = SimpleNamespace(sampling_params=sampling)
+    sentinel = object()
+    monkeypatch.setattr(super_module.MiniMaxH3Pipeline, "forward", lambda _self, _request: sentinel)
+
+    assert MiniMaxH3SuperDraftPipeline.forward(pipeline, request) is sentinel
+    assert sampling.lora_scale == 0.0625
+    assert sampling.extra_args == {
+        "duration": 5.0,
+        "task": "fl2va",
+        "flow_shift": 12.0,
+        "audio_flow_shift": 3.0,
+    }
+    assert (sampling.height, sampling.width, sampling.fps, sampling.num_inference_steps) == (512, 896, 24, 5)
 
 
 @pytest.mark.parametrize(
@@ -414,19 +476,14 @@ def test_h3_super_deploy_merges_two_independent_diffusion_stages():
     assert stages[1].yaml_runtime["devices"] == "1"
     assert stages[0].yaml_engine_args["model"] == "MiniMaxAI/MiniMax-H3"
     assert stages[0].yaml_engine_args["model_class_name"] == "MiniMaxH3SuperDraftPipeline"
-    attention_roles = stages[0].yaml_engine_args["diffusion_attention_config"]["per_role"]
-    assert attention_roles["self"] == {
-        "backend": "TRTLLM_ATTN",
-        "quant": {
-            "dtype_qk": "fp8_e4m3",
-            "q_block_size": 1,
-            "k_block_size": 16,
-        },
-    }
-    assert attention_roles["minimax_h3.token_refiner"] == {"backend": "TRTLLM_ATTN"}
+    assert "diffusion_attention_config" not in stages[0].yaml_engine_args
     assert stages[0].yaml_engine_args["additional_config"]["taeh3_checkpoint"] == TAEH3_CHECKPOINT_URL
     assert stages[0].yaml_extras["default_sampling_params"]["height"] == 512
     assert stages[0].yaml_extras["default_sampling_params"]["num_inference_steps"] == 5
+    assert stages[0].yaml_extras["default_sampling_params"]["seed"] == 50803
+    assert stages[0].yaml_extras["default_sampling_params"]["lora_request"]["lora_name"] == "lx2v_4s_v01_544p"
+    assert stages[0].yaml_extras["default_sampling_params"]["lora_scale"] == 0.0625
+    assert stages[0].yaml_extras["default_sampling_params"]["extra_args"]["flow_shift"] == 12.0
     assert stages[1].yaml_engine_args["model"] == "Lightricks/LTX-2.5-Diffusers"
     assert stages[1].yaml_engine_args["model_class_name"] == "LTX25H3RefinerPipeline"
     assert "diffusion_attention_config" not in stages[1].yaml_engine_args
@@ -436,3 +493,4 @@ def test_h3_super_deploy_merges_two_independent_diffusion_stages():
     assert stages[1].yaml_engine_args["additional_config"]["encode_output_video"] is True
     assert stages[1].yaml_extras["default_sampling_params"]["height"] == 768
     assert stages[1].yaml_extras["default_sampling_params"]["num_inference_steps"] == 3
+    assert stages[1].yaml_extras["default_sampling_params"]["seed"] == 50803

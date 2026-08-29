@@ -10,6 +10,7 @@ adapter-capable while retaining their quantization and tensor-parallel paths.
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -274,6 +275,7 @@ class _PhaseAdapterLinear(nn.Module):
         self.pieces = nn.ModuleList(pieces)
         self._pieces_by_target = {piece.target: piece for piece in pieces}
         self._enabled = False
+        self._scale = 1.0
 
     def load_target(self, target: AdapterTarget, lora_a: torch.Tensor, lora_b: torch.Tensor) -> None:
         try:
@@ -282,8 +284,9 @@ class _PhaseAdapterLinear(nn.Module):
             raise ValueError(f"Adapter target {target.module!r} is not installed on this layer.") from exc
         piece.load(lora_a, lora_b, device=_module_device(self.base_layer), dtype=self.adapter_dtype)
 
-    def set_enabled(self, enabled: bool) -> None:
+    def set_active(self, enabled: bool, scale: float = 1.0) -> None:
         self._enabled = enabled
+        self._scale = scale
 
     def _add_adapter_delta(self, input_: torch.Tensor, output: torch.Tensor) -> torch.Tensor:
         if not self._enabled:
@@ -292,6 +295,7 @@ class _PhaseAdapterLinear(nn.Module):
             output = output.clone()
         for piece in self.pieces:
             delta = piece.delta(input_).to(dtype=output.dtype)
+            delta.mul_(self._scale)
             start = piece.layout.output_start
             output[..., start : start + piece.layout.b_output_size].add_(delta)
         return output
@@ -311,6 +315,7 @@ class _PhaseAdapterLinear(nn.Module):
                 )
             # Match official fusion exactly: materialize B@A in the adapter
             # dtype, then add the base tensor in-place before the main GEMM.
+            delta.mul_(self._scale)
             delta.add_(base_slice)
             fused_weight.narrow(0, start, piece.layout.b_output_size).copy_(delta)
         return fused_weight
@@ -387,14 +392,16 @@ class LTXPhaseAdapterRuntime:
         self._materialized = True
         logger.info("Materialized %d LTX phase-adapter tensor pairs", len(self.manifest.targets))
 
-    def activate(self, adapter_slot: str | None) -> None:
+    def activate(self, adapter_slot: str | None, scale: float = 1.0) -> None:
+        if not math.isfinite(scale) or scale < 0:
+            raise ValueError("LTX phase adapter scale must be finite and non-negative.")
         if adapter_slot is not None:
             if adapter_slot != LTX_DISTILLED_ADAPTER_SLOT:
                 raise ValueError(f"Unknown LTX phase adapter slot {adapter_slot!r}.")
             if not self._materialized:
                 raise RuntimeError("LTX phase adapter data must be materialized before activation.")
         for wrapper in self._wrappers.values():
-            wrapper.set_enabled(adapter_slot is not None)
+            wrapper.set_active(adapter_slot is not None, scale)
 
 
 def build_ltx_phase_adapter(pipeline: Any) -> LTXPhaseAdapterRuntime | None:

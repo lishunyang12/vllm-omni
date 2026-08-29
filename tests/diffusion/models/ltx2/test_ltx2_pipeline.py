@@ -1019,9 +1019,9 @@ def test_ltx_two_stage_executes_declarative_i2v_phase_plan(pipeline_cls):
     pipeline.vae_spatial_compression_ratio = 32
     pipeline.vae_temporal_compression_ratio = 8
     pipeline.latent_upsampler = FakeUpsampler()
-    activated_slots: list[Any] = []
+    activated_slots: list[tuple[str | None, float]] = []
     if pipeline_cls is LTX2TwoStagePipeline:
-        pipeline._phase_adapter = SimpleNamespace(activate=activated_slots.append)
+        pipeline._phase_adapter = SimpleNamespace(activate=lambda slot, scale: activated_slots.append((slot, scale)))
     object.__setattr__(pipeline, "_resolve_request_inputs", resolve_request_inputs)
     object.__setattr__(pipeline, "run_phase", run_phase)
     object.__setattr__(pipeline, "decode_phase", decode_phase)
@@ -1032,7 +1032,7 @@ def test_ltx_two_stage_executes_declarative_i2v_phase_plan(pipeline_cls):
     assert len(phase_calls) == 2
     assert phase_calls[1][2] is prompt_context_sentinel
     if pipeline_cls is LTX2TwoStagePipeline:
-        assert activated_slots == [None, "ltx_distilled"]
+        assert activated_slots == [(None, 1.0), ("ltx_distilled", 1.0)]
     torch.testing.assert_close(output.output[0], torch.full((1, 128, 1, 2, 2), 3.0))
     expected_audio = 2.0 if pipeline_cls is LTX2TwoStagePipeline else 4.0
     torch.testing.assert_close(output.output[1], torch.full((1, 8, 1, 2), expected_audio))
@@ -1397,12 +1397,14 @@ def test_ltx_official_two_stage_recipes_only_vary_by_model_defaults(recipe, step
 
 
 def test_ltx_two_stage_entries_select_the_official_adapter_slots():
-    phase_switches: list[Any] = []
+    phase_switches: list[tuple[str | None, float]] = []
     ordinary_pipeline = object.__new__(LTX2TwoStagePipeline)
-    ordinary_pipeline._phase_adapter = SimpleNamespace(activate=phase_switches.append)
+    ordinary_pipeline._phase_adapter = SimpleNamespace(
+        activate=lambda slot, scale: phase_switches.append((slot, scale))
+    )
     for phase in LTX2_TWO_STAGE_RECIPE.phases:
         ordinary_pipeline._enter_phase(phase)
-    assert phase_switches == [None, "ltx_distilled"]
+    assert phase_switches == [(None, 1.0), ("ltx_distilled", 1.0)]
 
     distilled_pipeline = object.__new__(LTX2DistilledPipeline)
     for phase in LTX2_DISTILLED_TWO_STAGE_RECIPE.phases:

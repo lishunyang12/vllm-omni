@@ -14,33 +14,23 @@ stages:
     max_num_seqs: 1
     enforce_eager: true
     lora_backend: peft
-    diffusion_attention_config:
-      per_role:
-        self:
-          backend: TRTLLM_ATTN
-          quant:
-            dtype_qk: fp8_e4m3
-            q_block_size: 1
-            k_block_size: 16
-        minimax_h3.token_refiner:
-          backend: TRTLLM_ATTN
     additional_config:
       taeh3_checkpoint: https://raw.githubusercontent.com/madebyollin/taehv/e589fddc076e77f5ba8cd6baabe4ba3260b261cd/taeh3.pth
     default_sampling_params:
-      seed: 42
+      seed: 50803
       height: 512
       width: 896
       fps: 24
       num_inference_steps: 5
       lora_request:
-        lora_name: h3-turbo-v1.0
+        lora_name: lx2v_4s_v01_544p
         lora_int_id: 1
         lora_path: lightx2v/Minimax-h3-Turbo
-      lora_scale: 1.0
+      lora_scale: 0.0625
       extra_args:
         task: fl2va
         duration: 5.0
-        flow_shift: 6.0
+        flow_shift: 12.0
         audio_flow_shift: 3.0
 
   - stage_id: 1
@@ -55,7 +45,7 @@ stages:
       taehv_checkpoint: https://raw.githubusercontent.com/madebyollin/taehv/32ac0146b11007cda5a57b60a3b35653361fb8a4/taeltx2_3_wide.pth
       encode_output_video: true
     default_sampling_params:
-      seed: 42
+      seed: 50803
       height: 768
       width: 1344
       num_frames: 121

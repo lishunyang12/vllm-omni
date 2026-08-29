@@ -346,7 +346,7 @@ class LTXRuntime(
             if phase.adapter_slot is not None:
                 raise RuntimeError(f"LTX phase {phase.name!r} requires adapter slot {phase.adapter_slot!r}.")
             return
-        phase_adapter.activate(phase.adapter_slot)
+        phase_adapter.activate(phase.adapter_slot, phase.adapter_scale)
 
     def eval(self):
         result = super().eval()
