@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """WebSocket handler for streaming generated video chunks.
 
 Protocol:
@@ -478,7 +478,7 @@ class OmniStreamingVideoOutputHandler:
                     raise RuntimeError(str(result.error))
                 videos = self._extract_video_outputs(result)
                 for video in videos:
-                    chunk = video if isinstance(video, bytes) else encoder.encode(video)
+                    chunk = encoder.encode(video)
                     if chunk:
                         yield (
                             chunk,
