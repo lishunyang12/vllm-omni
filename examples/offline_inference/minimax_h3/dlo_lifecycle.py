@@ -121,7 +121,7 @@ def parse_args() -> argparse.Namespace:
         type=json_object,
         help=(
             "JSON diffusion_offload_config override for DLO modes; useful for "
-            "exercising component, module/layer, transfer, and resident-layer policies"
+            "exercising component, module/layer, weight-transfer, and resident-layer policies"
         ),
     )
     parser.add_argument(
