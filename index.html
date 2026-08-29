@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MiniMax-H3 B300 BF16 vs quantized comparison</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0f172a;
+        --panel: #111827;
+        --muted: #94a3b8;
+        --text: #e5e7eb;
+        --border: rgba(148, 163, 184, 0.2);
+        --accent: #38bdf8;
+      }
+      body {
+        margin: 0;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: linear-gradient(180deg, #020617 0%, #0f172a 100%);
+        color: var(--text);
+      }
+      .wrap {
+        max-width: 1320px;
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+      }
+      .hero {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 24px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.24);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(28px, 4vw, 42px);
+        line-height: 1.1;
+      }
+      p, li, table {
+        color: var(--text);
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+      }
+      .meta {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        margin-top: 18px;
+      }
+      .card {
+        background: rgba(17, 24, 39, 0.85);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 16px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.95rem;
+      }
+      th, td {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .videos {
+        grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      }
+      video {
+        width: 100%;
+        display: block;
+        border-radius: 12px;
+        background: black;
+      }
+      .controls {
+        margin-top: 10px;
+      }
+      input[type="range"] {
+        width: 100%;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      .pill {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(56, 189, 248, 0.12);
+        color: #7dd3fc;
+        font-size: 0.85rem;
+      }
+      .footer {
+        margin-top: 20px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      code {
+        background: rgba(148, 163, 184, 0.12);
+        padding: 0.15rem 0.35rem;
+        border-radius: 0.35rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="hero">
+        <div class="pill">B300 single-GPU validation</div>
+        <h1>MiniMax-H3 BF16 reference vs quantized candidate</h1>
+        <p class="muted">
+          This page compares the BF16 reference video against the current hybrid
+          quantized candidate from the B300 loop. The candidate restores the
+          first 32 retained MiniMax-H3 language layers to BF16 and keeps the
+          remaining text-encoder layers on NVFP4 W4A16.
+        </p>
+
+        <div class="grid meta">
+          <div class="card">
+            <strong>Prompt</strong>
+            <p class="muted">A bright daytime cinematic tracking shot of a golden retriever running through a sunlit meadow filled with colorful wildflowers, vivid blue sky, crisp natural colors.</p>
+          </div>
+          <div class="card">
+            <strong>Run settings</strong>
+            <p class="muted">Seed 42 · 50 steps · 384×672 · 5 seconds</p>
+          </div>
+          <div class="card">
+            <strong>Hardware</strong>
+            <p class="muted">NVIDIA B300 SXM6 AC · 1 GPU</p>
+          </div>
+          <div class="card">
+            <strong>Candidate</strong>
+            <p class="muted">Latest `layer0-31-bf16` hybrid text-encoder checkpoint</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid" style="margin-top: 20px;">
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>BF16 reference</th>
+                <th>Quantized candidate</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Generation time</td><td>25.93 s</td><td>31.83 s</td></tr>
+              <tr><td>Peak memory</td><td>121080 MiB</td><td>57954 MiB</td></tr>
+              <tr><td>LPIPS</td><td>—</td><td>0.3517</td></tr>
+              <tr><td>PSNR</td><td>—</td><td>16.10 dB</td></tr>
+              <tr><td>MAE</td><td>—</td><td>0.1067</td></tr>
+              <tr><td>Audio spectral cosine</td><td>—</td><td>0.7524</td></tr>
+              <tr><td>Audio RMS ratio</td><td>—</td><td>2.3216</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="grid videos">
+          <figure class="card" style="margin: 0;">
+            <video id="bf16-video" controls preload="metadata" playsinline poster="assets/bf16_reference.jpg">
+              <source src="assets/bf16_reference.mp4" type="video/mp4" />
+            </video>
+            <figcaption style="margin-top: 10px;">BF16 reference</figcaption>
+          </figure>
+          <figure class="card" style="margin: 0;">
+            <video id="quant-video" controls preload="metadata" playsinline poster="assets/quantized_candidate.jpg">
+              <source src="assets/quantized_candidate.mp4" type="video/mp4" />
+            </video>
+            <figcaption style="margin-top: 10px;">Quantized candidate</figcaption>
+          </figure>
+        </div>
+
+        <div class="card controls">
+          <label for="seek"><strong>Shared seek</strong></label>
+          <input id="seek" type="range" min="0" max="1000" value="0" />
+          <div id="time" class="muted">0.00 / 0.00 s</div>
+        </div>
+      </section>
+
+      <p class="footer">
+        Source artifact:
+        <code>artifacts/minimax-h3-v2-quality-b300-layer0-31-bf16/quality_report.json</code>
+      </p>
+      <p class="footer">
+        <a href="assets/bf16_reference.mp4">Download BF16 mp4</a> ·
+        <a href="assets/quantized_candidate.mp4">Download quantized mp4</a> ·
+        <a href="assets/quality_report.json">Quality report JSON</a>
+      </p>
+    </main>
+
+    <script>
+      (() => {
+        const a = document.getElementById('bf16-video');
+        const b = document.getElementById('quant-video');
+        const seek = document.getElementById('seek');
+        const time = document.getElementById('time');
+        let duration = 0;
+        let locked = false;
+
+        const updateTime = () => {
+          const current = Math.min(a.currentTime || 0, b.currentTime || 0);
+          time.textContent = `${current.toFixed(2)} / ${duration.toFixed(2)} s`;
+          if (!locked && duration > 0) {
+            seek.value = String(Math.round((current / duration) * 1000));
+          }
+        };
+
+        const sync = (src, dst) => {
+          if (locked) return;
+          locked = true;
+          try {
+            dst.currentTime = src.currentTime;
+            if (!src.paused && dst.paused) {
+              dst.play().catch(() => {});
+            }
+            if (src.paused && !dst.paused) {
+              dst.pause();
+            }
+          } finally {
+            locked = false;
+          }
+          updateTime();
+        };
+
+        const onMeta = () => {
+          duration = Math.min(
+            Number.isFinite(a.duration) ? a.duration : Infinity,
+            Number.isFinite(b.duration) ? b.duration : Infinity,
+          );
+          updateTime();
+        };
+
+        seek.addEventListener('input', () => {
+          if (!duration) return;
+          const target = (Number(seek.value) / 1000) * duration;
+          locked = true;
+          try {
+            a.currentTime = target;
+            b.currentTime = target;
+          } finally {
+            locked = false;
+          }
+          updateTime();
+        });
+
+        a.addEventListener('play', () => sync(a, b));
+        b.addEventListener('play', () => sync(b, a));
+        a.addEventListener('pause', () => sync(a, b));
+        b.addEventListener('pause', () => sync(b, a));
+        a.addEventListener('seeked', () => sync(a, b));
+        b.addEventListener('seeked', () => sync(b, a));
+        a.addEventListener('timeupdate', updateTime);
+        b.addEventListener('timeupdate', updateTime);
+        a.addEventListener('loadedmetadata', onMeta);
+        b.addEventListener('loadedmetadata', onMeta);
+      })();
+    </script>
+  </body>
+</html>
