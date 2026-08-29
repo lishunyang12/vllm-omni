@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """Validate MiniMax-H3 request-mode and DLO lifecycle behavior.
 
 The DLO modes accept any positive data-parallel size.  With AllGather enabled,
