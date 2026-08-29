@@ -13,6 +13,7 @@ import torch.distributed as dist
 from torch import nn
 from torch.distributed.tensor import DeviceMesh, DTensor, Replicate
 
+import vllm_omni.diffusion.offloader.config as offload_config_module
 import vllm_omni.diffusion.offloader.layerwise_backend as layerwise_backend_module
 from tests.helpers.runtime import get_distributed_init_method
 from vllm_omni.diffusion.offloader.base import OffloadConfig, OffloadStrategy
@@ -553,6 +554,47 @@ def _offload_od_config(**overrides):
 
 
 class TestLayerwiseComponentConfig:
+    def test_public_config_is_parsed_once_per_config_object(self, monkeypatch):
+        od_config = _offload_od_config(
+            diffusion_offload_config={
+                "mode": "layer",
+                "components": ["dit", "text_encoder"],
+            }
+        )
+        parse = offload_config_module.parse_diffusion_offload_config
+        calls = 0
+
+        def counted_parse(value):
+            nonlocal calls
+            calls += 1
+            return parse(value)
+
+        monkeypatch.setattr(offload_config_module, "parse_diffusion_offload_config", counted_parse)
+
+        assert offload_config_module.selected_offload_components(od_config) == {"dit", "text_encoder"}
+        assert not offload_config_module.component_uses_allgather(od_config, "dit")
+        assert offload_config_module.resolve_offload_strategy(od_config) is OffloadStrategy.LAYER_WISE
+        assert calls == 1
+
+    def test_replacing_public_config_invalidates_parsed_cache(self):
+        od_config = _offload_od_config(
+            diffusion_offload_config={
+                "mode": "layer",
+                "components": ["dit"],
+            }
+        )
+
+        first = offload_config_module.get_diffusion_offload_config(od_config)
+        od_config.diffusion_offload_config = {
+            "mode": "layer",
+            "components": ["text_encoder"],
+        }
+        second = offload_config_module.get_diffusion_offload_config(od_config)
+
+        assert first is not second
+        assert second is not None
+        assert second.components == {"text_encoder"}
+
     def test_layer_mode_selects_components_without_backend_jargon(self):
         config = OffloadConfig.from_od_config(
             _offload_od_config(

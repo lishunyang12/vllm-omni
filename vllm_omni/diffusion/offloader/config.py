@@ -19,6 +19,8 @@ DLO_COMPONENTS = OFFLOAD_COMPONENTS
 # already-materialized terminal config. Structured projections keep the compact
 # config canonical instead of transporting this implementation detail.
 _MATERIALIZED_EXTRAS_KEY = "_diffusion_offload_flags_materialized"
+_PARSED_CONFIG_CACHE_KEY = "_parsed_diffusion_offload_config"
+_PARSED_CONFIG_SOURCE_KEY = "_parsed_diffusion_offload_config_source"
 
 
 class OffloadMode(str, Enum):
@@ -105,7 +107,8 @@ def _parse_transfer(value: Any) -> DLOTransfer:
 
 def _parse_layer_options(component: str, value: Any) -> LayerOffloadOptions:
     if isinstance(value, LayerOffloadOptions):
-        parsed = value
+        weight_transfer = _parse_transfer(value.weight_transfer) if value.weight_transfer is not None else None
+        resident_layers = value.resident_layers
     else:
         if not isinstance(value, Mapping):
             raise TypeError(
@@ -119,19 +122,12 @@ def _parse_layer_options(component: str, value: Any) -> LayerOffloadOptions:
             )
         weight_transfer = _parse_transfer(value["weight_transfer"]) if "weight_transfer" in value else None
         resident_layers = value.get("resident_layers", 0)
-        if type(resident_layers) is not int or resident_layers < 0:
-            raise ValueError(f"resident_layers for {component} must be a non-negative integer")
-        parsed = LayerOffloadOptions(
-            weight_transfer=weight_transfer,
-            resident_layers=resident_layers,
-        )
 
-    weight_transfer = _parse_transfer(parsed.weight_transfer) if parsed.weight_transfer is not None else None
-    if type(parsed.resident_layers) is not int or parsed.resident_layers < 0:
+    if type(resident_layers) is not int or resident_layers < 0:
         raise ValueError(f"resident_layers for {component} must be a non-negative integer")
     parsed = LayerOffloadOptions(
         weight_transfer=weight_transfer,
-        resident_layers=parsed.resident_layers,
+        resident_layers=resident_layers,
     )
     if component != DIT_COMPONENT and parsed.resident_layers:
         raise ValueError("resident_layers currently supports only the 'dit' component")
@@ -207,8 +203,27 @@ def parse_diffusion_offload_config(value: Any) -> DiffusionOffloadConfig | None:
 
 
 def get_diffusion_offload_config(config: Any) -> DiffusionOffloadConfig | None:
-    """Read and validate the compact public config from a diffusion-like object."""
-    return parse_diffusion_offload_config(getattr(config, "diffusion_offload_config", None))
+    """Read the validated compact config, caching it on the owning config.
+
+    Configuration objects are finalized before runtime use. Replacing the
+    public mapping invalidates the cache by identity; mutating that mapping in
+    place after construction remains unsupported.
+    """
+    raw_config = getattr(config, "diffusion_offload_config", None)
+    namespace = getattr(config, "__dict__", None)
+    if (
+        isinstance(namespace, dict)
+        and _PARSED_CONFIG_SOURCE_KEY in namespace
+        and _PARSED_CONFIG_CACHE_KEY in namespace
+        and namespace[_PARSED_CONFIG_SOURCE_KEY] is raw_config
+    ):
+        return namespace[_PARSED_CONFIG_CACHE_KEY]
+
+    parsed = parse_diffusion_offload_config(raw_config)
+    if isinstance(namespace, dict):
+        namespace[_PARSED_CONFIG_SOURCE_KEY] = raw_config
+        namespace[_PARSED_CONFIG_CACHE_KEY] = parsed
+    return parsed
 
 
 def _legacy_strategy(config: Any) -> OffloadStrategy:
