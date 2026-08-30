@@ -12,6 +12,8 @@ VENV=${VLLM_OMNI_VENV:-"$REPO/../.venv-vllm028"}
 MODEL=${MINIMAX_H3_MODEL:-"$ROOT/MiniMax-H3/FL2VA"}
 PROMPT_FILE="$REPO/examples/offline_inference/minimax_h3/prompts/starship_hyperspace_10s.txt"
 STEPS=${MINIMAX_H3_STEPS:-2}
+DURATION=${MINIMAX_H3_DURATION:-10.0}
+REPETITIONS=${MINIMAX_H3_REPETITIONS:-1}
 RESIDENT_LAYERS=${MINIMAX_H3_DLO_RESIDENT_LAYERS:-35}
 GPU_ORDER=0,4,1,5,2,6,3,7
 
@@ -84,9 +86,10 @@ CMD=(
   --dp-size 1
   --sp-size 8
   --steps "$STEPS"
+  --repetitions "$REPETITIONS"
   --seed 0
   --resident-layers "$RESIDENT_LAYERS"
-  --duration 10.0
+  --duration "$DURATION"
   --width 1344
   --height 768
   --prompt-file "$PROMPT_FILE"
@@ -102,12 +105,13 @@ cp "$PROMPT_FILE" "$RESULT_ROOT/prompt.txt"
   echo "commit=$(git rev-parse HEAD)"
   echo "model=$MODEL"
   echo "prompt_file=$PROMPT_FILE"
-  echo "duration=10.0"
+  echo "duration=$DURATION"
   echo "physical_gpu_order=$GPU_ORDER"
   echo "parallelism=DP1_TP1_SP8_RING1_TE8_VAE8"
   echo "dlo_use_allgather=true"
   echo "dlo_resident_layers=$RESIDENT_LAYERS"
   echo "steps=$STEPS"
+  echo "repetitions=$REPETITIONS"
   "$PYTHON" --version
   "$PYTHON" -m pip show vllm vllm-omni
   nvidia-smi

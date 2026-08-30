@@ -101,6 +101,7 @@ def parse_args() -> argparse.Namespace:
         help="Ulysses SP and text-encoder/VAE parallel size for DLO modes (default: 1)",
     )
     parser.add_argument("--steps", type=int, default=2)
+    parser.add_argument("--repetitions", type=positive_int, default=1)
     parser.add_argument("--seed", type=int, default=2000)
     parser.add_argument(
         "--resident-layers",
@@ -299,22 +300,33 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             if len(summary["asymmetric_errors"]) != args.dp_size:
                 raise RuntimeError("Every request in the asymmetric DP wave must fail before dispatch")
 
-        started = time.perf_counter()
         request_count = args.dp_size if uses_dp_wave else 1
-        outputs = await asyncio.gather(
-            *(
-                generate_one(
-                    engine,
-                    args,
-                    request_id=f"recovery-{index}",
-                    prompt=(primary_prompt if index == 0 else DEFAULT_PROMPTS[index % len(DEFAULT_PROMPTS)]),
-                    seed=args.seed + index,
+        valid_waves = []
+        for repetition in range(args.repetitions):
+            started = time.perf_counter()
+            outputs = await asyncio.gather(
+                *(
+                    generate_one(
+                        engine,
+                        args,
+                        request_id=(f"recovery-{index}" if args.repetitions == 1 else f"recovery-{repetition}-{index}"),
+                        prompt=(primary_prompt if index == 0 else DEFAULT_PROMPTS[index % len(DEFAULT_PROMPTS)]),
+                        seed=args.seed + index,
+                    )
+                    for index in range(request_count)
                 )
-                for index in range(request_count)
             )
-        )
-        summary["valid_wave_s"] = time.perf_counter() - started
-        summary["outputs"] = [output_summary(output, args) for output in outputs]
+            valid_waves.append(
+                {
+                    "valid_wave_s": time.perf_counter() - started,
+                    "outputs": [output_summary(output, args) for output in outputs],
+                }
+            )
+        summary["valid_wave_s"] = valid_waves[-1]["valid_wave_s"]
+        summary["outputs"] = valid_waves[-1]["outputs"]
+        if args.repetitions > 1:
+            summary["valid_waves"] = valid_waves
+            summary["valid_wave_mean_s"] = sum(wave["valid_wave_s"] for wave in valid_waves) / len(valid_waves)
         if args.video_output is not None:
             if len(outputs) != 1:
                 raise ValueError("--video-output requires a single-request run")
