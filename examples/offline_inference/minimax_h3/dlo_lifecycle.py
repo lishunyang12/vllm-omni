@@ -27,6 +27,13 @@ Examples:
     CUDA_VISIBLE_DEVICES=0,1 \
     python examples/offline_inference/minimax_h3/dlo_lifecycle.py \
         --model /path/to/MiniMax-H3/FL2VA --mode request --tp-size 2
+
+    # One offline request with SP8-backed DLO AllGather.
+    VLLM_WORKER_MULTIPROC_METHOD=spawn \
+    CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+    python examples/offline_inference/minimax_h3/dlo_lifecycle.py \
+        --model /path/to/MiniMax-H3/FL2VA --mode dlo \
+        --dp-size 1 --sp-size 8 --video-output output.mp4
 """
 
 from __future__ import annotations
@@ -42,6 +49,7 @@ from typing import Any
 
 import numpy as np
 
+from vllm_omni.diffusion.utils.media_utils import mux_video_audio_bytes
 from vllm_omni.entrypoints.async_omni import AsyncOmni
 
 DEFAULT_PROMPTS = (
@@ -79,23 +87,33 @@ def parse_args() -> argparse.Namespace:
         default=2,
         help="Tensor-parallel size used only by request mode (default: 2)",
     )
+    parser.add_argument(
+        "--sp-size",
+        type=positive_int,
+        default=1,
+        help="Ulysses SP and text-encoder/VAE parallel size for DLO modes (default: 1)",
+    )
     parser.add_argument("--steps", type=int, default=2)
+    parser.add_argument("--seed", type=int, default=2000)
     parser.add_argument("--duration", type=float, default=5.0)
     parser.add_argument("--width", type=int, default=1344)
     parser.add_argument("--height", type=int, default=768)
     parser.add_argument("--batch-wait-ms", type=float, default=500.0)
     parser.add_argument("--init-timeout", type=float, default=1800.0)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--video-output", type=Path)
     return parser.parse_args()
 
 
 def engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     is_dlo = args.mode in {"dlo", "dlo-no-allgather"}
+    if not is_dlo and args.sp_size != 1:
+        raise ValueError("--sp-size is supported only by DLO modes")
     common: dict[str, Any] = {
         "model": args.model,
         "trust_remote_code": True,
-        "num_gpus": args.dp_size if is_dlo else args.tp_size,
-        "usp": 1,
+        "num_gpus": args.dp_size * args.sp_size if is_dlo else args.tp_size,
+        "usp": args.sp_size if is_dlo else 1,
         "ring": 1,
         "vae_parallel_mode": "tile",
         "vae_use_tiling": True,
@@ -109,8 +127,8 @@ def engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         common.update(
             tensor_parallel_size=1,
             data_parallel_size=args.dp_size,
-            text_encoder_tp_size=1,
-            vae_patch_parallel_size=1,
+            text_encoder_tp_size=args.sp_size,
+            vae_patch_parallel_size=args.sp_size,
             enable_distributed_layerwise_offload=True,
             dlo_use_allgather=args.mode == "dlo",
             dlo_resident_layers=0,
@@ -124,6 +142,26 @@ def engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             enable_distributed_layerwise_offload=False,
         )
     return common
+
+
+def save_video_output(output: Any, path: Path) -> None:
+    frames = np.asarray(output.images[0])
+    if np.issubdtype(frames.dtype, np.integer):
+        frames_u8 = np.clip(frames, 0, 255).astype(np.uint8)
+    else:
+        frames_u8 = (np.clip(frames, 0.0, 1.0) * 255).round().astype(np.uint8)
+
+    payload = output.multimodal_output or {}
+    audio = np.asarray(payload.get("audio"), dtype=np.float32)
+    sample_rate = int(payload.get("audio_sample_rate", 32000))
+    video_bytes = mux_video_audio_bytes(
+        frames_u8,
+        np.squeeze(audio),
+        fps=24.0,
+        audio_sample_rate=sample_rate,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(video_bytes)
 
 
 def sampling_params(
@@ -242,13 +280,18 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                     args,
                     request_id=f"recovery-{index}",
                     prompt=DEFAULT_PROMPTS[index % len(DEFAULT_PROMPTS)],
-                    seed=2000 + index,
+                    seed=args.seed + index,
                 )
                 for index in range(request_count)
             )
         )
         summary["valid_wave_s"] = time.perf_counter() - started
         summary["outputs"] = [output_summary(output, args) for output in outputs]
+        if args.video_output is not None:
+            if len(outputs) != 1:
+                raise ValueError("--video-output requires a single-request run")
+            save_video_output(outputs[0], args.video_output)
+            summary["video_output"] = str(args.video_output)
     finally:
         started = time.perf_counter()
         engine.close()

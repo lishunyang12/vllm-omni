@@ -10,35 +10,24 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd -- "$SCRIPT_DIR/.." && pwd)
 VENV=${VLLM_OMNI_VENV:-"$REPO/../.venv-vllm028"}
 MODEL=${MINIMAX_H3_MODEL:-"$ROOT/MiniMax-H3/FL2VA"}
-PORT=${VLLM_OMNI_PORT:-8091}
+STEPS=${MINIMAX_H3_STEPS:-2}
 GPU_ORDER=0,4,1,5,2,6,3,7
 
-require_command() {
-  if ! command -v "$1" >/dev/null; then
-    echo "ERROR: required command not found: $1" >&2
+for command_name in nvidia-smi numactl nohup setsid; do
+  if ! command -v "$command_name" >/dev/null; then
+    echo "ERROR: required command not found: $command_name" >&2
     exit 2
   fi
-}
-
-for command_name in nvidia-smi numactl nohup setsid ss; do
-  require_command "$command_name"
 done
 
 cd "$REPO"
-
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "ERROR: checkout is dirty: $REPO" >&2
   git status --short >&2
   exit 2
 fi
 
-VLLM="$VENV/bin/vllm"
 PYTHON="$VENV/bin/python"
-
-[[ -x "$VLLM" ]] || {
-  echo "ERROR: vllm executable not found: $VLLM" >&2
-  exit 2
-}
 [[ -x "$PYTHON" ]] || {
   echo "ERROR: Python executable not found: $PYTHON" >&2
   exit 2
@@ -50,8 +39,7 @@ PYTHON="$VENV/bin/python"
 
 AVAILABLE=$(nvidia-smi --query-gpu=index --format=csv,noheader)
 if [[ $(wc -l <<<"$AVAILABLE") -ne 8 ]]; then
-  echo "ERROR: this profile requires exactly eight visible GPUs" >&2
-  printf '%s\n' "$AVAILABLE" >&2
+  echo "ERROR: this profile requires exactly eight GPUs" >&2
   exit 3
 fi
 
@@ -60,19 +48,14 @@ ACTIVE_PIDS=$(nvidia-smi \
   --format=csv,noheader,nounits 2>/dev/null \
   | awk '/^[[:space:]]*[0-9]+[[:space:]]*$/ {print $1}')
 if [[ -n "$ACTIVE_PIDS" ]]; then
-  echo "ERROR: selected GPUs have active compute processes" >&2
+  echo "ERROR: GPUs have active compute processes" >&2
   printf '%s\n' "$ACTIVE_PIDS" >&2
   exit 3
 fi
 
-if [[ -n "$(ss -ltnH "sport = :$PORT")" ]]; then
-  echo "ERROR: port $PORT is already listening" >&2
-  exit 3
-fi
-
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-RESULT_ROOT="$ROOT/results/dlo-sp8-main-$STAMP"
-SERVER_LOG="$RESULT_ROOT/server.log"
+RESULT_ROOT="$ROOT/results/dlo-sp8-offline-$STAMP"
+RUN_LOG="$RESULT_ROOT/run.log"
 mkdir -p "$RESULT_ROOT"
 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
@@ -86,27 +69,21 @@ export XDG_CACHE_HOME="$ROOT/xdg-cache"
 export TORCHINDUCTOR_CACHE_DIR="$ROOT/torchinductor-cache"
 export TRITON_CACHE_DIR="$ROOT/triton-cache"
 
-ARGS=(
-  serve "$MODEL"
-  --omni
-  --host 127.0.0.1
-  --port "$PORT"
-  --trust-remote-code
-  --task-type fl2va
-  --num-gpus 8
-  --data-parallel-size 1
-  --tensor-parallel-size 1
-  --usp 8
-  --ring 1
-  --text-encoder-tp-size 8
-  --vae-patch-parallel-size 8
-  --vae-parallel-mode tile
-  --vae-use-tiling
-  --enable-distributed-layerwise-offload
-  --dlo-use-allgather
-  --dlo-resident-layers 0
-  --enforce-eager
-  --diffusion-attention-backend CUDNN_ATTN
+CMD=(
+  numactl --interleave=0,1
+  "$PYTHON"
+  "$REPO/examples/offline_inference/minimax_h3/dlo_lifecycle.py"
+  --model "$MODEL"
+  --mode dlo
+  --dp-size 1
+  --sp-size 8
+  --steps "$STEPS"
+  --seed 0
+  --duration 5.0
+  --width 1344
+  --height 768
+  --output "$RESULT_ROOT/summary.json"
+  --video-output "$RESULT_ROOT/smoke.mp4"
 )
 
 {
@@ -118,8 +95,8 @@ ARGS=(
   echo "parallelism=DP1_TP1_SP8_RING1_TE8_VAE8"
   echo "dlo_use_allgather=true"
   echo "dlo_resident_layers=0"
+  echo "steps=$STEPS"
   "$PYTHON" --version
-  "$VLLM" --version
   "$PYTHON" -m pip show vllm vllm-omni
   nvidia-smi
   nvidia-smi topo -m
@@ -127,34 +104,32 @@ ARGS=(
 } >"$RESULT_ROOT/environment.txt" 2>&1
 
 "$PYTHON" -m pip freeze >"$RESULT_ROOT/packages.txt"
-printf '%q ' "$VLLM" "${ARGS[@]}" >"$RESULT_ROOT/command.txt"
+printf '%q ' "${CMD[@]}" >"$RESULT_ROOT/command.txt"
 printf '\n' >>"$RESULT_ROOT/command.txt"
 
-CMD=(numactl --interleave=0,1 "$VLLM" "${ARGS[@]}")
-nohup setsid "${CMD[@]}" >"$SERVER_LOG" 2>&1 </dev/null &
-SERVER_PID=$!
-echo "$SERVER_PID" >"$RESULT_ROOT/server.pid"
+nohup setsid "${CMD[@]}" >"$RUN_LOG" 2>&1 </dev/null &
+RUN_PID=$!
+echo "$RUN_PID" >"$RESULT_ROOT/run.pid"
 
 sleep 3
-if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-  echo "ERROR: server exited during initial startup" >&2
-  tail -n 100 "$SERVER_LOG" >&2
+if ! kill -0 "$RUN_PID" 2>/dev/null; then
+  echo "ERROR: offline inference exited during startup" >&2
+  tail -n 100 "$RUN_LOG" >&2
   exit 4
 fi
 
-SERVER_PGID=$(ps -o pgid= -p "$SERVER_PID" | tr -d ' ')
-if [[ ! "$SERVER_PGID" =~ ^[0-9]+$ ]]; then
-  echo "ERROR: failed to resolve server process group" >&2
+RUN_PGID=$(ps -o pgid= -p "$RUN_PID" | tr -d ' ')
+if [[ ! "$RUN_PGID" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: failed to resolve inference process group" >&2
   exit 4
 fi
-
-echo "$SERVER_PGID" >"$RESULT_ROOT/server.pgid"
-ps -o pid,pgid,sid,stat,etime,cmd -p "$SERVER_PID" \
-  >"$RESULT_ROOT/server.process"
+echo "$RUN_PGID" >"$RESULT_ROOT/run.pgid"
+ps -o pid,pgid,sid,stat,etime,cmd -p "$RUN_PID" \
+  >"$RESULT_ROOT/run.process"
 
 echo "RESULT_ROOT=$RESULT_ROOT"
-echo "SERVER_PID=$SERVER_PID"
-echo "SERVER_PGID=$SERVER_PGID"
-echo "SERVER_LOG=$SERVER_LOG"
-echo "TAIL_COMMAND=tail -f $SERVER_LOG"
-echo "STOP_COMMAND=kill -TERM -- -$SERVER_PGID"
+echo "RUN_PID=$RUN_PID"
+echo "RUN_PGID=$RUN_PGID"
+echo "RUN_LOG=$RUN_LOG"
+echo "TAIL_COMMAND=tail -f $RUN_LOG"
+echo "STOP_COMMAND=kill -TERM -- -$RUN_PGID"
