@@ -10,6 +10,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd -- "$SCRIPT_DIR/.." && pwd)
 VENV=${VLLM_OMNI_VENV:-"$REPO/../.venv-vllm028"}
 MODEL=${MINIMAX_H3_MODEL:-"$ROOT/MiniMax-H3/FL2VA"}
+PROMPT_FILE="$REPO/examples/offline_inference/minimax_h3/prompts/starship_hyperspace_10s.txt"
 STEPS=${MINIMAX_H3_STEPS:-2}
 GPU_ORDER=0,4,1,5,2,6,3,7
 
@@ -34,6 +35,10 @@ PYTHON="$VENV/bin/python"
 }
 [[ -f "$MODEL/model_index.json" ]] || {
   echo "ERROR: MiniMax-H3 FL2VA model not found: $MODEL" >&2
+  exit 2
+}
+[[ -s "$PROMPT_FILE" ]] || {
+  echo "ERROR: prompt file not found or empty: $PROMPT_FILE" >&2
   exit 2
 }
 
@@ -79,18 +84,23 @@ CMD=(
   --sp-size 8
   --steps "$STEPS"
   --seed 0
-  --duration 5.0
+  --duration 10.0
   --width 1344
   --height 768
+  --prompt-file "$PROMPT_FILE"
   --output "$RESULT_ROOT/summary.json"
   --video-output "$RESULT_ROOT/smoke.mp4"
 )
+
+cp "$PROMPT_FILE" "$RESULT_ROOT/prompt.txt"
 
 {
   echo "utc_start=$STAMP"
   echo "repo=$REPO"
   echo "commit=$(git rev-parse HEAD)"
   echo "model=$MODEL"
+  echo "prompt_file=$PROMPT_FILE"
+  echo "duration=10.0"
   echo "physical_gpu_order=$GPU_ORDER"
   echo "parallelism=DP1_TP1_SP8_RING1_TE8_VAE8"
   echo "dlo_use_allgather=true"

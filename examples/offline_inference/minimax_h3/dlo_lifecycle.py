@@ -100,6 +100,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--height", type=int, default=768)
     parser.add_argument("--batch-wait-ms", type=float, default=500.0)
     parser.add_argument("--init-timeout", type=float, default=1800.0)
+    parser.add_argument(
+        "--prompt-file",
+        type=Path,
+        help="UTF-8 file used as the first valid request prompt",
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--video-output", type=Path)
     return parser.parse_args()
@@ -162,6 +167,15 @@ def save_video_output(output: Any, path: Path) -> None:
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(video_bytes)
+
+
+def load_primary_prompt(path: Path | None) -> str:
+    if path is None:
+        return DEFAULT_PROMPTS[0]
+    prompt = path.read_text(encoding="utf-8").strip()
+    if not prompt:
+        raise ValueError(f"Prompt file is empty: {path}")
+    return prompt
 
 
 def sampling_params(
@@ -235,6 +249,7 @@ def output_summary(output: Any, args: argparse.Namespace) -> dict[str, Any]:
 
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
+    primary_prompt = load_primary_prompt(args.prompt_file)
     engine = AsyncOmni(**engine_kwargs(args))
     summary: dict[str, Any] = {
         "mode": args.mode,
@@ -279,7 +294,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                     engine,
                     args,
                     request_id=f"recovery-{index}",
-                    prompt=DEFAULT_PROMPTS[index % len(DEFAULT_PROMPTS)],
+                    prompt=(primary_prompt if index == 0 else DEFAULT_PROMPTS[index % len(DEFAULT_PROMPTS)]),
                     seed=args.seed + index,
                 )
                 for index in range(request_count)
