@@ -46,18 +46,27 @@ class _FakeAllocation:
     size: int
     device: torch.device
 
+    def __getitem__(self, index: slice) -> _FakeView:
+        assert index.start is None and index.step is None
+        return _FakeView(self, index.stop)
 
-class _FakeHandle:
-    rank = 0
 
-    def __init__(self, allocation: _FakeAllocation) -> None:
-        self.allocation = allocation
-        self.views: list[tuple[tuple[int, ...], torch.dtype]] = []
+@dataclass
+class _FakeView:
+    allocation: _FakeAllocation
+    byte_size: int
+    dtype: torch.dtype = torch.uint8
+    shape: tuple[int, ...] = ()
 
-    def get_buffer(self, rank, shape, dtype):
-        assert rank == self.rank
-        self.views.append((shape, dtype))
-        return self.allocation, shape, dtype
+    def view(self, dtype_or_shape: torch.dtype | tuple[int, ...]) -> _FakeView:
+        if isinstance(dtype_or_shape, torch.dtype):
+            return _FakeView(self.allocation, self.byte_size, dtype=dtype_or_shape)
+        return _FakeView(
+            self.allocation,
+            self.byte_size,
+            dtype=self.dtype,
+            shape=dtype_or_shape,
+        )
 
 
 def test_workspace_reuses_peak_capacity_across_shapes(monkeypatch) -> None:
@@ -93,16 +102,19 @@ def test_workspace_reuses_peak_capacity_across_shapes(monkeypatch) -> None:
         return allocation
 
     monkeypatch.setattr(a2a_permute.symm_mem, "empty", empty)
-    monkeypatch.setattr(a2a_permute.symm_mem, "rendezvous", lambda allocation, _group: _FakeHandle(allocation))
+    monkeypatch.setattr(a2a_permute.symm_mem, "rendezvous", lambda _allocation, _group: object())
 
     device = torch.device("cuda:0")
     first = a2a_permute._get_symm_buffer((2, 3), torch.float16, device, "group")
     smaller = a2a_permute._get_symm_buffer((1, 4), torch.float16, device, "group")
     larger = a2a_permute._get_symm_buffer((4, 3), torch.float16, device, "group")
 
-    assert first[0].size == 12
-    assert smaller[0] is first[0]
-    assert larger[0].size == 24
+    assert first.shape == (2, 3)
+    assert smaller.shape == (1, 4)
+    assert larger.shape == (4, 3)
+    assert first.dtype == smaller.dtype == larger.dtype == torch.float16
+    assert first.allocation is smaller.allocation
+    assert larger.allocation is not first.allocation
     assert [allocation.size for allocation in allocations] == [12, 24]
     assert len(a2a_permute._SYMM_WORKSPACES) == 1
     assert len(all_reduce_calls) == 1
