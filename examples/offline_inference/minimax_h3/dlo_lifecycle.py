@@ -66,6 +66,13 @@ def positive_int(value: str) -> int:
     return parsed
 
 
+def nonnegative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be a non-negative integer")
+    return parsed
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", required=True, help="Path to MiniMax-H3/FL2VA")
@@ -95,6 +102,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--steps", type=int, default=2)
     parser.add_argument("--seed", type=int, default=2000)
+    parser.add_argument(
+        "--resident-layers",
+        type=nonnegative_int,
+        default=0,
+        help="Leading DiT layers kept on each GPU during denoise (default: 0)",
+    )
     parser.add_argument("--duration", type=float, default=5.0)
     parser.add_argument("--width", type=int, default=1344)
     parser.add_argument("--height", type=int, default=768)
@@ -136,7 +149,7 @@ def engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             vae_patch_parallel_size=args.sp_size,
             enable_distributed_layerwise_offload=True,
             dlo_use_allgather=args.mode == "dlo",
-            dlo_resident_layers=0,
+            dlo_resident_layers=args.resident_layers,
         )
     else:
         common.update(
