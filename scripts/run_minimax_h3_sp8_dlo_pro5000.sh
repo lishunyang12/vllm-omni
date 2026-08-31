@@ -53,6 +53,54 @@ PYTHON="$VENV/bin/python"
   echo "ERROR: Python executable not found: $PYTHON" >&2
   exit 2
 }
+
+CUDA_TOOLKIT=unused
+TORCH_CUDA_VERSION=$(
+  "$PYTHON" -c 'import torch; print(torch.version.cuda or "")'
+)
+if [[ "$ULYSSES_A2A_PERMUTE" == 1 ]]; then
+  [[ -n "$TORCH_CUDA_VERSION" ]] || {
+    echo "ERROR: LSA requires a CUDA-enabled PyTorch build" >&2
+    exit 2
+  }
+
+  CUDA_CANDIDATES=()
+  if [[ -n "${MINIMAX_H3_CUDA_HOME:-}" ]]; then
+    CUDA_CANDIDATES+=("$MINIMAX_H3_CUDA_HOME")
+  else
+    [[ -n "${CUDA_HOME:-}" ]] && CUDA_CANDIDATES+=("$CUDA_HOME")
+    for candidate in "$VENV"/lib/python*/site-packages/nvidia/cu13; do
+      CUDA_CANDIDATES+=("$candidate")
+    done
+    CUDA_CANDIDATES+=("/usr/local/cuda-$TORCH_CUDA_VERSION" "/usr/local/cuda")
+  fi
+
+  for candidate in "${CUDA_CANDIDATES[@]}"; do
+    [[ -x "$candidate/bin/nvcc" ]] || continue
+    NVCC_VERSION=$(
+      "$candidate/bin/nvcc" --version |
+        awk '/release/ {sub(/.*release /, ""); sub(/,.*/, ""); print; exit}'
+    )
+    if [[ "$NVCC_VERSION" == "$TORCH_CUDA_VERSION" ]]; then
+      CUDA_TOOLKIT=$(cd -- "$candidate" && pwd -P)
+      break
+    fi
+  done
+
+  if [[ "$CUDA_TOOLKIT" == unused ]]; then
+    echo "ERROR: LSA JIT requires nvcc $TORCH_CUDA_VERSION to match PyTorch; no matching CUDA toolkit found" >&2
+    echo "ERROR: set MINIMAX_H3_CUDA_HOME to the matching toolkit root" >&2
+    exit 2
+  fi
+  export CUDA_HOME=$CUDA_TOOLKIT
+  export PATH="$CUDA_TOOLKIT/bin:$PATH"
+  if [[ -d "$CUDA_TOOLKIT/lib" ]]; then
+    export LD_LIBRARY_PATH="$CUDA_TOOLKIT/lib:${LD_LIBRARY_PATH:-}"
+  elif [[ -d "$CUDA_TOOLKIT/lib64" ]]; then
+    export LD_LIBRARY_PATH="$CUDA_TOOLKIT/lib64:${LD_LIBRARY_PATH:-}"
+  fi
+fi
+
 [[ -f "$MODEL/model_index.json" ]] || {
   echo "ERROR: MiniMax-H3 FL2VA model not found: $MODEL" >&2
   exit 2
@@ -131,11 +179,16 @@ cp "$PROMPT_FILE" "$RESULT_ROOT/prompt.txt"
   echo "ulysses_mode=strict"
   echo "ulysses_a2a_permute=$ULYSSES_A2A_PERMUTE"
   echo "ulysses_transport=$ULYSSES_TRANSPORT"
+  echo "torch_cuda=$TORCH_CUDA_VERSION"
+  echo "cuda_toolkit=$CUDA_TOOLKIT"
   echo "dlo_use_allgather=true"
   echo "dlo_resident_layers=$RESIDENT_LAYERS"
   echo "steps=$STEPS"
   echo "repetitions=$REPETITIONS"
   "$PYTHON" --version
+  if [[ "$ULYSSES_A2A_PERMUTE" == 1 ]]; then
+    "$CUDA_TOOLKIT/bin/nvcc" --version
+  fi
   "$PYTHON" -m pip show vllm vllm-omni
   nvidia-smi
   nvidia-smi topo -m
