@@ -959,6 +959,12 @@ class MiniMaxH3Pipeline(
             )
 
         self._fasth3 = resolve_fasth3_fusion(od_config, self.transformer)
+        if self._fasth3 is not None and self._fasth3.requires_vsa:
+            # The artifact assigns a compression gate per DiT block, so those
+            # modules have to exist before load_weights streams them in.
+            self.transformer.enable_vsa_gates()
+            if ref2va_model_path is not None:
+                self.transformers_ref.enable_vsa_gates()
         if self._fasth3 is not None:
             self._fasth3.check_serving_contract(
                 partition=self.partition,

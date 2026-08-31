@@ -422,6 +422,13 @@ class MiniMaxH3Attention(nn.Module):
             quant_config=quant_config,
             prefix=f"{prefix}.out_proj",
         )
+        # VSA compression gate. A FastH3 VSA artifact assigns this projection
+        # with ``.set_weight``; the dense path never builds it, so the module is
+        # created only once the loader knows a VSA artifact is coming.
+        self.to_gate_compress: ColumnParallelLinear | None = None
+        self._gate_hidden_size = arch.hidden_size
+        self._gate_quant_config = quant_config
+        self._gate_prefix = f"{prefix}.to_gate_compress"
         self.attention = Attention(
             num_heads=self.num_heads,
             num_kv_heads=self.num_kv_heads,
@@ -435,6 +442,26 @@ class MiniMaxH3Attention(nn.Module):
             skip_sequence_parallel=skip_sequence_parallel,
             prefix=prefix,
         )
+
+    def enable_vsa_gate(self) -> None:
+        """Build the VSA compression gate this attention would otherwise lack.
+
+        Called before ``load_weights`` so the artifact's ``.set_weight`` tensor
+        has a parameter to land on. Zero-initialized like the Wan VSA layers, so
+        a gate that never receives weights degrades to sparse-only selection
+        rather than to garbage.
+        """
+        if self.to_gate_compress is not None:
+            return
+        self.to_gate_compress = ColumnParallelLinear(
+            self._gate_hidden_size,
+            self.total_num_heads * self.head_dim,
+            bias=False,
+            params_dtype=_BF16_DTYPE,
+            quant_config=self._gate_quant_config,
+            prefix=self._gate_prefix,
+        )
+        nn.init.zeros_(self.to_gate_compress.weight)
 
     def _apply_rope(self, x: torch.Tensor, freqs: torch.Tensor) -> torch.Tensor:
         """Rotate the first rot_dim head dims; pass the rest through.
@@ -461,6 +488,7 @@ class MiniMaxH3Attention(nn.Module):
         packed_total: int,
         num_requests: int = 1,
         video_layout: VideoTokenLayout | None = None,
+        gate_compress: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Run packed attention as a small eager island.
 
@@ -539,6 +567,9 @@ class MiniMaxH3Attention(nn.Module):
                 # (see MINIMAX_H3_LASER_INPUT_SCALE). Ignored by every other
                 # backend/path.
                 "laser_input_scale": MINIMAX_H3_LASER_INPUT_SCALE,
+                # Present only for a VSA artifact; the VSA backend reads it as
+                # the learned compression gate and every other backend ignores it.
+                **({"gate_compress": gate_compress.unsqueeze(0)} if gate_compress is not None else {}),
             },
             video_layout=video_layout,
         )
@@ -593,6 +624,16 @@ class MiniMaxH3Attention(nn.Module):
                 self.q_norm.variance_epsilon,
             )
 
+        # The gate is projected from this rank's rows, the same ones that
+        # produced q. Under Ulysses, q is traded for heads inside self.attention
+        # while the gate is not, so the two only line up when sequence
+        # parallelism is off - which is also the only case the VSA backend runs.
+        gate_compress = None
+        if self.to_gate_compress is not None:
+            gate_result = self.to_gate_compress(x)
+            gate_compress = gate_result[0] if isinstance(gate_result, tuple) else gate_result
+            gate_compress = gate_compress.view(total, self.num_heads, self.head_dim)
+
         # Each request contributes a document for its rows plus one for any
         # nonempty alignment padding. Local/Ulysses backends unpad it, while
         # Ring keeps aligned rows for fixed-size P2P buffers.
@@ -608,6 +649,7 @@ class MiniMaxH3Attention(nn.Module):
             packed_total=packed_total if packed_total is not None else q.shape[0],
             num_requests=num_requests,
             video_layout=video_layout,
+            gate_compress=gate_compress,
         )
         out = out.reshape(total, self.num_heads * self.head_dim)
         out, _ = self.out_proj(out)
@@ -1130,12 +1172,27 @@ class MiniMaxH3DiTModel(nn.Module):
         self.sp_prepare = MiniMaxH3SPPrepare()
         self.local_sp_prepare = MiniMaxH3SPPrepare()
         self.sp_gather = MiniMaxH3SPGather()
+        self.vsa_gates_enabled = False
         self.final_layer = MiniMaxH3FinalLayer(
             arch,
             quant_config,
             prefix="final_layer",
         )
         self._mark_missing_params_required()
+
+    def enable_vsa_gates(self) -> None:
+        """Give every DiT block's attention a VSA compression gate.
+
+        A FastH3 VSA artifact assigns these projections rather than adding to
+        them, so they have to exist before the weight stream reaches them. The
+        token refiner is left alone: the artifact carries gates for the 50 DiT
+        blocks only.
+        """
+        if self.vsa_gates_enabled:
+            return
+        for block in self.blocks:
+            block.attn.enable_vsa_gate()
+        self.vsa_gates_enabled = True
 
     def _mark_missing_params_required(self) -> None:
         for _, param in self.named_parameters():
