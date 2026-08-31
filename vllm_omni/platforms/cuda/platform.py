@@ -187,12 +187,15 @@ class CudaOmniPlatform(OmniPlatform, CudaPlatformBase):
                     )
                     return DiffusionAttentionBackendEnum.TORCH_SDPA.get_path()
             if backend_upper == "TRTLLM_ATTN":
-                trtllm_attn_supported = compute_capability is not None and compute_capability.major == 10
+                trtllm_attn_supported = compute_capability is not None and (
+                    compute_capability.major == 10 or tuple(compute_capability) == (12, 0)
+                )
                 if not trtllm_attn_supported:
                     raise ValueError(
-                        "TRTLLM_ATTN diffusion attention backend requires a datacenter "
-                        "Blackwell GPU (SM100 / SM103, compute capability 10.x). Select a "
-                        "different --diffusion-attention-backend."
+                        "TRTLLM_ATTN diffusion attention backend requires SM100/SM103 "
+                        "(compute capability 10.x), or SM120 with "
+                        "quant.flashinfer_backend='cute-dsl-prims'. Select a different "
+                        "--diffusion-attention-backend."
                     )
                 if not flashinfer_available:
                     raise ValueError(

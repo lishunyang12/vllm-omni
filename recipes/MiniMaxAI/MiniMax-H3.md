@@ -278,11 +278,13 @@ CuTe DSL kernel through `TRTLLM_ATTN`. Build the exact tested FlashInfer fork
 and revision first:
 
 ```bash
-git clone --recursive https://github.com/Tom-Zheng/flashinfer.git
+git clone --recursive https://github.com/lishunyang12/flashinfer.git
 cd flashinfer
-git checkout 4a2345906256da0849d7e1e4681db514ab9b800e
+git checkout f764a6c868543fcf581da43b4ecef4de9b5aaa6a
 python -m pip install -v '.[cu13]'
-python -m pytest -q tests/attention/test_sm120_prims_prefill_backend.py
+python -m pytest -q tests/attention/test_sm120_fmha_api.py
+python -m pytest -q tests/attention/test_sm120_fmha.py \
+  -k 'sm120_ragged_skip_softmax_omits_negligible_tiles'
 ```
 
 Then select the kernel explicitly. Q/K/V are quantized to FP8 E4M3 and the
@@ -296,6 +298,10 @@ kernel returns BF16/FP16. The short token-refiner attention remains dense:
       "dtype_qk": "fp8_e4m3",
       "dtype_vo": "fp8_e4m3",
       "flashinfer_backend": "cute-dsl-prims"
+    },
+    "skip_softmax": {
+      "threshold": 0.05,
+      "disabled_until_timestep": 0.97
     }
   },
   "per_role": {
@@ -310,6 +316,11 @@ before measuring. For reproducible production measurements, copy validated
 per-model scales into the three optional quant fields. This path requires
 compute capability 12.0 and fails explicitly on B300/SM103; use dense
 `TRTLLM_ATTN` or `CUDNN_ATTN` for the B300 baseline.
+
+The optional `skip_softmax` block uses the same threshold and timestep-gating
+semantics as dense `TRTLLM_ATTN`. It requires the FlashInfer revision above;
+an older `cute-dsl-prims` wrapper fails explicitly instead of silently running
+dense attention.
 
 `TRTLLM_ATTN` additionally supports two **lossy** optimizations for the long main
 DiT attention sequence: SAGE attention quantization and Skip-Softmax Sparse

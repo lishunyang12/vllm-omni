@@ -54,6 +54,26 @@ def test_kernels_hub_platform_fallback(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.core_model
+@pytest.mark.cpu
+def test_explicit_trtllm_backend_accepts_sm120(monkeypatch: pytest.MonkeyPatch):
+    from vllm.platforms.interface import DeviceCapability
+
+    from vllm_omni.diffusion.envs import PACKAGES_CHECKER
+    from vllm_omni.platforms.cuda.platform import CudaOmniPlatform
+
+    monkeypatch.setitem(sys.modules, "flashinfer", types.ModuleType("flashinfer"))
+    monkeypatch.setattr(
+        CudaOmniPlatform,
+        "get_device_capability",
+        classmethod(lambda cls, device_id=0: DeviceCapability(12, 0)),
+    )
+    monkeypatch.setattr(PACKAGES_CHECKER, "get_packages_info", lambda: {"has_flash_attn": False})
+
+    backend_path = CudaOmniPlatform.get_diffusion_attn_backend_cls("TRTLLM_ATTN", head_size=128)
+    assert backend_path == DiffusionAttentionBackendEnum.TRTLLM_ATTN.get_path()
+
+
+@pytest.mark.core_model
 @hardware_test(res={"cuda": "L4"}, num_cards=1)
 def test_kernels_hub_execution():
     """Verify basic forward of flash_attn_hub and flash_attn_3_hub, comparing with SDPA reference."""

@@ -255,8 +255,6 @@ class TrtllmAttentionImpl(AttentionImpl):
                 raise RuntimeError(
                     "TRTLLM_ATTN cute-dsl-prims requires quant.dtype_qk and quant.dtype_vo to both be 'fp8_e4m3'."
                 )
-            if self.skip.configured:
-                raise RuntimeError("TRTLLM_ATTN cute-dsl-prims does not support skip_softmax.")
         elif self.quant.enabled:
             if self.quant.dtype_vo is not None:
                 raise RuntimeError(
@@ -368,6 +366,7 @@ class TrtllmAttentionImpl(AttentionImpl):
         cu_seq_lens_q: torch.Tensor,
         cu_seq_lens_kv: torch.Tensor,
         plan_key: tuple | None,
+        skip_softmax_threshold_scale_factor: float | None,
     ) -> torch.Tensor:
         capability = torch.cuda.get_device_capability(q.device)
         if capability != (12, 0):
@@ -388,6 +387,14 @@ class TrtllmAttentionImpl(AttentionImpl):
                 self._get_sm120_workspace(q.device),
                 "NHD",
                 backend=_SM120_PRIMS_BACKEND,
+            )
+        if (
+            skip_softmax_threshold_scale_factor is not None
+            and "skip_softmax_threshold_scale_factor" not in inspect.signature(self._sm120_wrapper.run).parameters
+        ):
+            raise RuntimeError(
+                "TRTLLM_ATTN cute-dsl-prims skip_softmax requires a FlashInfer build "
+                "whose ragged prefill wrapper exposes skip_softmax_threshold_scale_factor."
             )
         if plan_key is None or plan_key != self._sm120_plan_key:
             self._sm120_wrapper.plan(
@@ -413,6 +420,7 @@ class TrtllmAttentionImpl(AttentionImpl):
             q_scale=q_scale,
             k_scale=k_scale,
             v_scale=v_scale,
+            skip_softmax_threshold_scale_factor=skip_softmax_threshold_scale_factor,
         )
         return output
 
@@ -450,6 +458,15 @@ class TrtllmAttentionImpl(AttentionImpl):
         kv_len, num_kv_heads = key.shape[1], key.shape[2]
 
         device = query.device
+        if (
+            device.type == "cuda"
+            and torch.cuda.get_device_capability(device) == (12, 0)
+            and not self.quant.use_sm120_prims
+        ):
+            raise RuntimeError(
+                "TRTLLM_ATTN on SM120 requires quant.dtype_qk='fp8_e4m3', "
+                "quant.dtype_vo='fp8_e4m3', and quant.flashinfer_backend='cute-dsl-prims'."
+            )
 
         q = query.reshape(physical_batch * q_len, num_q_heads, head_dim).contiguous()
         k = key.reshape(physical_batch * kv_len, num_kv_heads, head_dim).contiguous()
@@ -523,7 +540,15 @@ class TrtllmAttentionImpl(AttentionImpl):
             sm120_plan_key = ("uniform", batch, q_len, kv_len, tuple(q.shape), tuple(k.shape), q.dtype, self.causal)
 
         if self.quant.use_sm120_prims:
-            out = self._run_sm120_prims(q, k, v, cu_seq_lens_q, cu_seq_lens_kv, sm120_plan_key)
+            out = self._run_sm120_prims(
+                q,
+                k,
+                v,
+                cu_seq_lens_q,
+                cu_seq_lens_kv,
+                sm120_plan_key,
+                self._resolve_skip_factor(max_kv_len),
+            )
             if out.shape[0] != output_tokens:
                 padded_out = torch.zeros((output_tokens, num_q_heads, head_dim), dtype=out.dtype, device=out.device)
                 padded_out[: out.shape[0]] = out

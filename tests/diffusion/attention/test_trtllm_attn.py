@@ -75,15 +75,15 @@ def test_quant_config_from_backend_kwargs():
 def test_sm120_prims_requires_explicit_fp8_qk_and_vo():
     with pytest.raises(RuntimeError, match="dtype_qk and quant.dtype_vo"):
         _impl(quant={"dtype_qk": "fp8_e4m3", "flashinfer_backend": "cute-dsl-prims"})
-    with pytest.raises(RuntimeError, match="does not support skip_softmax"):
-        _impl(
-            quant={
-                "dtype_qk": "fp8_e4m3",
-                "dtype_vo": "fp8_e4m3",
-                "flashinfer_backend": "cute-dsl-prims",
-            },
-            skip_softmax_threshold=0.1,
-        )
+    impl = _impl(
+        quant={
+            "dtype_qk": "fp8_e4m3",
+            "dtype_vo": "fp8_e4m3",
+            "flashinfer_backend": "cute-dsl-prims",
+        },
+        skip_softmax_threshold=0.1,
+    )
+    assert impl.skip.enabled
 
 
 def test_sm120_prims_scale_validation_and_calibration():
@@ -123,9 +123,24 @@ def test_sm120_prims_wrapper_is_planned_once_and_receives_scales(monkeypatch):
             observed["plans"] += 1
             observed.update(qo=qo.clone(), kv=kv.clone(), hq=hq, hkv=hkv, dim=dim, plan_kwargs=kwargs)
 
-        def run(self, q, k, v, *, out, q_scale, k_scale, v_scale):
+        def run(
+            self,
+            q,
+            k,
+            v,
+            *,
+            out,
+            q_scale,
+            k_scale,
+            v_scale,
+            skip_softmax_threshold_scale_factor,
+        ):
             observed["runs"] += 1
-            observed.update(dtypes=(q.dtype, k.dtype, v.dtype), scales=(q_scale, k_scale, v_scale))
+            observed.update(
+                dtypes=(q.dtype, k.dtype, v.dtype),
+                scales=(q_scale, k_scale, v_scale),
+                skip_factor=skip_softmax_threshold_scale_factor,
+            )
             out.zero_()
             return out
 
@@ -142,7 +157,8 @@ def test_sm120_prims_wrapper_is_planned_once_and_receives_scales(monkeypatch):
             "q_scale": 0.5,
             "k_scale": 0.25,
             "v_scale": 0.125,
-        }
+        },
+        skip_softmax_threshold=0.25,
     )
     q = torch.randn(1, 4, 8, 128, dtype=torch.bfloat16)
     first = impl.forward_cuda(q, q, q)
@@ -153,7 +169,44 @@ def test_sm120_prims_wrapper_is_planned_once_and_receives_scales(monkeypatch):
     assert observed["plans"] == 1 and observed["runs"] == 2
     assert observed["dtypes"] == (torch.float8_e4m3fn,) * 3
     assert observed["scales"] == (0.5, 0.25, 0.125)
+    assert observed["skip_factor"] == pytest.approx(1.0)
     assert observed["qo"].tolist() == [0, 4]
+
+
+def test_sm120_prims_skip_requires_updated_flashinfer_wrapper(monkeypatch):
+    class LegacyWrapper:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def plan(self, *args, **kwargs):
+            pass
+
+        def run(self, q, k, v, *, out, q_scale, k_scale, v_scale):
+            return out
+
+    monkeypatch.setattr(tg, "HAS_FLASHINFER", True)
+    monkeypatch.setattr(tg, "_sm120_prims_wrapper_cls", lambda: LegacyWrapper)
+    monkeypatch.setattr(
+        TrtllmAttentionImpl,
+        "_get_sm120_workspace",
+        classmethod(lambda cls, device: torch.empty(1)),
+    )
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda device=None: (12, 0))
+
+    impl = _impl(
+        quant={
+            "dtype_qk": "fp8_e4m3",
+            "dtype_vo": "fp8_e4m3",
+            "flashinfer_backend": "cute-dsl-prims",
+            "q_scale": 0.5,
+            "k_scale": 0.25,
+            "v_scale": 0.125,
+        },
+        skip_softmax_threshold=0.25,
+    )
+    q = torch.zeros(1, 4, 8, 128, dtype=torch.bfloat16)
+    with pytest.raises(RuntimeError, match="ragged prefill wrapper exposes"):
+        impl.forward_cuda(q, q, q)
 
 
 def test_sm120_prims_fails_fast_on_b300(monkeypatch):
