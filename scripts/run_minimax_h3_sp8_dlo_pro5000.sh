@@ -16,10 +16,16 @@ DURATION=${MINIMAX_H3_DURATION:-10.0}
 REPETITIONS=${MINIMAX_H3_REPETITIONS:-1}
 RESIDENT_LAYERS=${MINIMAX_H3_DLO_RESIDENT_LAYERS:-35}
 ULYSSES_A2A_PERMUTE=${MINIMAX_H3_ULYSSES_A2A_PERMUTE:-0}
-GPU_ORDER=0,4,1,5,2,6,3,7
+GPU_ORDER=${MINIMAX_H3_GPU_ORDER:-0,4,1,5,2,6,3,7}
+IFS=',' read -r -a SELECTED_GPUS <<<"$GPU_ORDER"
+SP_SIZE=${#SELECTED_GPUS[@]}
 
 if [[ "$ULYSSES_A2A_PERMUTE" != 0 && "$ULYSSES_A2A_PERMUTE" != 1 ]]; then
   echo "ERROR: MINIMAX_H3_ULYSSES_A2A_PERMUTE must be 0 or 1" >&2
+  exit 2
+fi
+if [[ "$SP_SIZE" != 4 && "$SP_SIZE" != 8 ]]; then
+  echo "ERROR: MINIMAX_H3_GPU_ORDER must select exactly 4 or 8 GPUs" >&2
   exit 2
 fi
 if [[ "$ULYSSES_A2A_PERMUTE" == 1 ]]; then
@@ -56,24 +62,24 @@ PYTHON="$VENV/bin/python"
   exit 2
 }
 
-AVAILABLE=$(nvidia-smi --query-gpu=index --format=csv,noheader)
-if [[ $(wc -l <<<"$AVAILABLE") -ne 8 ]]; then
-  echo "ERROR: this profile requires exactly eight GPUs" >&2
-  exit 3
-fi
-
-ACTIVE_PIDS=$(nvidia-smi \
-  --query-compute-apps=pid \
-  --format=csv,noheader,nounits 2>/dev/null \
-  | awk '/^[[:space:]]*[0-9]+[[:space:]]*$/ {print $1}')
-if [[ -n "$ACTIVE_PIDS" ]]; then
-  echo "ERROR: GPUs have active compute processes" >&2
-  printf '%s\n' "$ACTIVE_PIDS" >&2
-  exit 3
-fi
+GPU_STATE=$(nvidia-smi \
+  --query-gpu=index,memory.used,utilization.gpu \
+  --format=csv,noheader,nounits)
+for GPU_ID in "${SELECTED_GPUS[@]}"; do
+  MEMORY_USED=$(awk -F',' -v gpu="$GPU_ID" '$1 + 0 == gpu {gsub(/ /, "", $2); print $2}' <<<"$GPU_STATE")
+  GPU_UTIL=$(awk -F',' -v gpu="$GPU_ID" '$1 + 0 == gpu {gsub(/ /, "", $3); print $3}' <<<"$GPU_STATE")
+  if [[ -z "$MEMORY_USED" || -z "$GPU_UTIL" ]]; then
+    echo "ERROR: selected GPU $GPU_ID is not visible" >&2
+    exit 3
+  fi
+  if (( MEMORY_USED > 2048 || GPU_UTIL > 10 )); then
+    echo "ERROR: selected GPU $GPU_ID is busy: memory=${MEMORY_USED} MiB, utilization=${GPU_UTIL}%" >&2
+    exit 3
+  fi
+done
 
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-RESULT_ROOT="$ROOT/results/dlo-sp8-$ULYSSES_TRANSPORT-offline-$STAMP"
+RESULT_ROOT="$ROOT/results/dlo-sp$SP_SIZE-$ULYSSES_TRANSPORT-offline-$STAMP"
 RUN_LOG="$RESULT_ROOT/run.log"
 mkdir -p "$RESULT_ROOT"
 
@@ -95,7 +101,7 @@ CMD=(
   --model "$MODEL"
   --mode dlo
   --dp-size 1
-  --sp-size 8
+  --sp-size "$SP_SIZE"
   --steps "$STEPS"
   --repetitions "$REPETITIONS"
   --seed 0
@@ -121,7 +127,7 @@ cp "$PROMPT_FILE" "$RESULT_ROOT/prompt.txt"
   echo "prompt_file=$PROMPT_FILE"
   echo "duration=$DURATION"
   echo "physical_gpu_order=$GPU_ORDER"
-  echo "parallelism=DP1_TP1_SP8_RING1_TE8_VAE8"
+  echo "parallelism=DP1_TP1_SP${SP_SIZE}_RING1_TE${SP_SIZE}_VAE${SP_SIZE}"
   echo "ulysses_mode=strict"
   echo "ulysses_a2a_permute=$ULYSSES_A2A_PERMUTE"
   echo "ulysses_transport=$ULYSSES_TRANSPORT"
