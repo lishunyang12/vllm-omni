@@ -15,7 +15,18 @@ STEPS=${MINIMAX_H3_STEPS:-2}
 DURATION=${MINIMAX_H3_DURATION:-10.0}
 REPETITIONS=${MINIMAX_H3_REPETITIONS:-1}
 RESIDENT_LAYERS=${MINIMAX_H3_DLO_RESIDENT_LAYERS:-35}
+ULYSSES_A2A_PERMUTE=${MINIMAX_H3_ULYSSES_A2A_PERMUTE:-0}
 GPU_ORDER=0,4,1,5,2,6,3,7
+
+if [[ "$ULYSSES_A2A_PERMUTE" != 0 && "$ULYSSES_A2A_PERMUTE" != 1 ]]; then
+  echo "ERROR: MINIMAX_H3_ULYSSES_A2A_PERMUTE must be 0 or 1" >&2
+  exit 2
+fi
+if [[ "$ULYSSES_A2A_PERMUTE" == 1 ]]; then
+  ULYSSES_TRANSPORT=lsa
+else
+  ULYSSES_TRANSPORT=regular
+fi
 
 for command_name in nvidia-smi numactl nohup setsid; do
   if ! command -v "$command_name" >/dev/null; then
@@ -62,7 +73,7 @@ if [[ -n "$ACTIVE_PIDS" ]]; then
 fi
 
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-RESULT_ROOT="$ROOT/results/dlo-sp8-offline-$STAMP"
+RESULT_ROOT="$ROOT/results/dlo-sp8-$ULYSSES_TRANSPORT-offline-$STAMP"
 RUN_LOG="$RESULT_ROOT/run.log"
 mkdir -p "$RESULT_ROOT"
 
@@ -96,6 +107,9 @@ CMD=(
   --output "$RESULT_ROOT/summary.json"
   --video-output "$RESULT_ROOT/smoke.mp4"
 )
+if [[ "$ULYSSES_A2A_PERMUTE" == 1 ]]; then
+  CMD+=(--ulysses-a2a-permute)
+fi
 
 cp "$PROMPT_FILE" "$RESULT_ROOT/prompt.txt"
 
@@ -108,6 +122,9 @@ cp "$PROMPT_FILE" "$RESULT_ROOT/prompt.txt"
   echo "duration=$DURATION"
   echo "physical_gpu_order=$GPU_ORDER"
   echo "parallelism=DP1_TP1_SP8_RING1_TE8_VAE8"
+  echo "ulysses_mode=strict"
+  echo "ulysses_a2a_permute=$ULYSSES_A2A_PERMUTE"
+  echo "ulysses_transport=$ULYSSES_TRANSPORT"
   echo "dlo_use_allgather=true"
   echo "dlo_resident_layers=$RESIDENT_LAYERS"
   echo "steps=$STEPS"

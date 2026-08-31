@@ -100,6 +100,11 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Ulysses SP and text-encoder/VAE parallel size for DLO modes (default: 1)",
     )
+    parser.add_argument(
+        "--ulysses-a2a-permute",
+        action="store_true",
+        help="Enable the fused symmetric-memory Ulysses all-to-all transport",
+    )
     parser.add_argument("--steps", type=int, default=2)
     parser.add_argument("--repetitions", type=positive_int, default=1)
     parser.add_argument("--seed", type=int, default=2000)
@@ -133,6 +138,7 @@ def engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         "trust_remote_code": True,
         "num_gpus": args.dp_size * args.sp_size if is_dlo else args.tp_size,
         "ulysses_degree": args.sp_size if is_dlo else 1,
+        "ulysses_a2a_permute": args.ulysses_a2a_permute,
         "ring_degree": 1,
         "vae_parallel_mode": "tile",
         "vae_use_tiling": True,
