@@ -8,9 +8,9 @@
 
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAException.h>
+#include <c10/cuda/CUDAStream.h>
 #include <c10/macros/Macros.h>
 #include <ATen/native/cuda/MemoryAccess.cuh>
-#include <ATen/cuda/CUDAContext.h>
 #include <torch/csrc/distributed/c10d/NCCLUtils.hpp>
 #include <torch/csrc/distributed/c10d/symm_mem/nccl_dev_cap.hpp>
 #include <torch/csrc/distributed/c10d/symm_mem/nccl_devcomm_manager.hpp>
@@ -49,7 +49,7 @@ void copy_rows(const at::Tensor& input, at::Tensor& out) {
       static_cast<size_t>(input.stride(0) * input.element_size());
 
   c10::cuda::CUDAGuard guard(input.device());
-  auto stream = at::cuda::getCurrentCUDAStream();
+  auto stream = c10::cuda::getCurrentCUDAStream();
   C10_CUDA_CHECK(cudaMemcpy2DAsync(
       out.data_ptr(),
       row_bytes,
@@ -170,7 +170,7 @@ void all_to_all_permute(
   TORCH_CHECK(nccl_hdl != nullptr, "a2a_permute: requires NCCL symmetric memory backend");
 
   c10::cuda::CUDAGuard guard(input.device());
-  auto stream = at::cuda::getCurrentCUDAStream();
+  auto stream = c10::cuda::getCurrentCUDAStream();
   auto device = input.device();
 
   auto& manager = NCCLDevCommManager::get(device);
