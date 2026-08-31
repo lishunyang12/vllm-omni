@@ -85,6 +85,72 @@ if not hasattr(torch.ops.vllm_omni, "fastvideo_vsa_bshd"):
 _fastvideo_vsa_bshd_op = torch.ops.vllm_omni.fastvideo_vsa_bshd
 
 
+# The BSHD entry point is defined for 128- and 256-token blocks only; the
+# 64-token path the FastH3 VSA students were distilled for lives behind the
+# BHSD entry point, which dispatches to the TK/Triton kernels.
+if not hasattr(torch.ops.vllm_omni, "fastvideo_vsa_bhsd"):
+
+    @torch.library.custom_op("vllm_omni::fastvideo_vsa_bhsd", mutates_args=())
+    def _fastvideo_vsa_bhsd_op(
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        variable_block_sizes: torch.Tensor,
+        q_variable_block_sizes: torch.Tensor,
+        compress_attn_weight: torch.Tensor,
+        topk: int,
+        block_t: int,
+        block_h: int,
+        block_w: int,
+    ) -> torch.Tensor:
+        from fastvideo_kernel import video_sparse_attn
+
+        gate = compress_attn_weight if compress_attn_weight.numel() else None
+        out = video_sparse_attn(
+            query.transpose(1, 2).contiguous(),
+            key.transpose(1, 2).contiguous(),
+            value.transpose(1, 2).contiguous(),
+            variable_block_sizes=variable_block_sizes,
+            q_variable_block_sizes=q_variable_block_sizes,
+            topk=topk,
+            block_size=(block_t, block_h, block_w),
+            compress_attn_weight=gate.transpose(1, 2).contiguous() if gate is not None else None,
+        )
+        return out.transpose(1, 2).contiguous()
+
+    @_fastvideo_vsa_bhsd_op.register_fake
+    def _(
+        query,
+        key,
+        value,
+        variable_block_sizes,
+        q_variable_block_sizes,
+        compress_attn_weight,
+        topk,
+        block_t,
+        block_h,
+        block_w,
+    ):
+        del (
+            key,
+            value,
+            variable_block_sizes,
+            q_variable_block_sizes,
+            compress_attn_weight,
+            topk,
+            block_t,
+            block_h,
+            block_w,
+        )
+        return torch.empty_like(query)
+
+
+_fastvideo_vsa_bhsd_op = torch.ops.vllm_omni.fastvideo_vsa_bhsd
+
+# block_elements -> the entry point that implements it.
+_VSA_SUPPORTED_BLOCK_ELEMENTS = (64, 128, 256)
+
+
 @functools.lru_cache(maxsize=32)
 def _get_tile_partition_indices(
     dit_seq_shape: tuple[int, int, int],
@@ -232,11 +298,11 @@ class FastVideoVSAImpl(AttentionImpl):
             qkv_layout=qkv_layout,
         )
 
-        if self.block_elements != 256:
+        if self.block_elements not in _VSA_SUPPORTED_BLOCK_ELEMENTS:
             logger.warning(
-                "FASTVIDEO_VSA currently uses fastvideo_kernel.video_sparse_attn_bshd, "
-                "which supports only 256-token blocks. Configured block_size=%s "
+                "FASTVIDEO_VSA implements %s-token blocks. Configured block_size=%s "
                 "(product=%d) will fall back to SDPA.",
+                "/".join(str(n) for n in _VSA_SUPPORTED_BLOCK_ELEMENTS),
                 self.block_size,
                 self.block_elements,
             )
@@ -269,8 +335,8 @@ class FastVideoVSAImpl(AttentionImpl):
     ) -> str | None:
         if self.causal:
             return "causal attention is not supported"
-        if self.block_elements != 256:
-            return f"block_elements must be 256, got {self.block_elements}"
+        if self.block_elements not in _VSA_SUPPORTED_BLOCK_ELEMENTS:
+            return f"block_elements must be one of {_VSA_SUPPORTED_BLOCK_ELEMENTS}, got {self.block_elements}"
         if self.topk <= 0:
             return f"topk must be positive, got {self.topk}"
         if query.ndim != 4 or key.ndim != 4 or value.ndim != 4:
@@ -385,7 +451,9 @@ class FastVideoVSAImpl(AttentionImpl):
             gate_tiled[:, non_pad_index] = gate_compress[:, tile_partition_indices]
             compress_attn_weight = gate_tiled
 
-            output = _fastvideo_vsa_bshd_op(
+            # 64-token blocks are only reachable through the BHSD entry point.
+            vsa_op = _fastvideo_vsa_bshd_op if self.block_elements >= 128 else _fastvideo_vsa_bhsd_op
+            output = vsa_op(
                 query_tiled.contiguous(),
                 key_tiled.contiguous(),
                 value_tiled.contiguous(),
