@@ -14,16 +14,27 @@ from vllm_omni.diffusion.distributed import a2a_permute
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
 
 
-def test_jit_build_includes_cuda_headers_from_nvidia_wheels(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("external_cuda_home", [False, True])
+def test_jit_build_uses_matching_cuda_headers(tmp_path, monkeypatch, external_cuda_home: bool) -> None:
     cu13_include = tmp_path / "nvidia" / "cu13" / "include"
     nccl_include = tmp_path / "nvidia" / "nccl" / "include"
     nccl_lib = tmp_path / "nvidia" / "nccl" / "lib" / "libnccl.so.2"
+    cuda_home = tmp_path / "cuda-toolkit"
+    cuda_home_include = cuda_home / "include"
     cu13_include.mkdir(parents=True)
     nccl_include.mkdir(parents=True)
     nccl_lib.parent.mkdir(parents=True)
+    cuda_home_include.mkdir(parents=True)
     (cu13_include / "cusparse.h").touch()
     (nccl_include / "nccl.h").touch()
     nccl_lib.touch()
+
+    if external_cuda_home:
+        monkeypatch.setenv("CUDA_HOME", str(cuda_home))
+        expected_cuda_include = cuda_home_include
+    else:
+        monkeypatch.delenv("CUDA_HOME", raising=False)
+        expected_cuda_include = cu13_include
 
     load_kwargs = {}
     monkeypatch.setattr(a2a_permute.sysconfig, "get_paths", lambda: {"purelib": str(tmp_path)})
@@ -37,7 +48,7 @@ def test_jit_build_includes_cuda_headers_from_nvidia_wheels(tmp_path, monkeypatc
 
     a2a_permute.ensure_a2a_permute_available()
 
-    assert set(load_kwargs["extra_include_paths"]) == {str(cu13_include), str(nccl_include)}
+    assert set(load_kwargs["extra_include_paths"]) == {str(expected_cuda_include), str(nccl_include)}
     assert load_kwargs["extra_ldflags"] == [str(nccl_lib)]
 
 

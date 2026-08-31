@@ -68,6 +68,16 @@ def _ensure_built() -> None:
         site_packages = sysconfig.get_paths()["purelib"]
         nvidia_root = os.path.join(site_packages, "nvidia")
         include_paths = glob.glob(os.path.join(nvidia_root, "*", "include"))
+        cuda_home = os.environ.get("CUDA_HOME")
+        if cuda_home:
+            cuda_include = os.path.join(cuda_home, "include")
+            if not os.path.isdir(cuda_include):
+                raise RuntimeError(f"a2a_permute: CUDA_HOME has no include directory: {cuda_include}")
+            wheel_cuda_include = os.path.join(nvidia_root, "cu13", "include")
+            include_paths = [
+                path for path in include_paths if os.path.normpath(path) != os.path.normpath(wheel_cuda_include)
+            ]
+            include_paths.insert(0, cuda_include)
         nccl_libs = glob.glob(os.path.join(nvidia_root, "nccl", "lib", "libnccl.so*"))
         if not nccl_libs:
             raise RuntimeError("a2a_permute: could not locate nvidia-nccl libnccl.so")
