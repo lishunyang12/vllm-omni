@@ -261,20 +261,18 @@ def _get_h3_tile_metadata(
 def _get_h3_layout(
     attn_metadata: AttentionMetadata | None,
 ) -> tuple[tuple[int, ...], tuple[int, int, int], int] | None:
-    if attn_metadata is None:
+    if attn_metadata is None or attn_metadata.video_layout is None:
         return None
     prefix = attn_metadata.extra.get("vsa_h3_prefix_segments")
-    video = attn_metadata.extra.get("vsa_h3_video_shape")
-    target_start = attn_metadata.extra.get("vsa_h3_target_start")
-    if (
-        not isinstance(prefix, (tuple, list))
-        or not isinstance(video, (tuple, list))
-        or len(video) != 3
-        or target_start is None
-    ):
+    if not isinstance(prefix, (tuple, list)):
         return None
-    video_shape = (int(video[0]), int(video[1]), int(video[2]))
-    return tuple(int(x) for x in prefix if int(x) > 0), video_shape, int(target_start)
+    target = next(
+        (span for span in reversed(attn_metadata.video_layout.video_spans) if span.role == "target"),
+        None,
+    )
+    if target is None:
+        return None
+    return tuple(int(x) for x in prefix if int(x) > 0), target.latent_grid, target.start
 
 
 def _pool_h3_tiles(x: torch.Tensor, sizes: torch.Tensor) -> torch.Tensor:

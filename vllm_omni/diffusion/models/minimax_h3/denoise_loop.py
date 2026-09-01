@@ -149,8 +149,10 @@ class MiniMaxH3DenoiseBranch:
             self.static_kwargs["video_token_layout"] = VideoTokenLayout(
                 used_len=int(cu[1]),
                 video_spans=spans,
-                prefix_segments=tuple(prefix_segments),
             )
+            # FastH3-specific prefix geometry belongs to MiniMax-H3's packed
+            # attention contract, not the shared VideoTokenLayout interface.
+            self.static_kwargs["packed_seq_params"]["vsa_prefix_segments"] = tuple(prefix_segments)
         else:
             grid = packed["latent_grid"].tolist()
             self.static_kwargs["video_token_layout"] = VideoTokenLayout(

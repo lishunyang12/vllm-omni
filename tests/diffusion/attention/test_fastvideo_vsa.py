@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
+import math
 import sys
 import types
 from typing import Any
@@ -8,7 +9,12 @@ from typing import Any
 import pytest
 import torch
 
-from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata, PackedPaddingMetadata
+from vllm_omni.diffusion.attention.backends.abstract import (
+    AttentionMetadata,
+    PackedPaddingMetadata,
+    VideoTokenLayout,
+    VideoTokenSpan,
+)
 from vllm_omni.diffusion.attention.backends.fastvideo_vsa import (
     FastVideoVSABackend,
     FastVideoVSAImpl,
@@ -215,12 +221,17 @@ def test_fastvideo_vsa_allows_topk_equal_to_num_blocks():
 def _h3_metadata(prefix_segments, video_shape, *, gate=None, packed_padding=None):
     extra: dict[str, Any] = {
         "vsa_h3_prefix_segments": prefix_segments,
-        "vsa_h3_video_shape": video_shape,
-        "vsa_h3_target_start": sum(prefix_segments),
     }
     if gate is not None:
         extra["gate_compress"] = gate
-    return AttentionMetadata(packed_padding=packed_padding, extra=extra)
+    return AttentionMetadata(
+        packed_padding=packed_padding,
+        video_layout=VideoTokenLayout(
+            used_len=sum(prefix_segments) + math.prod(video_shape),
+            video_spans=(VideoTokenSpan(start=sum(prefix_segments), latent_grid=video_shape, role="target"),),
+        ),
+        extra=extra,
+    )
 
 
 def _fake_block_sparse_kernel(monkeypatch, calls):

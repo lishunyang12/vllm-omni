@@ -488,6 +488,7 @@ class MiniMaxH3Attention(nn.Module):
         packed_total: int,
         num_requests: int = 1,
         video_layout: VideoTokenLayout | None = None,
+        vsa_prefix_segments: tuple[int, ...] = (),
         gate_compress: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Run packed attention as a small eager island.
@@ -570,20 +571,10 @@ class MiniMaxH3Attention(nn.Module):
                 # Present only for a VSA artifact; the VSA backend reads it as
                 # the learned compression gate and every other backend ignores it.
                 **({"gate_compress": gate_compress.unsqueeze(0)} if gate_compress is not None else {}),
-                # FastH3 uses segment-pure prefix chunks followed by true 3-D
-                # target-video tiles. This is deliberately not a flattened
-                # (1, 1, S) grid: that loses spatial locality and differs from
-                # the official FastVideo H3 backend/training geometry.
+                # FastH3 uses segment-pure prefix chunks. The target video and
+                # its true 3-D shape remain in the shared typed video layout.
                 **(
-                    {
-                        "vsa_h3_prefix_segments": video_layout.prefix_segments,
-                        "vsa_h3_video_shape": next(
-                            span.latent_grid for span in reversed(video_layout.video_spans) if span.role == "target"
-                        ),
-                        "vsa_h3_target_start": next(
-                            span.start for span in reversed(video_layout.video_spans) if span.role == "target"
-                        ),
-                    }
+                    {"vsa_h3_prefix_segments": vsa_prefix_segments}
                     if gate_compress is not None and video_layout is not None and video_layout.video_spans
                     else {}
                 ),
@@ -608,6 +599,7 @@ class MiniMaxH3Attention(nn.Module):
         num_requests: int = 1,
         sp_seq_lens: list[int] | None = None,
         video_layout: VideoTokenLayout | None = None,
+        vsa_prefix_segments: tuple[int, ...] = (),
     ) -> torch.Tensor:
         """x: [T, hidden] packed thd rows -> [T, hidden].
 
@@ -665,6 +657,7 @@ class MiniMaxH3Attention(nn.Module):
             packed_total=packed_total if packed_total is not None else q.shape[0],
             num_requests=num_requests,
             video_layout=video_layout,
+            vsa_prefix_segments=vsa_prefix_segments,
             gate_compress=gate_compress,
         )
         out = out.reshape(total, self.num_heads * self.head_dim)
@@ -884,6 +877,7 @@ class MiniMaxH3DiTBlock(nn.Module):
         num_requests: int = 1,
         sp_seq_lens: list[int] | None = None,
         video_layout: VideoTokenLayout | None = None,
+        vsa_prefix_segments: tuple[int, ...] = (),
     ) -> torch.Tensor:
         """x: [T, H]; t_emb: [M, t_dim]; combined_indices: [T]
         (= inverse_indices * modality_num + token_tags.clamp(min=0)).
@@ -919,6 +913,7 @@ class MiniMaxH3DiTBlock(nn.Module):
             num_requests=num_requests,
             sp_seq_lens=sp_seq_lens,
             video_layout=video_layout,
+            vsa_prefix_segments=vsa_prefix_segments,
         )
         x, h = indexed_gate_rms_norm_scale_shift(
             residual,
@@ -1472,6 +1467,7 @@ class MiniMaxH3DiTModel(nn.Module):
         # attention never reads cu_seqlens scalars off the device; a producer
         # that omits it is packing a single request.
         num_requests = int(self._psp_optional(psp, "num_requests", 1))
+        vsa_prefix_segments = tuple(int(length) for length in self._psp_optional(psp, "vsa_prefix_segments", ()))
         refiner_psp = _required_kwarg(kwargs, "refiner_packed_seq_params")
         refiner_cu = self._psp_field(refiner_psp, "refiner_packed_seq_params", "cu_seqlens_q").to(torch.int32)
         refiner_max = int(self._psp_field(refiner_psp, "refiner_packed_seq_params", "max_seqlen_q"))
@@ -1553,6 +1549,7 @@ class MiniMaxH3DiTModel(nn.Module):
                 packed_total=seq_len,
                 num_requests=num_requests,
                 video_layout=video_layout,
+                vsa_prefix_segments=vsa_prefix_segments,
             )
         if local_len == seq_len:
             hidden = self.sp_gather(hidden)

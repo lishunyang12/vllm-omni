@@ -159,10 +159,6 @@ class VideoTokenLayout:
     latent_grid: tuple[int, int, int] | None = None
     used_len: int | None = None
     video_spans: tuple[VideoTokenSpan, ...] = ()
-    # Optional run lengths for the non-target prefix. MiniMax-H3 VSA uses
-    # these to keep text/condition/audio tiles segment-pure, matching the
-    # geometry used to train FastH3's compression gates.
-    prefix_segments: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
