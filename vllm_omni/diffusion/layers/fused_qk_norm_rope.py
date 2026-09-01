@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 """Q/K RMSNorm followed by packed non-interleaved RoPE.
 
@@ -74,7 +74,11 @@ if HAS_TRITON:
         eps: tl.constexpr,
         heads_per_program: tl.constexpr,
     ):
-        token = tl.program_id(0)
+        # Large H3 packed sequences can exceed the signed-int32 flat-offset
+        # range (e.g. 109599 * 56 * 128). Promote the token coordinate before
+        # multiplying by strides; otherwise Triton wraps the address and the
+        # first DiT block faults before attention runs.
+        token = tl.program_id(0).to(tl.int64)
         head_group = tl.program_id(1)
         heads = head_group * heads_per_program + tl.arange(0, heads_per_program)
         dims = tl.arange(0, head_dim)

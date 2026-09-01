@@ -437,6 +437,33 @@ def test_adopting_the_contract_refuses_a_vsa_variant_and_ref2va(tmp_path):
         _fusion(tmp_path).check_serving_contract(partition="ref2va", **contract)
 
 
+def test_a_vsa_variant_accepts_pure_ulysses_and_refuses_ring(tmp_path):
+    sparse = tmp_path / "vsa" / "adapter_model.safetensors"
+    _write_adapter(sparse, tensors={"transformer_blocks.0.attn.to_gate_compress.set_weight": torch.ones((2, 2))})
+    od_config = SimpleNamespace(
+        diffusion_attention_backend="FASTVIDEO_VSA",
+        parallel_config=SimpleNamespace(sequence_parallel_size=8, ulysses_degree=8, ring_degree=1),
+    )
+    fusion = _load(sparse.parent)
+    fusion.check_serving_contract(partition="fl2va", od_config=od_config, video_shift=12.0, audio_shift=3.0)
+
+    od_config.parallel_config.ring_degree = 2
+    with pytest.raises(ValueError, match="pure Ulysses"):
+        fusion.check_serving_contract(partition="fl2va", od_config=od_config, video_shift=12.0, audio_shift=3.0)
+
+
+def test_a_vsa_variant_accepts_normalized_attention_config(tmp_path):
+    sparse = tmp_path / "vsa" / "adapter_model.safetensors"
+    _write_adapter(sparse, tensors={"transformer_blocks.0.attn.to_gate_compress.set_weight": torch.ones((2, 2))})
+    od_config = SimpleNamespace(
+        diffusion_attention_config=SimpleNamespace(default=SimpleNamespace(backend="FASTVIDEO_VSA")),
+        parallel_config=SimpleNamespace(sequence_parallel_size=1),
+    )
+    _load(sparse.parent).check_serving_contract(
+        partition="fl2va", od_config=od_config, video_shift=12.0, audio_shift=3.0
+    )
+
+
 def test_a_full_rank_delta_on_a_fused_parameter_is_refused(tmp_path):
     # Only low-rank factors are placed into H3's fused QKV and gate/up layouts,
     # so a .diff aimed at one would otherwise be added transposed.

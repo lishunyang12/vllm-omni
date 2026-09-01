@@ -588,12 +588,24 @@ class FastH3WeightFusion:
             )
         if self.requires_vsa:
             backend = str(getattr(od_config, "diffusion_attention_backend", "") or "").upper()
+            if not backend:
+                attention_config = getattr(od_config, "diffusion_attention_config", None)
+                default_spec = getattr(attention_config, "default", None)
+                backend = str(getattr(default_spec, "backend", "") or "").upper()
             if backend != "FASTVIDEO_VSA":
                 raise ValueError(
                     f"{self.source} is a Video Sparse Attention variant of FastH3. Its compression "
                     "gates only mean anything to the VSA kernel, and any other backend would run it "
                     f"as dense attention on a student distilled for 90% sparsity (got {backend or 'default'}). "
                     "Serve it with --diffusion-attention-backend FASTVIDEO_VSA."
+                )
+            parallel_config = getattr(od_config, "parallel_config", None)
+            ring_degree = int(getattr(parallel_config, "ring_degree", 1) or 1)
+            allgather_degree = int(getattr(parallel_config, "allgather_degree", 1) or 1)
+            if ring_degree != 1 or allgather_degree != 1:
+                raise ValueError(
+                    "FastH3 VSA supports local attention or pure Ulysses sequence parallelism; "
+                    "ring/all-gather SP does not give the block-sparse kernel the complete packed sequence."
                 )
         logger.info(
             "FastH3 adapter active: sigma points %s for %d transformer forwards, "

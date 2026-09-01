@@ -962,13 +962,26 @@ mostly base H3 weights on a four-step schedule. Offload is refused for the same
 reason - `--enable-cpu-offload`, `--enable-layerwise-offload` and
 `--enable-distributed-layerwise-offload` all bypass the fusion, so they fail fast.
 
-> [!NOTE]
-> Only the **Dense / Data-Free** variant is supported today. The three VSA
-> variants carry `.set_weight` compression gates for modules that do not exist
-> in vLLM-Omni's dense H3 attention, and the release states dense attention is
-> not a supported substitute for them, so they are refused at startup rather
-> than silently run wrong. Video Sparse Attention for H3's packed
-> `[text | cond | audio | video]` sequence is follow-up work.
+The VSA variants are supported through FastVideo's external kernel. Install a
+`fastvideo-kernel` build that provides the `fastvideo_kernel` Python module,
+then add the following flags to the same command:
+
+```bash
+--diffusion-attention-backend FASTVIDEO_VSA \
+--fastvideo-vsa-topk 64
+```
+
+FastH3 VSA applies its learned `.set_weight` compression gates to the complete
+packed `[text | cond | audio | video]` document using the official H3 geometry:
+text/condition/audio prefix tiles never cross segment boundaries, and target
+video rows use `(4, 4, 4)` 3-D tiles (64 tokens). Prefix queries remain dense;
+video queries select all prefix tiles plus the configured top-k video tiles.
+Pure Ulysses sequence parallelism is supported: the learned gate follows the
+same sequence-to-head all-to-all as Q/K/V before VSA runs. Ring and all-gather
+SP remain unsupported because they do not present a complete packed sequence
+to each block-sparse kernel rank.
+The Dense / Data-Free variant does not require `fastvideo-kernel` and should be
+served with a dense attention backend.
 
 Measured on 8x NVIDIA B300 with USP8, VAE patch-parallel 8, `TRTLLM_ATTN`, at
 1344x768, 4.4 s, seed 1101, one warmup excluded and two runs recorded:

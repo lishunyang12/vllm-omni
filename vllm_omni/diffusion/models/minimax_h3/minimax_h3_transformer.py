@@ -570,6 +570,24 @@ class MiniMaxH3Attention(nn.Module):
                 # Present only for a VSA artifact; the VSA backend reads it as
                 # the learned compression gate and every other backend ignores it.
                 **({"gate_compress": gate_compress.unsqueeze(0)} if gate_compress is not None else {}),
+                # FastH3 uses segment-pure prefix chunks followed by true 3-D
+                # target-video tiles. This is deliberately not a flattened
+                # (1, 1, S) grid: that loses spatial locality and differs from
+                # the official FastVideo H3 backend/training geometry.
+                **(
+                    {
+                        "vsa_h3_prefix_segments": video_layout.prefix_segments,
+                        "vsa_h3_video_shape": next(
+                            span.latent_grid for span in reversed(video_layout.video_spans) if span.role == "target"
+                        ),
+                        "vsa_h3_target_start": next(
+                            span.start for span in reversed(video_layout.video_spans) if span.role == "target"
+                        ),
+                        "vsa_block_size": (4, 4, 4),
+                    }
+                    if gate_compress is not None and video_layout is not None and video_layout.video_spans
+                    else {}
+                ),
             },
             video_layout=video_layout,
         )
@@ -624,10 +642,9 @@ class MiniMaxH3Attention(nn.Module):
                 self.q_norm.variance_epsilon,
             )
 
-        # The gate is projected from this rank's rows, the same ones that
-        # produced q. Under Ulysses, q is traded for heads inside self.attention
-        # while the gate is not, so the two only line up when sequence
-        # parallelism is off - which is also the only case the VSA backend runs.
+        # The gate is projected from the same local rows as Q. Pure Ulysses
+        # reshards it alongside Q/K/V in UlyssesParallelAttention so each VSA
+        # rank receives the full sequence for its local head shard.
         gate_compress = None
         if self.to_gate_compress is not None:
             gate_result = self.to_gate_compress(x)

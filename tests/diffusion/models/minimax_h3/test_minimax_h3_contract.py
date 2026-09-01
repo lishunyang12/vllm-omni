@@ -829,6 +829,7 @@ def test_packed_attention_skips_mask_for_packed_mask_free_backend():
         cu_seqlens=torch.tensor([0, 5, 8], dtype=torch.int32),
         max_seqlen=5,
         packed_total=8,
+        gate_compress=torch.ones_like(q),
     )
 
     metadata = attention.attention.metadata
@@ -836,6 +837,8 @@ def test_packed_attention_skips_mask_for_packed_mask_free_backend():
     assert metadata.attn_mask is None
     assert metadata.extra["valid_kv_length"] == 5
     assert metadata.extra["npu_attn_varlen"] is True
+    assert "vsa_h3_video_shape" not in metadata.extra
+    assert metadata.extra["gate_compress"].shape == (1, *q.shape)
     packed_padding = metadata.packed_padding
     assert packed_padding is not None
     assert packed_padding.q_length == 5
