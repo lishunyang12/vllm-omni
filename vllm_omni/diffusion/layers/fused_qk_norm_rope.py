@@ -74,11 +74,7 @@ if HAS_TRITON:
         eps: tl.constexpr,
         heads_per_program: tl.constexpr,
     ):
-        # Large H3 packed sequences can exceed the signed-int32 flat-offset
-        # range because Q/K are views of one QKV projection (for example,
-        # 109599 * (3 * 56 * 128)). Promote the token coordinate before stride
-        # multiplication; otherwise Triton wraps the address and faults.
-        token = tl.program_id(0).to(tl.int64)
+        token = tl.program_id(0)
         head_group = tl.program_id(1)
         heads = head_group * heads_per_program + tl.arange(0, heads_per_program)
         dims = tl.arange(0, head_dim)
