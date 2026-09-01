@@ -20,6 +20,7 @@ from vllm_omni.diffusion.attention.backends.abstract import (
 )
 from vllm_omni.diffusion.attention.backends.sdpa import SDPAImpl
 from vllm_omni.diffusion.forward_context import get_forward_context, is_forward_context_available
+from vllm_omni.platforms import current_omni_platform
 
 logger = init_logger(__name__)
 
@@ -87,69 +88,6 @@ if not hasattr(torch.ops.vllm_omni, "fastvideo_vsa_bshd"):
 _fastvideo_vsa_bshd_op = torch.ops.vllm_omni.fastvideo_vsa_bshd
 
 
-# The BSHD entry point is defined for 128- and 256-token blocks only; the
-# 64-token path the FastH3 VSA students were distilled for lives behind the
-# BHSD entry point, which dispatches to the TK/Triton kernels.
-if not hasattr(torch.ops.vllm_omni, "fastvideo_vsa_bhsd"):
-
-    @torch.library.custom_op("vllm_omni::fastvideo_vsa_bhsd", mutates_args=())
-    def _fastvideo_vsa_bhsd_op(
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-        variable_block_sizes: torch.Tensor,
-        q_variable_block_sizes: torch.Tensor,
-        compress_attn_weight: torch.Tensor,
-        topk: int,
-        block_t: int,
-        block_h: int,
-        block_w: int,
-    ) -> torch.Tensor:
-        from fastvideo_kernel import video_sparse_attn
-
-        gate = compress_attn_weight if compress_attn_weight.numel() else None
-        out = video_sparse_attn(
-            query.transpose(1, 2).contiguous(),
-            key.transpose(1, 2).contiguous(),
-            value.transpose(1, 2).contiguous(),
-            variable_block_sizes=variable_block_sizes,
-            q_variable_block_sizes=q_variable_block_sizes,
-            topk=topk,
-            block_size=(block_t, block_h, block_w),
-            compress_attn_weight=gate.transpose(1, 2).contiguous() if gate is not None else None,
-        )
-        return out.transpose(1, 2).contiguous()
-
-    @_fastvideo_vsa_bhsd_op.register_fake
-    def _(
-        query,
-        key,
-        value,
-        variable_block_sizes,
-        q_variable_block_sizes,
-        compress_attn_weight,
-        topk,
-        block_t,
-        block_h,
-        block_w,
-    ):
-        del (
-            key,
-            value,
-            variable_block_sizes,
-            q_variable_block_sizes,
-            compress_attn_weight,
-            topk,
-            block_t,
-            block_h,
-            block_w,
-        )
-        return torch.empty_like(query)
-
-
-_fastvideo_vsa_bhsd_op = torch.ops.vllm_omni.fastvideo_vsa_bhsd
-
-
 # H3 needs an explicit per-query block map: prefix queries are dense, while
 # video queries select prefix + top-k video tiles. The generic
 # video_sparse_attn() entry point cannot express that contract.
@@ -188,8 +126,14 @@ if not hasattr(torch.ops.vllm_omni, "fastvideo_h3_vsa_bhsd"):
                         need_lse=False,
                     )
                     return out.transpose(1, 2).contiguous()
-            except (ImportError, RuntimeError):
-                pass
+            except (ImportError, RuntimeError) as exc:
+                # Opting in explicitly and then silently getting a different
+                # numeric path is worse than the slower route it lands on.
+                logger.warning_once(
+                    "FASTVIDEO_VSA_SM100A=1 requested but the native Blackwell forward is "
+                    "unavailable (%s); using the Triton block-sparse route instead.",
+                    exc,
+                )
 
         from fastvideo_kernel.block_sparse_attn import block_sparse_attn
 
@@ -213,9 +157,6 @@ if not hasattr(torch.ops.vllm_omni, "fastvideo_h3_vsa_bhsd"):
 
 
 _fastvideo_h3_vsa_bhsd_op = torch.ops.vllm_omni.fastvideo_h3_vsa_bhsd
-
-# block_elements -> the entry point that implements it.
-_VSA_SUPPORTED_BLOCK_ELEMENTS = (64, 128, 256)
 
 
 @functools.lru_cache(maxsize=32)
@@ -380,18 +321,6 @@ def _get_gate_compress(attn_metadata: AttentionMetadata | None) -> torch.Tensor 
     return value if isinstance(value, torch.Tensor) else None
 
 
-def _get_vsa_block_size(
-    attn_metadata: AttentionMetadata | None,
-    default: tuple[int, int, int],
-) -> tuple[int, int, int]:
-    if attn_metadata is None:
-        return default
-    value = attn_metadata.extra.get("vsa_block_size")
-    if value is None:
-        return default
-    return FastVideoVSAImpl._parse_block_size(value)
-
-
 def _preserve_vsa_all_blocks(attn_metadata: AttentionMetadata | None) -> bool:
     if attn_metadata is None:
         return False
@@ -406,7 +335,10 @@ class FastVideoVSABackend(AttentionBackend):
         # FastVideo accepts variable-sized edge blocks. This lets packed
         # [real, pad] inputs run on their valid prefix without materializing an
         # attention mask; the implementation restores the ignored pad rows.
-        return True
+        # Only forward_cuda honours packed_padding: every other platform hands
+        # the tensors straight to SDPA, which reads attn_mask and nothing else,
+        # so the pad rows would be attended as real keys.
+        return current_omni_platform.is_cuda()
 
     @classmethod
     def validate_available(cls) -> None:
@@ -469,11 +401,11 @@ class FastVideoVSAImpl(AttentionImpl):
             qkv_layout=qkv_layout,
         )
 
-        if self.block_elements not in _VSA_SUPPORTED_BLOCK_ELEMENTS:
+        if self.block_elements != 256:
             logger.warning(
-                "FASTVIDEO_VSA implements %s-token blocks. Configured block_size=%s "
+                "FASTVIDEO_VSA currently uses fastvideo_kernel.video_sparse_attn_bshd, "
+                "which supports only 256-token blocks. Configured block_size=%s "
                 "(product=%d) will fall back to SDPA.",
-                "/".join(str(n) for n in _VSA_SUPPORTED_BLOCK_ELEMENTS),
                 self.block_size,
                 self.block_elements,
             )
@@ -494,8 +426,31 @@ class FastVideoVSAImpl(AttentionImpl):
         attn_metadata: AttentionMetadata | None,
         reason: str,
     ) -> torch.Tensor:
+        """Run dense SDPA, honouring the mask-free packed contract this backend claims.
+
+        ``supports_packed_mask_free`` tells the model it may skip building the
+        padding mask, so on this path there is nothing to stop SDPA attending
+        the structural pad rows as real keys. Slice to the valid prefix instead
+        and leave the pad rows zeroed, exactly as the VSA path does.
+        """
         logger.warning_once("FASTVIDEO_VSA falling back to SDPA: %s", reason)
-        return self.sdpa_fallback.forward(query, key, value, attn_metadata)
+        packed = attn_metadata.packed_padding if attn_metadata is not None else None
+        if attn_metadata is None or packed is None or attn_metadata.attn_mask is not None:
+            return self.sdpa_fallback.forward(query, key, value, attn_metadata)
+        q_length = min(int(packed.q_length), query.shape[1])
+        kv_length = min(int(packed.kv_length), key.shape[1])
+        output = self.sdpa_fallback.forward(
+            query[:, :q_length], key[:, :kv_length], value[:, :kv_length], attn_metadata
+        )
+        if q_length == query.shape[1]:
+            return output
+        restored = torch.zeros(
+            (output.shape[0], query.shape[1], output.shape[2], output.shape[3]),
+            device=output.device,
+            dtype=output.dtype,
+        )
+        restored[:, :q_length] = output
+        return restored
 
     def _fallback_reason(
         self,
@@ -506,10 +461,8 @@ class FastVideoVSAImpl(AttentionImpl):
     ) -> str | None:
         if self.causal:
             return "causal attention is not supported"
-        block_size = _get_vsa_block_size(attn_metadata, self.block_size)
-        block_elements = math.prod(block_size)
-        if block_elements not in _VSA_SUPPORTED_BLOCK_ELEMENTS:
-            return f"block_elements must be one of {_VSA_SUPPORTED_BLOCK_ELEMENTS}, got {block_elements}"
+        if self.block_elements != 256:
+            return f"block_elements must be 256, got {self.block_elements}"
         if self.topk <= 0:
             return f"topk must be positive, got {self.topk}"
         if query.ndim != 4 or key.ndim != 4 or value.ndim != 4:
@@ -527,7 +480,9 @@ class FastVideoVSAImpl(AttentionImpl):
             return "vsa_dit_seq_shape metadata is required"
         if math.prod(dit_seq_shape) != query.shape[1]:
             return f"vsa_dit_seq_shape product {math.prod(dit_seq_shape)} != sequence length {query.shape[1]}"
-        num_blocks = math.prod(math.ceil(seq_dim / tile_dim) for seq_dim, tile_dim in zip(dit_seq_shape, block_size))
+        num_blocks = math.prod(
+            math.ceil(seq_dim / tile_dim) for seq_dim, tile_dim in zip(dit_seq_shape, self.block_size)
+        )
         if self.topk > num_blocks:
             return f"topk {self.topk} > num_blocks {num_blocks}"
         if query.dtype not in (torch.float16, torch.bfloat16):
@@ -567,8 +522,8 @@ class FastVideoVSAImpl(AttentionImpl):
         expected = target_start + math.prod(video_shape)
         if query.shape[1] != expected:
             raise ValueError(f"VSA-H3 layout has {expected} rows but attention received {query.shape[1]}")
-        if query.dtype not in (torch.float16, torch.bfloat16) or query.device.type != "cuda":
-            raise ValueError("VSA-H3 requires fp16/bf16 CUDA tensors")
+        if query.dtype not in (torch.float16, torch.bfloat16):
+            raise ValueError(f"VSA-H3 requires fp16/bf16 tensors, got {query.dtype}")
         gate = _get_gate_compress(attn_metadata)
         if gate is not None:
             # H3 pads the packed document to 64 rows, while VSA operates on
@@ -685,9 +640,9 @@ class FastVideoVSAImpl(AttentionImpl):
         seq_len = query.shape[1]
         dit_seq_shape = _get_vsa_dit_seq_shape(attn_metadata)
         assert dit_seq_shape is not None
-        block_size = _get_vsa_block_size(attn_metadata, self.block_size)
-        block_elements = math.prod(block_size)
-        num_blocks = math.prod(math.ceil(seq_dim / tile_dim) for seq_dim, tile_dim in zip(dit_seq_shape, block_size))
+        num_blocks = math.prod(
+            math.ceil(seq_dim / tile_dim) for seq_dim, tile_dim in zip(dit_seq_shape, self.block_size)
+        )
         preserve_all_blocks = _preserve_vsa_all_blocks(attn_metadata)
         use_native_sdpa = self.topk == num_blocks and not preserve_all_blocks
         route = "SDPA" if use_native_sdpa else "VSA_ALL_BLOCKS" if self.topk == num_blocks else "VSA"
@@ -697,7 +652,7 @@ class FastVideoVSAImpl(AttentionImpl):
             "topk=%d, keep_ratio=%.1f%%, checkpoint_mode=%s, route=%s",
             seq_len,
             dit_seq_shape,
-            block_size,
+            self.block_size,
             num_blocks,
             self.topk,
             100.0 * self.topk / num_blocks,
@@ -716,12 +671,12 @@ class FastVideoVSAImpl(AttentionImpl):
         try:
             tile_partition_indices, variable_block_sizes, non_pad_index, untile_combined_index = _get_tile_metadata(
                 dit_seq_shape,
-                block_size,
-                block_elements,
+                self.block_size,
+                self.block_elements,
                 query.device,
             )
 
-            padded_len = variable_block_sizes.numel() * block_elements
+            padded_len = variable_block_sizes.numel() * self.block_elements
             target_shape = (query.shape[0], padded_len, query.shape[2], query.shape[3])
             query_tiled = torch.zeros(target_shape, device=query.device, dtype=query.dtype)
             key_tiled = torch.zeros_like(query_tiled)
@@ -744,9 +699,7 @@ class FastVideoVSAImpl(AttentionImpl):
             gate_tiled[:, non_pad_index] = gate_compress[:, tile_partition_indices]
             compress_attn_weight = gate_tiled
 
-            # 64-token blocks are only reachable through the BHSD entry point.
-            vsa_op = _fastvideo_vsa_bshd_op if block_elements >= 128 else _fastvideo_vsa_bhsd_op
-            output = vsa_op(
+            output = _fastvideo_vsa_bshd_op(
                 query_tiled.contiguous(),
                 key_tiled.contiguous(),
                 value_tiled.contiguous(),
@@ -754,9 +707,9 @@ class FastVideoVSAImpl(AttentionImpl):
                 variable_block_sizes,
                 compress_attn_weight,
                 self.topk,
-                block_size[0],
-                block_size[1],
-                block_size[2],
+                self.block_size[0],
+                self.block_size[1],
+                self.block_size[2],
             )
             output = output[:, untile_combined_index].contiguous()
             if valid_seq_len == original_seq_len:

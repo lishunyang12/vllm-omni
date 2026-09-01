@@ -122,11 +122,36 @@ _BLOCK_TARGETS = {
     "norm2": ("norm2", _PLAIN),
 }
 
+# The attention role MiniMaxH3Attention gives its 50 DiT blocks. The
+# compression gates live on exactly these layers, so this is the role whose
+# resolved backend decides whether the artifact runs sparse.
+_H3_DIT_ATTENTION_ROLE = "self"
+
 # Adapter block prefix -> native block prefix.
 _BLOCK_PREFIXES = (
     ("token_refiner.refiner_blocks.", "token_refiner.blocks."),
     ("transformer_blocks.", "blocks."),
 )
+
+
+def _resolve_dit_attention_backend(od_config: Any) -> str:
+    """The backend the 50-block H3 DiT will actually resolve to.
+
+    The DiT's attention layers carry role ``"self"``, so a ``per_role`` entry
+    overrides the default for exactly the layers the compression gates live on.
+    Reading only the default would accept a config that runs the sparse student
+    dense, and reject a per-role-only config that is correct.
+    """
+    attention_config = getattr(od_config, "diffusion_attention_config", None)
+    per_role = getattr(attention_config, "per_role", None) or {}
+    spec = per_role.get(_H3_DIT_ATTENTION_ROLE)
+    if spec is not None:
+        return str(getattr(spec, "backend", "") or "").upper()
+    backend = str(getattr(od_config, "diffusion_attention_backend", "") or "").upper()
+    if backend:
+        return backend
+    default_spec = getattr(attention_config, "default", None)
+    return str(getattr(default_spec, "backend", "") or "").upper()
 
 
 class FastH3AdapterError(ValueError):
@@ -538,20 +563,28 @@ class FastH3WeightFusion:
             self._injected.add(name)
             yield name, weight
 
-    def validate_fully_applied(self) -> None:
+    def validate_fully_applied(self, loaded: Iterable[str] | None = None) -> None:
         """Close the fusion: every edit must have met its parameter.
 
         A silently unapplied delta is the failure mode that matters here: the
         model would load and generate, just not as the distilled student. The
         weights are loaded once, so the mapped payloads are dropped afterwards
         rather than held for the life of the process.
+
+        ``loaded`` is the set of parameter names ``load_weights`` actually
+        consumed. A gate is assigned rather than fused, so it lands on a module
+        the base transformer does not have; if that module was never built,
+        ``load_weights`` only logs a skip and the server would serve a
+        zero-initialized gate. Yielding a tensor is not evidence it arrived, so
+        the injections are closed against that set when it is available.
         """
         missing = sorted(set(self._patches) - self._applied)
         if missing:
             raise FastH3AdapterError(
                 f"FastH3 adapter edits {len(missing)} parameters the checkpoint never provided: {missing[:5]}"
             )
-        uninjected = sorted(set(self._injections) - self._injected)
+        arrived = self._injected if loaded is None else set(loaded)
+        uninjected = sorted(set(self._injections) - arrived)
         if uninjected:
             raise FastH3AdapterError(
                 f"FastH3 adapter assigns {len(uninjected)} parameters that never reached the model: {uninjected[:5]}"
@@ -587,11 +620,7 @@ class FastH3WeightFusion:
                 f"{sorted(offloads)}. Serve it without offload."
             )
         if self.requires_vsa:
-            backend = str(getattr(od_config, "diffusion_attention_backend", "") or "").upper()
-            if not backend:
-                attention_config = getattr(od_config, "diffusion_attention_config", None)
-                default_spec = getattr(attention_config, "default", None)
-                backend = str(getattr(default_spec, "backend", "") or "").upper()
+            backend = _resolve_dit_attention_backend(od_config)
             if backend != "FASTVIDEO_VSA":
                 raise ValueError(
                     f"{self.source} is a Video Sparse Attention variant of FastH3. Its compression "

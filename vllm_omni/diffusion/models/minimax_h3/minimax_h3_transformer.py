@@ -583,7 +583,6 @@ class MiniMaxH3Attention(nn.Module):
                         "vsa_h3_target_start": next(
                             span.start for span in reversed(video_layout.video_spans) if span.role == "target"
                         ),
-                        "vsa_block_size": (4, 4, 4),
                     }
                     if gate_compress is not None and video_layout is not None and video_layout.video_spans
                     else {}

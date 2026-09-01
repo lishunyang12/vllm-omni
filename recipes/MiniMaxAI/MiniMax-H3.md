@@ -980,6 +980,7 @@ Pure Ulysses sequence parallelism is supported: the learned gate follows the
 same sequence-to-head all-to-all as Q/K/V before VSA runs. Ring and all-gather
 SP remain unsupported because they do not present a complete packed sequence
 to each block-sparse kernel rank.
+
 The Dense / Data-Free variant does not require `fastvideo-kernel` and should be
 served with a dense attention backend.
 

@@ -212,41 +212,167 @@ def test_fastvideo_vsa_allows_topk_equal_to_num_blocks():
     assert too_many._fallback_reason(query, query, query, metadata) == "topk 3 > num_blocks 2"
 
 
-def test_fastvideo_vsa_runs_packed_prefix_with_64_token_override(monkeypatch):
-    calls: dict[str, Any] = {}
-    fake_module = types.ModuleType("fastvideo_kernel")
+def _h3_metadata(prefix_segments, video_shape, *, gate=None, packed_padding=None):
+    extra: dict[str, Any] = {
+        "vsa_h3_prefix_segments": prefix_segments,
+        "vsa_h3_video_shape": video_shape,
+        "vsa_h3_target_start": sum(prefix_segments),
+    }
+    if gate is not None:
+        extra["gate_compress"] = gate
+    return AttentionMetadata(packed_padding=packed_padding, extra=extra)
 
-    def fake_video_sparse_attn(q, k, v, **kwargs):
+
+def _fake_block_sparse_kernel(monkeypatch, calls):
+    """Stand in for fastvideo_kernel.block_sparse_attn with a mask-obeying SDPA."""
+
+    def block_sparse_attn(q, k, v, block_map, variable_block_sizes):
+        calls["block_map"] = block_map.clone()
+        calls["variable_block_sizes"] = variable_block_sizes.tolist()
         calls["q_shape"] = tuple(q.shape)
-        calls["block_size"] = kwargs["block_size"]
-        calls["vbs"] = kwargs["variable_block_sizes"].tolist()
-        return q + k + v
+        blocks = block_map.shape[-1]
+        assert blocks * 64 == q.shape[2]
+        # Expand the per-block map to a per-token mask so the stand-in honours
+        # the sparsity contract the real kernel implements, and drop the rows
+        # each partial block pads with, which the real kernel skips through
+        # variable_block_sizes.
+        token_mask = block_map.repeat_interleave(64, dim=-1).repeat_interleave(64, dim=-2)
+        within = torch.arange(64, device=q.device)[None, :] < variable_block_sizes[:, None]
+        token_mask = token_mask & within.reshape(1, 1, 1, -1)
+        out = torch.nn.functional.scaled_dot_product_attention(q.float(), k.float(), v.float(), attn_mask=token_mask)
+        return out.to(q.dtype), None
 
-    setattr(fake_module, "video_sparse_attn", fake_video_sparse_attn)
-    monkeypatch.setitem(sys.modules, "fastvideo_kernel", fake_module)
+    module = types.ModuleType("fastvideo_kernel.block_sparse_attn")
+    setattr(module, "block_sparse_attn", block_sparse_attn)
+    monkeypatch.setitem(sys.modules, "fastvideo_kernel", types.ModuleType("fastvideo_kernel"))
+    monkeypatch.setitem(sys.modules, "fastvideo_kernel.block_sparse_attn", module)
+
+
+def _h3_impl(**backend_kwargs):
+    kwargs = {"topk": 1, "min_seq_len": 1, "disable_when_sp_active": False}
+    kwargs.update(backend_kwargs)
+    return FastVideoVSAImpl(num_heads=2, head_size=8, softmax_scale=8**-0.5, backend_kwargs=kwargs)
+
+
+def test_h3_forward_tiles_untiles_and_restores_the_original_row_order(monkeypatch):
+    calls: dict[str, Any] = {}
+    _fake_block_sparse_kernel(monkeypatch, calls)
+    impl = _h3_impl(topk=64)
+    prefix_segments, video_shape = (5, 70), (2, 4, 4)
+    seq_len = sum(prefix_segments) + 2 * 4 * 4
+    torch.manual_seed(0)
+    query = torch.randn(1, seq_len, 2, 8, dtype=torch.bfloat16)
+
+    output = impl.forward_cuda(query, query, query, _h3_metadata(prefix_segments, video_shape))
+
+    assert output.shape == query.shape
+    # topk covers every video block, so the block map is dense and the tiled
+    # kernel must reproduce plain attention over the same rows.
+    reference = torch.nn.functional.scaled_dot_product_attention(
+        *(x.float().transpose(1, 2) for x in (query, query, query))
+    ).transpose(1, 2)
+    torch.testing.assert_close(output.float(), reference, atol=2e-2, rtol=2e-2)
+    # 5 + 70 splits into segment-pure 5 | 64 | 6, then one (2, 4, 4) video tile.
+    assert calls["variable_block_sizes"] == [5, 64, 6, 32]
+
+
+def test_h3_forward_keeps_prefix_dense_and_selects_top_k_video_tiles(monkeypatch):
+    calls: dict[str, Any] = {}
+    _fake_block_sparse_kernel(monkeypatch, calls)
+    impl = _h3_impl(topk=1)
+    prefix_segments, video_shape = (5,), (8, 4, 4)
+    seq_len = 5 + 8 * 4 * 4
+    torch.manual_seed(0)
+    query = torch.randn(1, seq_len, 2, 8, dtype=torch.bfloat16)
+
+    impl.forward_cuda(query, query, query, _h3_metadata(prefix_segments, video_shape))
+
+    # 1 prefix block + 2 video blocks. The odd count is padded to an even one
+    # for the paired-CTA kernel contract, and the Triton route slices that
+    # transport-only partner off again before launching.
+    block_map = calls["block_map"]
+    assert block_map.shape[-1] == 3
+    assert calls["variable_block_sizes"] == [5, 64, 64]
+    assert block_map[:, :, :1, :].all(), "prefix queries stay dense"
+    assert block_map[..., :1].all(), "prefix keys are exempt from selection"
+    assert (block_map[:, :, 1:, 1:].sum(dim=-1) == 1).all(), "one video tile per video query"
+
+    # The same odd geometry must still untile back onto the original rows.
+    dense = _h3_impl(topk=64).forward_cuda(query, query, query, _h3_metadata(prefix_segments, video_shape))
+    reference = torch.nn.functional.scaled_dot_product_attention(
+        *(x.float().transpose(1, 2) for x in (query, query, query))
+    ).transpose(1, 2)
+    torch.testing.assert_close(dense.float(), reference, atol=2e-2, rtol=2e-2)
+
+
+def test_h3_forward_applies_the_learned_compression_gate(monkeypatch):
+    _fake_block_sparse_kernel(monkeypatch, {})
+    impl = _h3_impl(topk=64)
+    prefix_segments, video_shape = (5,), (2, 4, 4)
+    seq_len = 5 + 2 * 4 * 4
+    torch.manual_seed(0)
+    query = torch.randn(1, seq_len, 2, 8, dtype=torch.bfloat16)
+
+    without_gate = impl.forward_cuda(query, query, query, _h3_metadata(prefix_segments, video_shape))
+    zero_gate = torch.zeros_like(query)
+    with_zero_gate = impl.forward_cuda(query, query, query, _h3_metadata(prefix_segments, video_shape, gate=zero_gate))
+    live_gate = torch.full_like(query, 0.5)
+    with_live_gate = impl.forward_cuda(query, query, query, _h3_metadata(prefix_segments, video_shape, gate=live_gate))
+
+    torch.testing.assert_close(with_zero_gate.float(), without_gate.float())
+    assert not torch.allclose(with_live_gate.float(), without_gate.float())
+
+
+def test_h3_forward_restores_rows_the_packed_padding_excludes(monkeypatch):
+    _fake_block_sparse_kernel(monkeypatch, {})
+    impl = _h3_impl(topk=64)
+    prefix_segments, video_shape = (5,), (2, 4, 4)
+    valid = 5 + 2 * 4 * 4
+    torch.manual_seed(0)
+    query = torch.randn(1, valid + 24, 2, 8, dtype=torch.bfloat16)
+    padding = PackedPaddingMetadata(
+        q_length=valid,
+        kv_length=valid,
+        cu_seqlens_q=torch.tensor([0, valid], dtype=torch.int32),
+        cu_seqlens_k=torch.tensor([0, valid], dtype=torch.int32),
+    )
+
+    output = impl.forward_cuda(query, query, query, _h3_metadata(prefix_segments, video_shape, packed_padding=padding))
+
+    assert output.shape == query.shape
+    assert torch.count_nonzero(output[:, valid:]) == 0
+
+
+def test_sdpa_fallback_never_attends_the_structural_padding(monkeypatch):
+    # The backend advertises supports_packed_mask_free, so MiniMax-H3 skips
+    # building the padding mask. Every fallback out of the VSA path must honour
+    # that contract itself; SDPA reads attn_mask and nothing else.
     impl = FastVideoVSAImpl(
         num_heads=2,
         head_size=8,
         softmax_scale=8**-0.5,
-        backend_kwargs={"topk": 1, "min_seq_len": 1, "disable_when_sp_active": False},
+        backend_kwargs={"topk": 1, "min_seq_len": 4096},
     )
-    query = torch.randn(1, 160, 2, 8)
-    metadata = AttentionMetadata(
-        packed_padding=PackedPaddingMetadata(
-            q_length=130,
-            kv_length=130,
-            cu_seqlens_q=torch.tensor([0, 130], dtype=torch.int32),
-            cu_seqlens_k=torch.tensor([0, 130], dtype=torch.int32),
-        ),
-        extra={"vsa_dit_seq_shape": (1, 1, 130), "vsa_block_size": (1, 1, 64)},
+    valid = 40
+    torch.manual_seed(0)
+    query = torch.randn(1, 64, 2, 8)
+    padding = PackedPaddingMetadata(
+        q_length=valid,
+        kv_length=valid,
+        cu_seqlens_q=torch.tensor([0, valid], dtype=torch.int32),
+        cu_seqlens_k=torch.tensor([0, valid], dtype=torch.int32),
     )
-    monkeypatch.setattr(impl, "_fallback_reason", lambda *args, **kwargs: None)
 
-    output = impl.forward_cuda(query, query, query, metadata)
+    baseline = impl.forward_cuda(query, query, query, AttentionMetadata(packed_padding=padding, extra={}))
+    perturbed_input = query.clone()
+    perturbed_input[:, valid:] += 100.0
+    perturbed = impl.forward_cuda(
+        perturbed_input, perturbed_input, perturbed_input, AttentionMetadata(packed_padding=padding, extra={})
+    )
 
-    assert output.shape == query.shape
-    assert calls == {"q_shape": (1, 2, 192, 8), "block_size": (1, 1, 64), "vbs": [64, 64, 2]}
-    assert torch.count_nonzero(output[:, 130:]) == 0
+    assert baseline.shape == query.shape
+    torch.testing.assert_close(baseline[:, :valid], perturbed[:, :valid])
+    assert torch.count_nonzero(baseline[:, valid:]) == 0
 
 
 def test_h3_geometry_keeps_prefix_segments_pure_and_tiles_video_3d():
