@@ -8,8 +8,8 @@ attention only against the selected top-k blocks.
 The supported checkpoint provides both text-to-video and image-to-video modes through `Wan22Pipeline`; the separate Wan I2V-14B, S2V, and VACE pipelines are outside this backend's supported scope.
 
 MiniMax-H3 served with a FastH3 VSA adapter uses a second, H3-specific route
-through the same backend. See
-[MiniMax-H3](../../../../recipes/MiniMaxAI/MiniMax-H3.md) for its geometry,
+through the same backend. See the
+[MiniMax-H3 recipe](https://recipes.vllm.ai/MiniMaxAI/MiniMax-H3) for its geometry,
 supported topologies, and commands.
 
 VSA is a CUDA-only, explicitly selected backend. It requires the
