@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import partial
 from typing import Protocol
@@ -19,6 +19,7 @@ class DirectMmapTensorPolicy:
 
     allow_custom_loader: bool = False
     transform: Callable[[torch.Tensor], torch.Tensor] | None = None
+    source: tuple[str, str] | None = None
 
 
 class DirectMmapAdapter(Protocol):
@@ -27,6 +28,21 @@ class DirectMmapAdapter(Protocol):
         runtime_name: str,
         target: torch.Tensor,
     ) -> DirectMmapTensorPolicy | None: ...
+
+
+def _compose_transforms(
+    first: Callable[[torch.Tensor], torch.Tensor] | None,
+    second: Callable[[torch.Tensor], torch.Tensor] | None,
+) -> Callable[[torch.Tensor], torch.Tensor] | None:
+    if first is None:
+        return second
+    if second is None:
+        return first
+
+    def composed(tensor: torch.Tensor) -> torch.Tensor:
+        return second(first(tensor))
+
+    return composed
 
 
 class _MiniMaxH3DirectMmapAdapter:
@@ -41,7 +57,7 @@ class _MiniMaxH3DirectMmapAdapter:
         target: torch.Tensor,
     ) -> DirectMmapTensorPolicy:
         del target
-        transform = None
+        layout_transform = None
         suffix = ".qkv_proj.weight"
         if runtime_name.endswith(suffix):
             from vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer import (
@@ -56,16 +72,36 @@ class _MiniMaxH3DirectMmapAdapter:
                     f"MiniMax-H3 direct-mmap adapter expected attention at {attention_path!r}, "
                     f"got {type(attention).__name__}"
                 )
-            transform = partial(
+            layout_transform = partial(
                 _reorder_grouped_qkv_to_qkv,
                 num_query_groups=attention.total_num_heads,
                 heads_per_group=1,
                 head_dim=attention.head_dim,
             )
+        fusion = getattr(self.pipeline, "_fasth3", None)
+        fusion_transform = None
+        source = None
+        prefix = "transformer."
+        if fusion is not None and runtime_name.startswith(prefix):
+            local_name = runtime_name[len(prefix) :]
+            fusion_transform = fusion.direct_mmap_transform(local_name)
+            source = fusion.direct_mmap_source(local_name)
+
         return DirectMmapTensorPolicy(
             allow_custom_loader=True,
-            transform=transform,
+            # Normal loading fuses the adapter while the checkpoint is still
+            # in grouped-QKV layout, before MiniMaxH3DiTModel.load_weights
+            # converts it to runtime Q/K/V layout. Preserve that order here.
+            transform=_compose_transforms(fusion_transform, layout_transform),
+            source=source,
         )
+
+    def plan_finalizer(self, runtime_names: Iterable[str]) -> Callable[[], None] | None:
+        fusion = getattr(self.pipeline, "_fasth3", None)
+        if fusion is None:
+            return None
+        names = frozenset(runtime_names)
+        return partial(fusion.finalize_direct_mmap, names)
 
 
 class _Cosmos3DirectMmapAdapter:

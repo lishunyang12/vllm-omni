@@ -1002,6 +1002,31 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
         self._host_weight_lease: HostWeightLease | None = None
         self._host_registration: HostRegistration | None = None
         self._mmap_transforms_by_tensor_id: dict[int, Any] = {}
+        self._host_weight_plan_finalized = False
+
+    def _apply_mmap_transforms(self, module: nn.Module, *, recurse: bool = True) -> None:
+        """Apply deferred transforms before a planned tensor becomes resident."""
+        parameters = module.named_parameters(recurse=recurse)
+        buffers = module.named_buffers(recurse=recurse)
+        for name, target in chain(parameters, buffers):
+            transform = self._mmap_transforms_by_tensor_id.pop(id(target), None)
+            if not callable(transform):
+                continue
+            transformed = transform(target)
+            if transformed.dtype != target.dtype or transformed.shape != target.shape:
+                raise ValueError(
+                    "mmap weight transform changed tensor metadata for "
+                    f"{name!r}: expected dtype={target.dtype}, shape={tuple(target.shape)}, "
+                    f"got dtype={transformed.dtype}, shape={tuple(transformed.shape)}"
+                )
+            target.data = transformed
+
+    def _finalize_host_weight_plan(self) -> None:
+        plan = self.host_weight_plan
+        if plan is None or plan.finalizer is None or self._host_weight_plan_finalized:
+            return
+        plan.finalizer()
+        self._host_weight_plan_finalized = True
 
     def load_resident_layers(self) -> None:
         """Load the model-declared leading blocks for the denoise stage."""
@@ -1504,9 +1529,11 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
             self.dp_size,
         )
 
+        self._apply_mmap_transforms(module, recurse=False)
         # Move non-block parts of the submodule to GPU (small: embeddings, norms)
         for child_name, child in module.named_children():
             if child_name != blocks_attr:
+                self._apply_mmap_transforms(child)
                 child.to(self.device)
 
         # Apply distributed hooks (1/4 sharding + AllGather, same as DiT)
@@ -1602,6 +1629,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                     self._register_on_demand_hook(module, name)
                 continue
 
+            self._apply_mmap_transforms(module)
             try:
                 module.to(self.device)
             except (NotImplementedError, RuntimeError):
@@ -1626,6 +1654,7 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 except Exception:
                     logger.warning("Module %s still has meta params after mmap load", name)
 
+        self._apply_mmap_transforms(dit_module, recurse=False)
         for param in dit_module._parameters.values():
             if param is not None and not getattr(param, "is_meta", False):
                 param.data = param.data.to(self.device, non_blocking=True)
@@ -1879,6 +1908,11 @@ class DistributedLayerwiseOffloadBackend(OffloadBackend):
                 tensor_transforms=self._mmap_transforms_by_tensor_id,
             )
             pipeline._dlo_residency_controller = self
+
+        # Every AllGather shard and resident tensor now holds its final runtime
+        # layout. Model-specific plans can release temporary adapter state only
+        # after reaching this point.
+        self._finalize_host_weight_plan()
 
         all_hooks = [hook for group in self._all_hook_groups for hook in group]
         self._configure_hwr_transfer(all_hooks)

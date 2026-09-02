@@ -10,6 +10,9 @@ import pytest
 import torch
 from safetensors.torch import save_file
 
+from vllm_omni.diffusion.model_loader.checkpoint_adapters.direct_mmap import (
+    get_direct_mmap_adapter,
+)
 from vllm_omni.diffusion.models.minimax_h3.fasth3 import (
     FASTH3_BASE_MODEL,
     FASTH3_BASE_SCHEDULE,
@@ -19,7 +22,11 @@ from vllm_omni.diffusion.models.minimax_h3.fasth3 import (
     FastH3WeightFusion,
     resolve_fasth3_fusion,
 )
-from vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer import _reorder_grouped_qkv_to_qkv
+from vllm_omni.diffusion.models.minimax_h3.minimax_h3_transformer import (
+    MiniMaxH3Attention,
+    MiniMaxH3DiTModel,
+    _reorder_grouped_qkv_to_qkv,
+)
 from vllm_omni.diffusion.models.minimax_h3.time_request import minimax_h3_time_shift_sigmas
 from vllm_omni.errors import OmniClientError
 
@@ -260,6 +267,77 @@ def test_a_vsa_variant_is_recognised_by_its_compression_gates(tmp_path):
     assert _load(sparse.parent).requires_vsa is True
 
 
+def test_dlo_can_bind_gates_and_defer_every_base_weight_edit(tmp_path):
+    path = tmp_path / "vsa" / "adapter_model.safetensors"
+    gate_key = "transformer_blocks.0.attn.to_gate_compress.set_weight"
+    gate_name = "blocks.0.attn.to_gate_compress.weight"
+    _write_adapter(path, tensors={gate_key: torch.ones((2, 2))})
+    fusion = _load(path.parent)
+
+    assert fusion.direct_mmap_source(gate_name) == (gate_key, str(path))
+    shapes = {
+        "blocks.0.attn.qkv_proj.weight": (3 * _INNER, _HIDDEN),
+        "blocks.0.attn.out_proj.weight": (_HIDDEN, _INNER),
+        "blocks.0.mlp.fc1.weight": (2 * _FFN, _HIDDEN),
+        "blocks.0.mlp.fc2.weight": (_HIDDEN, _FFN),
+    }
+    for name, shape in shapes.items():
+        transform = fusion.direct_mmap_transform(name)
+        assert transform is not None
+        assert tuple(transform(torch.zeros(shape)).shape) == shape
+
+    fusion.finalize_direct_mmap({f"transformer.{name}" for name in (*shapes, gate_name)})
+
+
+def test_dlo_fuses_grouped_qkv_before_converting_to_runtime_layout(tmp_path):
+    fusion = _fusion(tmp_path)
+    attention = object.__new__(MiniMaxH3Attention)
+    torch.nn.Module.__init__(attention)
+    attention.total_num_heads = _HEADS
+    attention.head_dim = _HEAD_DIM
+    block = torch.nn.Module()
+    block.attn = attention
+    transformer = object.__new__(MiniMaxH3DiTModel)
+    torch.nn.Module.__init__(transformer)
+    transformer.blocks = torch.nn.ModuleList([block])
+    pipeline = torch.nn.Module()
+    pipeline.transformer = transformer
+    pipeline._fasth3 = fusion
+
+    adapter = get_direct_mmap_adapter(pipeline)
+    assert adapter is not None
+    policy = adapter.policy_for(
+        "transformer.blocks.0.attn.qkv_proj.weight",
+        torch.empty((3 * _INNER, _HIDDEN)),
+    )
+    assert policy is not None and policy.transform is not None
+    q, k, v = torch.split(
+        policy.transform(torch.zeros((3 * _INNER, _HIDDEN))).cpu(),
+        [_INNER, _INNER, _INNER],
+    )
+    a, b = _factors(_INNER, _HIDDEN)
+    for projection in (q, k, v):
+        assert torch.allclose(projection, b @ a, atol=1e-5)
+
+
+def test_component_only_load_defers_fasth3_validation_to_dlo(tmp_path):
+    fusion = _fusion(tmp_path)
+    pipeline = _pipeline_stub(fusion)
+
+    class TextEncoder:
+        def load_weights(self, weights):
+            return {name for name, _ in weights}
+
+    pipeline.text_encoder = TextEncoder()
+    pipeline.video_vae = None
+    pipeline.audio_vae = None
+
+    loaded = pipeline.load_weights([("text_encoder.weight", torch.ones(1))])
+
+    assert loaded == {"text_encoder.weight"}
+    assert fusion.direct_mmap_transform("blocks.0.attn.qkv_proj.weight") is not None
+
+
 def test_a_tensor_naming_no_h3_parameter_is_an_error(tmp_path):
     path = tmp_path / "fasth3" / "adapter_model.safetensors"
     _write_adapter(path, tensors={"transformer_blocks.0.attn.norm_q.lora_A.weight": torch.ones((_RANK, _HIDDEN))})
@@ -412,11 +490,9 @@ def test_a_request_may_not_carry_a_lora_on_a_fused_server(tmp_path):
         _check_request(fusion, _sampling(lora_request=SimpleNamespace(lora_int_id=1)))
 
 
-def test_offload_is_refused_because_it_bypasses_the_fusion(tmp_path):
+def test_fasth3_accepts_only_multi_rank_dlo_allgather(tmp_path):
     fusion = _fusion(tmp_path)
-    for flag in ("enable_cpu_offload", "enable_layerwise_offload", "enable_distributed_layerwise_offload"):
-        # A host-weight plan installs the transformer without load_weights(),
-        # so the fusion and its completeness check would both be skipped.
+    for flag in ("enable_cpu_offload", "enable_layerwise_offload"):
         with pytest.raises(ValueError, match="cannot be combined with"):
             fusion.check_serving_contract(
                 partition="fl2va",
@@ -424,6 +500,38 @@ def test_offload_is_refused_because_it_bypasses_the_fusion(tmp_path):
                 video_shift=12.0,
                 audio_shift=3.0,
             )
+
+    contract = {
+        "partition": "fl2va",
+        "video_shift": 12.0,
+        "audio_shift": 3.0,
+    }
+    with pytest.raises(ValueError, match="requires DLO AllGather"):
+        fusion.check_serving_contract(
+            od_config=SimpleNamespace(
+                enable_distributed_layerwise_offload=True,
+                dlo_use_allgather=False,
+                parallel_config=SimpleNamespace(sequence_parallel_size=8),
+            ),
+            **contract,
+        )
+    with pytest.raises(ValueError, match="multi-rank"):
+        fusion.check_serving_contract(
+            od_config=SimpleNamespace(
+                enable_distributed_layerwise_offload=True,
+                dlo_use_allgather=True,
+                parallel_config=SimpleNamespace(sequence_parallel_size=1),
+            ),
+            **contract,
+        )
+    fusion.check_serving_contract(
+        od_config=SimpleNamespace(
+            enable_distributed_layerwise_offload=True,
+            dlo_use_allgather=True,
+            parallel_config=SimpleNamespace(sequence_parallel_size=8),
+        ),
+        **contract,
+    )
 
 
 def test_adopting_the_contract_refuses_a_vsa_variant_and_ref2va(tmp_path):

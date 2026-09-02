@@ -16,9 +16,13 @@ from safetensors.torch import save_file
 from torch import nn
 from torch.distributed.tensor import DeviceMesh, DTensor, Replicate
 
+import vllm_omni.diffusion.model_loader.host_weight_plan as host_weight_plan_module
 import vllm_omni.diffusion.offloader.distributed_layerwise_backend as dist_backend_module
 from tests.helpers.runtime import get_distributed_init_method
 from vllm_omni.diffusion.data import validate_dlo_host_registration_options
+from vllm_omni.diffusion.model_loader.checkpoint_adapters.direct_mmap import (
+    DirectMmapTensorPolicy,
+)
 from vllm_omni.diffusion.model_loader.host_weight_plan import (
     HostWeightPlan,
     TensorBinding,
@@ -1660,6 +1664,58 @@ class TestMmapValidation:
             file_path=str(checkpoint_file),
         )
         assert result.plan.planned_source_prefixes == frozenset({"transformer."})
+
+    def test_adapter_can_supply_an_auxiliary_checkpoint_binding(self, monkeypatch, tmp_path):
+        base = tmp_path / "base"
+        checkpoint_dir = base / "transformer"
+        checkpoint_dir.mkdir(parents=True)
+        checkpoint_file = checkpoint_dir / "model.safetensors"
+        auxiliary_file = tmp_path / "adapter.safetensors"
+        save_file({"weight": torch.ones((2, 2))}, str(checkpoint_file))
+        save_file({"injected": torch.full((2, 2), 3.0)}, str(auxiliary_file))
+
+        pipeline = nn.Module()
+        pipeline.transformer = nn.Module()
+        pipeline.transformer.weight = nn.Parameter(torch.empty((2, 2)))
+        pipeline.transformer.injected = nn.Parameter(torch.empty((2, 2)))
+        source = SimpleNamespace(
+            model_or_path=str(base),
+            subfolder="transformer",
+            revision=None,
+            prefix="transformer.",
+        )
+        finalized = []
+
+        class Adapter:
+            def policy_for(self, runtime_name, target):
+                del target
+                if runtime_name == "transformer.injected":
+                    return DirectMmapTensorPolicy(source=("injected", str(auxiliary_file)))
+                return DirectMmapTensorPolicy()
+
+            def plan_finalizer(self, runtime_names):
+                names = frozenset(runtime_names)
+                return lambda: finalized.append(names)
+
+        monkeypatch.setattr(host_weight_plan_module, "get_direct_mmap_adapter", lambda _pipeline: Adapter())
+        result = build_checkpoint_mmap_plan(
+            pipeline,
+            dit_modules=(("transformer", pipeline.transformer),),
+            sources=(source,),
+            model_path=None,
+            tensor_parallel_size=1,
+            use_hsdp=False,
+            online_quantization=False,
+        )
+
+        assert result.plan is not None
+        assert result.plan.bindings["transformer.injected"] == TensorBinding(
+            checkpoint_key="injected",
+            file_path=str(auxiliary_file),
+        )
+        assert result.plan.finalizer is not None
+        result.plan.finalizer()
+        assert finalized == [{"transformer.injected", "transformer.weight"}]
 
     def test_non_dedicated_component_source_falls_back_before_discovery(self):
         pipeline = nn.Module()

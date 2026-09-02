@@ -12,6 +12,13 @@ through the same backend. See the
 [MiniMax-H3 recipe](https://recipes.vllm.ai/MiniMaxAI/MiniMax-H3) for its geometry,
 supported topologies, and commands.
 
+The FastH3 adapter can be combined with distributed layerwise offload when the
+weights are sharded across a multi-rank AllGather group. For an eight-GPU pure
+Ulysses deployment, enable `--enable-distributed-layerwise-offload`,
+`--ulysses-degree 8`, `--ulysses-a2a-permute`, and
+`--text-encoder-tp-size 8`. Rank-local DLO is not supported because it would
+have to reconstruct the adapter weights again before every device transfer.
+
 VSA is a CUDA-only, explicitly selected backend. It requires the
 `fastvideo-kernel` package and currently supports non-causal self-attention
 with equal query and key/value sequence lengths. Unsupported shapes, masks,

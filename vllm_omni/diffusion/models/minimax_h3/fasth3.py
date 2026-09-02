@@ -332,6 +332,7 @@ class FastH3WeightFusion:
         head_dim: int,
         requires_vsa: bool,
         injections: Mapping[str, torch.Tensor] | None = None,
+        injection_sources: Mapping[str, str] | None = None,
     ) -> None:
         self._source = source
         self._patches = dict(patches)
@@ -340,6 +341,10 @@ class FastH3WeightFusion:
         # Parameters the base checkpoint does not carry, assigned into the
         # stream instead of fused onto an existing weight.
         self._injections = dict(injections or {})
+        # Runtime parameter name -> safetensors key.  DLO's direct-mmap path
+        # binds these adapter-only parameters without first materializing the
+        # complete transformer on every rank.
+        self._injection_sources = dict(injection_sources or {})
         self._injected: set[str] = set()
         self._applied: set[str] = set()
         self._device: torch.device | None = None
@@ -384,6 +389,7 @@ class FastH3WeightFusion:
         patches: dict[str, _ParamPatch] = {}
         gate_tensors: list[str] = []
         injections: dict[str, torch.Tensor] = {}
+        injection_sources: dict[str, str] = {}
         unmapped: list[str] = []
         blocks_seen: dict[str, set[int]] = {}
         counted = {"low_rank_tensors": 0, "diff_tensors": 0}
@@ -409,7 +415,9 @@ class FastH3WeightFusion:
                     if block is not None:
                         blocks_seen.setdefault(block[0], set()).add(block[1])
                     gate_tensors.append(name)
-                    injections[f"{native_module}.weight"] = checkpoint.get_tensor(name)
+                    runtime_name = f"{native_module}.weight"
+                    injections[runtime_name] = checkpoint.get_tensor(name)
+                    injection_sources[runtime_name] = name
                     continue
                 if target is None:
                     unmapped.append(name)
@@ -463,6 +471,7 @@ class FastH3WeightFusion:
             head_dim=head_dim,
             requires_vsa=bool(gate_tensors),
             injections=injections,
+            injection_sources=injection_sources,
         )
         logger.info(
             "FastH3 adapter %s: rank=%s, parameters patched=%d, low-rank=%s, diff=%s, set_weight=%d",
@@ -474,6 +483,25 @@ class FastH3WeightFusion:
             len(gate_tensors),
         )
         return fusion
+
+    def direct_mmap_source(self, name: str) -> tuple[str, str] | None:
+        """Return the adapter entry that directly backs an injected weight."""
+        checkpoint_key = self._injection_sources.get(name)
+        if checkpoint_key is None:
+            return None
+        return checkpoint_key, str(self._source)
+
+    def direct_mmap_transform(self, name: str) -> Any | None:
+        """Return a deferred base-weight fusion for DLO's AllGather path."""
+        if name not in self._patches:
+            return None
+        return lambda weight: self.fuse(name, weight)
+
+    def finalize_direct_mmap(self, runtime_names: Iterable[str]) -> None:
+        """Validate a DLO plan after every deferred transform has executed."""
+        prefix = "transformer."
+        loaded = {name[len(prefix) :] for name in runtime_names if name.startswith(prefix)}
+        self.validate_fully_applied(loaded)
 
     def _compute_device(self, weight: torch.Tensor) -> torch.device:
         """Where to reconstruct a delta.
@@ -605,20 +633,22 @@ class FastH3WeightFusion:
         """Hold a starting server to the ladder this student was trained on."""
         if partition == "ref2va":
             raise ValueError("FastH3 preview v1 distills T2VA only, so it cannot serve a Ref2VA partition")
-        offloads = [
-            flag
-            for flag in ("enable_cpu_offload", "enable_layerwise_offload", "enable_distributed_layerwise_offload")
-            if getattr(od_config, flag, False)
+        unsupported_offloads = [
+            flag for flag in ("enable_cpu_offload", "enable_layerwise_offload") if getattr(od_config, flag, False)
         ]
-        if offloads:
-            # A host-weight plan installs the transformer without going through
-            # load_weights(), which is where the fusion and its completeness
-            # check live. Serving base H3 weights under a four-step schedule
-            # would otherwise degrade output with nothing to signal it.
+        if unsupported_offloads:
             raise ValueError(
                 f"FastH3 is fused while the checkpoint streams in, so it cannot be combined with "
-                f"{sorted(offloads)}. Serve it without offload."
+                f"{sorted(unsupported_offloads)}. Use distributed layerwise offload or serve it without offload."
             )
+        if getattr(od_config, "enable_distributed_layerwise_offload", False):
+            if not getattr(od_config, "dlo_use_allgather", True):
+                raise ValueError("FastH3 requires DLO AllGather; rank-local mmap would recompute its fusion per step")
+            parallel_config = getattr(od_config, "parallel_config", None)
+            dp_size = int(getattr(parallel_config, "data_parallel_size", 1) or 1)
+            sp_size = int(getattr(parallel_config, "sequence_parallel_size", 1) or 1)
+            if max(dp_size, sp_size) <= 1:
+                raise ValueError("FastH3 requires a multi-rank DLO AllGather group")
         if self.requires_vsa:
             backend = _resolve_dit_attention_backend(od_config)
             if backend != "FASTVIDEO_VSA":

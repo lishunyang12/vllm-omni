@@ -1103,9 +1103,11 @@ class MiniMaxH3Pipeline(
             if component is None:
                 continue
             loaded_with_prefix.update(f"{component_name}.{name}" for name, _ in component.named_parameters())
-        if self._fasth3 is not None:
+        if self._fasth3 is not None and "transformer." in loaded_prefixes:
             # load_weights only warns on a parameter the model does not have, so
-            # close the adapter against what the DiT actually consumed.
+            # close the adapter against what the DiT actually consumed. A DLO
+            # host-weight plan loads only the remaining component sources here;
+            # its deferred transformer fusion is validated by the plan finalizer.
             self._fasth3.validate_fully_applied(transformer_loaded)
         return loaded_with_prefix
 

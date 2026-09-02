@@ -45,6 +45,7 @@ class HostWeightPlan:
     bindings: dict[str, TensorBinding]
     planned_source_prefixes: frozenset[str] = frozenset()
     lease_carrier: HostWeightLeaseCarrier | None = None
+    finalizer: Callable[[], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -317,13 +318,8 @@ def build_checkpoint_mmap_plan(
         if not required:
             raise _PlanIncompatibleError("no DiT parameters or persistent buffers were discovered")
 
-        missing = sorted(set(required) - set(model_to_ckpt))
-        if missing:
-            raise _PlanIncompatibleError(
-                f"{len(missing)} required DiT tensors have no checkpoint binding (first 5: {missing[:5]})"
-            )
-
         bindings: dict[str, TensorBinding] = {}
+        missing: list[str] = []
         for runtime_name, target in required.items():
             policy = adapter.policy_for(runtime_name, target) if adapter is not None else None
             has_custom_loader = callable(getattr(target, "weight_loader", None))
@@ -331,22 +327,36 @@ def build_checkpoint_mmap_plan(
                 raise _PlanIncompatibleError(
                     f"{runtime_name!r} requires a custom weight_loader with no direct-mmap adapter"
                 )
-            checkpoint_key, file_path = model_to_ckpt[runtime_name]
+            source = policy.source if policy is not None else None
+            if source is None:
+                source = model_to_ckpt.get(runtime_name)
+            if source is None:
+                missing.append(runtime_name)
+                continue
+            checkpoint_key, file_path = source
             bindings[runtime_name] = TensorBinding(
                 checkpoint_key=checkpoint_key,
                 file_path=file_path,
                 transform=policy.transform if policy is not None else None,
             )
 
+        if missing:
+            raise _PlanIncompatibleError(
+                f"{len(missing)} required DiT tensors have no checkpoint binding (first 5: {missing[:5]})"
+            )
+
         _validate_source_metadata(required, bindings)
     except (OSError, ValueError, _PlanIncompatibleError) as exc:
         return HostWeightPlanResult(None, str(exc))
 
+    plan_finalizer = getattr(adapter, "plan_finalizer", None)
+    finalizer = plan_finalizer(bindings) if callable(plan_finalizer) else None
     return HostWeightPlanResult(
         HostWeightPlan(
             backing_kind="checkpoint_mmap",
             bindings=bindings,
             planned_source_prefixes=planned_source_prefixes,
+            finalizer=finalizer,
         )
     )
 
