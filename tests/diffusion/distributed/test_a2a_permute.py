@@ -15,9 +15,12 @@ pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
 
 
 def test_jit_build_includes_cuda_headers_from_nvidia_wheels(tmp_path, monkeypatch) -> None:
+    cuda_home = tmp_path / "cuda"
+    cuda_include = cuda_home / "include"
     cu13_include = tmp_path / "nvidia" / "cu13" / "include"
     nccl_include = tmp_path / "nvidia" / "nccl" / "include"
     nccl_lib = tmp_path / "nvidia" / "nccl" / "lib" / "libnccl.so.2"
+    cuda_include.mkdir(parents=True)
     cu13_include.mkdir(parents=True)
     nccl_include.mkdir(parents=True)
     nccl_lib.parent.mkdir(parents=True)
@@ -32,12 +35,14 @@ def test_jit_build_includes_cuda_headers_from_nvidia_wheels(tmp_path, monkeypatc
         "load",
         lambda **kwargs: load_kwargs.update(kwargs),
     )
+    monkeypatch.setattr(torch.utils.cpp_extension, "CUDA_HOME", str(cuda_home))
     monkeypatch.setattr(a2a_permute.symm_mem, "set_backend", lambda _backend: None)
     monkeypatch.setattr(a2a_permute, "_BUILT", False)
 
     a2a_permute.ensure_a2a_permute_available()
 
-    assert set(load_kwargs["extra_include_paths"]) == {str(cu13_include), str(nccl_include)}
+    assert load_kwargs["extra_include_paths"][0] == str(cuda_include)
+    assert set(load_kwargs["extra_include_paths"][1:]) == {str(cu13_include), str(nccl_include)}
     assert load_kwargs["extra_ldflags"] == [str(nccl_lib)]
 
 

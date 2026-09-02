@@ -61,13 +61,20 @@ def _ensure_built() -> None:
     with _BUILD_LOCK:
         if _BUILT:
             return
-        from torch.utils.cpp_extension import load
+        from torch.utils.cpp_extension import CUDA_HOME, load
 
         here = os.path.dirname(__file__)
         src = os.path.join(here, "csrc", "a2a_permute.cu")
         site_packages = sysconfig.get_paths()["purelib"]
         nvidia_root = os.path.join(site_packages, "nvidia")
         include_paths = glob.glob(os.path.join(nvidia_root, "*", "include"))
+        if CUDA_HOME is not None:
+            cuda_include = os.path.join(CUDA_HOME, "include")
+            if os.path.isdir(cuda_include):
+                # cpp_extension invokes CUDA_HOME/bin/nvcc. Keep that
+                # compiler's matching CRT headers ahead of headers from
+                # independently versioned nvidia-* wheels.
+                include_paths.insert(0, cuda_include)
         nccl_libs = glob.glob(os.path.join(nvidia_root, "nccl", "lib", "libnccl.so*"))
         if not nccl_libs:
             raise RuntimeError("a2a_permute: could not locate nvidia-nccl libnccl.so")
