@@ -14,7 +14,8 @@ from vllm_omni.diffusion.distributed import a2a_permute
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
 
 
-def test_jit_build_includes_cuda_headers_from_nvidia_wheels(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("use_cuda_home", [False, True])
+def test_jit_build_uses_matching_cuda_headers(tmp_path, monkeypatch, use_cuda_home) -> None:
     cuda_home = tmp_path / "cuda"
     cuda_include = cuda_home / "include"
     cu13_include = tmp_path / "nvidia" / "cu13" / "include"
@@ -22,9 +23,11 @@ def test_jit_build_includes_cuda_headers_from_nvidia_wheels(tmp_path, monkeypatc
     nccl_lib = tmp_path / "nvidia" / "nccl" / "lib" / "libnccl.so.2"
     cuda_include.mkdir(parents=True)
     cu13_include.mkdir(parents=True)
+    (cu13_include / "crt").mkdir()
     nccl_include.mkdir(parents=True)
     nccl_lib.parent.mkdir(parents=True)
     (cu13_include / "cusparse.h").touch()
+    (cu13_include / "crt" / "host_runtime.h").touch()
     (nccl_include / "nccl.h").touch()
     nccl_lib.touch()
 
@@ -35,14 +38,16 @@ def test_jit_build_includes_cuda_headers_from_nvidia_wheels(tmp_path, monkeypatc
         "load",
         lambda **kwargs: load_kwargs.update(kwargs),
     )
-    monkeypatch.setattr(torch.utils.cpp_extension, "CUDA_HOME", str(cuda_home))
+    monkeypatch.setattr(torch.utils.cpp_extension, "CUDA_HOME", str(cuda_home) if use_cuda_home else None)
     monkeypatch.setattr(a2a_permute.symm_mem, "set_backend", lambda _backend: None)
     monkeypatch.setattr(a2a_permute, "_BUILT", False)
 
     a2a_permute.ensure_a2a_permute_available()
 
-    assert load_kwargs["extra_include_paths"][0] == str(cuda_include)
-    assert set(load_kwargs["extra_include_paths"][1:]) == {str(cu13_include), str(nccl_include)}
+    if use_cuda_home:
+        assert load_kwargs["extra_include_paths"] == [str(cuda_include), str(nccl_include)]
+    else:
+        assert set(load_kwargs["extra_include_paths"]) == {str(cu13_include), str(nccl_include)}
     assert load_kwargs["extra_ldflags"] == [str(nccl_lib)]
 
 

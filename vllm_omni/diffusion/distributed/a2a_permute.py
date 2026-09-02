@@ -71,9 +71,11 @@ def _ensure_built() -> None:
         if CUDA_HOME is not None:
             cuda_include = os.path.join(CUDA_HOME, "include")
             if os.path.isdir(cuda_include):
-                # cpp_extension invokes CUDA_HOME/bin/nvcc. Keep that
-                # compiler's matching CRT headers ahead of headers from
-                # independently versioned nvidia-* wheels.
+                # cpp_extension invokes CUDA_HOME/bin/nvcc. Do not expose it
+                # to a different CUDA CRT from independently versioned wheels.
+                include_paths = [
+                    path for path in include_paths if not os.path.isfile(os.path.join(path, "crt", "host_runtime.h"))
+                ]
                 include_paths.insert(0, cuda_include)
         nccl_libs = glob.glob(os.path.join(nvidia_root, "nccl", "lib", "libnccl.so*"))
         if not nccl_libs:
