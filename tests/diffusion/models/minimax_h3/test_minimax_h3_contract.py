@@ -1189,6 +1189,12 @@ def test_text_encoder_stub_constructs_without_group_or_weights():
     from vllm_omni.diffusion.models.minimax_h3.encoder import (
         MiniMaxH3Qwen3VLEncoder,
     )
+    from vllm_omni.diffusion.models.minimax_h3.pipeline_minimax_h3 import (
+        MiniMaxH3Pipeline,
+    )
+    from vllm_omni.diffusion.offloader.component_utils import (
+        get_encoder_block_groups,
+    )
 
     encoder = MiniMaxH3Qwen3VLEncoder(
         "/nonexistent/text_encoder",
@@ -1201,6 +1207,25 @@ def test_text_encoder_stub_constructs_without_group_or_weights():
     # The stub has no parameters, so it never contributes to the runner's
     # strict missing-parameter check on non-encoder ranks.
     assert list(encoder.named_parameters()) == []
+    assert (
+        get_encoder_block_groups(
+            encoder,
+            "text_encoder",
+            MiniMaxH3Pipeline._offload_plan,
+            strict=True,
+        )
+        == []
+    )
+
+    # An arbitrary empty module is not silently treated as a distributed
+    # stub; explicit plans still validate their declared paths.
+    with pytest.raises(ValueError, match=r"text_encoder\.vision\.blocks was not found"):
+        get_encoder_block_groups(
+            nn.Module(),
+            "text_encoder",
+            MiniMaxH3Pipeline._offload_plan,
+            strict=True,
+        )
 
 
 def test_global_quant_config_is_shared_by_dit_and_encoder():

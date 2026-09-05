@@ -51,6 +51,12 @@ def get_encoder_block_groups(
     if plan is None:
         return []
 
+    # Some distributed models expose an unloaded stub on ranks where the
+    # component never executes.  That is a valid local no-op even when the
+    # component was selected explicitly.
+    if getattr(module, "is_loaded", True) is False:
+        return []
+
     groups: list[nn.ModuleList] = []
     for block_path in plan.encoder_block_attrs.get(name, ()):
         try:

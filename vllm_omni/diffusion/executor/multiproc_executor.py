@@ -572,12 +572,15 @@ class MultiprocDiffusionExecutor(DiffusionExecutor):
                 if new_req.diffusion_kv_metadata is not None:
                     args += (new_req.diffusion_kv_metadata,)
                 allgather_active = any_selected_component_uses_allgather(self.od_config)
+                timeout_options: dict[str, Any] = {}
+                if allgather_active:
+                    timeout_options["timeout"] = _DLO_DP_WAVE_TIMEOUT_S
                 result = self.collective_rpc(
                     "execute_model",
-                    timeout=_DLO_DP_WAVE_TIMEOUT_S if allgather_active else None,
                     args=args,
                     unique_reply_rank=0,
                     exec_all_ranks=True,
+                    **timeout_options,
                 )
                 if isinstance(result, AsyncDiffusionOutput) and result.kind == AsyncOutputKind.COMPUTE_DONE:
                     runner_outputs.append(
