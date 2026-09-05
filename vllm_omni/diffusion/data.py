@@ -804,8 +804,9 @@ class OmniDiffusionConfig:
 
     output_type: str = "pil"
 
-    # CPU offload parameters. The compact public mapping separates component
-    # selection from component-specific layer settings.
+    # CPU offload parameters. Keep the public mapping raw so stage configs can
+    # serialize it across processes; __post_init__ validates it once and caches
+    # the internal typed resolution used at runtime.
     diffusion_offload_config: dict[str, Any] | None = None
     # Compatibility aliases. Some model-specific legacy stage lifecycles are
     # intentionally broader than the compact dit/text_encoder selector.
@@ -1065,7 +1066,6 @@ class OmniDiffusionConfig:
             materialize_legacy_offload_flags,
         )
 
-        offload_strategy = materialize_legacy_offload_flags(self)
         if self.diffusion_compile_granularity not in {"regional", "full"}:
             raise ValueError(
                 "diffusion_compile_granularity must be 'regional' or 'full', "
@@ -1138,6 +1138,9 @@ class OmniDiffusionConfig:
                 self.num_gpus = 1
 
         self.parallel_config.resolve_data_parallel_size(self.num_gpus)
+        # Resolve offload only after DP/SP normalization so cached policy
+        # validation observes the actual execution topology.
+        offload_strategy = materialize_legacy_offload_flags(self)
 
         if self.diffusion_compile_granularity == "full":
             incompatible_features = []

@@ -26,10 +26,26 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 
+def encoder_component_type(name: str, plan: OffloadPlan | None) -> str | None:
+    """Map a discovered encoder path to its public offload component."""
+    declared = None if plan is None else plan.encoder_component_types.get(name)
+    if declared is not None:
+        if declared != TEXT_ENCODER_COMPONENT:
+            raise ValueError(f"OffloadPlan maps encoder {name!r} to unknown component {declared!r}")
+        return declared
+
+    leaf_name = name.rsplit(".", 1)[-1]
+    if leaf_name.startswith(TEXT_ENCODER_COMPONENT) or leaf_name.endswith(TEXT_ENCODER_COMPONENT):
+        return TEXT_ENCODER_COMPONENT
+    return None
+
+
 def get_encoder_block_groups(
     module: nn.Module,
     name: str,
     plan: OffloadPlan | None,
+    *,
+    strict: bool = False,
 ) -> list[nn.ModuleList]:
     """Resolve the streamable block lists declared for one encoder."""
     if plan is None:
@@ -40,9 +56,13 @@ def get_encoder_block_groups(
         try:
             blocks = attrgetter(block_path)(module)
         except AttributeError:
+            if strict:
+                raise ValueError(f"Encoder offload path {name}.{block_path} was not found") from None
             logger.warning("Encoder offload path %s.%s was not found", name, block_path)
             continue
         if not isinstance(blocks, nn.ModuleList) or len(blocks) <= 1:
+            if strict:
+                raise ValueError(f"Encoder offload path {name}.{block_path} is not a streamable block list")
             logger.warning("Encoder offload path %s.%s is not a streamable block list", name, block_path)
             continue
         groups.append(blocks)
@@ -65,7 +85,7 @@ def iter_streamable_dits(
         if blocks:
             yield name, module, block_attrs, blocks
             continue
-        if config.components_explicit:
+        if config.components is not None:
             raise ValueError(f"Selected DiT {name!r} has no streamable layerwise-offload blocks")
         logger.warning("Target layers (blocks) not found. Skipping offloading on %s (%s)", name, type(module).__name__)
         module.to(device)
@@ -143,19 +163,29 @@ def prepare_pipeline_components(
     *,
     device: torch.device,
     staged_components: list[nn.Module],
-    enable_encoder_blocks: Callable[[nn.Module, str, OffloadPlan | None], bool],
+    enable_encoder_blocks: Callable[[nn.Module, str, OffloadPlan | None, bool], bool],
 ) -> None:
     """Apply the shared encoder/VAE/resident placement policy."""
+    if config.components is not None and config.offloads(TEXT_ENCODER_COMPONENT):
+        selected_encoder_names = [name for name in modules.encoder_names if config.offloads_encoder(name, plan)]
+        if not selected_encoder_names:
+            raise ValueError("No text encoder modules found for selected text_encoder offload")
+
     if plan is not None:
         for encoder, name in zip(modules.encoders, modules.encoder_names):
             if config.should_offload_encoder(name, plan) and name in plan.on_demand_component_paths:
                 validate_on_demand_component(encoder, name)
 
-    selected_encoder_ready = False
     for encoder, name in zip(modules.encoders, modules.encoder_names):
         selected = config.should_offload_encoder(name, plan)
-        blockwise = selected and enable_encoder_blocks(encoder, name, plan)
         stage_on_demand = bool(selected and plan is not None and name in plan.on_demand_component_paths)
+        blockwise = selected and enable_encoder_blocks(encoder, name, plan, stage_on_demand)
+        if stage_on_demand and not blockwise and config.uses_allgather(TEXT_ENCODER_COMPONENT):
+            raise ValueError(
+                f"Text encoder {name!r} cannot use AllGather without a model-declared streamable block plan"
+            )
+        if selected and config.components is not None and not (blockwise or stage_on_demand):
+            raise ValueError(f"Selected text encoder {name!r} requires a model-declared streamable or on-demand plan")
         prepare_component(
             encoder,
             name,
@@ -164,15 +194,9 @@ def prepare_pipeline_components(
             blockwise=blockwise,
             staged_components=staged_components,
         )
-        selected_encoder_ready = selected_encoder_ready or blockwise or stage_on_demand
-
-    if config.components_explicit and config.offloads(TEXT_ENCODER_COMPONENT) and not selected_encoder_ready:
-        raise ValueError(
-            "Selected text_encoder layerwise offload requires a model-declared streamable or on-demand plan"
-        )
 
     for vae, name in zip(modules.vaes, modules.vae_names):
-        legacy_staged = not config.components_explicit and plan is not None and name in plan.on_demand_component_paths
+        legacy_staged = config.components is None and plan is not None and name in plan.on_demand_component_paths
         prepare_component(
             vae,
             name,
@@ -183,10 +207,8 @@ def prepare_pipeline_components(
         )
 
     for name, module in zip(modules.resident_names, modules.resident_modules):
-        try:
-            module.to(device)
-        except Exception as exc:
-            logger.debug("Failed to move resident module %s to %s: %s", name, device, exc)
+        module.to(device)
+        logger.debug("Moved resident module %s to %s", name, device)
 
     if not config.offloads(DIT_COMPONENT):
         for dit in modules.dits:

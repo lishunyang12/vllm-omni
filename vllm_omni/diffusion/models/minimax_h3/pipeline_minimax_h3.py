@@ -55,6 +55,8 @@ from vllm_omni.diffusion.offloader import (
 from vllm_omni.diffusion.offloader.config import (
     DIT_COMPONENT,
     TEXT_ENCODER_COMPONENT,
+    OffloadStrategy,
+    resolve_offload,
     should_offload_component,
 )
 from vllm_omni.diffusion.offloader.module_collector import ModuleDiscovery
@@ -709,10 +711,13 @@ class MiniMaxH3Pipeline(
         self._lora_sigma_schedules.pop(lora_request.lora_int_id, None)
         od_config = getattr(self, "od_config", None)
         offload_modes = []
-        if getattr(od_config, "enable_cpu_offload", False):
-            offload_modes.append("model-level CPU offload (--enable-cpu-offload)")
-        if getattr(od_config, "enable_layerwise_offload", False):
-            offload_modes.append("layerwise offload (--enable-layerwise-offload)")
+        if od_config is not None:
+            resolved_offload = resolve_offload(od_config)
+            if resolved_offload.offloads(DIT_COMPONENT):
+                if resolved_offload.strategy is OffloadStrategy.MODEL_LEVEL:
+                    offload_modes.append("model-level CPU offload")
+                elif resolved_offload.strategy is OffloadStrategy.LAYER_WISE:
+                    offload_modes.append("layerwise offload")
         loaded = load_minimax_h3_turbo_lora(
             partition=self.partition,
             lora_request=lora_request,
@@ -1057,7 +1062,9 @@ class MiniMaxH3Pipeline(
         self.vae = self.video_vae
 
         self._dlo_component_cache = None
-        if getattr(od_config, "enable_distributed_layerwise_offload", False):
+        offloads_text_encoder = should_offload_component(od_config, TEXT_ENCODER_COMPONENT)
+        needs_component_cache = legacy_manual_components or offloads_text_encoder
+        if getattr(od_config, "enable_distributed_layerwise_offload", False) and needs_component_cache:
             self._dlo_component_cache = BoundedAllocatorCache(self.device)
             if legacy_manual_components:
                 _register_dlo_component_cache(
@@ -1066,7 +1073,7 @@ class MiniMaxH3Pipeline(
                     self.video_vae,
                     self.audio_vae,
                 )
-            elif should_offload_component(od_config, TEXT_ENCODER_COMPONENT):
+            elif offloads_text_encoder:
                 _register_dlo_component_cache(self._dlo_component_cache, self.text_encoder)
 
         self._quality_policy = MiniMaxH3QualityPolicy(od_config)
@@ -1569,6 +1576,10 @@ class MiniMaxH3Pipeline(
         modules = [*dits, *stages]
         selection_options: dict[str, Any] = {}
         if offload_components is not None:
+            if DIT_COMPONENT in offload_components and not dits:
+                raise ValueError("MiniMax-H3 has no loaded DiT for selected module offload")
+            if TEXT_ENCODER_COMPONENT in offload_components and not components.encoders:
+                raise ValueError("MiniMax-H3 has no loaded text encoder for selected module offload")
             selection_options = {
                 "offload_dit_modules": dits if DIT_COMPONENT in offload_components else (),
                 "offload_encoder_modules": (

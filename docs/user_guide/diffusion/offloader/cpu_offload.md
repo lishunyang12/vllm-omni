@@ -8,8 +8,8 @@ and is selected with `diffusion_offload_config.mode="module"`.
 
 Pre-forward hooks enforce mutual exclusion between DiT and encoder modules:
 
-- before an encoder runs, the DiT moves to CPU;
-- before a DiT runs, encoders and other DiTs move to CPU; and
+- before an encoder runs, selected DiTs move to CPU;
+- before a DiT runs, selected encoders and other selected DiTs move to CPU; and
 - VAE modules remain on the accelerator.
 
 Pinned host memory reduces transfer overhead. Transfers occur at phase

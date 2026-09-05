@@ -147,6 +147,31 @@ def test_h3_model_cpu_offload_keeps_unselected_vaes_resident(monkeypatch):
     )
 
 
+def test_h3_model_cpu_offload_rejects_unloaded_selected_encoder(monkeypatch):
+    from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
+    from vllm_omni.diffusion.models.minimax_h3 import pipeline_minimax_h3 as module
+
+    pipeline = object.__new__(MiniMaxH3Pipeline)
+    torch.nn.Module.__init__(pipeline)
+    pipeline.transformer = torch.nn.Linear(2, 2)
+    pipeline.transformers_ref = torch.nn.Linear(2, 2)
+    pipeline.text_encoder = None
+    pipeline.video_vae = torch.nn.Linear(2, 2)
+    pipeline.audio_vae = torch.nn.Linear(2, 2)
+    apply_offload = Mock()
+    monkeypatch.setattr(module, "apply_sequential_offload", apply_offload)
+
+    with pytest.raises(ValueError, match="no loaded text encoder"):
+        pipeline.enable_omni_model_cpu_offload(
+            device=torch.device("cpu"),
+            pin_memory=False,
+            use_hsdp=False,
+            offload_components=frozenset({"text_encoder"}),
+        )
+
+    apply_offload.assert_not_called()
+
+
 @pytest.mark.parametrize("decode_fails", [False, True])
 def test_h3_model_cpu_offload_scopes_direct_vae_call(monkeypatch, decode_fails):
     from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline

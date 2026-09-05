@@ -106,7 +106,7 @@ service downloads both; `--task-type fl2va` or `--task-type ref2va` downloads
 only the selected partition.
 
 CPU offload and distributed layerwise offload reduce GPU residency; they do
-not make the model weights disappear. With `weight_transfer="rank-local"`, each
+not make the model weights disappear. With `--dlo-no-use-allgather`, each
 worker retains its standard-loader rank-local weights in host memory, including
 pinned CPU buffers used for H2D streaming. Use at least **200 GiB available
 system RAM** before starting the two-GPU recipe; a **384 GiB host is
@@ -192,8 +192,9 @@ vllm serve "${MODEL}" \
   --vae-patch-parallel-size 2 \
   --vae-parallel-mode tile \
   --vae-use-tiling \
-  --diffusion-offload-config \
-  '{"mode":"layer","components":["dit","text_encoder"],"layer_options":{"dit":{"weight_transfer":"rank-local","resident_layers":20},"text_encoder":{"weight_transfer":"rank-local"}}}' \
+  --enable-distributed-layerwise-offload \
+  --dlo-no-use-allgather \
+  --dlo-resident-layers 20 \
   --enforce-eager \
   --diffusion-attention-backend CUDNN_ATTN
 ```
@@ -206,7 +207,7 @@ Use the profile that matches the per-GPU memory capacity:
 | `rtx4090` | 2 x 24 GB | 1024x576 | 12 | cuDNN attention | eager | Capacity-proxy starting point |
 
 This topology uses all available parallel capacity: TP2 shards both the DiT
-and text encoder, `weight_transfer="rank-local"` streams each rank's local TP shard
+and text encoder, `--dlo-no-use-allgather` streams each rank's local TP shard
 without reconstructing full blocks, and VAE patch parallelism splits tiled
 decode across both GPUs. cuDNN attention is selected explicitly for the RTX
 consumer path; the server stays eager to avoid an unqualified compile path.
@@ -1126,10 +1127,7 @@ omni = Omni(
     cache_backend="tea_cache",
     cache_config={"rel_l1_thresh": 0.17},
     trust_remote_code=True,
-    diffusion_offload_config={
-        "mode": "module",
-        "components": ["dit", "text_encoder"],
-    },
+    enable_cpu_offload=True,
 )
 outputs = omni.generate(
     "A quiet cinematic night scene with matching ambient sound.",

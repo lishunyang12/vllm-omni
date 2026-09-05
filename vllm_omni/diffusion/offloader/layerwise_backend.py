@@ -12,7 +12,7 @@ from vllm.logger import init_logger
 from vllm_omni.diffusion.hooks import HookRegistry, ModelHook
 from vllm_omni.platforms import current_omni_platform
 
-from .base import OffloadBackend, OffloadConfig
+from .base import OffloadBackend, OffloadConfig, run_cleanup_steps
 from .block_discovery import (
     get_blocks_attr_names,
     get_blocks_from_dit,
@@ -36,6 +36,8 @@ from .tensor_utils import (
     flatten_physical_storage,
     group_named_tensors_by_dtype,
     is_materialized_tensor,
+    materialization_probe,
+    module_materialization_probe,
     restore_tensor_storage,
     set_tensor_storage,
     tensor_storage_metadata,
@@ -66,6 +68,7 @@ class LayerwiseOffloadHook(ModelHook):
         device: torch.device,
         stream: current_omni_platform.Stream | None = None,
         pin_memory: bool = True,
+        materialization_probe_tensor: torch.Tensor | None = None,
     ):
         assert isinstance(next_block, nn.Module), "transformer block must be type `torch.nn.Module`"
 
@@ -84,6 +87,7 @@ class LayerwiseOffloadHook(ModelHook):
         self.next_block_buffers: dict[str, torch.Tensor] = {}
         self.dtype_cpu_flattened_weights: dict[torch.dtype, torch.Tensor] = {}
         self.dtype_metadata: dict[torch.dtype, list[dict[str, Any]]] = {}
+        self._materialization_probe = materialization_probe_tensor
 
     def initialize_hook(self, module: nn.Module) -> nn.Module:
         # This all happen during the hook instance being registered to hook registry;
@@ -92,6 +96,8 @@ class LayerwiseOffloadHook(ModelHook):
 
         self.block_parameters: dict[str, nn.Parameter] = dict(module.named_parameters())
         self.block_buffers: dict[str, torch.Tensor] = dict(module.named_buffers())
+        if self._materialization_probe is None:
+            self._materialization_probe = materialization_probe(self.block_parameters, self.block_buffers)
 
         self.next_block_parameters: dict[str, nn.Parameter] = dict(self.next_block.named_parameters())
         self.next_block_buffers: dict[str, torch.Tensor] = dict(self.next_block.named_buffers())
@@ -100,7 +106,6 @@ class LayerwiseOffloadHook(ModelHook):
         self.dtype_cpu_flattened_weights, self.dtype_metadata = LayerwiseOffloadHook._to_cpu(
             self.next_block_parameters,
             self.next_block_buffers,
-            self.device,
             self.pin_memory,
         )
 
@@ -110,7 +115,6 @@ class LayerwiseOffloadHook(ModelHook):
     def _to_cpu(
         params: dict[str, nn.Parameter],
         bufs: dict[str, torch.Tensor],
-        device: torch.device,
         pin_memory: bool = True,
     ) -> tuple[dict[torch.dtype, torch.Tensor], dict[torch.dtype, list[dict[str, Any]]]]:
         """Helper method to move block parameters and buffers to CPU, flattening by dtype.
@@ -155,10 +159,7 @@ class LayerwiseOffloadHook(ModelHook):
     @property
     def is_materialized(self) -> bool:
         """Check whether this block's parameters hold real data on device."""
-        for param in self.block_parameters.values():
-            return is_materialized_tensor(param)
-
-        return True
+        return self._materialization_probe is None or is_materialized_tensor(self._materialization_probe)
 
     @torch.compiler.disable
     def prefetch_layer(self, non_blocking: bool = True) -> None:
@@ -254,9 +255,17 @@ def apply_block_hook(
     device: torch.device,
     stream: current_omni_platform.Stream | None = None,
     pin_memory: bool = True,
+    *,
+    materialization_probe_tensor: torch.Tensor | None = None,
 ) -> LayerwiseOffloadHook:
     registry = HookRegistry.get_or_create(module)
-    hook = LayerwiseOffloadHook(next_block, device, stream, pin_memory)
+    hook = LayerwiseOffloadHook(
+        next_block,
+        device,
+        stream,
+        pin_memory,
+        materialization_probe_tensor,
+    )
     registry.register_hook(LayerwiseOffloadHook._HOOK_NAME, hook)
 
     return hook
@@ -282,19 +291,34 @@ def _install_layerwise_hook_group(
 
     hooks: list[LayerwiseOffloadHook] = []
     hooked_blocks: list[nn.Module] = []
+    probes = {id(block): module_materialization_probe(block) for block in block_list}
     try:
         for block, next_block in zip(
             chain((block_list[-1],), block_list[:-1]),
             block_list,
             strict=True,
         ):
-            hooks.append(apply_block_hook(block, next_block, device, stream, pin_memory))
+            hooks.append(
+                apply_block_hook(
+                    block,
+                    next_block,
+                    device,
+                    stream,
+                    pin_memory,
+                    materialization_probe_tensor=probes[id(block)],
+                )
+            )
             hooked_blocks.append(block)
     except BaseException:
-        for hook in hooks:
-            hook.restore_next_block()
-        for block in hooked_blocks:
-            remove_block_hook(block)
+        run_cleanup_steps(
+            [
+                *(("restoring a partially installed layerwise block", hook.restore_next_block) for hook in hooks),
+                *(
+                    ("removing a partially installed layerwise hook", lambda block=block: remove_block_hook(block))
+                    for block in hooked_blocks
+                ),
+            ]
+        )
         raise
 
     for index, hook in enumerate(hooks):
@@ -310,6 +334,8 @@ def enable_plan_encoder_layerwise_offload(
     device: torch.device,
     stream: current_omni_platform.Stream,
     pin_memory: bool,
+    stage_on_demand: bool = False,
+    strict: bool = False,
 ) -> bool:
     """Apply rank-local layerwise hooks to plan-declared encoder stacks."""
     if getattr(module, "_omni_layerwise_enabled", False):
@@ -317,7 +343,12 @@ def enable_plan_encoder_layerwise_offload(
 
     hooks: list[LayerwiseOffloadHook] = []
     hooked_blocks: list[nn.Module] = []
-    block_groups = get_encoder_block_groups(module, name, plan)
+    block_groups = get_encoder_block_groups(
+        module,
+        name,
+        plan,
+        strict=strict,
+    )
     if not block_groups:
         return False
     try:
@@ -325,16 +356,18 @@ def enable_plan_encoder_layerwise_offload(
             group_hooks = _install_layerwise_hook_group(blocks, device, stream, pin_memory)
             hooks.extend(group_hooks)
             hooked_blocks.extend(blocks)
-        move_non_block_state_to_device(
-            module,
-            block_groups,
-            device,
-        )
+        if not stage_on_demand:
+            move_non_block_state_to_device(module, block_groups, device)
     except BaseException:
-        for hook in hooks:
-            hook.restore_next_block()
-        for block in hooked_blocks:
-            remove_block_hook(block)
+        run_cleanup_steps(
+            [
+                *(("restoring a partially installed encoder block", hook.restore_next_block) for hook in hooks),
+                *(
+                    ("removing a partially installed encoder hook", lambda block=block: remove_block_hook(block))
+                    for block in hooked_blocks
+                ),
+            ]
+        )
         raise
     set_encoder_layerwise_state(
         module,
@@ -358,13 +391,19 @@ def disable_plan_encoder_layerwise_offload(
     """Remove hooks installed by :func:`enable_plan_encoder_layerwise_offload`."""
     if not getattr(module, "_omni_layerwise_enabled", False):
         return
+    hooks = getattr(module, "_omni_layerwise_hooks", [])
+    block_groups = getattr(module, "_omni_layerwise_block_groups", [])
+    steps = []
     if restore_weights:
-        for hook in getattr(module, "_omni_layerwise_hooks", []):
-            hook.restore_next_block()
-
-    for blocks in getattr(module, "_omni_layerwise_block_groups", []):
-        for block in blocks:
-            remove_block_hook(block)
+        steps.extend(("restoring an encoder block", hook.restore_next_block) for hook in hooks)
+    steps.extend(
+        ("removing an encoder hook", lambda block=block: remove_block_hook(block))
+        for blocks in block_groups
+        for block in blocks
+    )
+    cleanup_error = run_cleanup_steps(steps)
+    if cleanup_error is not None:
+        raise RuntimeError("Failed to fully disable encoder layerwise offload") from cleanup_error
     clear_encoder_layerwise_state(module)
 
 
@@ -387,7 +426,14 @@ class LayerWiseOffloadBackend(OffloadBackend):
         self._staged_components: list[nn.Module] = []
 
     def enable(self, pipeline: nn.Module) -> None:
-        self._enable_transactionally(lambda: self._enable(pipeline), self.disable)
+        try:
+            self._enable(pipeline)
+        except BaseException:
+            try:
+                self.disable()
+            except BaseException:
+                logger.exception("LayerWiseOffloadBackend cleanup failed while handling an enable failure")
+            raise
 
     def _enable(self, pipeline: nn.Module) -> None:
         if self.enabled:
@@ -398,10 +444,32 @@ class LayerWiseOffloadBackend(OffloadBackend):
         plan = get_offload_plan(pipeline)
         if not modules.dits and self.config.offloads(DIT_COMPONENT):
             message = "No DiT/transformer modules found for selected DiT layerwise offload"
-            if self.config.components_explicit:
+            if self.config.components is not None:
                 raise ValueError(message)
             logger.warning(message)
             return
+
+        def enable_encoder_blocks(
+            module: nn.Module,
+            name: str,
+            component_plan: OffloadPlan | None,
+            stage_on_demand: bool,
+        ) -> bool:
+            enabled = enable_plan_encoder_layerwise_offload(
+                module,
+                name,
+                component_plan,
+                device=self.device,
+                stream=self.copy_stream,
+                pin_memory=self.config.pin_cpu_memory,
+                stage_on_demand=stage_on_demand,
+                strict=self.config.components is not None,
+            )
+            if enabled:
+                # Record each successful installation immediately so a later
+                # component failure can remove these hooks transactionally.
+                self._encoder_modules.append(module)
+            return enabled
 
         prepare_pipeline_components(
             modules,
@@ -409,18 +477,8 @@ class LayerWiseOffloadBackend(OffloadBackend):
             plan,
             device=self.device,
             staged_components=self._staged_components,
-            enable_encoder_blocks=lambda module, name, component_plan: enable_plan_encoder_layerwise_offload(
-                module,
-                name,
-                component_plan,
-                device=self.device,
-                stream=self.copy_stream,
-                pin_memory=self.config.pin_cpu_memory,
-            ),
+            enable_encoder_blocks=enable_encoder_blocks,
         )
-        self._encoder_modules = [
-            encoder for encoder in modules.encoders if getattr(encoder, "_omni_layerwise_enabled", False)
-        ]
 
         if not self.config.offloads(DIT_COMPONENT):
             self.enabled = bool(self._encoder_modules or self._staged_components)
@@ -440,7 +498,7 @@ class LayerWiseOffloadBackend(OffloadBackend):
         ):
             num_blocks = len(blocks)
             if num_blocks <= 1:
-                if self.config.components_explicit:
+                if self.config.components is not None:
                     raise ValueError(
                         f"Selected DiT {dit_name!r} requires at least two streamable layerwise-offload blocks"
                     )
@@ -495,17 +553,28 @@ class LayerWiseOffloadBackend(OffloadBackend):
         ):
             return
 
+        steps = []
         if restore_weights:
-            for hook in self._dit_hooks:
-                hook.restore_next_block()
-        for block in self._hooked_dit_blocks:
-            remove_block_hook(block)
-
-        for module in self._encoder_modules:
-            disable_plan_encoder_layerwise_offload(
-                module,
-                restore_weights=restore_weights,
+            steps.extend(("restoring a DiT block", hook.restore_next_block) for hook in self._dit_hooks)
+        steps.extend(
+            ("removing a DiT block hook", lambda block=block: remove_block_hook(block))
+            for block in self._hooked_dit_blocks
+        )
+        steps.extend(
+            (
+                "disabling encoder layerwise offload",
+                lambda module=module: disable_plan_encoder_layerwise_offload(
+                    module,
+                    restore_weights=restore_weights,
+                ),
             )
+            for module in self._encoder_modules
+        )
+        cleanup_error = run_cleanup_steps(steps)
+        if cleanup_error is not None:
+            # Keep every host-master reference so a transient teardown error
+            # can be retried without losing weights behind placeholders.
+            raise RuntimeError("Failed to fully disable layerwise offload") from cleanup_error
         self._blocks.clear()
         self._dit_hooks.clear()
         self._hooked_dit_blocks.clear()

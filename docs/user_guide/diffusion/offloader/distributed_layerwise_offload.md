@@ -2,11 +2,12 @@
 
 Distributed layerwise offloading (DLO) extends block streaming to multi-device
 deployments. Each selected component chooses its transfer independently. With
-`allgather`, each rank stores roughly `1 / group_size` of the component's host
-weights and reconstructs each layer at runtime. With `rank-local`, each rank
-streams a complete loader-produced block independently. Compatible TP1 DiT
-deployments can share checkpoint-backed host pages among processes on the same
-node; otherwise DLO streams the ordinary loader's rank-local tensors.
+`allgather`, each rank stores roughly one shard per member of the effective DLO
+group (DP, or SP when DP is one) and reconstructs each layer at runtime. With
+`rank-local`, each rank streams a complete loader-produced block independently.
+Compatible TP1 DiT deployments can share checkpoint-backed host pages among
+processes on the same node; otherwise DLO streams the ordinary loader's
+rank-local tensors.
 
 See the [DLO feature design](../../../design/feature/offloader/distributed_layerwise_offload.md)
 for the implementation contract and compatibility matrix.
@@ -64,12 +65,18 @@ vllm serve /path/to/model --omni \
   '{"mode":"layer","components":["dit","text_encoder"],"layer_options":{"dit":{"weight_transfer":"allgather"},"text_encoder":{"weight_transfer":"rank-local"}}}' \
   --usp 4
 
-# Standard-loader rank-local weights for both components
+# Full-topology rank-local DLO for an existing model-specific lifecycle
 vllm serve /path/to/model --omni \
-  --diffusion-offload-config \
-  '{"mode":"layer","components":["dit","text_encoder"]}' \
+  --enable-distributed-layerwise-offload \
+  --dlo-no-use-allgather \
   --usp 4
 ```
+
+A compact layer config whose selected components are all `rank-local` and
+whose `resident_layers` is zero resolves to the ordinary layerwise backend. It
+uses the ordinary loader and does not request DLO's direct-checkpoint mmap.
+Keep the compatibility DLO flags for a model-specific full-topology rank-local
+lifecycle; do not add resident layers solely to force backend selection.
 
 ```python
 from vllm_omni import Omni
@@ -102,7 +109,7 @@ omni = Omni(
 | `layer_options.NAME.weight_transfer` | `rank-local` or `allgather` | `rank-local` |
 | `layer_options.dit.resident_layers` | Leading main-DiT blocks kept on device; requires `rank-local` and model-declared resident paths | `0` |
 | `diffusion_offload_config.pin_memory` | Pin streamed host memory for faster H2D copies | `true` |
-| `--data-parallel-size N` | DP ranks and AllGather weight-sharding group | `1` |
+| `--data-parallel-size N` | DP ranks; DP is the DLO group when greater than one, otherwise SP is used | `1` |
 | `--host-weight-runtime-mode {disabled,preferred,required}` | HWR policy: no interaction, populate on a miss, or require an exact hit | `disabled` |
 | `--host-weight-runtime-root PATH` | Writable node-local HWR store shared by workers in one storage domain; required for `preferred` and `required` | unset |
 | `--dlo-host-registration-limit-gib N` | Optional per-worker ceiling for registering an HWR mmap; zero adds no ceiling | `0` |
@@ -130,7 +137,9 @@ transfer to be `rank-local`.
 
 ## Host-weight loading
 
-The diffusion loader chooses host storage before DLO is enabled. It first
+When the distributed backend is selected by AllGather, resident DiT layers, or
+the compatibility DLO flag, the diffusion loader chooses host storage before
+DLO is enabled. It first
 attempts to build a complete, validated direct-checkpoint mmap plan. If names,
 coverage, shape, dtype, topology, or loader-callback compatibility cannot be
 proven, it runs the ordinary model loader instead. DLO consumes that result and
@@ -326,9 +335,9 @@ undeclared auxiliary components remain resident.
 
 With `data_parallel_size > 1` and AllGather enabled, the scheduler can process
 up to `dp_size` requests per denoising step. Concurrent requests must resolve
-to the same denoise schedule. A shared default (`num_inference_steps=None`) is
-valid; mixing different explicit step counts is rejected because every rank
-must enter each collective in the same order.
+to the same denoise schedule, so every request must provide the same explicit
+`num_inference_steps`. Pipeline defaults are rejected because different request
+modes can resolve the same `None` value to different schedules.
 
 ## Limitations
 
@@ -340,6 +349,10 @@ must enter each collective in the same order.
   TP greater than one.
 - HSDP with `allgather` on any selected component is rejected to avoid double
   sharding. HSDP with rank-local transfers has limited end-to-end validation.
+- With data parallelism, `allgather` cannot be combined with TeaCache or
+  Cache-DiT on any selected component. Prompt-embedding cache is also
+  incompatible when the text encoder uses `allgather`. Rank-local cache hits
+  could otherwise make ranks enter different weight collectives.
 - Per-tensor online FP8 linears use the ordinary loader and can run with either
   DiT transfer path. With DiT `allgather`, every rank temporarily materializes
   the complete FP8 model in host memory before DLO retains only its shard.

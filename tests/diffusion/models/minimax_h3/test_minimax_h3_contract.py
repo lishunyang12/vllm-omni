@@ -1454,57 +1454,6 @@ def test_distributed_layerwise_resident_blocks_can_be_skipped():
     controller.offload_resident_layers.assert_not_called()
 
 
-def test_encoder_layerwise_offload_keeps_tp_blocks_rank_local(monkeypatch):
-    from vllm_omni.diffusion.models.minimax_h3.encoder import (
-        MiniMaxH3Qwen3VLEncoder,
-    )
-
-    class Stack(torch.nn.Module):
-        def __init__(self, count):
-            super().__init__()
-            self.blocks = torch.nn.ModuleList([torch.nn.Linear(2, 2) for _ in range(count)])
-
-    class TextStack(torch.nn.Module):
-        def __init__(self, count):
-            super().__init__()
-            self.layers = torch.nn.ModuleList([torch.nn.Linear(2, 2) for _ in range(count)])
-
-    hooks = []
-
-    def fake_apply(block, next_block, device, stream, pin_memory):
-        hook = SimpleNamespace(
-            block=block,
-            next_block=next_block,
-            device=device,
-            stream=stream,
-            pin_memory=pin_memory,
-            _prev_hook=None,
-            offload_layer=Mock(),
-        )
-        hooks.append(hook)
-        return hook
-
-    monkeypatch.setattr(
-        "vllm_omni.diffusion.offloader.layerwise_backend.apply_block_hook",
-        fake_apply,
-    )
-    monkeypatch.setattr(
-        "vllm_omni.platforms.current_omni_platform.Stream",
-        Mock(return_value="copy-stream"),
-    )
-    encoder = object.__new__(MiniMaxH3Qwen3VLEncoder)
-    torch.nn.Module.__init__(encoder)
-    encoder.device_target = torch.device("cpu")
-    encoder.vision = Stack(2)
-    encoder.text_model = TextStack(3)
-
-    encoder.enable_omni_layerwise_offload(pin_memory=False)
-
-    assert len(hooks) == 5
-    assert all(hook._prev_hook is not None for hook in hooks)
-    assert all(hook.device == torch.device("cpu") for hook in hooks)
-
-
 def test_video_vae_keeps_reference_fp32_weights(monkeypatch):
     from vllm_omni.diffusion.models.minimax_h3 import vae as vae_module
 

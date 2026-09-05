@@ -91,7 +91,6 @@ def test_model_level_backend_passes_explicit_component_selection() -> None:
         OffloadConfig(
             strategy=OffloadStrategy.MODEL_LEVEL,
             components=frozenset({"dit", "text_encoder"}),
-            components_explicit=True,
         ),
         torch.device("cpu"),
     )
@@ -155,6 +154,44 @@ def test_sequential_offload_rolls_back_partial_hook_registration(monkeypatch: py
         assert registry is None or registry.get_hook(SequentialOffloadHook._HOOK_NAME) is None
 
 
+def test_model_level_disable_cleans_remaining_hooks_and_can_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    pipeline = nn.Module()
+    pipeline.transformer = _create_simple_module()
+    pipeline.text_encoder = _create_simple_module()
+    backend = ModelLevelOffloadBackend(
+        OffloadConfig(strategy=OffloadStrategy.MODEL_LEVEL, pin_cpu_memory=False),
+        torch.device("cpu"),
+    )
+    backend.enable(pipeline)
+
+    original_remove = HookRegistry.remove_hook
+    calls = 0
+
+    def fail_first_removal(self, name):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("injected hook removal failure")
+        original_remove(self, name)
+
+    monkeypatch.setattr(HookRegistry, "remove_hook", fail_first_removal)
+
+    with pytest.raises(RuntimeError, match="Failed to remove one or more sequential offload hooks"):
+        backend.disable()
+
+    assert backend.enabled
+    assert backend._offload_modules == [pipeline.transformer, pipeline.text_encoder]
+    assert pipeline.transformer._hook_registry.get_hook(SequentialOffloadHook._HOOK_NAME) is not None
+    assert pipeline.text_encoder._hook_registry.get_hook(SequentialOffloadHook._HOOK_NAME) is None
+
+    backend.disable()
+
+    assert not backend.enabled
+    assert not backend._offload_modules
+    for module in (pipeline.transformer, pipeline.text_encoder):
+        assert module._hook_registry.get_hook(SequentialOffloadHook._HOOK_NAME) is None
+
+
 def test_sequential_offload_filters_cpu_eligible_components() -> None:
     dit = _create_simple_module()
     encoder = _create_simple_module()
@@ -180,6 +217,18 @@ def test_sequential_offload_filters_cpu_eligible_components() -> None:
     remove_sequential_offload([dit, encoder, resident_stage])
 
 
+def test_move_params_handles_buffer_only_modules() -> None:
+    module = nn.Module()
+    module.register_buffer("state", torch.ones(2))
+
+    # An indexed CPU device compares differently while remaining usable on
+    # CPU-only test hosts, so the helper must inspect the buffer itself.
+    moved = SequentialOffloadHook._move_params(module, torch.device("cpu:1"))
+
+    assert moved
+    assert module.state.device.type == "cpu"
+
+
 def test_model_level_backend_keeps_declared_image_encoder_resident() -> None:
     class MixedEncoderPipeline(nn.Module):
         _offload_plan = OffloadPlan(
@@ -199,7 +248,6 @@ def test_model_level_backend_keeps_declared_image_encoder_resident() -> None:
         OffloadConfig(
             strategy=OffloadStrategy.MODEL_LEVEL,
             components=frozenset({"dit", "text_encoder"}),
-            components_explicit=True,
         ),
         torch.device("cpu"),
     )
@@ -212,6 +260,28 @@ def test_model_level_backend_keeps_declared_image_encoder_resident() -> None:
     assert image_hook.offload_after_context is False
 
     backend.disable()
+
+
+@pytest.mark.parametrize(
+    ("component", "attribute", "message"),
+    [
+        ("text_encoder", "text_encoder", "requires a DiT/transformer"),
+        ("dit", "transformer", "requires an encoder execution stage"),
+    ],
+)
+def test_component_selective_model_offload_requires_swap_counterpart(component, attribute, message) -> None:
+    pipeline = nn.Module()
+    setattr(pipeline, attribute, _create_simple_module())
+    backend = ModelLevelOffloadBackend(
+        OffloadConfig(
+            strategy=OffloadStrategy.MODEL_LEVEL,
+            components=frozenset({component}),
+        ),
+        torch.device("cpu"),
+    )
+
+    with pytest.raises(ValueError, match=message):
+        backend.enable(pipeline)
 
 
 def test_sequential_offload_can_begin_with_dit_on_cpu(monkeypatch: pytest.MonkeyPatch) -> None:

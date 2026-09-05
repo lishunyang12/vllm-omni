@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import fields
 from inspect import Parameter, signature
+from multiprocessing.reduction import ForkingPickler
 from pathlib import Path
 
 import msgspec
@@ -1415,3 +1416,37 @@ def test_compact_offload_config_reaches_terminal_config(monkeypatch):
     assert cfg.diffusion_offload_config == compact_config
     assert cfg.extras == {}
     assert resolve_offload_strategy(cfg) is OffloadStrategy.DISTRIBUTED_LAYER_WISE
+    restored = ForkingPickler.loads(ForkingPickler.dumps(cfg))
+    assert resolve_offload_strategy(restored) is OffloadStrategy.DISTRIBUTED_LAYER_WISE
+
+
+def test_global_diffusion_offload_config_targets_only_diffusion_stages():
+    compact_config = {"mode": "layer", "components": ["dit"]}
+
+    config = _from_pipeline_key(
+        "minimax_h3_disaggregated",
+        cli_overrides={"diffusion_offload_config": compact_config},
+    )
+
+    assert not hasattr(config.stage_by_id(0), "diffusion_config")
+    assert config.stage_by_id(1).diffusion_config.diffusion_offload_config == compact_config
+
+
+def test_explicit_llm_stage_diffusion_offload_override_is_rejected():
+    with pytest.raises(ValueError, match="no structured config owner: diffusion_offload_config"):
+        _from_pipeline_key(
+            "minimax_h3_disaggregated",
+            cli_overrides={
+                "stage_0_diffusion_offload_config": {"mode": "layer", "components": ["dit"]},
+            },
+        )
+
+
+def test_compact_offload_config_is_validated_during_projection():
+    with pytest.raises(ValueError, match="Unknown diffusion offload mode"):
+        omni_config_module._DiffusionConfigProjection.from_kwargs(
+            diffusion_offload_config={
+                "mode": "layerwise",
+                "components": ["dit"],
+            }
+        )

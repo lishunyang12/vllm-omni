@@ -39,6 +39,28 @@ def test_pipeline_declares_layerwise_offload_components() -> None:
     assert Cosmos3VFMTransformer._layerwise_offload_blocks_attrs == ["gen_layers"]
 
 
+def test_component_selective_model_offload_fails_before_component_loading(monkeypatch) -> None:
+    from vllm_omni.diffusion.models.cosmos3 import pipeline_cosmos3 as pipeline_module
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "get_local_device",
+        lambda: pytest.fail("component loading must not start for an unsupported selector"),
+    )
+    config = SimpleNamespace(
+        diffusion_offload_config={"mode": "module", "components": ["dit"]},
+        enable_cpu_offload=False,
+        enable_layerwise_offload=False,
+        enable_distributed_layerwise_offload=False,
+        dlo_use_allgather=True,
+        dlo_resident_layers=0,
+        pin_cpu_memory=True,
+    )
+
+    with pytest.raises(ValueError, match="does not support the dit/text_encoder component selector"):
+        pipeline_module.Cosmos3OmniDiffusersPipeline(od_config=config)
+
+
 class StubScheduler:
     def __init__(
         self,

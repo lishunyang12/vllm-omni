@@ -3,7 +3,9 @@
 
 """Unit tests for LayerwiseOffloadHook and LayerWiseOffloadBackend utilities."""
 
+import pickle
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 import torch
@@ -11,6 +13,7 @@ from torch import nn
 from torch.distributed.tensor import DeviceMesh, DTensor, Replicate
 
 import vllm_omni.diffusion.offloader.layerwise_backend as layerwise_backend_module
+import vllm_omni.diffusion.offloader.tensor_utils as tensor_utils_module
 from tests.diffusion.offloader.helpers import (
     DummyStream,
     _DummyBlock,
@@ -47,7 +50,66 @@ def _make_values(start: float) -> torch.Tensor:
     return torch.arange(start, start + 4, dtype=torch.float32)
 
 
+def test_clear_tensor_storage_rolls_back_partial_commit(monkeypatch):
+    first = nn.Parameter(torch.tensor([1.0, 2.0]))
+    second = nn.Parameter(torch.tensor([3.0, 4.0]))
+    expected_first = first.detach().clone()
+    expected_second = second.detach().clone()
+    second_data_ptr = second.data_ptr()
+    original_set_storage = tensor_utils_module.set_tensor_storage
+    calls = 0
+
+    def fail_second_commit(target, value):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("injected storage clear failure")
+        original_set_storage(target, value)
+
+    monkeypatch.setattr(tensor_utils_module, "set_tensor_storage", fail_second_commit)
+
+    with pytest.raises(RuntimeError, match="injected storage clear failure"):
+        tensor_utils_module.clear_tensor_storage([first, second])
+
+    assert calls == 3  # first commit, failed second commit, first rollback
+    torch.testing.assert_close(first, expected_first)
+    torch.testing.assert_close(second, expected_second)
+    assert second.data_ptr() == second_data_ptr
+
+
 class TestLayerwiseOffloadHook:
+    def test_buffer_only_block_reports_offloaded_state(self, patched_offload_runtime):
+        current_block = nn.Module()
+        current_block.register_buffer("state", torch.ones(2))
+        next_block = nn.Module()
+        next_block.register_buffer("state", torch.ones(2))
+        hook = LayerwiseOffloadHook(
+            next_block=next_block,
+            device=torch.device("cpu"),
+            stream=DummyStream(),
+            pin_memory=False,
+        )
+        hook.initialize_hook(current_block)
+
+        assert hook.is_materialized
+        hook.offload_layer()
+        assert not hook.is_materialized
+
+    def test_ring_probes_are_captured_before_any_block_is_cleared(self, patched_offload_runtime):
+        blocks = nn.ModuleList([nn.Linear(2, 2, bias=False) for _ in range(3)])
+        expected_middle = blocks[1].weight.detach().clone()
+
+        hooks = layerwise_backend_module._install_layerwise_hook_group(
+            blocks,
+            torch.device("cpu"),
+            DummyStream(),
+            pin_memory=False,
+        )
+
+        assert all(not hook.is_materialized for hook in hooks)
+        hooks[2].pre_forward(blocks[1])
+        torch.testing.assert_close(blocks[1].weight, expected_middle)
+
     def test_dtensor_wrapper_is_preserved_across_prefetch_and_offload(self, dist_group, patched_offload_runtime):
         current_block = TinyBlock(_make_values(1.0))
         next_block = TinyBlock(_make_values(10.0))
@@ -260,10 +322,7 @@ class _GenericEncoderPipeline(nn.Module):
 def _layer_backend(components: set[str] | None = None) -> LayerWiseOffloadBackend:
     options = {}
     if components is not None:
-        options = {
-            "components": frozenset(components),
-            "components_explicit": True,
-        }
+        options = {"components": frozenset(components)}
     return LayerWiseOffloadBackend(
         OffloadConfig(
             strategy=OffloadStrategy.LAYER_WISE,
@@ -294,9 +353,11 @@ class TestLayerwiseComponentSelection:
         assert pipeline.text_encoder.offload_calls == 0
         assert pipeline.vae.offload_calls == 0
 
-    def test_encoder_only_streams_planned_blocks(self, patched_offload_runtime):
+    def test_encoder_only_streams_planned_blocks(self, patched_offload_runtime, monkeypatch):
         pipeline = _ComponentPipeline()
         backend = _layer_backend({"text_encoder"})
+        move_non_block_state = Mock()
+        monkeypatch.setattr(layerwise_backend_module, "move_non_block_state_to_device", move_non_block_state)
 
         backend.enable(pipeline)
 
@@ -307,6 +368,7 @@ class TestLayerwiseComponentSelection:
         assert pipeline.vae.to_calls == 1
         assert not hasattr(pipeline.transformer.blocks[0], "_hook_registry")
         assert backend.enabled
+        move_non_block_state.assert_not_called()
 
         backend.disable()
         assert not pipeline.text_encoder._omni_layerwise_enabled
@@ -360,14 +422,73 @@ class TestLayerwiseComponentSelection:
             assert registry is None or registry.get_hook("layerwise_offload") is None
             torch.testing.assert_close(block.weight, expected)
 
+    def test_later_component_failure_removes_installed_encoder_hooks(
+        self,
+        patched_offload_runtime,
+        monkeypatch,
+    ):
+        pipeline = _ComponentPipeline()
+        blocks = [*pipeline.text_encoder.vision.blocks, *pipeline.text_encoder.text_model.layers]
+        expected = [block.weight.detach().clone() for block in blocks]
+        backend = _layer_backend({"text_encoder"})
+
+        def fail_vae_placement(*_args, **_kwargs):
+            raise RuntimeError("injected VAE placement failure")
+
+        monkeypatch.setattr(pipeline.vae, "to", fail_vae_placement)
+
+        with pytest.raises(RuntimeError, match="injected VAE placement failure"):
+            backend.enable(pipeline)
+
+        assert not backend.enabled
+        assert not pipeline.text_encoder._omni_layerwise_enabled
+        assert not backend._encoder_modules
+        for block, original in zip(blocks, expected, strict=True):
+            assert block._hook_registry.get_hook("layerwise_offload") is None
+            torch.testing.assert_close(block.weight, original)
+
     def test_encoder_only_requires_streamable_offload_plan(self, patched_offload_runtime):
         pipeline = nn.Module()
         pipeline.transformer = _SingleBlockModel()
         pipeline.text_encoder = _StagedEncoder()
         backend = _layer_backend({"text_encoder"})
 
-        with pytest.raises(ValueError, match="Selected text_encoder layerwise offload requires"):
+        with pytest.raises(ValueError, match="Selected text encoder 'text_encoder' requires"):
             backend.enable(pipeline)
+
+    def test_explicit_text_encoder_selection_requires_a_matching_module(self, patched_offload_runtime):
+        pipeline = nn.Module()
+        pipeline.transformer = _SingleBlockModel(num_blocks=2)
+        backend = _layer_backend({"dit", "text_encoder"})
+
+        with pytest.raises(ValueError, match="No text encoder modules found"):
+            backend.enable(pipeline)
+
+        assert not hasattr(pipeline.transformer.blocks[0], "_hook_registry")
+
+    def test_every_selected_encoder_requires_its_own_plan(self, patched_offload_runtime):
+        class Pipeline(nn.Module):
+            _offload_plan = OffloadPlan(
+                encoder_component_types={
+                    "text_encoder": "text_encoder",
+                    "text_encoder_2": "text_encoder",
+                },
+                encoder_block_attrs={"text_encoder": ("encoder.block",)},
+            )
+
+            def __init__(self):
+                super().__init__()
+                self.transformer = _SingleBlockModel()
+                self.text_encoder = _PlainEncoder()
+                self.text_encoder_2 = _PlainEncoder()
+
+        pipeline = Pipeline()
+        backend = _layer_backend({"text_encoder"})
+
+        with pytest.raises(ValueError, match="Selected text encoder 'text_encoder_2' requires"):
+            backend.enable(pipeline)
+
+        assert not pipeline.text_encoder._omni_layerwise_enabled
 
     def test_default_selection_preserves_unplanned_auxiliaries(self, patched_offload_runtime):
         pipeline = _LegacyComponentPipeline()
@@ -383,6 +504,75 @@ class TestLayerwiseComponentSelection:
         assert pipeline.vae.offload_calls == 0
 
         backend.disable()
+
+    def test_disable_failure_keeps_host_masters_for_retry(self, patched_offload_runtime, monkeypatch):
+        pipeline = nn.Module()
+        pipeline.transformer = _SingleBlockModel(num_blocks=3)
+        expected = {name: tensor.detach().clone() for name, tensor in pipeline.state_dict().items()}
+        backend = _layer_backend()
+        backend.enable(pipeline)
+        failing_hook = backend._dit_hooks[0]
+        restore = failing_hook.restore_next_block
+        attempts = 0
+
+        def fail_once():
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RuntimeError("injected restore failure")
+            restore()
+
+        monkeypatch.setattr(failing_hook, "restore_next_block", fail_once)
+
+        with pytest.raises(RuntimeError, match="Failed to fully disable"):
+            backend.disable()
+
+        assert backend.enabled
+        assert backend._dit_hooks
+
+        backend.disable()
+
+        assert not backend.enabled
+        for name, tensor in pipeline.state_dict().items():
+            torch.testing.assert_close(tensor, expected[name])
+
+    def test_encoder_disable_failure_keeps_host_masters_for_retry(
+        self,
+        patched_offload_runtime,
+        monkeypatch,
+    ):
+        pipeline = _ComponentPipeline()
+        encoder = pipeline.text_encoder
+        expected = {name: tensor.detach().clone() for name, tensor in encoder.state_dict().items()}
+        backend = _layer_backend({"text_encoder"})
+        backend.enable(pipeline)
+        failing_hook = encoder._omni_layerwise_hooks[0]
+        restore = failing_hook.restore_next_block
+        attempts = 0
+
+        def fail_once():
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RuntimeError("injected encoder restore failure")
+            restore()
+
+        monkeypatch.setattr(failing_hook, "restore_next_block", fail_once)
+
+        with pytest.raises(RuntimeError, match="Failed to fully disable"):
+            backend.disable()
+
+        assert backend.enabled
+        assert backend._encoder_modules == [encoder]
+        assert encoder._omni_layerwise_enabled
+        assert encoder._omni_layerwise_hooks
+
+        backend.disable()
+
+        assert not backend.enabled
+        assert not encoder._omni_layerwise_enabled
+        for name, tensor in encoder.state_dict().items():
+            torch.testing.assert_close(tensor, expected[name])
 
     def test_legacy_selector_preserves_planned_encoder_and_vae_lifecycle(self, patched_offload_runtime):
         pipeline = _ComponentPipeline()
@@ -469,7 +659,7 @@ class TestLayerwiseComponentConfig:
             )
 
     def test_layer_options_requires_component_name_keys(self):
-        with pytest.raises(TypeError, match="layer_options keys must be component names"):
+        with pytest.raises(TypeError, match="layer_options keys must be strings"):
             OffloadConfig.from_od_config(
                 _offload_od_config(
                     diffusion_offload_config={
@@ -481,11 +671,30 @@ class TestLayerwiseComponentConfig:
             )
 
     @pytest.mark.parametrize(
+        ("config", "message"),
+        [
+            ({0: "layer"}, "diffusion_offload_config keys must be strings"),
+            (
+                {
+                    "mode": "layer",
+                    "components": ["dit"],
+                    "layer_options": {"dit": {0: "allgather"}},
+                },
+                "layer_options\\['dit'\\] keys must be strings",
+            ),
+        ],
+    )
+    def test_all_public_mapping_levels_require_string_keys(self, config, message):
+        with pytest.raises(TypeError, match=message):
+            OffloadConfig.from_od_config(_offload_od_config(diffusion_offload_config=config))
+
+    @pytest.mark.parametrize(
         "config,match",
         [
             ({"components": ["dit"]}, "requires 'mode'"),
             ({"mode": "layer"}, "requires 'components'"),
             ({"mode": "layer", "components": []}, "must not be empty"),
+            ({"mode": "layer", "components": [" dit "]}, "Unknown diffusion offload component"),
             ({"mode": "layerwise", "components": ["dit"]}, "Unknown diffusion offload mode"),
             (
                 {
@@ -535,7 +744,6 @@ class TestLayerwiseComponentConfig:
 
         assert config.strategy is OffloadStrategy.MODEL_LEVEL
         assert config.components == frozenset({"dit", "text_encoder"})
-        assert config.components_explicit is True
 
     @pytest.mark.parametrize("setting", [{"weight_transfer": "rank-local"}, {"resident_layers": 1}])
     def test_module_mode_rejects_layer_settings(self, setting):
@@ -617,7 +825,96 @@ class TestLayerwiseComponentConfig:
         config = _resolve_offload_config(enable_layerwise_offload=True)
 
         assert config.strategy is OffloadStrategy.LAYER_WISE
-        assert config.components == frozenset({"dit"})
+        assert config.components is None
+
+    def test_offload_resolution_is_cached_for_runtime_accessors(self, monkeypatch):
+        import vllm_omni.diffusion.offloader.config as config_module
+
+        od_config = _offload_od_config(
+            diffusion_offload_config={
+                "mode": "layer",
+                "components": ["dit", "text_encoder"],
+            }
+        )
+        parse_calls = 0
+        original_parse = config_module.parse_diffusion_offload_config
+
+        def track_parse(value):
+            nonlocal parse_calls
+            parse_calls += 1
+            return original_parse(value)
+
+        monkeypatch.setattr(config_module, "parse_diffusion_offload_config", track_parse)
+
+        assert config_module.resolve_offload_strategy(od_config) is OffloadStrategy.LAYER_WISE
+        assert config_module.selected_offload_components(od_config) == {"dit", "text_encoder"}
+        assert not config_module.component_uses_allgather(od_config, "dit")
+        assert not config_module.any_selected_component_uses_allgather(od_config)
+        assert parse_calls == 1
+
+    def test_cached_policy_is_deeply_immutable_and_pickle_safe(self):
+        import vllm_omni.diffusion.offloader.config as config_module
+
+        od_config = _offload_od_config(
+            diffusion_offload_config={
+                "mode": "layer",
+                "components": ["dit"],
+                "layer_options": {"dit": {"weight_transfer": "rank-local"}},
+            }
+        )
+        resolved = config_module.resolve_offload(od_config)
+
+        with pytest.raises(TypeError):
+            resolved.transfers["dit"] = config_module.DLOTransfer.ALLGATHER  # type: ignore[index]
+        assert resolved.public is not None
+        with pytest.raises(TypeError):
+            resolved.public.layer_options["dit"] = config_module.LayerOffloadOptions()  # type: ignore[index]
+
+        restored = pickle.loads(pickle.dumps(resolved))
+        assert not restored.uses_allgather("dit")
+
+    def test_dp_text_encoder_allgather_rejects_rank_local_prompt_cache(self):
+        config = _offload_od_config(
+            diffusion_offload_config={
+                "mode": "layer",
+                "components": ["text_encoder"],
+                "layer_options": {"text_encoder": {"weight_transfer": "allgather"}},
+            },
+            enable_prompt_embed_cache=True,
+            parallel_config=SimpleNamespace(
+                data_parallel_size=2,
+                sequence_parallel_size=1,
+                use_hsdp=False,
+            ),
+        )
+
+        with pytest.raises(ValueError, match="rank-local cache hits would skip different encoder collectives"):
+            OffloadConfig.from_od_config(config)
+
+    def test_dp_allgather_rejects_rank_local_dit_cache_decisions(self):
+        config = _offload_od_config(
+            diffusion_offload_config={
+                "mode": "layer",
+                "components": ["dit"],
+                "layer_options": {"dit": {"weight_transfer": "allgather"}},
+            },
+            cache_backend="tea_cache",
+            parallel_config=SimpleNamespace(
+                data_parallel_size=2,
+                sequence_parallel_size=1,
+                use_hsdp=False,
+            ),
+        )
+
+        with pytest.raises(ValueError, match="rank-local cache decisions can skip different weight collectives"):
+            OffloadConfig.from_od_config(config)
+
+    def test_internal_transfer_map_requires_every_component(self):
+        with pytest.raises(ValueError, match="missing: text_encoder"):
+            OffloadConfig(
+                strategy=OffloadStrategy.DISTRIBUTED_LAYER_WISE,
+                dlo_transfers={"dit": "rank-local"},
+            )
 
     def test_legacy_distributed_settings_still_work(self):
         config = _resolve_offload_config(

@@ -47,7 +47,7 @@ one offload strategy per deployment:
 --stage-overrides '{"1":{"enable_cpu_offload":true}}'
 
 # Stage 1 distributed layerwise offload. Tune resident layers for available RAM.
---stage-overrides '{"1":{"diffusion_offload_config":{"mode":"layer","components":["dit"],"layer_options":{"dit":{"weight_transfer":"rank-local","resident_layers":20}}}}}'
+--stage-overrides '{"1":{"enable_distributed_layerwise_offload":true,"dlo_use_allgather":false,"dlo_resident_layers":20}}'
 
 # Stage 1 online FP8 quantization of the DiT only.
 --stage-overrides '{"1":{"diffusion_quantization_config":"{\"transformer\":{\"method\":\"fp8\"}}"}}'

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -12,21 +12,31 @@ from vllm.logger import init_logger
 
 from vllm_omni.diffusion.data import OmniDiffusionConfig, validate_dlo_host_registration_options
 
+from .component_utils import encoder_component_type
 from .config import (
-    DEFAULT_OFFLOAD_COMPONENTS,
     DIT_COMPONENT,
-    OFFLOAD_COMPONENTS,
     TEXT_ENCODER_COMPONENT,
     DLOTransfer,
     OffloadStrategy,
-    get_diffusion_offload_config,
     parse_dlo_transfer,
     parse_offload_components,
-    resolve_offload_strategy,
+    resolve_offload,
 )
 from .offload_plan import OffloadPlan
 
 logger = init_logger(__name__)
+
+
+def run_cleanup_steps(steps: Iterable[tuple[str, Callable[[], None]]]) -> BaseException | None:
+    """Run every cleanup step and return the first failure, if any."""
+    first_error: BaseException | None = None
+    for description, step in steps:
+        try:
+            step()
+        except BaseException as exc:
+            logger.exception("Cleanup failed while %s", description)
+            first_error = first_error or exc
+    return first_error
 
 
 @runtime_checkable
@@ -63,22 +73,27 @@ class OffloadConfig:
     # Optional per-worker ceiling for registering an HWR mmap. Zero means no
     # additional ceiling; pin_cpu_memory controls whether registration is tried.
     dlo_host_registration_limit_gib: float = 0.0
-    model_path: str | None = None  # checkpoint path for mmap weight loading
-    components: frozenset[str] = DEFAULT_OFFLOAD_COMPONENTS
-    components_explicit: bool = False
+    # ``None`` preserves the model's legacy plan-driven component topology;
+    # a frozenset is an explicit compact-API selection.
+    components: frozenset[str] | None = None
     dlo_transfers: dict[str, DLOTransfer] | None = None
 
     def __post_init__(self) -> None:
-        self.components = parse_offload_components(self.components)
-        self.dlo_transfers = parse_dlo_transfer(
-            self.dlo_transfers,
-            legacy_use_allgather=self.dlo_use_allgather,
-        )
+        if self.components is not None:
+            self.components = parse_offload_components(self.components)
+        if self.dlo_transfers is None:
+            self.dlo_transfers = {
+                DIT_COMPONENT: DLOTransfer.ALLGATHER if self.dlo_use_allgather else DLOTransfer.RANK_LOCAL,
+                TEXT_ENCODER_COMPONENT: DLOTransfer.RANK_LOCAL,
+            }
+        self.dlo_transfers = parse_dlo_transfer(self.dlo_transfers)
         # Preserve the old field as the DiT transfer compatibility view.
         self.dlo_use_allgather = self.uses_allgather(DIT_COMPONENT)
 
     def offloads(self, component: str) -> bool:
-        return component in self.components
+        # Historically the generic selector covered DiT directly while model
+        # plans opted auxiliary components into their lifecycle.
+        return component == DIT_COMPONENT if self.components is None else component in self.components
 
     def transfer_for(self, component: str) -> DLOTransfer:
         if self.dlo_transfers is None:
@@ -97,20 +112,12 @@ class OffloadConfig:
         Plans declare non-standard encoder names explicitly. The name-based
         fallback preserves compatibility with pipelines that predate OffloadPlan.
         """
-        declared_component = None if plan is None else plan.encoder_component_types.get(name)
-        if declared_component is not None:
-            if declared_component != TEXT_ENCODER_COMPONENT:
-                raise ValueError(f"OffloadPlan maps encoder {name!r} to unknown component {declared_component!r}")
-            return self.offloads(declared_component)
-
-        leaf_name = name.rsplit(".", 1)[-1]
-        if leaf_name.startswith(TEXT_ENCODER_COMPONENT) or leaf_name.endswith(TEXT_ENCODER_COMPONENT):
-            return self.offloads(TEXT_ENCODER_COMPONENT)
-        return False
+        component = encoder_component_type(name, plan)
+        return component is not None and self.offloads(component)
 
     def should_offload_encoder(self, name: str, plan: OffloadPlan | None = None) -> bool:
         """Apply explicit selection while preserving the legacy encoder topology."""
-        return not self.components_explicit or self.offloads_encoder(name, plan)
+        return self.components is None or self.offloads_encoder(name, plan)
 
     @classmethod
     def from_od_config(cls, od_config: OmniDiffusionConfig) -> "OffloadConfig":
@@ -130,14 +137,11 @@ class OffloadConfig:
         Returns:
             OffloadConfig with validated settings
         """
-        strategy = resolve_offload_strategy(od_config)
-        public_config = get_diffusion_offload_config(od_config)
+        resolved = resolve_offload(od_config)
+        strategy = resolved.strategy
+        public_config = resolved.public
         enable_distributed_layerwise_offload = strategy is OffloadStrategy.DISTRIBUTED_LAYER_WISE
-        pin_cpu_memory = (
-            public_config.pin_memory
-            if public_config is not None and public_config.pin_memory is not None
-            else getattr(od_config, "pin_cpu_memory", True)
-        )
+        pin_cpu_memory = resolved.pin_memory
 
         parallel_config = getattr(od_config, "parallel_config", None)
         use_hsdp = getattr(parallel_config, "use_hsdp", False) if parallel_config else False
@@ -163,29 +167,13 @@ class OffloadConfig:
                     dp_size = sp_size
 
         if public_config is not None:
-            components = frozenset(public_config.components)
-            dlo_transfers = {component: DLOTransfer.RANK_LOCAL for component in OFFLOAD_COMPONENTS}
-            for component, layer_options in public_config.layer_options.items():
-                dlo_transfers[component] = layer_options.weight_transfer or DLOTransfer.RANK_LOCAL
-            dit_config = public_config.layer_options.get(DIT_COMPONENT)
-            dlo_resident_layers = 0 if dit_config is None else dit_config.resident_layers
-            components_explicit = True
+            components: frozenset[str] | None = resolved.components
         else:
-            components = DEFAULT_OFFLOAD_COMPONENTS
-            # The compatibility scalar controlled DiT sharding only. Auxiliary
-            # components in the legacy topology were always streamed from
-            # each rank's loader-produced weights, so preserve that behavior
-            # instead of applying the scalar to the text encoder as well.
-            dlo_transfers = {
-                DIT_COMPONENT: (
-                    DLOTransfer.ALLGATHER if getattr(od_config, "dlo_use_allgather", True) else DLOTransfer.RANK_LOCAL
-                ),
-                TEXT_ENCODER_COMPONENT: DLOTransfer.RANK_LOCAL,
-            }
-            dlo_resident_layers = int(getattr(od_config, "dlo_resident_layers", 0))
-            components_explicit = False
+            components = None
 
-        dit_uses_allgather = dlo_transfers[DIT_COMPONENT] is DLOTransfer.ALLGATHER
+        dlo_transfers = dict(resolved.transfers)
+        dlo_resident_layers = resolved.resident_layers
+        dit_uses_allgather = resolved.uses_allgather(DIT_COMPONENT)
         dlo_host_registration_limit_gib = validate_dlo_host_registration_options(
             limit_gib=getattr(od_config, "dlo_host_registration_limit_gib", 0.0),
             enable_dlo=enable_distributed_layerwise_offload,
@@ -196,7 +184,7 @@ class OffloadConfig:
         if enable_distributed_layerwise_offload and all(
             transfer is DLOTransfer.RANK_LOCAL
             for component, transfer in dlo_transfers.items()
-            if component in components
+            if component in resolved.components
         ):
             logger.info(
                 "Distributed layerwise offload: all selected components use "
@@ -206,11 +194,7 @@ class OffloadConfig:
         # HSDP already shards parameters into DTensors.  Running distributed
         # layerwise offload on top would shard each to_local() again, producing
         # incorrect reconstruction after AllGather.  Reject this combination.
-        if (
-            enable_distributed_layerwise_offload
-            and use_hsdp
-            and any(dlo_transfers[component] is DLOTransfer.ALLGATHER for component in components)
-        ):
+        if enable_distributed_layerwise_offload and use_hsdp and resolved.any_allgather:
             raise ValueError(
                 "Distributed layerwise offload with AllGather is incompatible with "
                 "HSDP: HSDP parameters are already sharded DTensors, and the offloader "
@@ -226,9 +210,7 @@ class OffloadConfig:
             dlo_use_allgather=dit_uses_allgather,
             dlo_resident_layers=dlo_resident_layers,
             dlo_host_registration_limit_gib=dlo_host_registration_limit_gib,
-            model_path=getattr(od_config, "model", None),
             components=components,
-            components_explicit=components_explicit,
             dlo_transfers=dlo_transfers,
         )
 
@@ -240,24 +222,6 @@ class OffloadBackend(ABC):
         self.config = config
         self.device = device
         self.enabled = False
-
-    def _enable_transactionally(
-        self,
-        enable: Callable[[], None],
-        rollback: Callable[[], None],
-    ) -> None:
-        """Run backend setup and clean up every partially-installed resource."""
-        try:
-            enable()
-        except BaseException:
-            try:
-                rollback()
-            except BaseException:
-                logger.exception(
-                    "%s cleanup failed while handling an enable failure",
-                    type(self).__name__,
-                )
-            raise
 
     @abstractmethod
     def enable(self, pipeline: nn.Module) -> None:

@@ -15,6 +15,7 @@ from itertools import chain
 from typing import Any
 
 import torch
+from torch import nn
 from torch.distributed.tensor import DTensor
 
 
@@ -124,9 +125,25 @@ def make_offload_placeholder(tensor: torch.Tensor) -> torch.Tensor:
 
 
 def clear_tensor_storage(tensors: Iterable[torch.Tensor]) -> None:
-    """Release tensor residency after all replacement backing is ready."""
-    for tensor in tensors:
-        set_tensor_storage(tensor, make_offload_placeholder(tensor))
+    """Atomically replace tensor storage with offload placeholders."""
+    targets = list(tensors)
+    originals = [tensor.to_local() if is_dtensor(tensor) else tensor.data for tensor in targets]
+    placeholders = [make_offload_placeholder(tensor) for tensor in targets]
+    committed = 0
+    try:
+        for target, placeholder in zip(targets, placeholders, strict=True):
+            set_tensor_storage(target, placeholder)
+            committed += 1
+    except BaseException:
+        rollback_error: BaseException | None = None
+        for target, original in zip(targets[:committed], originals[:committed], strict=True):
+            try:
+                set_tensor_storage(target, original)
+            except BaseException as exc:
+                rollback_error = rollback_error or exc
+        if rollback_error is not None:
+            raise RuntimeError("Tensor storage clear failed and rollback was incomplete") from rollback_error
+        raise
 
 
 def clear_block_storage(
@@ -148,6 +165,19 @@ def is_materialized_tensor(t: torch.Tensor) -> bool:
         local_t = t.to_local()
         return not local_t.is_meta
     return not t.is_meta and t.data.numel() > 0
+
+
+def materialization_probe(
+    params: Mapping[str, torch.Tensor],
+    buffers: Mapping[str, torch.Tensor],
+) -> torch.Tensor | None:
+    """Pick one non-empty tensor that tracks a block's atomic storage state."""
+    return next((tensor for tensor in chain(params.values(), buffers.values()) if tensor.numel()), None)
+
+
+def module_materialization_probe(module: nn.Module) -> torch.Tensor | None:
+    """Capture a probe before another hook releases the module's storage."""
+    return materialization_probe(dict(module.named_parameters()), dict(module.named_buffers()))
 
 
 def restore_tensor_storage(

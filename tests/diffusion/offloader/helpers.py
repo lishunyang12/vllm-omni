@@ -37,6 +37,7 @@ def patch_offload_runtime(monkeypatch, platform, *, synchronize: bool = False) -
     monkeypatch.setattr(platform, "stream", dummy_stream)
     if synchronize:
         monkeypatch.setattr(platform, "synchronize", lambda: None)
+        monkeypatch.setattr(platform, "empty_cache", lambda: None)
 
 
 class _DummyBlock(nn.Module):

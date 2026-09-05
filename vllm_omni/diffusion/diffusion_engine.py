@@ -1009,20 +1009,6 @@ class DiffusionEngine:
                 raise RuntimeError(f"Could not {action} profiler: {e}") from e
 
     def run_startup_warmup(self) -> None:
-        # A one-request dummy run would deadlock when any selected component
-        # uses a multi-rank DLO collective. This covers both DP and SP groups.
-        pc = getattr(self.od_config, "parallel_config", None)
-        dp_size = getattr(pc, "data_parallel_size", 1) if pc else 1
-        sp_size = getattr(pc, "sequence_parallel_size", 1) if pc else 1
-        effective_shard_size = max(dp_size, sp_size)
-        skip_dummy = any_selected_component_uses_allgather(self.od_config) and effective_shard_size > 1
-        if skip_dummy:
-            logger.info(
-                "Skipping dummy run (distributed offload has a multi-rank AllGather component, dp_size=%d, sp_size=%d)",
-                dp_size,
-                sp_size,
-            )
-            return
         try:
             self._dummy_run()
         except Exception as e:

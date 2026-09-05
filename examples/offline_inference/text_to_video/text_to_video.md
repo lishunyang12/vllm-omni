@@ -262,7 +262,7 @@ python text_to_video.py \
 - `--num-inference-steps`: sampling steps. Default depends on model.
 - `--fps`: frames per second for the saved MP4.
 - `--output`: path to save the generated video.
-- `--extra-body`: JSON object of model-specific generation parameters, filtered against the model's declared `extra_body_params` and merged into sampling `extra_args`; see the Helios and Cosmos3 examples above.
+- `--extra-body`: JSON object of model-specific generation knobs, filtered against the model's declared `extra_body_params` and merged into sampling `extra_args` (see the Helios and Cosmos3 examples above and [`vllm_omni/model_extras`](../../../vllm_omni/model_extras)).
 - `--vae-use-slicing`: enable VAE slicing for memory optimization.
 - `--vae-use-tiling`: enable VAE tiling for memory optimization.
 - `--cfg-parallel-size`: set it to 2 to enable CFG Parallel. See more examples in [`user_guide`](../../../docs/user_guide/diffusion/parallelism_acceleration.md#cfg-parallel).

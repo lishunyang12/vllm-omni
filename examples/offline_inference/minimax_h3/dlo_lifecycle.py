@@ -106,21 +106,15 @@ def engine_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         "init_timeout": args.init_timeout,
     }
     if is_dlo:
-        dit_transfer = "allgather" if args.mode == "dlo" else "rank-local"
         common.update(
             tensor_parallel_size=1,
             data_parallel_size=args.dp_size,
             text_encoder_tp_size=1,
             vae_patch_parallel_size=1,
+            enable_distributed_layerwise_offload=True,
+            dlo_use_allgather=args.mode == "dlo",
+            dlo_resident_layers=0,
         )
-        common["diffusion_offload_config"] = {
-            "mode": "layer",
-            "components": ["dit", "text_encoder"],
-            "layer_options": {
-                "dit": {"weight_transfer": dit_transfer},
-                "text_encoder": {"weight_transfer": "rank-local"},
-            },
-        }
     else:
         common.update(
             tensor_parallel_size=args.tp_size,
