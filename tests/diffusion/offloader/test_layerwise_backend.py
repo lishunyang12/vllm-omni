@@ -3,7 +3,7 @@
 
 """Unit tests for LayerwiseOffloadHook and LayerWiseOffloadBackend utilities."""
 
-import pickle
+from multiprocessing.reduction import ForkingPickler
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -870,7 +870,7 @@ class TestLayerwiseComponentConfig:
         with pytest.raises(TypeError):
             resolved.public.layer_options["dit"] = config_module.LayerOffloadOptions()  # type: ignore[index]
 
-        restored = pickle.loads(pickle.dumps(resolved))
+        restored = ForkingPickler.loads(ForkingPickler.dumps(resolved))
         assert not restored.uses_allgather("dit")
 
     def test_dp_text_encoder_allgather_rejects_rank_local_prompt_cache(self):
