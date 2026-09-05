@@ -2,7 +2,7 @@
 
 Model-level offload enforces mutual exclusion between pipeline component
 groups. For commands and model support, see the
-[model-level user guide](../../../user_guide/diffusion/offloader/cpu_offload.md).
+[model-level user guide](../../../user_guide/diffusion/offloader/module_offload.md).
 
 ## Generic hook path
 
