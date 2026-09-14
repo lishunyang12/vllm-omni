@@ -1023,68 +1023,71 @@ differ from each other.
 ### FastH3 adapter
 
 [FastH3](https://haoailab.com/blogs/fasth3-preview/) is FastVideo's four-step
-DMD2 student of H3-Base. It reuses H3's text encoder, VAEs, tokenizers, and
-schedulers unchanged, replacing 49 denoiser evaluations with four. It is fused
-into the checkpoint at load time rather than switched per request, because it
-carries full-rank deltas that no LoRA layer can express.
+DMD2 student of H3-Base. It generates video with synchronized audio using the
+base H3 checkpoint and a variant-specific adapter.
 
-The bundle publishes four variants, so download one and point `--lora-path` at
-it; the repository root is refused rather than guessed at:
+| Setting | Supported configuration |
+| --- | --- |
+| Task | Text-to-video-and-audio (`t2va`) only |
+| Inference steps | 4 |
+| VSA parallelism | Local attention or pure Ulysses; ring/all-gather SP unsupported |
+| Weight loading | Adapter fused at startup; offload and per-request LoRA unsupported |
+
+#### FastH3 VSA serving
+
+Complete the [prerequisites](#prerequisites), then install the kernel using the
+[VSA installation guide](../../docs/user_guide/diffusion/attention_backends/fastvideo_vsa.md#installation)
+in the vLLM-Omni environment on each worker.
+
+Download the VSA / Data-Free adapter:
 
 ```bash
-export FASTH3_DIR=/path/to/fasth3
 hf download FastVideo/FastVideo-FastH3-4-step-Preview-v1-LoRA \
-  dense-datafree/adapter_model.safetensors --local-dir "${FASTH3_DIR}"
-export FASTH3_LORA="${FASTH3_DIR}/dense-datafree/adapter_model.safetensors"
+  vsa-datafree/adapter_model.safetensors --local-dir ./fasth3
 ```
 
-Add `--task-type fl2va --lora-path "${FASTH3_LORA}"` to a non-offloaded server
-command. T2VA is served by the FL2VA partition, so `--task-type fl2va` is
-correct even though FastH3 preview v1 distills T2VA only. Because the adapter is
-fused, `--lora-backend` does not apply and a request carrying a `lora=` field is
-rejected rather than served without the adapter it asked for.
+Start four workers with pure Ulysses:
 
 ```bash
--F 'num_inference_steps=4' \
--F 'extra_params={"task":"t2va","duration":4.4}'
+vllm serve MiniMaxAI/MiniMax-H3 --omni --trust-remote-code \
+  --task-type fl2va --lora-path ./fasth3/vsa-datafree/adapter_model.safetensors \
+  --usp 4 --diffusion-attention-backend FASTVIDEO_VSA
 ```
 
-Requests must ask for `num_inference_steps=4` and `task=t2va`: the release's five
-sigma points bound four denoiser evaluations, and that count is what the step
-scheduler admits a request on. The server denoises on the release's own ladder,
-keeping H3's per-modality shifts at the checkpoint values, so a request that
-overrides `flow_shift` or `audio_flow_shift` is rejected - it would sample the
-student at noise levels it was never distilled at.
-
-Only a release that identifies itself as FastH3 is fused; any other
-`fastvideo-lora-v2` adapter stays on the dynamic LoRA route. A claimed artifact
-is then held to its own metadata: one that misdeclares its tensor counts or
-leaves a transformer block unedited is refused at startup instead of serving
-mostly base H3 weights on a four-step schedule. Offload is refused for the same
-reason - `--enable-cpu-offload`, `--enable-layerwise-offload` and
-`--enable-distributed-layerwise-offload` all bypass the fusion, so they fail fast.
-
-The VSA variants are supported through FastVideo's external kernel. Install a
-`fastvideo-kernel` build that provides the `fastvideo_kernel` Python module,
-then add the following flags to the same command:
+Once the server is ready, send a request from another terminal:
 
 ```bash
---diffusion-attention-backend FASTVIDEO_VSA \
---fastvideo-vsa-topk 64
+curl --fail-with-body -sS http://127.0.0.1:8000/v1/videos/sync \
+  -F 'prompt=A small boat crosses a calm lake at sunrise, with rippling water and gentle birdsong.' \
+  -F 'aspect_ratio=16:9' -F 'num_inference_steps=4' \
+  -F 'extra_params={"task":"t2va","duration":4.4}' \
+  -o fasth3-vsa.mp4
 ```
 
-FastH3 VSA applies its learned `.set_weight` compression gates to the complete
-packed `[text | cond | audio | video]` document using the official H3 geometry:
-text/condition/audio prefix tiles never cross segment boundaries, and target
-video rows use `(4, 4, 4)` 3-D tiles (64 tokens). Prefix queries remain dense;
-video queries select all prefix tiles plus the configured top-k video tiles.
-Pure Ulysses sequence parallelism is supported: the learned gate follows the
-same sequence-to-head all-to-all as Q/K/V before VSA runs. Ring and all-gather
-SP remain unsupported because they do not present a complete packed sequence
-to each block-sparse kernel rank.
+The output is an MP4 containing video and audio. Startup logs include
+`FastH3 adapter active`; DiT execution logs `FASTVIDEO_VSA H3 routing`.
+With this global backend selection, the token refiner uses dense SDPA;
+its missing-grid fallback warning is expected.
 
-The Dense / Data-Free variant does not require `fastvideo-kernel` and should be
-served with a dense attention backend.
+| Option | Meaning |
+| --- | --- |
+| `--lora-path` | Selects and loads the adapter at startup; selecting VSA alone does not load it |
+| `--task-type fl2va` | Loads the partition that serves T2VA, avoiding the additional Ref2VA model loaded by default from the repository root |
+| `--usp N` | Ulysses worker count; choose a count that fits the resident model weights and activations |
+| `--fastvideo-vsa-topk K` | Video blocks retained per query; default 64, with all prefix blocks retained |
+
+Smaller top-k values may reduce both attention cost and output quality. Keep
+the checkpoint's default video/audio flow shifts and the four-step schedule.
+This four-GPU example is configuration-only; full-model VSA end-to-end
+validation is pending.
+
+#### FastH3 Dense
+
+To use Dense / Data-Free, replace `vsa-datafree` with `dense-datafree` in the
+download and serve commands, and omit `--diffusion-attention-backend FASTVIDEO_VSA`
+to use the platform's dense default. This variant does not need `fastvideo-kernel`.
+
+The following measurements use a separate eight-GPU Dense configuration:
 
 Measured on 8x NVIDIA B300 with USP8, VAE patch-parallel 8, `TRTLLM_ATTN`, at
 1344x768, 4.4 s, seed 1101, one warmup excluded and two runs recorded:
