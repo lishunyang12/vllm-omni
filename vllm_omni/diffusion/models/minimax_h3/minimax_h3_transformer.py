@@ -442,7 +442,7 @@ class MiniMaxH3Attention(nn.Module):
         self._gate_hidden_size = arch.hidden_size
         self._gate_quant_config = quant_config
         self._gate_prefix = f"{prefix}.to_gate_compress"
-        from .attention.backend import MiniMaxH3VSAImpl
+        from .attention.vsa import MiniMaxH3VSAImpl
 
         self.attention = Attention(
             num_heads=self.num_heads,
