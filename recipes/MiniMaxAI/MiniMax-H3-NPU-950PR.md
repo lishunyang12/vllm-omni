@@ -179,7 +179,7 @@ Reduce both timeouts when the partition is staged on local disk.
 
 ## Additional resources
 
-- [MiniMax-H3.md](MiniMax-H3.md) — full GPU guide
+- [MiniMax-H3.md](MiniMax-H3.md) — model and API guide
 - [MiniMax-H3-NPU.md](MiniMax-H3-NPU.md) — eight-card Atlas 800I A3 BF16 guide
 - [Int8 quantization](../../docs/user_guide/quantization/int8.md)
 - [Supported models](../../docs/models/supported_models.md)

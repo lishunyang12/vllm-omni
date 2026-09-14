@@ -26,7 +26,7 @@ current implementation because resident layers retain pinned CPU master copies.
 A single RTX 4090 is not covered here. The one-GPU DLO profile in the RTX 5090
 recipe peaked at 26.50 GiB with 12 resident layers, which exceeds 24 GiB. On one
 4090, use the model-level CPU offload command in
-[MiniMax-H3.md](MiniMax-H3.md#single-gpu-blockwise-capacity-path) instead, or
+[CUDA capacity guide](MiniMax-H3-CUDA.md#single-gpu-blockwise-capacity-path) instead, or
 lower the resident count and re-measure before trusting it.
 
 > **Modular H3:** after #5720 lands, preserve this recipe's one-partition

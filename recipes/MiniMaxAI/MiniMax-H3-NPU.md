@@ -251,7 +251,7 @@ stage 0.
 
 ## Additional resources
 
-- [MiniMax-H3.md](MiniMax-H3.md) — full GPU guide
+- [MiniMax-H3.md](MiniMax-H3.md) — model and API guide
 - [Attention backends § RAINFUSION_ATTN](../../docs/user_guide/diffusion/attention_backends.md#rainfusion_attn-backend-and-block-sparse-video-attention)
   — RainFusion knobs and tuning
 - [Int8 quantization](../../docs/user_guide/quantization/int8.md)

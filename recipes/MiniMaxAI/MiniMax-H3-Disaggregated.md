@@ -23,7 +23,9 @@ size 1, Ulysses degree 4, and VAE patch parallel size 4. Adjust the
 `devices`, `tensor_parallel_size`, and stage 1 `parallel_config` values in a
 deployment override for the available hardware. Diffusion quantization,
 layerwise offload, distributed layerwise offload, VAE parallelism, and USP
-settings use the same stage 1 options documented in [MiniMax-H3.md](MiniMax-H3.md).
+settings use the same stage 1 options documented in the
+[model guide](MiniMax-H3.md#optimization-options) and
+[CUDA deployment guide](MiniMax-H3-CUDA.md).
 
 For example, this five-GPU topology assigns one GPU to the encoder and four
 to the diffusion stage. `--stage-overrides` keeps placement and parallelism
@@ -37,7 +39,7 @@ vllm serve MiniMaxAI/MiniMax-H3 \
 ```
 
 For memory-constrained deployments, start from the CPU-offload or distributed
-layerwise-offload profiles in [MiniMax-H3.md](MiniMax-H3.md). Apply memory and
+layerwise-offload profiles in the [CUDA deployment guide](MiniMax-H3-CUDA.md). Apply memory and
 quantization options only to Stage 1 with `--stage-overrides`; retain the
 encoder's BF16 configuration and the video/audio VAEs' FP32 precision. Select
 one offload strategy per deployment:
@@ -55,7 +57,7 @@ one offload strategy per deployment:
 ```
 
 The Stage 1 VAE patch-parallel options remain independent of offload and
-quantization. See [MiniMax-H3.md](MiniMax-H3.md) for memory requirements and
+quantization. See the [deployment guides](MiniMax-H3.md#choose-a-deployment) for memory requirements and
 hardware-qualified profiles before combining these options.
 
 Stage 1 sets `model_loaded.text_encoder: false`; it must not load or download
