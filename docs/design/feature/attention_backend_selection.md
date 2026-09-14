@@ -119,10 +119,12 @@ An implementation change is complete only when it:
 
 ## FastVideo VSA model metadata
 
-FastVideo VSA has model integrations for `FastVideo/FastWan2.2-TI2V-5B-Diffusers`
-and MiniMax-H3 with a FastH3 VSA adapter. FastWan's text-to-video and
-image-to-video modes both use `Wan22Pipeline`. It operates on a flattened DiT sequence but partitions tokens in
-the original latent video grid. Wan integrations therefore attach the
+The [supported models table](../../user_guide/diffusion/attention_backends/fastvideo_vsa.md#supported-models)
+lists checkpoints, adapters, tasks, and sequence-parallel support.
+
+FastWan's text-to-video and image-to-video modes both use `Wan22Pipeline`.
+It operates on a flattened DiT sequence but partitions tokens in the original
+latent video grid. Wan integrations therefore attach the
 post-patch `(T, H, W)` shape as `vsa_dit_seq_shape` attention metadata. The
 backend validates that `T * H * W` equals the sequence length, derives the
 runtime block count, and selects the configured top-k key/value blocks for
@@ -175,40 +177,4 @@ python -m pytest \
 
 These use reference/fake providers and do not qualify GPU execution. Follow
 the [user guide](../../user_guide/diffusion/attention_backends/fastvideo_vsa.md#installation)
-for installation. Provider validation is separate from model and distributed
-qualification.
-
-### Provider validation
-
-After the [kernel installation](../../user_guide/diffusion/attention_backends/fastvideo_vsa.md#installation), run this on a visible CUDA GPU. It executes the
-tile64 provider used by H3 and compares a small all-block case with dense
-attention; no model weights are needed:
-
-```bash
-python - <<'PY'
-from importlib.metadata import version
-
-import torch
-from fastvideo_kernel.block_sparse_attn import block_sparse_attn
-
-assert torch.cuda.is_available(), "Run this check on a visible CUDA GPU"
-torch.manual_seed(0)
-q, k, v = [torch.randn(1, 2, 128, 128, device="cuda", dtype=torch.bfloat16) for _ in range(3)]
-block_map = torch.ones(1, 2, 2, 2, device="cuda", dtype=torch.bool)
-sizes = torch.full((2,), 64, device="cuda", dtype=torch.int32)
-with torch.inference_mode():
-    output, _ = block_sparse_attn(q, k, v, block_map, sizes)
-    reference = torch.nn.functional.scaled_dot_product_attention(q.float(), k.float(), v.float())
-torch.testing.assert_close(output.float(), reference, atol=0.02, rtol=0.02)
-print(f"VSA kernel OK: fastvideo-kernel={version('fastvideo-kernel')}, torch={torch.__version__}")
-PY
-```
-
-The first call includes Triton compilation. `VSA kernel OK` verifies this
-kernel case, not full-model quality, distributed execution, or latency.
-
-The tile64 check passed on Linux x86-64, Python 3.12, SM120, PyTorch
-2.13.0+cu132, Triton 3.7.1, and fastvideo-kernel 0.3.4 with default provider
-selection. No model weights or distributed execution were tested. Version
-0.3.4 accepts the installed PyTorch; 0.3.5 pins PyTorch 2.12.0. Native SM100a
-extensions require a matching device and PyTorch/CUDA build.
+for installation.

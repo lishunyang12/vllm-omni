@@ -1078,8 +1078,10 @@ hf download FastVideo/FastVideo-FastH3-4-step-Preview-v1-LoRA \
   vsa-datafree/adapter_model.safetensors --local-dir ./fasth3
 ```
 
-Start four workers with pure Ulysses. The FL2VA partition serves T2VA;
-the adapter's task, schedule, and offload constraints above still apply:
+Start four workers with pure Ulysses. `--task-type fl2va` selects the partition
+that serves T2VA, avoiding the additional Ref2VA model loaded by default from
+the repository root. `--lora-path` loads and fuses the selected adapter at
+startup; selecting the VSA backend alone does not load an adapter.
 
 ```bash
 vllm serve MiniMaxAI/MiniMax-H3 --omni --trust-remote-code \

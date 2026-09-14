@@ -4,10 +4,12 @@ Variable Sparse Attention (VSA) selects key/value blocks from a video token
 grid. It changes the attention computation and is not a bitwise-lossless
 replacement for dense attention.
 
-| Model integration | Scope |
-| --- | --- |
-| `FastVideo/FastWan2.2-TI2V-5B-Diffusers` | T2V/I2V through `Wan22Pipeline`; no active sequence parallelism |
-| MiniMax-H3 + FastH3 VSA adapter | T2VA; local attention or pure Ulysses |
+## Supported models
+
+| Model / checkpoint | Required adapter | Tasks | Sequence parallelism |
+| --- | --- | --- | --- |
+| `FastVideo/FastWan2.2-TI2V-5B-Diffusers` | None | T2V, I2V | Disabled |
+| `MiniMaxAI/MiniMax-H3` | FastH3 VSA | T2VA | Disabled or pure Ulysses |
 
 The backend requires CUDA, FP16/BF16, and non-causal self-attention with equal
 Q/K/V sequence lengths and head counts. Other models require an explicit
@@ -24,8 +26,7 @@ uv pip install --only-binary=:all: "fastvideo-kernel==0.3.4"
 
 This wheel setup requires Linux, Python 3.12, and glibc 2.34 or newer
 (x86-64 or aarch64). The full FastVideo framework and additional environment
-variables are not required. Kernel verification and version compatibility
-are documented in the [developer guide](../../../design/feature/attention_backend_selection.md#provider-validation).
+variables are not required.
 
 ## Enable the backend
 
