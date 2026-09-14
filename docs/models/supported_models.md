@@ -134,7 +134,3 @@ Other AMD SKUs (e.g. MI325X) are not listed until their
 own validation evidence is added. See the
 [MiniMax H3 recipe](https://recipes.vllm.ai/MiniMaxAI/MiniMax-H3) for
 per-architecture serving commands.
-
-FastH3 VSA is a CUDA T2VA adapter path with narrower task, parallelism, and
-offload constraints than base H3. See its
-[installation and serving instructions](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-vsa-serving).

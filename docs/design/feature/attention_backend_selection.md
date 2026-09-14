@@ -119,9 +119,6 @@ An implementation change is complete only when it:
 
 ## FastVideo VSA model metadata
 
-The [supported models table](../../user_guide/diffusion/attention_backends/fastvideo_vsa.md#supported-models)
-lists checkpoints, adapters, tasks, and sequence-parallel support.
-
 FastWan's text-to-video and image-to-video modes both use `Wan22Pipeline`.
 It operates on a flattened DiT sequence but partitions tokens in the original
 latent video grid. Wan integrations therefore attach the
@@ -137,44 +134,7 @@ not allocate or execute it. When top-k selects every block, native checkpoints
 route to SDPA, while FastVideo DMD checkpoints preserve the VSA all-block path
 to retain checkpoint semantics.
 
-H3 installs `MiniMaxH3VSAImpl` through `impl_overrides`. Its model-owned
-`attention/vsa.py` consumes `VideoTokenLayout`, segment lengths in
-`extra["vsa_h3_prefix_segments"]`, and the learned `extra["gate_compress"]`.
-It owns segment-pure prefix chunks, `(4, 4, 4)` video tiles, prefix-dense
-routing, and checkpoint-specific compensation. `PackedPaddingMetadata`
-identifies valid rows and the implementation restores trailing output rows.
-Pure Ulysses uses the existing shared gate/QKV resharding; ring and all-gather
-SP are rejected by the FastH3 adapter before execution.
-
-### Reusing VSA in another model
-
-| Responsibility | Owner / reusable interface |
-| --- | --- |
-| Checkpoint weights, schedule, packing, and gate semantics | Model directory; publish metadata or specialize the implementation |
-| Provider selection and capability validation | Existing platform and backend registry |
-| FP32 pooling, prefix-dense top-k map, tile64 provider | `attention/ops/block_sparse.py`; BSHD tensors, zero-filled padding, explicit valid block sizes |
-| Q/K/V and metadata resharding | Shared parallel strategy; existing Ulysses gate handling is reusable |
-
-New metadata tensors require explicit row/head alignment through the parallel
-strategy; they are not automatically resharded. Reject unsupported topologies
-before collectives. A learned branch with different Q/K/V dependencies needs
-model integration, not only a provider substitution.
-
-Validate selection/capabilities, missing dependencies, row order, ragged
-blocks, gate behavior, and failure policy. Real-provider and model-reference
-comparisons on the target GPU are required before claiming model support.
-
-The focused policy tests require the compatible vLLM runtime and
-`pytest-mock`, but not `fastvideo-kernel`:
-
-```bash
-python -m pytest \
-  tests/diffusion/attention/test_impl_overrides.py \
-  tests/diffusion/attention/test_block_sparse_ops.py \
-  tests/diffusion/models/minimax_h3/test_vsa_layout.py \
-  -m 'core_model and cpu' --run-level=core_model -q
-```
-
-These use reference/fake providers and do not qualify GPU execution. Follow
-the [user guide](../../user_guide/diffusion/attention_backends/fastvideo_vsa.md#installation)
-for installation.
+MiniMax-H3 supplies `MiniMaxH3VSAImpl` through `impl_overrides`.
+`models/minimax_h3/attention/vsa.py` owns its prefix layout, video tiling, and
+learned compression gate. Pooling, block-map construction, and tile64 provider
+calls are shared through `attention/ops/block_sparse.py`.
