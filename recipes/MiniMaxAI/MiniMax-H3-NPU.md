@@ -33,7 +33,6 @@ once; `vllm serve` downloads the required nested components automatically:
 
 ```bash
 hf auth login
-export MODEL=MiniMaxAI/MiniMax-H3
 ```
 
 ### Environment
@@ -85,17 +84,8 @@ degree 8, native tiled VAE patch parallelism degree 8, and distributed
 layerwise offload:
 
 ```bash
-export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
-export PORT=9098
-export MODEL=MiniMaxAI/MiniMax-H3
-export VLLM_WORKER_MULTIPROC_METHOD=spawn
-export VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800
-export PYTHONDONTWRITEBYTECODE=1
-
-vllm serve "${MODEL}" \
+vllm serve MiniMaxAI/MiniMax-H3 \
   --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
   --trust-remote-code \
   --num-gpus 8 \
   --usp 8 \

@@ -40,11 +40,8 @@ recipe. On two RTX 4090s it peaked at 15,620 MiB per rank for T2VA and
 [Target-hardware validation](#target-hardware-validation) for the full numbers.
 
 ```bash
-export VLLM_WORKER_MULTIPROC_METHOD=spawn
-export VLLM_OMNI_VIDEO_SYNC_TIMEOUT=14400
-
-CUDA_VISIBLE_DEVICES=0,1 vllm serve /path/to/MiniMax-H3/FL2VA \
-  --omni --trust-remote-code --host 0.0.0.0 --port 8000 \
+vllm serve /path/to/MiniMax-H3/FL2VA \
+  --omni --trust-remote-code \
   --num-gpus 2 --tensor-parallel-size 2 --text-encoder-tp-size 2 \
   --usp 1 --ring 1 --vae-patch-parallel-size 2 \
   --vae-parallel-mode tile --vae-use-tiling \
@@ -57,10 +54,6 @@ For Ref2VA, stop the FL2VA server and restart the same command with
 `/path/to/MiniMax-H3/Ref2VA`. Ref2VA reference image count and prompt length can
 increase activation memory; begin with one request at a time.
 
-`VLLM_OMNI_VIDEO_SYNC_TIMEOUT` matters more here than on larger cards. DLO
-streams non-resident DiT blocks over PCIe on every denoising step, so a 60-step
-request takes several minutes and would otherwise hit the 600-second default.
-
 ## Four RTX 4090s: 1024x576, 5 seconds
 
 Keep TP2 and raise Ulysses sequence parallel to 2 so the world size is
@@ -69,11 +62,8 @@ Resident layers stay at 12: adding USP does not shard DiT weights further, so
 per-GPU peak HBM stays close to the two-GPU profile while wall-clock improves.
 
 ```bash
-export VLLM_WORKER_MULTIPROC_METHOD=spawn
-export VLLM_OMNI_VIDEO_SYNC_TIMEOUT=14400
-
-CUDA_VISIBLE_DEVICES=0,1,2,3 vllm serve /path/to/MiniMax-H3/FL2VA \
-  --omni --trust-remote-code --host 0.0.0.0 --port 8000 \
+vllm serve /path/to/MiniMax-H3/FL2VA \
+  --omni --trust-remote-code \
   --num-gpus 4 --tensor-parallel-size 2 --text-encoder-tp-size 4 \
   --usp 2 --ring 1 --vae-patch-parallel-size 4 \
   --vae-parallel-mode tile --vae-use-tiling \

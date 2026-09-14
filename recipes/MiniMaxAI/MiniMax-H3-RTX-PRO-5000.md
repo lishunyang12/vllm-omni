@@ -41,6 +41,10 @@ reproduce the same PCIe and NUMA relationships on the target host.
 
 ## Recommended serving configurations
 
+The commands below use the default device order and host-memory policy. The
+reported measurements additionally used the GPU ordering above, NUMA node 0
+binding for two/four GPUs, and memory interleaving for eight GPUs.
+
 ### Two GPUs
 
 Two 72 GiB cards require distributed layerwise offload. The validated route
@@ -49,18 +53,8 @@ rank-local weights without AllGather. Eager execution avoids regional-compile
 instability on this offload path.
 
 ```bash
-export MODEL_ROOT=/path/to/MiniMax-H3
-export MODEL="${MODEL_ROOT}/FL2VA"
-export PORT=8091
-
-CUDA_VISIBLE_DEVICES=0,1 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-numactl --cpunodebind=0 --membind=0 \
-vllm serve "${MODEL}" \
+vllm serve /path/to/MiniMax-H3/FL2VA \
   --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
   --trust-remote-code \
   --num-gpus 2 \
   --tensor-parallel-size 1 \
@@ -84,18 +78,8 @@ parallelism 4, and explicit cuDNN BF16 attention. Selecting the backend
 explicitly keeps the recipe independent of platform-default backend changes.
 
 ```bash
-export MODEL_ROOT=/path/to/MiniMax-H3
-export MODEL="${MODEL_ROOT}/FL2VA"
-export PORT=8091
-
-CUDA_VISIBLE_DEVICES=0,2,1,3 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-numactl --cpunodebind=0 --membind=0 \
-vllm serve "${MODEL}" \
+vllm serve /path/to/MiniMax-H3/FL2VA \
   --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
   --trust-remote-code \
   --num-gpus 4 \
   --tensor-parallel-size 2 \
@@ -111,21 +95,12 @@ vllm serve "${MODEL}" \
 ### Eight GPUs
 
 The recommended eight-GPU route uses TP4 x Ulysses2, text-encoder TP8, VAE
-patch parallelism 8, and host-memory interleaving across both NUMA nodes.
+patch parallelism 8. The measurements used host-memory interleaving across both
+NUMA nodes.
 
 ```bash
-export MODEL_ROOT=/path/to/MiniMax-H3
-export MODEL="${MODEL_ROOT}/FL2VA"
-export PORT=8091
-
-CUDA_VISIBLE_DEVICES=0,4,1,5,2,6,3,7 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-numactl --interleave=0,1 \
-vllm serve "${MODEL}" \
+vllm serve /path/to/MiniMax-H3/FL2VA \
   --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
   --trust-remote-code \
   --num-gpus 8 \
   --tensor-parallel-size 4 \
@@ -143,14 +118,12 @@ Warm the server once before measuring so regional compilation is outside the
 measured request. The two-GPU DLO route intentionally remains eager.
 
 For Ref2VA, stop the FL2VA server and restart the same command with
-`MODEL="${MODEL_ROOT}/Ref2VA"`.
+`/path/to/MiniMax-H3/Ref2VA`.
 
 ## T2VA request example
 
 ```bash
-export API_URL="http://127.0.0.1:${PORT}/v1/videos/sync"
-
-curl -sS --max-time 1800 -X POST "${API_URL}" \
+curl -sS --max-time 1800 -X POST "http://127.0.0.1:8000/v1/videos/sync" \
   -F 'prompt=At night, three cats march into a bedroom playing tiny brass instruments, then abruptly file out, with synchronized room ambience.' \
   -F 'width=1344' \
   -F 'height=768' \

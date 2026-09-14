@@ -7,6 +7,10 @@ a synchronous benchmark-oriented endpoint through `/v1/videos/sync`.
 Each server instance runs a single model specified at startup with
 `vllm serve <model> --omni`.
 
+Synchronous generation waits for completion without a default generation deadline.
+Client disconnection cancels the request. Deployments that need a fixed deadline
+can set `VLLM_OMNI_VIDEO_SYNC_TIMEOUT` in seconds; expiration returns HTTP 504.
+
 ## Quick Start
 
 ### Start the Server

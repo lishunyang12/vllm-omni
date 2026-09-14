@@ -52,15 +52,8 @@ uv pip install -e .
 ## Start a server
 
 ```bash
-export MODEL=/path/to/MiniMax-H3/FL2VA
-export PORT=8000
-export VLLM_WORKER_MULTIPROC_METHOD=spawn
-export VLLM_OMNI_VIDEO_SYNC_TIMEOUT=14400
-
-vllm serve "${MODEL}" \
+vllm serve /path/to/MiniMax-H3/FL2VA \
   --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
   --trust-remote-code \
   --num-gpus 1 \
   --tensor-parallel-size 1 \
@@ -85,9 +78,7 @@ H3 is CFG-distilled, so `--cfg-parallel-size` must remain 1.
 ## T2VA request example
 
 ```bash
-export API_URL="http://127.0.0.1:${PORT}/v1/videos/sync"
-
-curl -sS --max-time 1800 -X POST "${API_URL}" \
+curl -sS --max-time 1800 -X POST "http://127.0.0.1:8000/v1/videos/sync" \
   -F 'prompt=At night, three cats march into a bedroom playing tiny brass instruments, then abruptly file out, with synchronized room ambience.' \
   -F 'width=1024' \
   -F 'height=576' \

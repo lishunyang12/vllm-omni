@@ -84,15 +84,8 @@ peak memory before increasing the output shape, the reference-input length,
 or concurrency.
 
 ```bash
-export MODEL_ROOT=/path/to/MiniMax-H3
-export MODEL="${MODEL_ROOT}/FL2VA"
-export PORT=8000
-
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-vllm serve "${MODEL}" \
+vllm serve /path/to/MiniMax-H3/FL2VA \
   --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
   --trust-remote-code \
   --num-gpus 2 \
   --tensor-parallel-size 2 \
@@ -114,15 +107,8 @@ across all four GPUs. TP1 is not an option on this card: an unsharded BF16
 partition does not fit in 96 GiB.
 
 ```bash
-export MODEL_ROOT=/path/to/MiniMax-H3
-export MODEL="${MODEL_ROOT}/FL2VA"
-export PORT=8000
-
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-vllm serve "${MODEL}" \
+vllm serve /path/to/MiniMax-H3/FL2VA \
   --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
   --trust-remote-code \
   --num-gpus 4 \
   --tensor-parallel-size 2 \
@@ -143,15 +129,8 @@ activation memory and per-step latency by sharding the attention sequence
 four ways.
 
 ```bash
-export MODEL_ROOT=/path/to/MiniMax-H3
-export MODEL="${MODEL_ROOT}/FL2VA"
-export PORT=8000
-
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-vllm serve "${MODEL}" \
+vllm serve /path/to/MiniMax-H3/FL2VA \
   --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
   --trust-remote-code \
   --num-gpus 8 \
   --tensor-parallel-size 2 \
@@ -218,7 +197,7 @@ host the first request after startup ran 19% slower than the steady state
 converge.
 
 For Ref2VA on a single-server layout, stop the FL2VA server and restart the
-same command with `MODEL="${MODEL_ROOT}/Ref2VA"`.
+same command with `/path/to/MiniMax-H3/Ref2VA`.
 
 ## Request examples
 
@@ -228,9 +207,7 @@ same command with `MODEL="${MODEL_ROOT}/Ref2VA"`.
 are supplied.
 
 ```bash
-export API_URL="http://127.0.0.1:${PORT}/v1/videos/sync"
-
-curl -sS --max-time 1800 -X POST "${API_URL}" \
+curl -sS --max-time 1800 -X POST "http://127.0.0.1:8000/v1/videos/sync" \
   -F 'prompt=At night, three cats march into a bedroom playing tiny brass instruments, then abruptly file out, with synchronized room ambience.' \
   -F 'width=1344' \
   -F 'height=768' \
@@ -254,7 +231,7 @@ headers.txt` to the curl invocation, then read `X-Stage-Durations` and
 here.
 
 ```bash
-curl -X POST "http://127.0.0.1:${PORT}/v1/videos/sync" \
+curl -X POST "http://127.0.0.1:8000/v1/videos/sync" \
   --fail-with-body -w '\nHTTP %{http_code}\n' \
   --max-time 1200 \
   -F "input_reference=@/root/hand.jpg;type=image/jpeg" \

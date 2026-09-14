@@ -72,7 +72,6 @@ The checkpoint requires Hugging Face access approval. Authenticate once;
 
 ```bash
 hf auth login
-export MODEL=MiniMaxAI/MiniMax-H3
 ```
 
 The vLLM-Omni pipeline downloads `FL2VA/**`, `Ref2VA/model_index.json`, and
@@ -145,16 +144,8 @@ Both DiTs remain resident in this no-offload configuration. If they do not fit,
 use model-level CPU offload.
 
 ```bash
-export MODEL=MiniMaxAI/MiniMax-H3
-export PORT=8091
-
-CUDA_VISIBLE_DEVICES=0,1,2,3 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-vllm serve "${MODEL}" \
+vllm serve MiniMaxAI/MiniMax-H3 \
   --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
   --trust-remote-code \
   --num-gpus 4 \
   --usp 4 \
@@ -178,16 +169,8 @@ the Qwen vision blocks, and the first 50 Qwen text layers. Encoder blocks stay
 rank-local; the video/audio VAEs remain resident.
 
 ```bash
-export MODEL=MiniMaxAI/MiniMax-H3
-export PORT=8091
-
-CUDA_VISIBLE_DEVICES=0 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=14400 \
-vllm serve "${MODEL}" \
+vllm serve MiniMaxAI/MiniMax-H3 \
   --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
   --trust-remote-code \
   --task-type fl2va \
   --num-gpus 1 \
@@ -225,16 +208,8 @@ copied to the GPUs once per denoise stage, reused by every sampling step, and
 released before VAE decode so the decoder can reuse their HBM.
 
 ```bash
-export MODEL=MiniMaxAI/MiniMax-H3
-export PORT=8091
-
-CUDA_VISIBLE_DEVICES=0,1 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=14400 \
-vllm serve "${MODEL}" \
+vllm serve MiniMaxAI/MiniMax-H3 \
   --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
   --trust-remote-code \
   --task-type fl2va \
   --num-gpus 2 \
@@ -279,18 +254,12 @@ All four tasks use 24 FPS, 50 sigma points, seed values from the validated
 workloads, and the checkpoint-reference video/audio flow shifts of 12 and 3.
 Decimal durations are passed through `extra_params`.
 
-Set the endpoint once:
-
-```bash
-export API_URL="http://127.0.0.1:${PORT}/v1/videos/sync"
-```
-
 ### 1. T2VA: text to video and audio
 
 Run this request against the combined service:
 
 ```bash
-curl -sS -X POST "${API_URL}" \
+curl -sS -X POST "http://127.0.0.1:8000/v1/videos/sync" \
   -F 'prompt=In a snowy blue-purple forest, Ori carefully walks past a sleeping giant; footsteps crunch in the snow while the creature breathes and softly snorts.' \
   -F 'width=1344' \
   -F 'height=768' \
@@ -310,16 +279,14 @@ omitted, H3 preserves the first-frame aspect ratio and uses a 768-pixel short
 edge.
 
 ```bash
-export FIRST_FRAME=/path/to/fl2va_first_frame.png
-
-curl -sS -X POST "${API_URL}" \
+curl -sS -X POST "http://127.0.0.1:8000/v1/videos/sync" \
   -F 'prompt=A man stands beside a yellow car at night. The car drives away; he follows it with his eyes and begins singing sadly, with synchronized voice and city ambience.' \
   -F 'fps=24' \
   -F 'num_inference_steps=50' \
   -F 'flow_shift=12' \
   -F 'seed=2101' \
   -F 'extra_params={"task":"fl2va","duration":8.7,"audio_flow_shift":3.0}' \
-  -F "input_reference=@${FIRST_FRAME};type=image/png" \
+  -F "input_reference=@/path/to/fl2va_first_frame.png;type=image/png" \
   -o fl2va.mp4
 ```
 
@@ -328,17 +295,14 @@ image with `frame_indices=[-1]` conditions the last frame; two ordered images
 with `frame_indices=[0,-1]` condition the first and last frames:
 
 ```bash
-export LAST_FRAME=/path/to/fl2va_last_frame.png
-export FIRST_FRAME=/path/to/fl2va_first_frame.png
-
-curl -sS -X POST "${API_URL}" \
+curl -sS -X POST "http://127.0.0.1:8000/v1/videos/sync" \
   -F 'prompt=The subject moves naturally from the first image to the last image.' \
   -F 'num_inference_steps=50' \
   -F 'flow_shift=12' \
   -F 'seed=2102' \
   -F 'extra_params={"task":"fl2va","duration":8.7,"frame_indices":[0,-1],"audio_flow_shift":3.0}' \
-  -F "input_references=@${FIRST_FRAME};type=image/png" \
-  -F "input_references=@${LAST_FRAME};type=image/png" \
+  -F "input_references=@/path/to/fl2va_first_frame.png;type=image/png" \
+  -F "input_references=@/path/to/fl2va_last_frame.png;type=image/png" \
   -o fl2va_first_last.mp4
 ```
 
@@ -359,9 +323,7 @@ python -m http.server 8092 \
 Then submit an image-only request from another terminal:
 
 ```bash
-export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
-
-curl -sS -X POST "${API_URL}" \
+curl -sS -X POST "http://127.0.0.1:8000/v1/videos/sync" \
   -F 'prompt=A white cat sits on a beige couch and slowly looks toward the camera.' \
   -F 'aspect_ratio=adaptive' \
   -F 'short_edge=768' \
@@ -369,17 +331,14 @@ curl -sS -X POST "${API_URL}" \
   -F 'flow_shift=12' \
   -F 'seed=3100' \
   -F 'extra_params={"task":"ref2va","duration":8.0,"audio_flow_shift":3.0}' \
-  -F "input_reference=@${REF_IMAGE};type=image/png" \
+  -F "input_reference=@/path/to/reference_assets/ref2va_image.png;type=image/png" \
   -o ref2va_image_only.mp4
 ```
 
 An image-plus-audio request is:
 
 ```bash
-export REF_IMAGE=/path/to/reference_assets/ref2va_image.png
-export AUDIO_URL=http://127.0.0.1:8092/ref2va_audio.mp3
-
-curl -sS -X POST "${API_URL}" \
+curl -sS -X POST "http://127.0.0.1:8000/v1/videos/sync" \
   -F 'prompt=A white cat with black mustache and eyebrow markings sits on a beige couch, lip-syncing precisely to the complete reference audio before shifting from confusion to deadpan speechlessness.' \
   -F 'width=1344' \
   -F 'height=768' \
@@ -388,8 +347,8 @@ curl -sS -X POST "${API_URL}" \
   -F 'flow_shift=12' \
   -F 'seed=3101' \
   -F 'extra_params={"task":"ref2va","duration":15.0,"audio_flow_shift":3.0}' \
-  -F "input_reference=@${REF_IMAGE};type=image/png" \
-  -F "audio_reference={\"audio_url\":\"${AUDIO_URL}\"}" \
+  -F "input_reference=@/path/to/reference_assets/ref2va_image.png;type=image/png" \
+  -F "audio_reference={\"audio_url\":\"http://127.0.0.1:8092/ref2va_audio.mp3\"}" \
   -o ref2va_image_audio.mp4
 ```
 
@@ -404,10 +363,7 @@ videos in form order and preserves their original soundtracks during
 conditioning.
 
 ```bash
-export SUBJECT_VIDEO=/path/to/green_screen_subject.mp4
-export BACKGROUND_VIDEO=/path/to/fairytale_background.mov
-
-curl -sS -X POST "${API_URL}" \
+curl -sS -X POST "http://127.0.0.1:8000/v1/videos/sync" \
   -F 'prompt=Remove the green screen background of Video 1 and replace it with the fairytale environment from Video 2. Match the background motion to the character actions and relight the character to fit the scene.' \
   -F 'width=1344' \
   -F 'height=768' \
@@ -416,8 +372,8 @@ curl -sS -X POST "${API_URL}" \
   -F 'flow_shift=12' \
   -F 'seed=3101' \
   -F 'extra_params={"task":"ref2va","duration":15.0,"audio_flow_shift":3.0}' \
-  -F "input_references=@${SUBJECT_VIDEO};type=video/mp4" \
-  -F "input_references=@${BACKGROUND_VIDEO};type=video/quicktime" \
+  -F "input_references=@/path/to/green_screen_subject.mp4;type=video/mp4" \
+  -F "input_references=@/path/to/fairytale_background.mov;type=video/quicktime" \
   -o ref2va_video_video.mp4
 ```
 
@@ -475,9 +431,10 @@ base H3 checkpoint and a variant-specific adapter.
 
 ### FastH3 VSA serving
 
-Complete the [prerequisites](#prerequisites), then install the kernel using the
+Complete the [prerequisites](#prerequisites), using the `vsa` extra when installing
+vLLM-Omni. Dependencies are installed automatically; see the
 [VSA installation guide](../../docs/user_guide/diffusion/attention_backends/fastvideo_vsa.md#installation)
-in the vLLM-Omni environment on each worker.
+for supported environments.
 
 Download the VSA / Data-Free adapter:
 
@@ -635,16 +592,8 @@ vLLM-style tensor-parallel layers and runs with distributed collectives over
 its own encoder process group):
 
 ```bash
-export MODEL=MiniMaxAI/MiniMax-H3
-export PORT=8091
-
-CUDA_VISIBLE_DEVICES=0,1,2,3 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-vllm serve "${MODEL}" \
+vllm serve MiniMaxAI/MiniMax-H3 \
   --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
   --trust-remote-code \
   --num-gpus 4 \
   --usp 4 \
@@ -845,17 +794,14 @@ prompts and generation settings before changing it.
 
 #### Offline (Python API)
 
-Export the directory containing the `FL2VA` and `Ref2VA` subdirectories before
-running the Python example, for example `export MODEL_ROOT=/models/MiniMax-H3`.
+Set `model` to the local checkpoint partition:
 
 ```python
-import os
-
 from vllm_omni import Omni
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 omni = Omni(
-    model=os.path.join(os.environ["MODEL_ROOT"], "FL2VA"),
+    model="/path/to/MiniMax-H3/FL2VA",
     cache_backend="tea_cache",
     cache_config={"rel_l1_thresh": 0.17},
     trust_remote_code=True,
@@ -884,7 +830,7 @@ outputs = omni.generate(
 #### Online serving
 
 ```bash
-vllm serve "${MODEL_ROOT}/FL2VA" \
+vllm serve /path/to/MiniMax-H3/FL2VA \
   --omni \
   --trust-remote-code \
   --cache-backend tea_cache \
@@ -914,7 +860,7 @@ rejected.
 | `minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16.safetensors` | Ref2VA | 8 | 9 | 6 | 8 |
 
 `audio_flow_shift` is `3.0` across the family. Each row is the complete
-published filename; use it verbatim as `TURBO_FILE` below.
+published filename; preserve it when downloading an artifact.
 
 Alpha needs no manual compensation: the server reads it from the artifact's
 metadata, falling back to 8 with a warning for
@@ -942,10 +888,7 @@ running an undistilled model on the few-step schedule.
 Download the artifact you want:
 
 ```bash
-export TURBO_DIR=/path/to/minimax-h3-turbo
-export TURBO_FILE=minimax_h3_fl2v_turbo_4step_v1.0_768p_bf16.safetensors
-hf download lightx2v/Minimax-h3-Turbo "${TURBO_FILE}" --local-dir "${TURBO_DIR}"
-export TURBO_LORA="${TURBO_DIR}/${TURBO_FILE}"
+hf download lightx2v/Minimax-h3-Turbo "minimax_h3_fl2v_turbo_4step_v1.0_768p_bf16.safetensors" --local-dir "/path/to/minimax-h3-turbo"
 ```
 
 `--lora-path` accepts one artifact, or a directory holding exactly one.
@@ -958,7 +901,7 @@ export TURBO_LORA="${TURBO_DIR}/${TURBO_FILE}"
 > `--lora-path /path/to/minimax-h3-turbo/minimax_h3_fl2v_turbo_4step_v1.0_768p_bf16.safetensors`.
 
 Start from a non-offloaded or DLO FL2VA server command and add
-`--task-type fl2va --lora-backend peft --lora-path "${TURBO_LORA}"`.
+`--task-type fl2va --lora-backend peft --lora-path "/path/to/minimax-h3-turbo/minimax_h3_fl2v_turbo_4step_v1.0_768p_bf16.safetensors"`.
 `--lora-path` preloads the adapter; each request still activates it and must
 carry that artifact's sampling settings:
 
@@ -966,11 +909,11 @@ carry that artifact's sampling settings:
 -F 'num_inference_steps=5' \
 -F 'flow_shift=6' \
 -F 'extra_params={"task":"t2va","duration":4.4,"audio_flow_shift":3.0}' \
--F "lora={\"name\":\"h3-turbo-v1.0\",\"path\":\"${TURBO_LORA}\",\"scale\":1.0}"
+-F "lora={\"name\":\"h3-turbo-v1.0\",\"path\":\"/path/to/minimax-h3-turbo/minimax_h3_fl2v_turbo_4step_v1.0_768p_bf16.safetensors\",\"scale\":1.0}"
 ```
 
-Switching to another FL2VA artifact means repointing `TURBO_FILE`, which moves
-both `--lora-path` and the request's `lora.path`, and carrying that row's
+Switching to another FL2VA artifact requires updating both `--lora-path` and
+the request's `lora.path`, and carrying that row's
 `num_inference_steps` and `flow_shift`: `9` and `6` for `8step_v1.0_768p`, `9`
 and `12` for the 544p `8step_v1.0`. A request that does not match the loaded
 artifact is rejected, so a mismatch cannot silently degrade output.
@@ -1003,22 +946,19 @@ Download only that file:
 
 ```bash
 python -m pip install modelscope
-export FLASHGEN_DIR=/path/to/minimax-h3-flashgen-lora
-export FLASHGEN_FILE=minimax_h3_t2va_flashgen_4step_v1.0_768p_bf16.safetensors
 modelscope download FlashGen/Minimax-H3-4step-lora-flashgen \
-  --local_dir "${FLASHGEN_DIR}" \
-  --include "${FLASHGEN_FILE}"
-export FLASHGEN_LORA="${FLASHGEN_DIR}/${FLASHGEN_FILE}"
+  --local_dir "/path/to/minimax-h3-flashgen-lora" \
+  --include "minimax_h3_t2va_flashgen_4step_v1.0_768p_bf16.safetensors"
 ```
 
 Start from a non-offloaded or DLO FL2VA server command and add
-`--task-type fl2va --lora-backend peft --lora-path "${FLASHGEN_LORA}"`.
+`--task-type fl2va --lora-backend peft --lora-path "/path/to/minimax-h3-flashgen-lora/minimax_h3_t2va_flashgen_4step_v1.0_768p_bf16.safetensors"`.
 Each request must use T2VA and the distilled interval-count contract:
 
 ```bash
 -F 'num_inference_steps=4' \
 -F 'extra_params={"task":"t2va","duration":5.2}' \
--F "lora={\"name\":\"h3-flashgen-v1.0\",\"path\":\"${FLASHGEN_LORA}\",\"scale\":1.0}"
+-F "lora={\"name\":\"h3-flashgen-v1.0\",\"path\":\"/path/to/minimax-h3-flashgen-lora/minimax_h3_t2va_flashgen_4step_v1.0_768p_bf16.safetensors\",\"scale\":1.0}"
 ```
 
 This path rejects Ref2VA and checkpoints that already pin `base_schedule` in
@@ -1058,9 +998,7 @@ MiniMax H3 runs on AMD Instinct GPUs (gfx942 / gfx950) in BF16. Use
 `--diffusion-attention-backend FLASH_ATTN`, which resolves to AITER packed varlen
 attention on both architectures.
 
-Select the device with `HIP_VISIBLE_DEVICES` (not `CUDA_VISIBLE_DEVICES`), drop the
-CUDA-only `FLASHINFER_DISABLE_VERSION_CHECK`, and install without the `[fa4]` extra
-(FA4 is CUDA-only). The VAE uses AITER GroupNorm on ROCm.
+Install without the CUDA-only `[fa4]` extra. The VAE uses AITER GroupNorm on ROCm.
 
 Install (ROCm wheel + source vLLM-Omni):
 
@@ -1080,14 +1018,8 @@ Single GPU with model-level CPU offload keeps the Qwen3-VL encoder and DiT from
 being co-resident:
 
 ```bash
-export MODEL="${MODEL_ROOT}/FL2VA"
-export PORT=8091
-
-HIP_VISIBLE_DEVICES=0 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-vllm serve "${MODEL}" \
-  --omni --host 0.0.0.0 --port "${PORT}" --trust-remote-code \
+vllm serve /path/to/MiniMax-H3/FL2VA \
+  --omni --trust-remote-code \
   --num-gpus 1 --enable-cpu-offload \
   --diffusion-attention-backend FLASH_ATTN
 ```
@@ -1107,16 +1039,8 @@ parallelism, and text-encoder tensor parallelism, with no CPU offload when the m
 shards across the GPUs:
 
 ```bash
-export MODEL="${MODEL_ROOT}/FL2VA"
-export PORT=8091
-
-HIP_VISIBLE_DEVICES=0,1,2,3 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800 \
-vllm serve "${MODEL}" \
+vllm serve /path/to/MiniMax-H3/FL2VA \
   --omni \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
   --trust-remote-code \
   --num-gpus 4 \
   --usp 4 \

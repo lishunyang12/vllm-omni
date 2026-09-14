@@ -31,8 +31,8 @@ single-rank topology peaked at 26.50 GiB; re-measure peak HBM on the target
 card before increasing the resident count.
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 vllm serve /path/to/MiniMax-H3/FL2VA \
-  --omni --trust-remote-code --host 0.0.0.0 --port 8000 \
+vllm serve /path/to/MiniMax-H3/FL2VA \
+  --omni --trust-remote-code \
   --num-gpus 1 --tensor-parallel-size 1 --text-encoder-tp-size 1 \
   --usp 1 --ring 1 --vae-patch-parallel-size 1 \
   --vae-parallel-mode tile --vae-use-tiling \
@@ -48,8 +48,8 @@ Use TP2 and 20 resident DiT layers. The two-rank B300 capacity run peaked at
 proxy, not a consumer-GPU latency claim.
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1 vllm serve /path/to/MiniMax-H3/FL2VA \
-  --omni --trust-remote-code --host 0.0.0.0 --port 8000 \
+vllm serve /path/to/MiniMax-H3/FL2VA \
+  --omni --trust-remote-code \
   --num-gpus 2 --tensor-parallel-size 2 --text-encoder-tp-size 2 \
   --usp 1 --ring 1 --vae-patch-parallel-size 2 \
   --vae-parallel-mode tile --vae-use-tiling \

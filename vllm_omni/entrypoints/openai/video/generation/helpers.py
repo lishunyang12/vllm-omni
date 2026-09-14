@@ -92,7 +92,11 @@ CONTROL_REFERENCE_IMAGE_SUFFIXES = frozenset({".bmp", ".gif", ".jpg", ".jpeg", "
 CONTROL_REFERENCE_VIDEO_SUFFIXES = frozenset({".mkv", ".mov", ".mp4", ".webm"})
 CONTROL_REFERENCE_MAX_BYTES = 512 * 1024 * 1024
 
-VIDEO_SYNC_TIMEOUT_S = float(os.environ.get("VLLM_OMNI_VIDEO_SYNC_TIMEOUT", 600.0))
+# Generation time depends on the model, hardware and requested video length.
+# Wait for completion by default; retain an explicit operator deadline.
+VIDEO_SYNC_TIMEOUT_S = (
+    float(os.environ["VLLM_OMNI_VIDEO_SYNC_TIMEOUT"]) if "VLLM_OMNI_VIDEO_SYNC_TIMEOUT" in os.environ else None
+)
 
 
 def _resolve_video_runtime_context(raw_request: Request) -> tuple[str | None, list[Any] | None]:
@@ -866,11 +870,13 @@ async def _parse_video_form(
     reference_image = None
     reference_video = None
     reference_audio: ReferenceAudio | None = None
+    images: list[Image.Image] = []
+    video_paths: list[str] = []
+    audio_paths: list[str] = []
     if input_references:
         if not supports_mixed_reference_inputs:
             video_paths = await _persist_uploaded_video_references(input_references)
             reference_video = ReferenceVideo(data=video_paths, cleanup_paths=tuple(video_paths))
-            images, audio_paths = [], []
         else:
             images, video_paths, audio_paths = await _persist_uploaded_media_references(input_references)
         if images:
@@ -880,7 +886,6 @@ async def _parse_video_form(
         if audio_paths:
             reference_audio = ReferenceAudio(path=audio_paths, cleanup_paths=tuple(audio_paths))
     else:
-        video_paths: list[str] = []
         try:
             image_items = _reference_list(request.image_reference)
             video_items = _reference_list(request.video_reference)
@@ -942,13 +947,13 @@ async def _parse_video_form(
     audio_paths = [] if reference_audio is None else list(_reference_list(reference_audio.path))
     if request.audio_reference is not None:
         try:
-            for audio_reference in _reference_list(request.audio_reference):
-                audio_paths.append(await decode_audio_url(audio_reference.audio_url))
+            for audio_item in _reference_list(request.audio_reference):
+                audio_paths.append(await decode_audio_url(audio_item.audio_url))
         except InvalidInputReferenceError as exc:
             _cleanup_video_references(reference_video, reference_audio)
-            cleanup_paths = set(() if reference_audio is None else reference_audio.cleanup_paths)
+            existing_paths = set(() if reference_audio is None else reference_audio.cleanup_paths)
             for path in audio_paths:
-                if path not in cleanup_paths and os.path.exists(path):
+                if path not in existing_paths and os.path.exists(path):
                     os.unlink(path)
             raise HTTPException(400, detail=str(exc)) from exc
     if audio_paths:

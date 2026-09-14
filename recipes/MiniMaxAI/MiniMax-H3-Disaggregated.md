@@ -12,7 +12,7 @@ text encoder inside the diffusion pipeline.
 Choose the topology explicitly and load its deployment defaults:
 
 ```bash
-vllm-omni serve MiniMaxAI/MiniMax-H3 \
+vllm serve MiniMaxAI/MiniMax-H3 \
   --omni \
   --deploy-config vllm_omni/deploy/minimax_h3_disaggregated.yaml
 ```
@@ -30,8 +30,7 @@ to the diffusion stage. `--stage-overrides` keeps placement and parallelism
 scoped to the owning stage rather than broadcasting an override to both:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3,4 \
-vllm-omni serve MiniMaxAI/MiniMax-H3 \
+vllm serve MiniMaxAI/MiniMax-H3 \
   --omni \
   --deploy-config vllm_omni/deploy/minimax_h3_disaggregated.yaml \
   --stage-overrides '{"0":{"devices":"0","tensor_parallel_size":1},"1":{"devices":"1,2,3,4","tensor_parallel_size":1,"ulysses_degree":4,"vae_patch_parallel_size":4}}'
@@ -75,7 +74,7 @@ points, `flow_shift=6`, `audio_flow_shift=3` -- so requests that omit sampling
 controls do not inherit the 50-step base schedule:
 
 ```bash
-vllm-omni serve MiniMaxAI/MiniMax-H3 \
+vllm serve MiniMaxAI/MiniMax-H3 \
   --omni \
   --lora-path /path/to/minimax_h3_fl2v_turbo_4step_v1.0_768p_bf16.safetensors \
   --deploy-config vllm_omni/deploy/minimax_h3_disaggregated_turbo.yaml

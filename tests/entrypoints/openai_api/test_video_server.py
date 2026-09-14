@@ -14,12 +14,13 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import av
 import httpx
 import numpy as np
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 from PIL import Image
 from pytest_mock import MockerFixture
@@ -480,7 +481,7 @@ def test_async_video_generation_with_audio_bypasses_base64(test_client, mocker: 
         engine.captured_sampling_params_list = sampling_params_list
         yield MockVideoResult([object()], audios=[object()], sample_rate=48000)
 
-    engine.generate = _generate
+    cast(Any, engine).generate = _generate
 
     response = test_client.post(
         "/v1/videos",
@@ -592,12 +593,16 @@ def test_i2v_video_generation_resizes_input_to_requested_dimensions(test_client,
 
 def test_i2v_resize_policy_can_defer_to_pipeline(monkeypatch):
     engine = FakeAsyncOmni()
-    engine.get_diffusion_od_config = lambda: SimpleNamespace(
-        model="org/model",
-        model_class_name="ExamplePipeline",
-        revision="pinned-revision",
+    monkeypatch.setattr(
+        engine,
+        "get_diffusion_od_config",
+        lambda: SimpleNamespace(
+            model="org/model",
+            model_class_name="ExamplePipeline",
+            revision="pinned-revision",
+        ),
     )
-    captured = {}
+    captured: dict[str, Any] = {}
 
     def fake_policy(model_class_name, *, model, revision=None):
         captured.update(
@@ -625,6 +630,7 @@ def test_i2v_resize_policy_can_defer_to_pipeline(monkeypatch):
         )
     )
 
+    assert engine.captured_prompt is not None
     input_image = engine.captured_prompt["multi_modal_data"]["image"]
     assert isinstance(input_image, Image.Image)
     assert input_image.size == (48, 32)
@@ -654,6 +660,7 @@ def test_i2v_minimax_h3_preserves_reference_geometry():
 
     assert engine.captured_prompt is not None
     assert engine.captured_sampling_params_list is not None
+    assert engine.captured_prompt is not None
     input_image = engine.captured_prompt["multi_modal_data"]["image"]
     assert isinstance(input_image, Image.Image)
     assert input_image.size == (48, 32)
@@ -681,6 +688,7 @@ def test_i2v_extra_params_dimensions_preserve_input_image_geometry(test_client, 
     _wait_for_status(test_client, video_id, VideoGenerationStatus.COMPLETED.value)
 
     engine = test_client.app.state.openai_serving_video._engine_client
+    assert engine.captured_prompt is not None
     input_image = engine.captured_prompt["multi_modal_data"]["image"]
     assert isinstance(input_image, Image.Image)
     assert input_image.size == (48, 48)
@@ -718,6 +726,7 @@ def test_video_generation_bridges_request_fields(generation_request, expected_nu
 
     asyncio.run(handler._run_and_extract(generation_request, "field-bridge"))
 
+    assert engine.captured_sampling_params_list is not None
     sampling = engine.captured_sampling_params_list[0]
     # Top-level ``seconds`` bridges into extra_args["duration"]; num_frames is
     # passed through (or derived as seconds x fps when omitted). No private
@@ -752,6 +761,7 @@ def test_magi2_i2v_preserves_reference_geometry_for_model_preprocessing(test_cli
     assert response.status_code == 200
     video_id = response.json()["id"]
     _wait_for_status(test_client, video_id, VideoGenerationStatus.COMPLETED.value)
+    assert engine.captured_prompt is not None
     input_image = engine.captured_prompt["multi_modal_data"]["image"]
     assert isinstance(input_image, Image.Image)
     assert input_image.size == (48, 32)
@@ -767,6 +777,7 @@ def test_magi2_serving_applies_native_defaults_and_rejects_explicit_frame_mismat
 
     asyncio.run(handler._run_and_extract(VideoGenerationRequest(prompt="A fox walks through snow"), "defaults"))
 
+    assert engine.captured_sampling_params_list is not None
     sampling = engine.captured_sampling_params_list[0]
     assert (sampling.width, sampling.height) == (896, 512)
     assert sampling.num_frames == 125
@@ -859,6 +870,7 @@ def test_i2v_video_generation_follows_allowed_image_redirect(test_client, mocker
     assert requested_paths == ["/redirect.png", "/image.png"]
 
     engine = test_client.app.state.openai_serving_video._engine_client
+    assert engine.captured_prompt is not None
     input_image = engine.captured_prompt["multi_modal_data"]["image"]
     assert isinstance(input_image, Image.Image)
     assert input_image.size == (40, 24)
@@ -1180,7 +1192,7 @@ def test_model_reported_fps_wins_when_request_fps_omitted(test_client, mocker: M
         result.multimodal_output["fps"] = 8
         yield result
 
-    engine.generate = _generate
+    cast(Any, engine).generate = _generate
 
     response = test_client.post("/v1/videos", data={"prompt": "source fps"})
 
@@ -1381,7 +1393,7 @@ def test_worker_fps_multiplier_is_applied_to_async_encoding(test_client, mocker:
             },
         )
 
-    engine.generate = _generate
+    cast(Any, engine).generate = _generate
 
     def _fake_encode(video, fps, **kwargs):
         del video, kwargs
@@ -1432,7 +1444,7 @@ def test_audio_sample_rate_comes_from_model_config(test_client, mocker: MockerFi
 
         yield MockVideoResult([np.zeros((1, 64, 64, 3), dtype=np.uint8)], audios=[object()])
 
-    engine.generate = _generate
+    cast(Any, engine).generate = _generate
 
     mocker.patch(
         "vllm_omni.entrypoints.openai.serving_video._encode_video_bytes",
@@ -1461,7 +1473,7 @@ def test_video_job_persists_profiler_metadata(test_client, mocker: MockerFixture
             peak_memory_mb=4096.5,
         )
 
-    engine.generate = _generate
+    cast(Any, engine).generate = _generate
     mocker.patch(
         "vllm_omni.entrypoints.openai.serving_video._encode_video_bytes",
         return_value=b"fake-video",
@@ -1503,7 +1515,7 @@ def test_video_generation_response_exposes_action_payload(mocker: MockerFixture)
             },
         )
 
-    engine.generate = _generate
+    cast(Any, engine).generate = _generate
     mocker.patch(
         "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
         return_value="encoded-video",
@@ -1550,7 +1562,7 @@ def test_video_job_persists_action_metadata(test_client, mocker: MockerFixture):
             },
         )
 
-    engine.generate = _generate
+    cast(Any, engine).generate = _generate
     mocker.patch(
         "vllm_omni.entrypoints.openai.serving_video._encode_video_bytes",
         return_value=b"fake-video",
@@ -2277,6 +2289,88 @@ def _mock_encode_video_bytes(mocker: MockerFixture, return_value: bytes = b"fake
     )
 
 
+@pytest.mark.asyncio
+async def test_sync_generation_can_exceed_ten_minutes(monkeypatch):
+    """Advance the event-loop clock past the former deadline without waiting."""
+    assert api_server.VIDEO_SYNC_TIMEOUT_S is None
+    loop = asyncio.get_running_loop()
+    real_time = loop.time
+    elapsed = 0.0
+    monkeypatch.setattr(loop, "time", lambda: real_time() + elapsed)
+
+    async def generate(*args, **kwargs):
+        nonlocal elapsed
+        elapsed = 601.0
+        # Let an erroneously scheduled deadline fire before completion.
+        for _ in range(3):
+            await asyncio.sleep(0)
+        return b"long-video", {}, 0.0, None, {}
+
+    async def receive():
+        await asyncio.Future()
+
+    raw_request = Request({"type": "http", "app": FastAPI()}, receive=receive)
+    response = await api_server.create_video_sync(
+        raw_request=raw_request,
+        ctx=(
+            VideoGenerationRequest(prompt="long video"),
+            SimpleNamespace(generate_video_bytes=generate),
+            "test-model",
+            None,
+            None,
+            None,
+            None,
+        ),
+    )
+    assert response.body == b"long-video"
+    assert response.media_type == "video/mp4"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("termination", ["deadline", "disconnect"])
+async def test_sync_cancellation_cleans_references(termination, monkeypatch, tmp_path):
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+    control_path = tmp_path / "control.mp4"
+    control_path.write_bytes(b"uploaded-control")
+
+    async def generate(*args, **kwargs):
+        started.set()
+        try:
+            await asyncio.Future()
+        finally:
+            cancelled.set()
+
+    async def receive():
+        if termination == "disconnect":
+            await started.wait()
+            return {"type": "http.disconnect"}
+        await asyncio.Future()
+
+    monkeypatch.setattr(api_server, "VIDEO_SYNC_TIMEOUT_S", 0.01 if termination == "deadline" else None)
+    raw_request = Request({"type": "http", "app": FastAPI()}, receive=receive)
+    call = api_server.create_video_sync(
+        raw_request=raw_request,
+        ctx=(
+            VideoGenerationRequest(prompt="cancel video"),
+            SimpleNamespace(generate_video_bytes=generate),
+            "test-model",
+            None,
+            None,
+            None,
+            str(control_path),
+        ),
+    )
+    if termination == "deadline":
+        with pytest.raises(HTTPException) as exc:
+            await call
+        assert exc.value.status_code == 504
+    else:
+        assert await call is None
+    await asyncio.wait_for(cancelled.wait(), timeout=1)
+    assert not control_path.exists()
+
+
 def test_sync_t2v_returns_video_bytes(test_client, mocker: MockerFixture):
     """Sync endpoint should block until generation finishes and return raw
     video bytes with metadata headers."""
@@ -2315,7 +2409,7 @@ def test_sync_t2v_returns_profiler_headers(test_client, mocker: MockerFixture):
             peak_memory_mb=1234.25,
         )
 
-    engine.generate = _generate
+    cast(Any, engine).generate = _generate
     _mock_encode_video_bytes(mocker, b"profiled-video")
 
     response = test_client.post("/v1/videos/sync", data={"prompt": "sync profile"})
@@ -2749,7 +2843,7 @@ def test_worker_fps_multiplier_is_applied_to_sync_encoding(test_client, mocker: 
             },
         )
 
-    engine.generate = _generate
+    cast(Any, engine).generate = _generate
 
     def _fake_encode(video, fps, **kwargs):
         del video, kwargs

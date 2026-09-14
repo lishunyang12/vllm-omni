@@ -66,12 +66,8 @@ shape will run into the OOM killer.
 ### One GB10: 960x576, 8 seconds
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 \
-FLASHINFER_DISABLE_VERSION_CHECK=1 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=7200 \
 vllm serve /path/to/MiniMax-H3/FL2VA \
-  --omni --trust-remote-code --host 0.0.0.0 --port 8000 \
+  --omni --trust-remote-code \
   --init-timeout 3600 \
   --num-gpus 1 --tensor-parallel-size 1 --text-encoder-tp-size 1 \
   --usp 1 --ring 1 --vae-patch-parallel-size 1 \
@@ -130,12 +126,8 @@ geometry plus a 32 kHz stereo AAC track.
 Stop the FL2VA server before starting this one.
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 \
-FLASHINFER_DISABLE_VERSION_CHECK=1 \
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-VLLM_OMNI_VIDEO_SYNC_TIMEOUT=14400 \
 vllm serve /path/to/MiniMax-H3/Ref2VA \
-  --omni --trust-remote-code --host 0.0.0.0 --port 8000 \
+  --omni --trust-remote-code \
   --init-timeout 3600 \
   --num-gpus 1 --tensor-parallel-size 1 --text-encoder-tp-size 1 \
   --usp 1 --ring 1 --vae-patch-parallel-size 1 \
@@ -143,9 +135,6 @@ vllm serve /path/to/MiniMax-H3/Ref2VA \
   --quantization fp8 --enforce-eager \
   --diffusion-attention-backend CUDNN_ATTN
 ```
-
-The 7200 s timeout used for T2VA is too short here: a 50-step Ref2VA request
-takes over an hour on this platform. Use 14400 s.
 
 Unlike `t2va`, `ref2va` defaults to a 16:9 output ratio, so `aspect_ratio` can be
 omitted when `width` and `height` are supplied.
@@ -272,10 +261,6 @@ only reachable on a cold machine and does not hold for the length of one request
 Ref2VA text encode converged downward across the four runs (10.94 s, 9.66 s,
 8.52 s, 8.43 s) as first-touch costs fell away; treat ~8.5 s as steady state.
 VAE decode was stable at 67.9-69.8 s throughout.
-
-Set `VLLM_OMNI_VIDEO_SYNC_TIMEOUT` well above the expected request time — the
-default 1800 s is shorter than a 50-step run on this platform, and 7200 s is
-shorter than a 50-step Ref2VA run.
 
 ## Known limitations
 

@@ -14,16 +14,15 @@ attention only against the selected top-k blocks.
 
 ## Installation
 
-In the vLLM-Omni environment, install the
-[kernel wheel](https://pypi.org/project/fastvideo-kernel/0.3.4/):
+Install vLLM-Omni from this checkout with the `vsa` extra:
 
 ```bash
-uv pip install --only-binary=:all: "fastvideo-kernel==0.3.4"
+uv pip install -e '.[vsa]'
 ```
 
-This wheel requires Linux, Python 3.12, and glibc 2.34 or newer (x86-64 or
-aarch64). The full FastVideo framework and provider environment variables
-are not required.
+The extra installs the tested kernel dependency automatically. Prebuilt kernels require
+Linux, Python 3.12, and glibc 2.34 or newer (x86-64 or aarch64). The full
+FastVideo framework and provider environment variables are not required.
 
 ## Enable the backend
 
@@ -40,16 +39,7 @@ vllm serve <model> --omni \
 <details markdown="1">
 <summary>Alternative configuration formats</summary>
 
-The backwards-compatible environment variable selects the backend with the
-default `topk=64`:
-
-```bash
-export DIFFUSION_ATTENTION_BACKEND=FASTVIDEO_VSA
-vllm serve <model> --omni
-```
-
-To tune top-k, pass the CLI backend and top-k flags together as shown above,
-or use the equivalent structured configuration:
+Equivalent structured configuration:
 
 ```bash
 vllm serve <model> --omni \
