@@ -135,6 +135,6 @@ route to SDPA, while FastVideo DMD checkpoints preserve the VSA all-block path
 to retain checkpoint semantics.
 
 MiniMax-H3 supplies `MiniMaxH3VSAImpl` through `impl_overrides`.
-`models/minimax_h3/attention/vsa.py` owns its prefix layout, video tiling, and
+`models/minimax_h3/attention/fastvideo_h3.py` owns its prefix layout, video tiling, and
 learned compression gate. Pooling, block-map construction, and tile64 provider
 calls are shared through `attention/ops/block_sparse.py`.
