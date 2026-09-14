@@ -1,5 +1,7 @@
 # MiniMax H3 on Moore Threads MUSA
 
+[Model guide](MiniMax-H3.md) · [Deployment choices](MiniMax-H3.md#choose-a-deployment) · [HTTP API](MiniMax-H3.md#http-api-examples)
+
 > Joint video and audio generation on Moore Threads GPUs
 
 ## Summary

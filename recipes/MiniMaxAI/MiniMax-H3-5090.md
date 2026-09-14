@@ -1,5 +1,7 @@
 # MiniMax-H3 on RTX 5090
 
+[Model guide](MiniMax-H3.md) · [Deployment choices](MiniMax-H3.md#choose-a-deployment) · [HTTP API](MiniMax-H3.md#http-api-examples)
+
 This recipe uses BF16 weights, tiled VAE decode, tensor parallelism where a
 second GPU is available, and distributed layerwise offload (DLO). It is a
 memory-first serving configuration; lower resident counts reduce HBM use and

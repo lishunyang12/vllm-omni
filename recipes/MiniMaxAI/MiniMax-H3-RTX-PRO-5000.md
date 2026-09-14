@@ -1,5 +1,7 @@
 # MiniMax-H3 on RTX PRO 5000 Blackwell GPUs
 
+[Model guide](MiniMax-H3.md) · [Deployment choices](MiniMax-H3.md#choose-a-deployment) · [HTTP API](MiniMax-H3.md#http-api-examples)
+
 This recipe runs MiniMax-H3 in BF16 on 72 GiB RTX PRO 5000 Blackwell GPUs. It
 contains the validated two-GPU DLO configuration and the recommended resident
 configurations: TP1 x Ulysses2 with 20 resident layers on two GPUs, TP2 x
@@ -143,6 +145,24 @@ measured request. The two-GPU DLO route intentionally remains eager.
 For Ref2VA, stop the FL2VA server and restart the same command with
 `MODEL="${MODEL_ROOT}/Ref2VA"`.
 
+## T2VA request example
+
+```bash
+export API_URL="http://127.0.0.1:${PORT}/v1/videos/sync"
+
+curl -sS --max-time 1800 -X POST "${API_URL}" \
+  -F 'prompt=At night, three cats march into a bedroom playing tiny brass instruments, then abruptly file out, with synchronized room ambience.' \
+  -F 'width=1344' \
+  -F 'height=768' \
+  -F 'aspect_ratio=16:9' \
+  -F 'fps=24' \
+  -F 'num_inference_steps=50' \
+  -F 'flow_shift=12' \
+  -F 'seed=1101' \
+  -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
+  -o t2va.mp4
+```
+
 ## Target-hardware validation
 
 All three configurations were exercised on a PCIe-only, dual-socket host with
@@ -178,21 +198,3 @@ Peak memory is the maximum per-GPU value sampled externally with
 73,415 MiB device capacity, the four-GPU route leaves about 4.1 GiB, and the
 eight-GPU route leaves about 25.9 GiB. Re-measure memory for longer reference
 inputs, concurrency greater than one, or a different output shape.
-
-## T2VA request example
-
-```bash
-export API_URL="http://127.0.0.1:${PORT}/v1/videos/sync"
-
-curl -sS --max-time 1800 -X POST "${API_URL}" \
-  -F 'prompt=At night, three cats march into a bedroom playing tiny brass instruments, then abruptly file out, with synchronized room ambience.' \
-  -F 'width=1344' \
-  -F 'height=768' \
-  -F 'aspect_ratio=16:9' \
-  -F 'fps=24' \
-  -F 'num_inference_steps=50' \
-  -F 'flow_shift=12' \
-  -F 'seed=1101' \
-  -F 'extra_params={"task":"t2va","duration":5.0,"audio_flow_shift":3.0}' \
-  -o t2va.mp4
-```

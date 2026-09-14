@@ -1,5 +1,7 @@
 # MiniMax-H3 on RTX 4090
 
+[Model guide](MiniMax-H3.md) · [Deployment choices](MiniMax-H3.md#choose-a-deployment) · [HTTP API](MiniMax-H3.md#http-api-examples)
+
 This recipe uses BF16 weights, tiled VAE decode, tensor parallelism, optional
 Ulysses sequence parallelism, and distributed layerwise offload (DLO). It is the
 24 GiB sibling of [MiniMax-H3-5090.md](MiniMax-H3-5090.md): the two-GPU topology
@@ -24,7 +26,7 @@ current implementation because resident layers retain pinned CPU master copies.
 A single RTX 4090 is not covered here. The one-GPU DLO profile in the RTX 5090
 recipe peaked at 26.50 GiB with 12 resident layers, which exceeds 24 GiB. On one
 4090, use the model-level CPU offload command in
-[MiniMax-H3.md](MiniMax-H3.md#single-gpu-accuracy-and-memory-first) instead, or
+[MiniMax-H3.md](MiniMax-H3.md#single-gpu-blockwise-capacity-path) instead, or
 lower the resident count and re-measure before trusting it.
 
 > **Modular H3:** after #5720 lands, preserve this recipe's one-partition
@@ -85,41 +87,6 @@ For Ref2VA, stop the FL2VA server and restart the same command with
 fewer than four devices, startup fails with
 `Stage 0 requires 4 device(s) based on parallel_config`.
 
-## Target-hardware validation
-
-Measured on RTX 4090 (24,564 MiB each, driver 580.126.09) with the serve
-commands above, at vLLM-Omni `0.26.1.dev55+g81b48e83e`, vLLM `0.26.0`, and
-PyTorch `2.11.0+cu130`. GPUs used by each server were dedicated. `Client E2E`
-and `Peak per GPU` come from the `/v1/videos/sync` response headers
-`x-inference-time-s` and `x-peak-memory-mb`; the latter is the rank-0 CUDA
-reserved high-water mark, so it is a per-GPU figure.
-
-| GPUs | Topology | Task | Shape | Frames | Steps | Client E2E | Peak per GPU | Output validation |
-| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| 2 | TP2 × USP1 | T2VA (`FL2VA`) | 1024x576 | 124 at 24 FPS | 60 | 7 min 9 s | 15.3 GiB | H.264 video + 32 kHz stereo AAC; full `ffmpeg` decode passed |
-| 2 | TP2 × USP1 | Ref2VA | 1024x576 | 124 at 24 FPS | 60 | 14 min 52 s | 14.6 GiB | H.264 video + 32 kHz stereo AAC; full `ffmpeg` decode passed |
-| 4 | TP2 × USP2 | T2VA (`FL2VA`) | 1024x576 | 124 at 24 FPS | 60 | 4 min 29 s | 15.2 GiB | H.264 video + 32 kHz stereo AAC; full `ffmpeg` decode passed |
-| 4 | TP2 × USP2 | Ref2VA | 1024x576 | 124 at 24 FPS | 60 | 9 min 5 s | 16.1 GiB | H.264 video + 32 kHz stereo AAC; successful `/v1/videos/sync` 200 |
-
-All rows use `seed=1101`, `flow_shift=12`, and `audio_flow_shift=3.0`.
-
-Two-GPU repeats: T2VA measured 434.9 s and 429.3 s; Ref2VA measured 891.9 s and
-892.1 s. Peak memory was identical across repeats for both tasks, and the two
-outputs of each pair agreed to within 115 bytes.
-
-Four-GPU T2VA repeats: 273.8 s and 269.5 s, peaking at 15,560 MiB and
-15,612 MiB. Four-GPU Ref2VA is a single successful end-to-end run (545.2 s,
-16,448 MiB). Follow-up Ref2VA requests on this build completed diffusion but
-then hit the engine's async output wait during post-compute D2H, so they are
-not reported as repeats. That wait was a hardcoded 30 s when these numbers were
-taken; it is now `VLLM_OMNI_ASYNC_OUTPUT_TIMEOUT` (default 600 s), so a rerun on
-current main should not lose these repeats to the bound.
-
-Relative to the two-GPU baseline on the same shape, four-GPU TP2×USP2 was about
-1.6× faster for both tasks, while per-GPU peak HBM stayed in the mid-15 GiB
-range because USP does not further shard resident DiT weights. These are
-single-request validation runs, not concurrent throughput benchmarks.
-
 ## Request examples
 
 `t2va` requires an explicit `aspect_ratio`. Without it the request fails with
@@ -168,3 +135,38 @@ The response headers carry the measurements used in the table above:
 cat headers_t2va.txt
 ffmpeg -v error -i out_t2va.mp4 -f null - && echo DECODE_OK
 ```
+
+## Target-hardware validation
+
+Measured on RTX 4090 (24,564 MiB each, driver 580.126.09) with the serve
+commands above, at vLLM-Omni `0.26.1.dev55+g81b48e83e`, vLLM `0.26.0`, and
+PyTorch `2.11.0+cu130`. GPUs used by each server were dedicated. `Client E2E`
+and `Peak per GPU` come from the `/v1/videos/sync` response headers
+`x-inference-time-s` and `x-peak-memory-mb`; the latter is the rank-0 CUDA
+reserved high-water mark, so it is a per-GPU figure.
+
+| GPUs | Topology | Task | Shape | Frames | Steps | Client E2E | Peak per GPU | Output validation |
+| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 2 | TP2 × USP1 | T2VA (`FL2VA`) | 1024x576 | 124 at 24 FPS | 60 | 7 min 9 s | 15.3 GiB | H.264 video + 32 kHz stereo AAC; full `ffmpeg` decode passed |
+| 2 | TP2 × USP1 | Ref2VA | 1024x576 | 124 at 24 FPS | 60 | 14 min 52 s | 14.6 GiB | H.264 video + 32 kHz stereo AAC; full `ffmpeg` decode passed |
+| 4 | TP2 × USP2 | T2VA (`FL2VA`) | 1024x576 | 124 at 24 FPS | 60 | 4 min 29 s | 15.2 GiB | H.264 video + 32 kHz stereo AAC; full `ffmpeg` decode passed |
+| 4 | TP2 × USP2 | Ref2VA | 1024x576 | 124 at 24 FPS | 60 | 9 min 5 s | 16.1 GiB | H.264 video + 32 kHz stereo AAC; successful `/v1/videos/sync` 200 |
+
+All rows use `seed=1101`, `flow_shift=12`, and `audio_flow_shift=3.0`.
+
+Two-GPU repeats: T2VA measured 434.9 s and 429.3 s; Ref2VA measured 891.9 s and
+892.1 s. Peak memory was identical across repeats for both tasks, and the two
+outputs of each pair agreed to within 115 bytes.
+
+Four-GPU T2VA repeats: 273.8 s and 269.5 s, peaking at 15,560 MiB and
+15,612 MiB. Four-GPU Ref2VA is a single successful end-to-end run (545.2 s,
+16,448 MiB). Follow-up Ref2VA requests on this build completed diffusion but
+then hit the engine's async output wait during post-compute D2H, so they are
+not reported as repeats. That wait was a hardcoded 30 s when these numbers were
+taken; it is now `VLLM_OMNI_ASYNC_OUTPUT_TIMEOUT` (default 600 s), so a rerun on
+current main should not lose these repeats to the bound.
+
+Relative to the two-GPU baseline on the same shape, four-GPU TP2×USP2 was about
+1.6× faster for both tasks, while per-GPU peak HBM stayed in the mid-15 GiB
+range because USP does not further shard resident DiT weights. These are
+single-request validation runs, not concurrent throughput benchmarks.

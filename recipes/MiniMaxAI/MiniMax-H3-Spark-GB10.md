@@ -1,5 +1,7 @@
 # MiniMax-H3 on DGX Spark (GB10)
 
+[Model guide](MiniMax-H3.md) · [Deployment choices](MiniMax-H3.md#choose-a-deployment) · [HTTP API](MiniMax-H3.md#http-api-examples)
+
 This recipe uses online FP8 weight quantization, tiled VAE decode, and a single
 resident partition. GB10 is a unified-memory platform, so unlike the discrete-GPU
 recipes it uses **no offload of any kind** — see the capacity note below.
@@ -59,7 +61,9 @@ Treat this platform as strictly single-tenant for Ref2VA. There is no room for a
 second process, and adding reference images, reference videos, or a larger output
 shape will run into the OOM killer.
 
-## One GB10: 960x576, 8 seconds
+## Single-host deployment
+
+### One GB10: 960x576, 8 seconds
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 \
@@ -120,7 +124,7 @@ ffprobe -v error -show_entries \
 Both requests return `200 OK` with an MP4 body: H.264 video at the requested
 geometry plus a 32 kHz stereo AAC track.
 
-## One GB10: Ref2VA, 960x576, 8 seconds
+### One GB10: Ref2VA, 960x576, 8 seconds
 
 `FL2VA` and `Ref2VA` are separate 135 GiB partitions and only one fits at a time.
 Stop the FL2VA server before starting this one.

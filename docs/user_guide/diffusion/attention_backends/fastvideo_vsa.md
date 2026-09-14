@@ -12,15 +12,6 @@ attention only against the selected top-k blocks.
 | `MiniMaxAI/MiniMax-H3` | [FastH3 VSA (recipe)](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-vsa-serving) | T2VA | Disabled or pure Ulysses |
 | Wan I2V-14B, S2V, VACE | — | Unsupported | — |
 
-VSA is a CUDA-only, explicitly selected backend. It requires the
-`fastvideo-kernel` package and currently supports non-causal self-attention
-with equal query and key/value sequence lengths. Unsupported shapes, masks,
-dtypes, sequence-parallel execution, or kernel failures fall back to
-`TORCH_SDPA` and emit a warning with the reason. On the Wan route, an active
-sequence-parallel context is one of those fallbacks; the H3 route supports pure
-Ulysses and rejects ring or all-gather sequence parallelism at startup.
-H3 accelerator faults propagate instead of attempting dense recovery.
-
 ## Installation
 
 In the vLLM-Omni environment, install the
@@ -45,6 +36,9 @@ vllm serve <model> --omni \
   --diffusion-attention-backend FASTVIDEO_VSA \
   --fastvideo-vsa-topk 64
 ```
+
+<details markdown="1">
+<summary>Alternative configuration formats</summary>
 
 The backwards-compatible environment variable selects the backend with the
 default `topk=64`:
@@ -86,6 +80,8 @@ stages:
         backend: FASTVIDEO_VSA
         fastvideo_vsa_topk: 64
 ```
+
+</details>
 
 ## Choose top-k
 
@@ -133,6 +129,15 @@ Wan checkpoints keep their normal scheduler and inference-step configuration;
 selecting VSA does not turn a native checkpoint into a distilled model.
 
 ## Verify routing and fallback
+
+VSA is a CUDA-only, explicitly selected backend. It requires the
+`fastvideo-kernel` package and currently supports non-causal self-attention
+with equal query and key/value sequence lengths. Unsupported shapes, masks,
+dtypes, sequence-parallel execution, or kernel failures fall back to
+`TORCH_SDPA` and emit a warning with the reason. On the Wan route, an active
+sequence-parallel context is one of those fallbacks; the H3 route supports pure
+Ulysses and rejects ring or all-gather sequence parallelism at startup.
+H3 accelerator faults propagate instead of attempting dense recovery.
 
 Check the startup and first-forward logs instead of assuming that selecting
 the backend guarantees sparse execution:

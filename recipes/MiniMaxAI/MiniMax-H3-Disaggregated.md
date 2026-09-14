@@ -1,5 +1,7 @@
 # MiniMax H3 disaggregated text encoder
 
+[Model guide](MiniMax-H3.md) · [Deployment choices](MiniMax-H3.md#choose-a-deployment) · [HTTP API](MiniMax-H3.md#http-api-examples)
+
 This opt-in topology runs the Qwen3-VL text encoder as a vLLM stage and sends
 its hidden states and token-role metadata to an encoder-free diffusion stage.
 The standard MiniMax H3 recipes remain single-stage and continue to load the

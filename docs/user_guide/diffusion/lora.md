@@ -244,6 +244,10 @@ Notes:
 
 ## MiniMax-H3 adapter-declared schedules
 
+[Model recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#lora)
+
+### Schedule selection
+
 MiniMax-H3 supports two few-step mechanisms that must not be conflated:
 
 - **Checkpoint-pinned schedule**: a merged release writes `base_schedule` into
@@ -265,6 +269,8 @@ MiniMax-H3 supports two few-step mechanisms that must not be conflated:
   schedule; step execution requires it explicitly, because the step scheduler
   derives the total step count from the request before the adapter schedule is
   known.
+
+### Loading and offload
 
 Native artifacts also declare `qkv_layout=grouped`. The H3 loader reorders fused
 `qkv_proj` LoRA rows with the same `_reorder_grouped_qkv_to_qkv` helper used for
