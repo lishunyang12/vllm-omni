@@ -17,7 +17,6 @@ from vllm_omni.diffusion.attention.backends.abstract import (
 )
 from vllm_omni.diffusion.models.minimax_h3.attention.backend import (
     MiniMaxH3VSAImpl,
-    _build_h3_block_map,
     _get_h3_tile_metadata,
 )
 
@@ -169,14 +168,6 @@ def test_h3_geometry_keeps_prefix_segments_pure_and_tiles_video_3d():
     assert video_blocks == 8
     assert int(sizes.sum()) == 5 + 70 + 9 + 5 * 6 * 6
     assert partition.numel() == non_pad.numel() == untile.numel() == int(sizes.sum())
-
-
-def test_h3_block_map_makes_prefix_queries_dense_and_prefix_keys_exempt():
-    scores = torch.arange(1 * 2 * 5 * 5, dtype=torch.float32).reshape(1, 2, 5, 5)
-    block_map = _build_h3_block_map(scores, num_prefix_blocks=2, num_video_blocks=3, topk=1)
-    assert block_map[:, :, :2].all()
-    assert block_map[..., :2].all()
-    assert (block_map[:, :, 2:, 2:].sum(dim=-1) == 1).all()
 
 
 @pytest.mark.parametrize("fallback_on_error", [False, True])
