@@ -175,7 +175,10 @@ The following tables show which models support each feature:
 | **SANA-WM**                  |     ❌     |     ❌      |          ❌<sup>5</sup> |       ✅        |         ✅         |         ❌         |   ❌    |             ❌             |          ❌           |       ❌        |        ❌         |
 
 > Notes:
-> 5. SANA-WM cannot support sequence parallelism: its bidirectional gated delta
+> MiniMax-H3 entries describe the base model. FastH3 adapters have a narrower
+> contract; see the [FastH3 VSA recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-vsa-serving).
+>
+> <sup>5</sup> SANA-WM cannot support sequence parallelism: its bidirectional gated delta
 > recurrence carries state across frames, so a rank cannot denoise a slice of
 > the token sequence in isolation. Doing so would need a distributed scan or
 > an all-gather before every GDN block. The remaining ❌ columns are simply

@@ -76,6 +76,34 @@ preserve common `self` or `cross` policies. A model also decides whether its
 path is compatible with automatic TRTLLM selection, because only the model
 knows whether masking and packing satisfy the kernel contract.
 
+### Model-owned implementation specializations
+
+Use `Attention(..., impl_overrides={backend_name: implementation_class})`
+when a model needs different computation within an existing backend contract.
+The model defines the implementation in its own directory and passes it when
+constructing the layer:
+
+```python
+# MyModelVSAImpl is a model-owned subclass of FastVideoVSAImpl.
+self.attention = Attention(
+    num_heads=num_heads,
+    head_size=head_size,
+    softmax_scale=head_size**-0.5,
+    causal=False,
+    role="self",
+    impl_overrides={"FASTVIDEO_VSA": MyModelVSAImpl},
+)
+```
+
+The override is applied after role/platform selection, keyed by the selected
+backend's `get_name()`. It must subclass the **selected implementation**;
+incompatible platform implementations raise `TypeError`. Unselected overrides
+have no effect. Backend capabilities, constructor options, and shared
+parallel dispatch remain unchanged and must be honored by the specialization.
+
+Use a new backend for a new provider/capability contract. `custom_attention`
+instead owns communication and requires `skip_sequence_parallel=True`.
+
 ## Adding or changing a backend
 
 An implementation change is complete only when it:
@@ -91,7 +119,9 @@ An implementation change is complete only when it:
 
 ## FastVideo VSA model metadata
 
-FastVideo VSA support is scoped to `FastVideo/FastWan2.2-TI2V-5B-Diffusers`, whose text-to-video and image-to-video modes both use `Wan22Pipeline`. It operates on a flattened DiT sequence but partitions tokens in
+FastVideo VSA has model integrations for `FastVideo/FastWan2.2-TI2V-5B-Diffusers`
+and MiniMax-H3 with a FastH3 VSA adapter. FastWan's text-to-video and
+image-to-video modes both use `Wan22Pipeline`. It operates on a flattened DiT sequence but partitions tokens in
 the original latent video grid. Wan integrations therefore attach the
 post-patch `(T, H, W)` shape as `vsa_dit_seq_shape` attention metadata. The
 backend validates that `T * H * W` equals the sequence length, derives the
@@ -104,3 +134,81 @@ the checkpoint contains those weights. Checkpoints without the projection do
 not allocate or execute it. When top-k selects every block, native checkpoints
 route to SDPA, while FastVideo DMD checkpoints preserve the VSA all-block path
 to retain checkpoint semantics.
+
+H3 installs `MiniMaxH3VSAImpl` through `impl_overrides`. Its model-owned
+`attention/vsa.py` consumes `VideoTokenLayout`, segment lengths in
+`extra["vsa_h3_prefix_segments"]`, and the learned `extra["gate_compress"]`.
+It owns segment-pure prefix chunks, `(4, 4, 4)` video tiles, prefix-dense
+routing, and checkpoint-specific compensation. `PackedPaddingMetadata`
+identifies valid rows and the implementation restores trailing output rows.
+Pure Ulysses uses the existing shared gate/QKV resharding; ring and all-gather
+SP are rejected by the FastH3 adapter before execution.
+
+### Reusing VSA in another model
+
+| Responsibility | Owner / reusable interface |
+| --- | --- |
+| Checkpoint weights, schedule, packing, and gate semantics | Model directory; publish metadata or specialize the implementation |
+| Provider selection and capability validation | Existing platform and backend registry |
+| FP32 pooling, prefix-dense top-k map, tile64 provider | `attention/ops/block_sparse.py`; BSHD tensors, zero-filled padding, explicit valid block sizes |
+| Q/K/V and metadata resharding | Shared parallel strategy; existing Ulysses gate handling is reusable |
+
+New metadata tensors require explicit row/head alignment through the parallel
+strategy; they are not automatically resharded. Reject unsupported topologies
+before collectives. A learned branch with different Q/K/V dependencies needs
+model integration, not only a provider substitution.
+
+Validate selection/capabilities, missing dependencies, row order, ragged
+blocks, gate behavior, and failure policy. Real-provider and model-reference
+comparisons on the target GPU are required before claiming model support.
+
+The focused policy tests require the compatible vLLM runtime and
+`pytest-mock`, but not `fastvideo-kernel`:
+
+```bash
+python -m pytest \
+  tests/diffusion/attention/test_impl_overrides.py \
+  tests/diffusion/attention/test_block_sparse_ops.py \
+  tests/diffusion/models/minimax_h3/test_vsa_layout.py \
+  -m 'core_model and cpu' --run-level=core_model -q
+```
+
+These use reference/fake providers and do not qualify GPU execution. Follow
+the [user guide](../../user_guide/diffusion/attention_backends/fastvideo_vsa.md#installation)
+for installation. Provider validation is separate from model and distributed
+qualification.
+
+### Provider validation
+
+After the [kernel installation](../../user_guide/diffusion/attention_backends/fastvideo_vsa.md#installation), run this on a visible CUDA GPU. It executes the
+tile64 provider used by H3 and compares a small all-block case with dense
+attention; no model weights are needed:
+
+```bash
+python - <<'PY'
+from importlib.metadata import version
+
+import torch
+from fastvideo_kernel.block_sparse_attn import block_sparse_attn
+
+assert torch.cuda.is_available(), "Run this check on a visible CUDA GPU"
+torch.manual_seed(0)
+q, k, v = [torch.randn(1, 2, 128, 128, device="cuda", dtype=torch.bfloat16) for _ in range(3)]
+block_map = torch.ones(1, 2, 2, 2, device="cuda", dtype=torch.bool)
+sizes = torch.full((2,), 64, device="cuda", dtype=torch.int32)
+with torch.inference_mode():
+    output, _ = block_sparse_attn(q, k, v, block_map, sizes)
+    reference = torch.nn.functional.scaled_dot_product_attention(q.float(), k.float(), v.float())
+torch.testing.assert_close(output.float(), reference, atol=0.02, rtol=0.02)
+print(f"VSA kernel OK: fastvideo-kernel={version('fastvideo-kernel')}, torch={torch.__version__}")
+PY
+```
+
+The first call includes Triton compilation. `VSA kernel OK` verifies this
+kernel case, not full-model quality, distributed execution, or latency.
+
+The tile64 check passed on Linux x86-64, Python 3.12, SM120, PyTorch
+2.13.0+cu132, Triton 3.7.1, and fastvideo-kernel 0.3.4 with default provider
+selection. No model weights or distributed execution were tested. Version
+0.3.4 accepts the installed PyTorch; 0.3.5 pins PyTorch 2.12.0. Native SM100a
+extensions require a matching device and PyTorch/CUDA build.

@@ -1064,24 +1064,51 @@ mostly base H3 weights on a four-step schedule. Offload is refused for the same
 reason - `--enable-cpu-offload`, `--enable-layerwise-offload` and
 `--enable-distributed-layerwise-offload` all bypass the fusion, so they fail fast.
 
-The VSA variants are supported through FastVideo's external kernel. Install a
-`fastvideo-kernel` build that provides the `fastvideo_kernel` Python module,
-then add the following flags to the same command:
+#### FastH3 VSA serving
+
+Install the kernel following the
+[VSA installation guide](../../docs/user_guide/diffusion/attention_backends/fastvideo_vsa.md#installation)
+inside the vLLM-Omni environment on every worker.
+
+Download the **VSA / Data-Free** adapter for the base H3 model from
+[Prerequisites](#prerequisites):
 
 ```bash
---diffusion-attention-backend FASTVIDEO_VSA \
---fastvideo-vsa-topk 64
+hf download FastVideo/FastVideo-FastH3-4-step-Preview-v1-LoRA \
+  vsa-datafree/adapter_model.safetensors --local-dir ./fasth3
 ```
 
-FastH3 VSA applies its learned `.set_weight` compression gates to the complete
-packed `[text | cond | audio | video]` document using the official H3 geometry:
-text/condition/audio prefix tiles never cross segment boundaries, and target
-video rows use `(4, 4, 4)` 3-D tiles (64 tokens). Prefix queries remain dense;
-video queries select all prefix tiles plus the configured top-k video tiles.
-Pure Ulysses sequence parallelism is supported: the learned gate follows the
-same sequence-to-head all-to-all as Q/K/V before VSA runs. Ring and all-gather
-SP remain unsupported because they do not present a complete packed sequence
-to each block-sparse kernel rank.
+Start four workers with pure Ulysses. The FL2VA partition serves T2VA;
+the adapter's task, schedule, and offload constraints above still apply:
+
+```bash
+vllm serve MiniMaxAI/MiniMax-H3 --omni --trust-remote-code \
+  --task-type fl2va --lora-path ./fasth3/vsa-datafree/adapter_model.safetensors \
+  --usp 4 --diffusion-attention-backend FASTVIDEO_VSA
+```
+
+Once the server is ready, send a four-step request from another terminal:
+
+```bash
+curl --fail-with-body -sS http://127.0.0.1:8000/v1/videos/sync \
+  -F 'prompt=A small boat crosses a calm lake at sunrise, with rippling water and gentle birdsong.' \
+  -F 'aspect_ratio=16:9' -F 'num_inference_steps=4' \
+  -F 'extra_params={"task":"t2va","duration":4.4}' \
+  -o fasth3-vsa.mp4
+```
+
+The MP4 contains video and audio. Expect `FastH3 adapter active` at startup and
+`FASTVIDEO_VSA H3 routing` for the DiT. With this global backend selection,
+the token refiner has no VSA grid and uses the existing dense SDPA fallback;
+its missing-grid warning is expected. DiT fallback requires investigation.
+
+The default top-k is 64 video blocks; see [top-k semantics](../../docs/user_guide/diffusion/attention_backends/fastvideo_vsa.md#choose-top-k).
+Local attention and pure Ulysses are supported; ring/all-gather SP are not.
+This minimal command is a configuration example, not a latency-qualified
+profile. It uses default VAE execution; VAE parallelism and other performance
+settings are independent of enabling VSA.
+
+#### FastH3 Dense reference measurements
 
 The Dense / Data-Free variant does not require `fastvideo-kernel` and should be
 served with a dense attention backend.
