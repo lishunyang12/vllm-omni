@@ -8,12 +8,9 @@ attention only against the selected top-k blocks.
 
 | Model / checkpoint | Required adapter | Tasks | Sequence parallelism |
 | --- | --- | --- | --- |
-| `FastVideo/FastWan2.2-TI2V-5B-Diffusers` | None | T2V, I2V | Disabled |
-| `MiniMaxAI/MiniMax-H3` | FastH3 VSA | T2VA | Disabled or pure Ulysses |
-
-The Wan integration uses `Wan22Pipeline`; Wan I2V-14B, S2V, and VACE are
-outside its supported scope. For H3 setup and generation, see the
-[FastH3 VSA recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-vsa-serving).
+| `FastVideo/FastWan2.2-TI2V-5B-Diffusers` | None | T2V, I2V through `Wan22Pipeline` | Disabled |
+| `MiniMaxAI/MiniMax-H3` | [FastH3 VSA (recipe)](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-vsa-serving) | T2VA | Disabled or pure Ulysses |
+| Wan I2V-14B, S2V, VACE | — | Unsupported | — |
 
 VSA is a CUDA-only, explicitly selected backend. It requires the
 `fastvideo-kernel` package and currently supports non-causal self-attention
