@@ -24,6 +24,11 @@ The extra installs the tested kernel dependency automatically. Prebuilt kernels 
 Linux, Python 3.12, and glibc 2.34 or newer (x86-64 or aarch64). The full
 FastVideo framework and provider environment variables are not required.
 
+`FASTVIDEO_VSA` selects the attention algorithm. On SM120, the H3 integration
+currently executes FastVideo's 64-token Triton block-sparse kernel; it does not
+dispatch to FlashInfer. The `vsa` extra installs `fastvideo-kernel==0.3.4` for
+this execution path.
+
 ## Enable the backend
 
 For online serving, select the backend with the existing attention backend
