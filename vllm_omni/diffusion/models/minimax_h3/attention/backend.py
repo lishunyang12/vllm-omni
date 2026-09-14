@@ -12,7 +12,6 @@ from vllm.logger import init_logger
 
 from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata
 from vllm_omni.diffusion.attention.backends.fastvideo_vsa import (
-    FastVideoVSABackend,
     FastVideoVSAImpl,
     _construct_variable_block_sizes,
     _get_gate_compress,
@@ -208,9 +207,3 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
             return self._fallback(
                 original_query, original_key, original_value, attn_metadata, f"VSA-H3 kernel failed: {exc}"
             )
-
-
-class MiniMaxH3VSABackend(FastVideoVSABackend):
-    @staticmethod
-    def get_impl_cls() -> type[MiniMaxH3VSAImpl]:
-        return MiniMaxH3VSAImpl

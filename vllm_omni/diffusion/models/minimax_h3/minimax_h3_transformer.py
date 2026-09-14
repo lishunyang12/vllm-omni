@@ -442,7 +442,7 @@ class MiniMaxH3Attention(nn.Module):
         self._gate_hidden_size = arch.hidden_size
         self._gate_quant_config = quant_config
         self._gate_prefix = f"{prefix}.to_gate_compress"
-        from .attention.backend import MiniMaxH3VSABackend
+        from .attention.backend import MiniMaxH3VSAImpl
 
         self.attention = Attention(
             num_heads=self.num_heads,
@@ -456,7 +456,7 @@ class MiniMaxH3Attention(nn.Module):
             role_category=role_category,
             skip_sequence_parallel=skip_sequence_parallel,
             prefix=prefix,
-            backend_overrides={"FASTVIDEO_VSA": MiniMaxH3VSABackend},
+            impl_overrides={"FASTVIDEO_VSA": MiniMaxH3VSAImpl},
         )
 
     def enable_vsa_gate(self) -> None:

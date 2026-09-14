@@ -85,9 +85,10 @@ class Attention(nn.Module):
         custom_attention: nn.Module | None = None,
         # Preserve dense FP32 inference for models opting into CUDA auto fallback.
         allow_fp32_fallback: bool = False,
-        # Model-owned subclasses of the backend selected by the platform.
-        # Selection, configuration and parallel dispatch remain shared.
-        backend_overrides: Mapping[str, type[AttentionBackend]] | None = None,
+        # Model-owned implementation subclasses, keyed by backend name.
+        # Keep the platform-selected backend and its capabilities unchanged.
+        # Each override must preserve the selected implementation's contract.
+        impl_overrides: Mapping[str, type[AttentionImpl]] | None = None,
     ):
         super().__init__()
 
@@ -186,14 +187,18 @@ class Attention(nn.Module):
                 self.backend_pref = attn_backend_cls.get_name()
                 logger.debug("Attention(role=%s) → platform default (%s)", role, self.backend_pref)
 
-            if backend_overrides is not None:
-                override = backend_overrides.get(attn_backend_cls.get_name())
-                if override is not None:
-                    if not issubclass(override, attn_backend_cls):
-                        raise TypeError("A backend override must subclass the selected attention backend")
-                    attn_backend_cls = override
             self.attn_backend: type[AttentionBackend] | None = attn_backend_cls
             self.attn_impl_cls = self.attn_backend.get_impl_cls()
+            if impl_overrides is not None:
+                override = impl_overrides.get(attn_backend_cls.get_name())
+                if override is not None:
+                    if not issubclass(override, self.attn_impl_cls):
+                        raise TypeError(
+                            f"Attention implementation override {override.__qualname__} must subclass "
+                            f"the selected implementation {self.attn_impl_cls.__qualname__} "
+                            f"for backend {attn_backend_cls.__qualname__}"
+                        )
+                    self.attn_impl_cls = override
             self.attention = self.attn_impl_cls(
                 num_heads=num_heads,
                 head_size=head_size,

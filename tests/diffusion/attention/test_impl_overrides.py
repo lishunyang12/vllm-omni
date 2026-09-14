@@ -16,12 +16,6 @@ class _SpecializedImpl(FastVideoVSAImpl):
     pass
 
 
-class _SpecializedBackend(FastVideoVSABackend):
-    @staticmethod
-    def get_impl_cls():
-        return _SpecializedImpl
-
-
 @pytest.fixture
 def local_attention(monkeypatch):
     monkeypatch.setattr(layer, "get_current_diffusion_config_or_none", lambda: None)
@@ -41,10 +35,10 @@ def test_specialization_preserves_selected_backend_and_options(mocker, local_att
         role="video.self",
         role_category="self",
         qkv_layout="BSND",
-        backend_overrides={"FASTVIDEO_VSA": _SpecializedBackend} if override else None,
+        impl_overrides={"FASTVIDEO_VSA": _SpecializedImpl} if override else None,
     )
 
-    assert attention.attn_backend is (_SpecializedBackend if override else FastVideoVSABackend)
+    assert attention.attn_backend is FastVideoVSABackend
     assert type(attention.attention) is (_SpecializedImpl if override else FastVideoVSAImpl)
     assert attention.attention.topk == (7 if explicit else 64)
     assert attention.attention.qkv_layout == "BSND"
@@ -64,7 +58,7 @@ def test_unselected_specialization_does_not_replace_dense_backend(mocker, local_
         head_size=8,
         softmax_scale=8**-0.5,
         causal=False,
-        backend_overrides={"FASTVIDEO_VSA": _SpecializedBackend},
+        impl_overrides={"FASTVIDEO_VSA": _SpecializedImpl},
     )
     assert attention.attn_backend is SDPABackend
     assert type(attention.attention) is SDPABackend.get_impl_cls()
@@ -78,17 +72,65 @@ def test_specialization_does_not_bypass_selection_errors(mocker, local_attention
             head_size=8,
             softmax_scale=8**-0.5,
             causal=False,
-            backend_overrides={"FASTVIDEO_VSA": _SpecializedBackend},
+            impl_overrides={"FASTVIDEO_VSA": _SpecializedImpl},
         )
 
 
-def test_specialization_must_extend_selected_backend(mocker, local_attention):
+def test_specialization_must_extend_selected_implementation(mocker, local_attention):
     mocker.patch.object(layer, "get_attn_backend_for_role", return_value=(FastVideoVSABackend, None))
-    with pytest.raises(TypeError, match="must subclass the selected attention backend"):
+    with pytest.raises(TypeError, match="must subclass the selected implementation"):
         layer.Attention(
             num_heads=2,
             head_size=8,
             softmax_scale=8**-0.5,
             causal=False,
-            backend_overrides={"FASTVIDEO_VSA": SDPABackend},
+            impl_overrides={"FASTVIDEO_VSA": SDPABackend.get_impl_cls()},
+        )
+
+
+def test_platform_backend_capabilities_survive_model_specialization(mocker, local_attention):
+    from vllm_omni.diffusion.models.minimax_h3.attention.backend import MiniMaxH3VSAImpl
+
+    class PlatformBackend(FastVideoVSABackend):
+        @classmethod
+        def supports_packed_mask_free(cls):
+            return False
+
+        @staticmethod
+        def get_supported_head_sizes():
+            return [128]
+
+    # A registry/platform may refine capabilities without changing the
+    # implementation. The model must not replace those capability decisions.
+    mocker.patch.object(layer, "get_attn_backend_for_role", return_value=(PlatformBackend, None))
+    attention = layer.Attention(
+        num_heads=2,
+        head_size=128,
+        softmax_scale=128**-0.5,
+        causal=False,
+        impl_overrides={"FASTVIDEO_VSA": MiniMaxH3VSAImpl},
+    )
+    assert attention.attn_backend is PlatformBackend
+    assert not attention.attn_backend.supports_packed_mask_free()
+    assert attention.attn_backend.get_supported_head_sizes() == [128]
+    assert type(attention.attention) is MiniMaxH3VSAImpl
+
+
+def test_incompatible_platform_implementation_is_not_discarded(mocker, local_attention):
+    class PlatformImpl(FastVideoVSAImpl):
+        pass
+
+    class PlatformBackend(FastVideoVSABackend):
+        @staticmethod
+        def get_impl_cls():
+            return PlatformImpl
+
+    mocker.patch.object(layer, "get_attn_backend_for_role", return_value=(PlatformBackend, None))
+    with pytest.raises(TypeError, match="selected implementation .*PlatformImpl"):
+        layer.Attention(
+            num_heads=2,
+            head_size=8,
+            softmax_scale=8**-0.5,
+            causal=False,
+            impl_overrides={"FASTVIDEO_VSA": _SpecializedImpl},
         )
