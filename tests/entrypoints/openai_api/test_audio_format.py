@@ -290,7 +290,7 @@ class TestResolveAudioFormat:
 @pytest.mark.parametrize("fmt", ["pcm", "wav"])
 def test_chat_audio_metadata_survives_response_serialization(stream, fmt):
     from vllm.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
-    from vllm.entrypoints.openai.engine.protocol import ErrorResponse, UsageInfo
+    from vllm.entrypoints.serve.engine.protocol import ErrorResponse, UsageInfo
 
     from vllm_omni.entrypoints.openai.protocol.chat_completion import (
         OmniChatCompletionResponse,
