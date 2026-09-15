@@ -85,3 +85,42 @@ def test_custom_op_fake_preserves_metadata_without_loading_provider(monkeypatch)
         assert output.shape == query.shape
         assert output.dtype == query.dtype
         assert output.device == query.device
+
+
+@pytest.mark.parametrize("error_type", [ImportError, RuntimeError, torch.AcceleratorError])
+def test_native_provider_failure_only_recovers_without_accelerator_fault(monkeypatch, mocker, error_type):
+    monkeypatch.setenv("FASTVIDEO_VSA_SM100A", "1")
+    error = error_type("native provider failure")
+    native = mocker.Mock()
+    native.is_supported.return_value = True
+    native.block_sparse_attn_sm100a.side_effect = error
+    provider = types.ModuleType("fastvideo_kernel")
+    setattr(provider, "block_sparse_attn_sm100a", native)
+    index = types.ModuleType("fastvideo_kernel.triton_kernels.index")
+    setattr(
+        index,
+        "map_to_index",
+        mocker.Mock(return_value=(torch.zeros(1, dtype=torch.int32), torch.ones(1, dtype=torch.int32))),
+    )
+    triton = types.ModuleType("fastvideo_kernel.block_sparse_attn")
+    fallback = mocker.Mock(side_effect=lambda q, *args: (q.clone(), None))
+    setattr(triton, "block_sparse_attn", fallback)
+    monkeypatch.setitem(sys.modules, "fastvideo_kernel", provider)
+    monkeypatch.setitem(
+        sys.modules, "fastvideo_kernel.triton_kernels", types.ModuleType("fastvideo_kernel.triton_kernels")
+    )
+    monkeypatch.setitem(sys.modules, "fastvideo_kernel.triton_kernels.index", index)
+    monkeypatch.setitem(sys.modules, "fastvideo_kernel.block_sparse_attn", triton)
+    query = torch.arange(128 * 2 * 8, dtype=torch.float32).reshape(1, 128, 2, 8)
+    block_map = torch.ones(1, 2, 2, 2, dtype=torch.bool)
+    sizes = torch.tensor([64, 64], dtype=torch.int32)
+
+    if error_type is torch.AcceleratorError:
+        with pytest.raises(torch.AcceleratorError, match="native provider failure") as raised:
+            fastvideo_block_sparse_attn_bshd(query, query, query, block_map, sizes, 2)
+        assert raised.value is error
+        fallback.assert_not_called()
+    else:
+        output = fastvideo_block_sparse_attn_bshd(query, query, query, block_map, sizes, 2)
+        torch.testing.assert_close(output, query, rtol=0, atol=0)
+        fallback.assert_called_once()

@@ -51,9 +51,10 @@ if not hasattr(torch.ops.vllm_omni, "fastvideo_block_sparse_attn_bshd"):
                         need_lse=False,
                     )
                     return out.transpose(1, 2).contiguous()
+            except torch.AcceleratorError:
+                # A device fault can poison the context; do not launch another kernel.
+                raise
             except (ImportError, RuntimeError) as exc:
-                # Opting in explicitly and then silently getting a different
-                # numeric path is worse than the slower route it lands on.
                 logger.warning_once(
                     "FASTVIDEO_VSA_SM100A=1 requested but the native Blackwell forward is "
                     "unavailable (%s); using the Triton block-sparse route instead.",
