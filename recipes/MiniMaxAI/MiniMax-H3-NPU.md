@@ -28,7 +28,7 @@ environments. Differences from the GPU path:
 
 ### Checkpoint
 
-Same as the GPU recipe — Hugging Face access approval is required. Authenticate
+As described in the model guide — Hugging Face access approval is required. Authenticate
 once; `vllm serve` downloads the required nested components automatically:
 
 ```bash
@@ -112,13 +112,13 @@ above) or HSDP — see
 
 ## HTTP API examples
 
-The request format is identical to the GPU recipe; see
+The request format is defined in the model guide; see
 [MiniMax-H3.md § HTTP API examples](MiniMax-H3.md#http-api-examples).
 Use the validated 768P shapes (e.g. `width=1344 height=768`) on NPU.
 
 ### Key parameters
 
-Same as the GPU recipe; see
+As described in the model guide; see
 [MiniMax-H3.md § Key parameters](MiniMax-H3.md#key-parameters).
 The validated resolution on NPU is 768P (e.g. 1344x768).
 
@@ -233,16 +233,12 @@ stage 0.
 
 ## Known limitations
 
-- Combined serving requires sibling `FL2VA` and `Ref2VA` directories, loads
-  both task-specific DiTs, and loads one copy of every shared component.
-- H3 currently executes one generation request per diffusion batch.
 - The first regional-compile request is a warmup and should not be included
   in steady-state performance measurements.
-- The official H3 input matrix and media limits are documented in the [GPU
-  recipe](MiniMax-H3.md#official-input-matrix-and-limits); this NPU path uses
+- The official H3 input matrix and media limits are documented in the [model
+  guide](MiniMax-H3.md#official-input-matrix-and-limits); this NPU path uses
   the same HTTP request contract.
-- VAE patch parallelism requires size 1 or the full DiT group size and
-  supports the H3 native `tile` mode only.
+- The model's [parallelism constraints](MiniMax-H3.md#known-limitations) apply.
 - RainFusion block-sparse attention and INT8 quantization are validated for
   T2VA only; use the BF16 dense configuration for FL2VA and Ref2VA.
 - Online INT8 quantization can be combined with distributed layerwise offload

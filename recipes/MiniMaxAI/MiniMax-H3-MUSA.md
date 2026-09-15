@@ -127,7 +127,7 @@ Keep `--vae-use-tiling` enabled for this serving profile.
 - This MUSA recipe uses an explicitly selected single task partition; combined
   serving loads both DiTs.
 - H3 currently executes one generation request per diffusion batch.
-- FP8 quantization has not been enabled for MiniMax H3.
+- FP8 quantization is outside this validated MUSA profile.
 - MP3, M4A, MP4, and reference-video audio fallback requires `ffmpeg` on
   `PATH`; WAV inputs can be read directly through soundfile.
 

@@ -284,6 +284,5 @@ VAE decode was stable at 67.9-69.8 s throughout.
 - Ref2VA requires a vLLM-Omni build newer than `v0.26.0`. See the version note
   under **Validated on**: FP8 weight loading and image-only Ref2VA are both
   broken on `release/v0.26.0`. The suggested version is `v0.26.1`.
-- Online FP8 is incompatible with layerwise offload — the offload path produces a
-  weight stride the Cutlass FP8 kernel rejects. This is not a practical
-  restriction here since offload is unusable on GB10 anyway.
+- Keep offload disabled on this unified-memory deployment. General FP8
+  compatibility is documented in the [model guide](MiniMax-H3.md#online-fp8-quantization).

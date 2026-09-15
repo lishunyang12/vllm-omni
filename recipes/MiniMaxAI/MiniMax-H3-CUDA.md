@@ -13,10 +13,7 @@ The [RTX 4090](MiniMax-H3-4090.md), [RTX 5090](MiniMax-H3-5090.md),
 
 Complete the model guide's [checkpoint prerequisites](MiniMax-H3.md#prerequisites).
 
-Install vLLM-Omni from the checkout containing MiniMax H3 support. The
-two-GPU RTX 5090/4090 profiles use cuDNN attention and do not need
-FlashAttention-4. Install the optional dependency only for the four-GPU
-B300/GB200 `FLASH_ATTN` profile:
+Install vLLM-Omni from the checkout containing MiniMax H3 support:
 
 ```bash
 uv venv
@@ -24,7 +21,8 @@ source .venv/bin/activate
 uv pip install -e .
 ```
 
-To keep FA4 available as an explicit option on Blackwell, install the
+The cuDNN configurations in the RTX 4090/5090 recipes do not require FA4.
+For the optional `FLASH_ATTN` backend on datacenter Blackwell, install the
 FlashAttention-4 extra:
 
 ```bash
@@ -36,21 +34,13 @@ uv pip install -e '.[fa4]'
 See the model guide for [checkpoint storage](MiniMax-H3.md#checkpoint-storage).
 GPU memory and host RAM are separate deployment requirements.
 
-CPU offload and distributed layerwise offload reduce GPU residency; they do
-not make the model weights disappear. With `--dlo-no-use-allgather`, each
-worker retains its standard-loader rank-local weights in host memory, including
-pinned CPU buffers used for H2D streaming. Use at least **200 GiB available
-system RAM** before starting the two-GPU recipe; a **384 GiB host is
-recommended** to leave room for the OS, CUDA/PyTorch allocations, request
-inputs, and filesystem cache. Do not run the FL2VA and Ref2VA servers at the
-same time on a host sized for this minimum.
-
-The consumer-GPU profiles below are HBM budgets only. They still require the
-host-RAM budget above.
+For offloaded deployments, budget host RAM for model weights and pinned
+transfer buffers in addition to accelerator memory. The device-specific
+recipes give the requirements for their selected topology and workload.
 
 ## Four GPUs: throughput-oriented combined service
 
-For a combined service on four high-memory GPUs, use:
+For a combined service on four high-memory datacenter Blackwell GPUs, use:
 
 - no CPU or layerwise offload;
 - Ulysses sequence parallelism degree 4;
@@ -116,56 +106,58 @@ To use whole-component behavior, change the config to
 offload swaps the complete encoder and DiT and therefore has a higher
 encode-phase peak than encoder blockwise offload.
 
-## Two 24/32 GB GPUs: TP2 distributed layerwise offload
+## Single GPU: low-memory serving
 
-For two PCIe consumer GPUs, combine TP2 with distributed layerwise offload
-(DLO). The standard loader first creates the rank-local TP shard. DLO keeps
-that shard in pinned host memory and streams the 30 tail DiT blocks through a
-shared two-buffer window without a DP AllGather. The first 20 DiT blocks are
-copied to the GPUs once per denoise stage, reused by every sampling step, and
-released before VAE decode so the decoder can reuse their HBM.
+The [RTX 4090](MiniMax-H3-4090.md#single-gpu) and
+[RTX 5090](MiniMax-H3-5090.md#single-gpu) recipes use rank-local distributed
+layerwise offload with no retained DiT layers. On one worker, no weight
+collective is needed. DiT and text-encoder blocks stream from host memory;
+the video and audio VAEs move to the device only for their encode/decode
+phases. VAE tiling bounds each decode tile's activation footprint. This
+placement keeps the model's existing weight precision and sampling schedule.
+
+The full H3 component lifecycle requires
+`--enable-distributed-layerwise-offload --dlo-no-use-allgather`.
+The component-selective configuration above leaves VAEs resident and is not
+an equivalent replacement.
+
+For compatible unquantized TP1 DiT weights, the loader retains checkpoint
+mmap views and transfers blocks through bounded pinned buffers. The text
+encoder and VAEs still retain host copies. This is a GPU-memory reduction
+path, not a validated 32 GiB system-RAM deployment: account for those copies,
+startup allocations, transfer buffers, and the OS page cache. Local SSD
+storage is preferable when checkpoint pages must be read repeatedly.
+See [host-weight loading](../../docs/user_guide/diffusion/offloader/distributed_layerwise_offload.md#host-weight-loading).
+
+After starting either single-GPU server, begin with one 480P T2VA request:
 
 ```bash
-vllm serve MiniMaxAI/MiniMax-H3 \
-  --omni \
-  --trust-remote-code \
-  --task-type fl2va \
-  --num-gpus 2 \
-  --tensor-parallel-size 2 \
-  --usp 1 \
-  --ring 1 \
-  --text-encoder-tp-size 2 \
-  --vae-patch-parallel-size 2 \
-  --vae-parallel-mode tile \
-  --vae-use-tiling \
-  --enable-distributed-layerwise-offload \
-  --dlo-no-use-allgather \
-  --dlo-resident-layers 20 \
-  --enforce-eager \
-  --diffusion-attention-backend CUDNN_ATTN
+curl --fail-with-body -sS http://127.0.0.1:8000/v1/videos/sync \
+  -F 'prompt=A small boat crosses a calm lake at sunrise, with rippling water and gentle birdsong.' \
+  -F 'aspect_ratio=16:9' -F 'width=864' -F 'height=480' \
+  -F 'fps=24' -F 'num_inference_steps=50' -F 'seed=1101' \
+  -F 'extra_params={"task":"t2va","duration":5}' \
+  -o h3-t2va.mp4
 ```
 
-Use the profile that matches the per-GPU memory capacity:
-
-| Profile | GPUs | Starting shape | Resident DiT blocks | Attention | Execution | Status |
-| --- | ---: | ---: | ---: | --- | --- | --- |
-| `rtx5090` | 2 x 32 GB | 1344x768 | 20 | cuDNN attention | eager | Target-hardware validated |
-| `rtx4090` | 2 x 24 GB | 1024x576 | 12 | cuDNN attention | eager | Capacity-proxy starting point |
-
-This topology uses all available parallel capacity: TP2 shards both the DiT
-and text encoder, `--dlo-no-use-allgather` streams each rank's local TP shard
-without reconstructing full blocks, and VAE patch parallelism splits tiled
-decode across both GPUs. cuDNN attention is selected explicitly for the RTX
-consumer path; the server stays eager to avoid an unqualified compile path.
-
-The resident count changes placement and transfer frequency only; it does not
-quantize or change the BF16/FP32 denoise math. Re-measure peak memory before
-increasing it on a different request shape.
+This request is a starting configuration. Single-GPU end-to-end validation,
+peak device and host memory, and latency remain unmeasured for these profiles.
 
 ## FastH3 VSA
 
-Complete the [VSA installation and adapter download](MiniMax-H3.md#fasth3-vsa-serving),
-then start four workers with pure Ulysses:
+Complete the [checkpoint prerequisites](MiniMax-H3.md#prerequisites) and
+install the `vsa` extra using the
+[VSA installation guide](../../docs/user_guide/diffusion/attention_backends/fastvideo_vsa.md#installation).
+The model's [adapter contract](MiniMax-H3.md#fasth3-adapter) applies.
+
+Download the VSA / Data-Free adapter:
+
+```bash
+hf download FastVideo/FastVideo-FastH3-4-step-Preview-v1-LoRA \
+  vsa-datafree/adapter_model.safetensors --local-dir ./fasth3
+```
+
+Start four workers with pure Ulysses:
 
 ```bash
 vllm serve MiniMaxAI/MiniMax-H3 --omni --trust-remote-code \
@@ -176,7 +168,15 @@ vllm serve MiniMaxAI/MiniMax-H3 --omni --trust-remote-code \
 This four-GPU example is configuration-only; full-model VSA end-to-end
 validation is pending.
 
-Use the [FastH3 request example](MiniMax-H3.md#fasth3-vsa-serving) after startup.
+Once the server is ready, send a request from another terminal:
+
+```bash
+curl --fail-with-body -sS http://127.0.0.1:8000/v1/videos/sync \
+  -F 'prompt=A small boat crosses a calm lake at sunrise, with rippling water and gentle birdsong.' \
+  -F 'aspect_ratio=16:9' -F 'num_inference_steps=4' \
+  -F 'extra_params={"task":"t2va","duration":4.4}' \
+  -o fasth3-vsa.mp4
+```
 
 ## Attention Backends
 

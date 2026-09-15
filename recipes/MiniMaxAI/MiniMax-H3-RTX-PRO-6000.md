@@ -255,11 +255,10 @@ SM120 kernel.
 
 ### Optional: online FP8
 
-`--quantization fp8` quantizes eligible DiT linears at load time and is
-compatible with tensor parallelism and VAE tiling. Use it when the resident
-BF16 peak leaves too little headroom for long Ref2VA references, a larger
-output shape, or concurrency greater than one. It cannot be combined with
-layerwise offload.
+For eligible components and offload compatibility, see
+[H3 online FP8 quantization](MiniMax-H3.md#online-fp8-quantization).
+The measurements below use BF16; an FP8 deployment requires its own memory,
+latency, and quality validation.
 
 ## Target-hardware validation
 
@@ -274,7 +273,7 @@ preceded each measured request.
 | Topology | TP2 × USP1 | TP2 × USP2 | TP2 × USP4 |
 | Text encode | 0.040 s | 0.044 s | 0.035 s |
 | Denoise, 50 steps | 278.55 s | 168.73 s | 87.90 s |
-| Per step | 5.571 s | 3.375 s | 1.758 s |
+| Per requested step (denoise / 50) | 5.571 s | 3.375 s | 1.758 s |
 | VAE decode | 5.396 s | 2.791 s | 1.798 s |
 | Client E2E | 284.76 s | 172.32 s | 90.48 s |
 | Peak HBM per GPU | 77.49 GiB | 66.44 GiB | 61.07 GiB |
@@ -284,7 +283,9 @@ Stage times are read from the `X-Stage-Durations` response header of
 `/v1/videos/sync`. Peak memory is the maximum of `nvidia-smi
 --query-gpu=memory.used` sampled at 1 Hz across every device for the
 duration of the measured request. Per step is denoise wall time divided by
-the 50 requested steps. Stage times sum to roughly 0.75 s less than
+the 50 requested steps, not the number of executed denoiser updates. It is
+not directly comparable to the RTX PRO 5000 table's `denoise / 49` metric.
+Stage times sum to roughly 0.75 s less than
 end-to-end in all three configurations; queueing, result transfer, and MP4
 muxing sit outside the profiled stages.
 

@@ -157,7 +157,7 @@ The recommended routes produced the following 50-step results. MiniMax-H3
 requested 50 denoise steps and executed 49 denoise updates, so per-step latency
 is `denoise / 49`.
 
-| GPUs | Workload | Parallelism | E2E (s) | Text encode (s) | Denoise (s) | VAE decode (s) | Per step (ms) | Peak memory (GiB) |
+| GPUs | Workload | Parallelism | E2E (s) | Text encode (s) | Denoise (s) | VAE decode (s) | Per denoiser update (ms) | Peak memory (GiB) |
 | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | 2 | T2VA | TP1 x Ulysses2, DLO resident 20 | 515.57 | 1.19 | 504.69 | 8.79 | 10,300 | 36.38 |
 | 2 | FL2VA first-frame I2VA | TP1 x Ulysses2, DLO resident 20 | 553.45 | 1.27 | 541.90 | 8.76 | 11,059 | 36.38 |

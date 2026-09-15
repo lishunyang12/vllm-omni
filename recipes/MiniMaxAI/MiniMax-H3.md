@@ -16,8 +16,8 @@ checkpoint has two task-specific DiT partitions:
 
 - `FL2VA`: text-to-video+audio (`t2va`) and first-frame-to-video+audio
   (`fl2va`)
-- `Ref2VA`: up to 9 images, 3 videos, and 3 audio references in supported
-  image/video/audio combinations (`ref2va`; audio-only is rejected)
+- `Ref2VA`: mixed image/video/audio conditioning (`ref2va`); supported
+  combinations and counts are listed in the input matrix below
 
 One vLLM-Omni diffusion stage can load both DiTs while instantiating the
 tokenizer, processor, Qwen3-VL text encoder, video VAE, and audio VAE only
@@ -288,29 +288,9 @@ base H3 checkpoint and a variant-specific adapter.
 
 ### FastH3 VSA serving
 
-Complete the [prerequisites](#prerequisites), using the `vsa` extra when installing
-vLLM-Omni. Dependencies are installed automatically; see the
-[VSA installation guide](../../docs/user_guide/diffusion/attention_backends/fastvideo_vsa.md#installation)
-for supported environments.
-
-Download the VSA / Data-Free adapter:
-
-```bash
-hf download FastVideo/FastVideo-FastH3-4-step-Preview-v1-LoRA \
-  vsa-datafree/adapter_model.safetensors --local-dir ./fasth3
-```
-
-Start a server using the [FastH3 VSA deployment configuration](MiniMax-H3-CUDA.md#fasth3-vsa).
-
-Once the server is ready, send a request from another terminal:
-
-```bash
-curl --fail-with-body -sS http://127.0.0.1:8000/v1/videos/sync \
-  -F 'prompt=A small boat crosses a calm lake at sunrise, with rippling water and gentle birdsong.' \
-  -F 'aspect_ratio=16:9' -F 'num_inference_steps=4' \
-  -F 'extra_params={"task":"t2va","duration":4.4}' \
-  -o fasth3-vsa.mp4
-```
+Follow the [FastH3 VSA deployment example](MiniMax-H3-CUDA.md#fasth3-vsa)
+for installation, adapter download, startup, and a T2VA request. The options
+below define the model contract for that deployment.
 
 The output is an MP4 containing video and audio. Startup logs include
 `FastH3 adapter active`; DiT execution logs `FASTVIDEO_VSA H3 routing`.
@@ -330,7 +310,8 @@ the checkpoint's default video/audio flow shifts and the four-step schedule.
 ### FastH3 Dense
 
 To use Dense / Data-Free, replace `vsa-datafree` with `dense-datafree` in the
-download and [serve command](MiniMax-H3-CUDA.md#fasth3-vsa), and omit `--diffusion-attention-backend FASTVIDEO_VSA`
+download and serve commands in the [deployment example](MiniMax-H3-CUDA.md#fasth3-vsa),
+and omit `--diffusion-attention-backend FASTVIDEO_VSA`
 to use the platform's dense default. This variant does not need `fastvideo-kernel`.
 
 Deployment-specific measurements are recorded in the
@@ -369,8 +350,9 @@ end. Add the feature gate, then raise `--max-num-seqs` to co-batch:
 --step-execution --max-num-seqs 4
 ```
 
-Co-batched requests are packed into a single sequence that keeps one attention
-document per request, so a batch costs one DiT forward. That packing requires
+Request mode executes one generation request per diffusion batch.
+Co-batched requests in step mode are packed into a single sequence that keeps
+one attention document per request, so a batch costs one DiT forward. Packing requires
 `--diffusion-attention-backend FLASH_ATTN`; other backends fall back to one
 forward per request. `--max-num-seqs 1` keeps the conservative single-request
 step path. Cache acceleration (`--cache-backend`) is not available in step mode.
@@ -510,6 +492,12 @@ vllm serve /path/to/MiniMax-H3/FL2VA \
 
 ## LoRA
 
+Turbo and FlashGen use runtime adapters with artifact-specific sampling
+contracts. A checkpoint that instead pins `base_schedule` in `model_index.json`
+uses the interval count: for example, four steps for
+`[1.0, 0.7, 0.4, 0.15, 0.0]`. Follow the contract for the selected artifact;
+the same numerical step argument does not have identical meaning across families.
+
 ### Turbo LoRA
 
 The eight Diffusers-layout LightX2V Turbo artifacts are supported. The
@@ -564,12 +552,8 @@ hf download lightx2v/Minimax-h3-Turbo "minimax_h3_fl2v_turbo_4step_v1.0_768p_bf1
 
 `--lora-path` accepts one artifact, or a directory holding exactly one.
 
-> [!IMPORTANT]
-> This changes earlier behaviour. `--lora-path /path/to/minimax-h3-turbo`
-> pointing at a full clone of the Turbo repository used to select the v1.0 768p
-> file implicitly; a directory holding several recognized artifacts is now
-> rejected as ambiguous. Name the artifact instead:
-> `--lora-path /path/to/minimax-h3-turbo/minimax_h3_fl2v_turbo_4step_v1.0_768p_bf16.safetensors`.
+A directory containing several recognized artifacts is ambiguous and rejected;
+pass the intended artifact's filename explicitly.
 
 Start from a non-offloaded or DLO FL2VA server command and add
 `--task-type fl2va --lora-backend peft --lora-path "/path/to/minimax-h3-turbo/minimax_h3_fl2v_turbo_4step_v1.0_768p_bf16.safetensors"`.
@@ -595,13 +579,10 @@ The two `ref2v` rows are not served by this FL2VA command. Start a
 `num_inference_steps` and `flow_shift` with that row's values; those examples
 already send `audio_flow_shift=3.0`.
 
-For FL2VA, change `task` and add `input_reference` as shown above. This
-integration is dynamic-only and does not support prefusion or LoRA composition. DLO is
-supported by keeping the request-switchable LoRA A/B buffers resident on the
-accelerator while DLO streams only the base blocks; budget for this additional
-fixed HBM usage. Model-level and standard layerwise offload remain unsupported.
-The requested sigma points always number one more than the artifact's denoiser
-evaluations.
+For FL2VA, change `task` and add `input_reference` as shown above. Turbo is
+dynamic-only and does not support prefusion or LoRA composition. The requested
+sigma points always number one more than the artifact's denoiser evaluations.
+See [runtime adapter residency](#runtime-adapter-residency) for offload support.
 
 ### FlashGen native LoRA
 
@@ -640,43 +621,31 @@ the field and take the count from the adapter schedule; `--step-execution`
 requires it explicitly, because the step scheduler reads the total step count
 off the request at admission, before the adapter schedule is known.
 
-DLO is supported in request-mode generation on the same terms as the Turbo
-adapter: the request-switchable LoRA A/B buffers stay resident on the
-accelerator while DLO streams only the base blocks, so budget for that
-additional fixed HBM usage. The native artifact is rank 64 over 259 target
-modules, and its packed `qkv_proj` and `fc1` layers reuse the full-input A
-tensor per slice while B carries slice-local output rows, so the resident
-footprint exceeds the on-disk payload; measure it for your parallel layout
-rather than assuming the checkpoint size. Pure Ulysses replicates the adapter
-on every rank, while DiT tensor parallelism shards the B buffers. Model-level
-and standard layerwise offload remain unsupported, and `--step-execution`
-cannot be combined with `--enable-distributed-layerwise-offload`.
+See [runtime adapter residency](#runtime-adapter-residency) for offload and
+memory requirements.
 
 To validate a deployment, post the same fixed-seed T2VA request twice with the
 adapter and twice without it, then compare the four output digests. The adapter
 is bound and deterministic when each pair matches internally and the two pairs
 differ from each other.
 
+### Runtime adapter residency
+
+Turbo and FlashGen support DLO in request mode. Their LoRA tensors remain
+resident while base blocks are streamed, so budget additional accelerator
+memory. Model-level and standard layerwise offload are unsupported for these
+runtime adapters, and step execution cannot be combined with DLO.
+
+Pure Ulysses replicates the adapter on each rank; DiT tensor parallelism shards
+its output projections. Measure the resident footprint for the selected
+parallel layout rather than estimating it from the adapter file size.
+
 ## Known limitations
 
-- TeaCache is calibrated for FL2VA only; Ref2VA requests run uncached.
-- Combined serving requires sibling `FL2VA` and `Ref2VA` directories, loads
-  both task-specific DiTs, and loads shared components once from `FL2VA`.
-- Request mode executes one generation request per diffusion batch. Use
-  `--step-execution` with `--max-num-seqs N` to admit several requests at once
-  (see
-  [Execution modes](https://github.com/vllm-project/vllm-omni/blob/main/docs/user_guide/diffusion/execution_modes.md));
-  step
-  mode does not support `cache_backend`.
-- The first regional-compile request is a warmup and should not be included in
-  steady-state performance measurements.
-- The serving path accepts fewer references than the model supports. H3 documents up
-  to 9 images, 3 video clips, and 3 audio clips (12 files) per Omni Reference
-  request; the current vLLM-Omni path takes exactly one image plus one audio
-  reference, or one or more videos with no separate `audio_reference` (it uses the
-  source soundtracks).
-- The 768 px short-edge mode is available for T2VA and FL2VA; 1344x768 is the
-  documented 16:9 request shape.
+Input constraints are defined in the [input matrix](#official-input-matrix-and-limits).
+Cache and batching restrictions are described with their
+[optimization options](#optimization-options).
+
 - `--cfg-parallel-size > 1` is rejected by design (CFG-distilled, no negative branch).
 - VAE patch parallelism requires size 1 or the full DiT group size and supports the
   H3 native `tile` mode only.
@@ -686,10 +655,6 @@ differ from each other.
 - Online FP8 with DLO AllGather temporarily materializes the complete FP8 model
   in host memory on every rank during startup before retaining only each rank's
   shard. Size startup host memory for that transient peak.
-- TeaCache and Cache-DiT cannot be enabled on the same server.
-- Image+audio Ref2VA accepts exactly one image and one audio reference.
-- Video Ref2VA accepts one or more video files, but not an additional standalone
-  audio reference.
 - Pure Ulysses still replicates the full DiT on every rank, so smaller-memory GPUs
   cannot use `--usp N --tp 1` as a resident capacity path. Use DiT tensor parallelism
   or model-level CPU offload; text-encoder TP alone is not sufficient.

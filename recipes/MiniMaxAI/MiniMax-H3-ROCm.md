@@ -36,20 +36,15 @@ vllm serve /path/to/MiniMax-H3/FL2VA \
   --diffusion-attention-backend FLASH_ATTN
 ```
 
-This validated ROCm capacity recipe intentionally retains the compatibility
-full-topology alias because MiniMax-H3 also stages its VAEs on that path. The
-compact API in this release selects only `dit` and `text_encoder`, so replacing
-the flag would change residency rather than perform a mechanical migration.
-No removal deadline is assigned until the compact API offers equivalent
-component coverage.
+This configuration uses `--enable-cpu-offload` to stage the VAEs as well as
+the encoder and DiT. The compact `dit`/`text_encoder` selector covers fewer
+components and changes this recipe's residency.
 
 ## ROCm four GPUs
 
-The [CUDA four-GPU configuration](MiniMax-H3-CUDA.md#text-encoder-tensor-parallelism)
-works on ROCm with the changes above.
-It mirrors the CUDA command including Ulysses sequence parallelism, VAE patch
-parallelism, and text-encoder tensor parallelism, with no CPU offload when the model
-shards across the GPUs:
+Use Ulysses sequence parallelism, text-encoder TP4, and tiled VAE patch
+parallelism without CPU offload. The text encoder is sharded across four
+ranks; each rank retains a full DiT replica.
 
 ```bash
 vllm serve /path/to/MiniMax-H3/FL2VA \

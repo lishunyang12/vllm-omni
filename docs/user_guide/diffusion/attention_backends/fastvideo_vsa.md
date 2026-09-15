@@ -80,8 +80,10 @@ stages:
 
 ## Choose top-k
 
-This section describes the Wan route. H3 uses 64-token video blocks and keeps
+H3 uses 64-token video blocks and keeps
 all prefix blocks; see the [FastH3 VSA recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-vsa-serving).
+
+### Wan top-k behavior
 
 At runtime the backend logs the sequence shape and derived block count:
 
@@ -134,14 +136,17 @@ sequence-parallel context is one of those fallbacks; the H3 route supports pure
 Ulysses and rejects ring or all-gather sequence parallelism at startup.
 H3 accelerator faults propagate instead of attempting dense recovery.
 
-Check the startup and first-forward logs instead of assuming that selecting
-the backend guarantees sparse execution:
+On the Wan route, check the startup and first-forward logs:
 
 - `route=VSA` means top-k block selection is active.
 - `route=VSA_ALL_BLOCKS` means the FastVideo DMD checkpoint retained all
   blocks through the VSA kernel.
 - `route=SDPA` or `FASTVIDEO_VSA falling back to SDPA: ...` means dense SDPA
   executed; the warning includes the reason.
+
+For H3, check `FastH3 adapter active` at startup and
+`FASTVIDEO_VSA H3 routing` during DiT execution, as described in the
+[model recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-vsa-serving).
 
 The Wan route requires CUDA tensors in FP16 or BF16, 256-token blocks,
 standard `head_size**-0.5` scaling, equal Q/K/V head counts, no attention mask,
