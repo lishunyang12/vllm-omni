@@ -9,7 +9,7 @@ attention only against the selected top-k blocks.
 | Model / checkpoint | Required adapter | Tasks | Sequence parallelism |
 | --- | --- | --- | --- |
 | `FastVideo/FastWan2.2-TI2V-5B-Diffusers` | None | T2V, I2V through `Wan22Pipeline` | Disabled |
-| `MiniMaxAI/MiniMax-H3` | [FastH3 VSA (recipe)](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-vsa-serving) | T2VA | Disabled or pure Ulysses |
+| `MiniMaxAI/MiniMax-H3` | [FastH3 VSA (recipe)](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-adapter) | T2VA | Disabled or pure Ulysses |
 | Wan I2V-14B, S2V, VACE | — | Unsupported | — |
 
 ## Installation
@@ -81,7 +81,7 @@ stages:
 ## Choose top-k
 
 H3 uses 64-token video blocks and keeps
-all prefix blocks; see the [FastH3 VSA recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-vsa-serving).
+all prefix blocks; see the [FastH3 VSA recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-adapter).
 
 ### Wan top-k behavior
 
@@ -146,7 +146,7 @@ On the Wan route, check the startup and first-forward logs:
 
 For H3, check `FastH3 adapter active` at startup and
 `FASTVIDEO_VSA H3 routing` during DiT execution, as described in the
-[model recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-vsa-serving).
+[model recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-adapter).
 
 The Wan route requires CUDA tensors in FP16 or BF16, 256-token blocks,
 standard `head_size**-0.5` scaling, equal Q/K/V head counts, no attention mask,

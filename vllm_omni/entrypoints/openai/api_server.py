@@ -19,7 +19,7 @@ from argparse import Namespace
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from http import HTTPStatus
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal
 
 import vllm.envs as envs
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, WebSocket
@@ -433,7 +433,7 @@ async def build_async_omni(
     # Ensures everything is shutdown and cleaned up on error/exit
     async with build_async_omni_from_stage_config(
         args,
-        disable_frontend_multiprocessing=cast(bool, disable_frontend_multiprocessing),
+        disable_frontend_multiprocessing=disable_frontend_multiprocessing,
     ) as async_omni:
         yield async_omni
 
@@ -1757,8 +1757,6 @@ async def generate_images(
             detail=(f"Model mismatch: request specifies '{request.model}' but server is running '{model_name}'."),
         )
 
-    width: int | None = None
-    height: int | None = None
     try:
         # Unify request construction for any multi-stage pipeline to avoid
         # divergence between /v1/images and /v1/chat/completions.
@@ -1831,7 +1829,7 @@ async def generate_images(
             )
 
         # Build params - pass through user values directly
-        prompt = cast(OmniTextPrompt, {"prompt": request.prompt, "modalities": ["image"]})
+        prompt: OmniTextPrompt = {"prompt": request.prompt, "modalities": ["image"]}
         if request.negative_prompt is not None:
             prompt["negative_prompt"] = request.negative_prompt
         gen_params = OmniDiffusionSamplingParams(num_outputs_per_prompt=request.n)
@@ -1847,7 +1845,7 @@ async def generate_images(
         if extra_args:
             gen_params.extra_args = extra_args
         # Parse per-request LoRA (compatible with chat's extra_body.lora shape).
-        lora_request, lora_scale = _parse_lora_request(cast(dict[str, Any], request.lora))
+        lora_request, lora_scale = _parse_lora_request(request.lora)
         _update_if_not_none(gen_params, "lora_request", lora_request)
         _update_if_not_none(gen_params, "lora_scale", lora_scale)
 
@@ -2018,14 +2016,14 @@ async def edit_images(
     try:
         # 2. Build prompt & images params
         cot_output = None
-        engine_prompt = cast(OmniTextPrompt, {"prompt": prompt, "modalities": ["image"]})
+        prompt: OmniTextPrompt = {"prompt": prompt, "modalities": ["image"]}
         if negative_prompt is not None:
-            engine_prompt["negative_prompt"] = negative_prompt
+            prompt["negative_prompt"] = negative_prompt
         input_images_list = []
-        uploaded_images = image or image_array
+        images = image or image_array
         urls = url or url_array
-        if uploaded_images:
-            input_images_list.extend(uploaded_images)
+        if images:
+            input_images_list.extend(images)
         if urls:
             input_images_list.extend(urls)
         if not input_images_list:
@@ -2051,17 +2049,17 @@ async def edit_images(
         # Hunyuan-aware behavior. RGBA/P uploads otherwise diverge from offline.
         normalize_edit_images_rgb = bot_task is not None or sys_type is not None
         pil_images = await _load_input_images(input_images_list, normalize_rgb=normalize_edit_images_rgb)
-        engine_prompt["multi_modal_data"] = {}
-        engine_prompt["multi_modal_data"]["image"] = pil_images
+        prompt["multi_modal_data"] = {}
+        prompt["multi_modal_data"]["image"] = pil_images
 
         if mask_image is not None:
             # Mask role is different (alpha channel matters); never normalize.
             loaded = await _load_input_images([mask_image], normalize_rgb=False)
-            engine_prompt["multi_modal_data"]["mask_image"] = loaded[0]
+            prompt["multi_modal_data"]["mask_image"] = loaded[0]
 
         if reference_image is not None:
             loaded = await _load_input_images([reference_image], normalize_rgb=normalize_edit_images_rgb)
-            engine_prompt["multi_modal_data"]["reference_image"] = loaded[0]
+            prompt["multi_modal_data"]["reference_image"] = loaded[0]
 
         # 3 Build sample params
         gen_params = OmniDiffusionSamplingParams()
@@ -2127,13 +2125,13 @@ async def edit_images(
         # Keep AR stage target grid in sync with requested output size.
         # GLM-Image consumes target_h/target_w via mm_processor_kwargs.
         if width is not None and height is not None:
-            engine_prompt["mm_processor_kwargs"] = {
+            prompt["mm_processor_kwargs"] = {
                 "target_h": height,
                 "target_w": width,
             }
             # Backward-compatible fallback for processors reading top-level fields.
-            engine_prompt["height"] = height
-            engine_prompt["width"] = width
+            prompt["height"] = height
+            prompt["width"] = width
 
         _update_if_not_none(gen_params, "width", width)
         _update_if_not_none(gen_params, "height", height)
@@ -2231,7 +2229,7 @@ async def edit_images(
             if return_stage_metrics is not None:
                 extra_body["return_stage_metrics"] = return_stage_metrics
 
-            prompt_text = engine_prompt.get("prompt", "")
+            prompt_text = prompt.get("prompt", "")
             generation_result = await chat_handler.generate_diffusion_images(
                 prompt=prompt_text,
                 extra_body=extra_body,
@@ -2262,7 +2260,7 @@ async def edit_images(
                 engine_client=engine_client,
                 gen_params=gen_params,
                 stage_configs=stage_configs,
-                prompt=engine_prompt,
+                prompt=prompt,
                 request_id=request_id,
             )
             images = _extract_images_from_result(result)
@@ -2373,7 +2371,6 @@ async def create_video(
         HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
     },
 )
-@with_cancellation
 async def create_video_sync(
     raw_request: Request,
     ctx: tuple[
@@ -2672,10 +2669,7 @@ async def omni_sleep(request: OmniSleepRequest, raw_request: Request):
     acks = await engine_client.sleep(stage_ids=request.stage_ids, level=request.level)
     for sid in request.stage_ids:
         sleeping_set.add(sid)
-    return {
-        "status": "SUCCESS",
-        "acks": [dataclasses.asdict(cast(Any, a)) if dataclasses.is_dataclass(a) else a for a in acks],
-    }
+    return {"status": "SUCCESS", "acks": [dataclasses.asdict(a) if dataclasses.is_dataclass(a) else a for a in acks]}
 
 
 @router.post("/v1/omni/wakeup")
@@ -2690,10 +2684,7 @@ async def omni_wakeup(request: OmniWakeupRequest, raw_request: Request):
     for sid in request.stage_ids:
         if sid in sleeping_set:
             sleeping_set.remove(sid)
-    return {
-        "status": "SUCCESS",
-        "acks": [dataclasses.asdict(cast(Any, a)) if dataclasses.is_dataclass(a) else a for a in acks],
-    }
+    return {"status": "SUCCESS", "acks": [dataclasses.asdict(a) if dataclasses.is_dataclass(a) else a for a in acks]}
 
 
 if __name__ == "__main__":
