@@ -6,6 +6,7 @@ vLLM-Omni provides an OpenAI-compatible API for text-to-speech (TTS) generation.
 - **Fish Speech S2 Pro** (`fishaudio/s2-pro`) -- Dual-AR TTS with DAC codec. Supports text-to-speech and voice cloning via reference audio. Output: 44.1 kHz.
 - **Voxtral TTS** (`mistralai/Voxtral-4B-TTS-2603`) -- AR + FlowMatching TTS with preset voices. Output: 24 kHz.
 - **CosyVoice3** (`FunAudioLLM/Fun-CosyVoice3-0.5B-2512`) -- 2-stage talker + flow-matching code2wav. Voice cloning via `ref_audio` + `ref_text` (no presets). Output: 24 kHz.
+- **Gepard-1.0** (`nineninesix/gepard-1.0`) -- single-stage native-AR TTS with a 22.05 kHz NanoCodec. Zero-shot default voice only.
 
 See the [Supported Models](#supported-models) section below for the full list, including OmniVoice, VoxCPM2, MOSS-TTS-Nano, and Breeze-TTS-2.
 
@@ -40,11 +41,16 @@ vllm serve mistralai/Voxtral-4B-TTS-2603 --omni --port 8091
 # CosyVoice3 (voice cloning only — supply ref_audio + ref_text per request)
 vllm serve FunAudioLLM/Fun-CosyVoice3-0.5B-2512 \
     --omni --port 8091 --trust-remote-code
+
+# Gepard-1.0 (zero-shot default voice; packaged gepard.yaml)
+vllm-omni serve nineninesix/gepard-1.0 --omni --port 8091 --trust-remote-code \
+    --stage-init-timeout 900 \
+    --deploy-config vllm_omni/deploy/gepard.yaml
 ```
 
 ### Generate Speech
 
-**Using curl:**
+**Qwen3-TTS CustomVoice, using curl:**
 
 ```bash
 curl -X POST http://localhost:8091/v1/audio/speech \
@@ -56,7 +62,24 @@ curl -X POST http://localhost:8091/v1/audio/speech \
     }' --output output.wav
 ```
 
-**Using Python:**
+**Gepard-1.0, using curl:**
+
+Gepard accepts `input` (required), `voice` (`"default"`), `response_format`,
+`stream` / `stream_format`, `max_new_tokens`, and `seed`. Unsupported fields
+include `speed`, `language`, `instructions`, `task_type`, `ref_audio`,
+`ref_text`, `extra_params`, and `word_timestamps`.
+
+```bash
+curl -X POST http://localhost:8091/v1/audio/speech \
+    -H "Content-Type: application/json" \
+    -d '{
+        "input": "Hello, this is Gepard speaking.",
+        "voice": "default",
+        "seed": 7
+    }' --output output.wav
+```
+
+**Qwen3-TTS CustomVoice, using Python:**
 
 ```python
 import httpx
@@ -761,6 +784,28 @@ Fish Speech uses `ref_audio` and `ref_text` for voice cloning (no `task_type` ne
 | ------- | ------------- |
 | `FunAudioLLM/Fun-CosyVoice3-0.5B-2512` | Voice cloning from `ref_audio` + `ref_text`. No built-in voice presets — upload a voice or pass `ref_audio`/`ref_text` per request. |
 
+### Gepard-1.0
+
+| Model | Description |
+| ----- | ----------- |
+| `nineninesix/gepard-1.0` | Zero-shot native-AR TTS. 22.05 kHz mono. `voice` must be omitted or `"default"`. |
+
+Gepard request fields:
+
+| Field | Behavior |
+| ----- | -------- |
+| `input` | Required. Empty/whitespace-only returns 400. |
+| `voice` | Omitted or `"default"` only. Other values 400. |
+| `response_format` | `wav` default. Non-streaming: `wav`/`pcm`/`flac`/`mp3`. `opus` returns 400 (22.05 kHz is not an Opus sample rate). Streaming: `pcm`/`wav` only. |
+| `stream` / `stream_format` | SSE (`speech.audio.*`) and raw `audio` byte streaming. |
+| `speed` | Must be `1.0`. Gepard has no native speed control. |
+| `max_new_tokens` | Frame budget (1 token = 1 frame = 1024 samples ≈ 46.4 ms). Default 1000 from deploy YAML; adapter bounds 1..4096. |
+| `seed` | Optional. Reaches the in-model 32-head sampler. The packaged YAML currently pins `seed: 42`, so serving is deterministic by default until that pin is removed. |
+| `extra_params` | Any key returns 400, including `temperature`/`top_p`/`top_k`. |
+| Cloning / style fields | `ref_audio`, `ref_text`, `speaker_embedding`, `instructions`, `language`, `task_type`, `word_timestamps`, and similar declared-but-unsupported fields return 400. |
+
+See the [Gepard section of the online TTS hub](../user_guide/examples/online_serving/text_to_speech.md#gepard-10) for launch commands. Native-AR recompute preemption is a known limitation under concurrency.
+
 ### OmniVoice
 
 | Model | Description |
@@ -776,6 +821,40 @@ hidden-state dtype before the output projection. Consequently, a float32 stage c
 | Model | Description |
 | ------- | ------------- |
 | `openbmb/VoxCPM2` | TTS + voice cloning with built-in speaker presets and uploaded-voice support. Accepts `voice` (preset or uploaded) or `ref_audio` + optional `ref_text`. |
+
+#### Startup LoRA adapter
+
+To serve a fine-tuned VoxCPM2 voice, set
+`voxcpm2_runtime_config.startup_lora_path` in the stage's `hf_overrides`.
+Copy `vllm_omni/deploy/voxcpm2.yaml` to a local deploy config and add this key
+alongside its existing runtime settings:
+
+```yaml
+# Under stages[0].engine_extras.hf_overrides.voxcpm2_runtime_config:
+startup_lora_path: /absolute/path/to/adapter
+```
+
+Then launch with the modified config:
+
+```bash
+vllm serve openbmb/VoxCPM2 --omni --deploy-config /absolute/path/to/voxcpm2-lora.yaml
+```
+
+The directory must be accessible to the worker and contain the native VoxCPM2
+training export: `lora_config.json` (with a `lora_config` object containing
+`r`, `alpha`, enabled groups, and target module names) and
+`lora_weights.safetensors`. PEFT checkpoints and pickle checkpoints are not
+accepted. Missing, unexpected, non-finite, or incorrectly shaped adapter
+tensors fail model loading rather than silently loading a partial adapter.
+
+The adapter is merged into the base LM, residual LM, LocDiT, and optional
+projection layers selected by its configuration, after base weight loading
+and before compilation or CUDA graph capture. All requests use that adapter;
+`voice` still selects a reference voice, not a LoRA adapter. Changing adapters
+requires restarting the server. Runtime loading/unloading, per-request
+multi-LoRA selection, and `load_format=dummy` are not supported by this path.
+Weight fusion rounds to the base model's dtype, so numerical and speech-quality
+parity should be checked against the upstream adapter on your deployment.
 
 ### MOSS-TTS-Nano
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import binascii
 import json
+import time
 import uuid
 from collections.abc import Callable
 from contextlib import suppress
@@ -494,6 +495,7 @@ class DuplexSessionRunnerMixin:
             async def _run() -> bool:
                 nonlocal runtime_closed
                 try:
+                    session.mark_model_turn_request_started(append_turn_id, time.monotonic())
                     append_ok, emitted_response = await self._append_runtime_input(
                         session,
                         payload,
