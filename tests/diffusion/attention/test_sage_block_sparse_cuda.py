@@ -11,11 +11,12 @@ pytestmark = [pytest.mark.core_model, pytest.mark.diffusion]
 
 @hardware_test(res={"cuda": ["B200"]}, num_cards=1)
 @pytest.mark.parametrize("rows,keys", [(128, 192), (129, 191), (256, 256)])
-def test_sage_sparse_against_masked_sdpa(rows, keys):
+@pytest.mark.parametrize("precision", ["sage", "bf16"])
+def test_sage_sparse_against_masked_sdpa(rows, keys, precision):
     if not torch.cuda.is_available() or torch.cuda.get_device_capability() != (12, 0):
         pytest.skip("requires SM120")
     pytest.importorskip("flashinfer.cute_dsl.sparse.bsa_attn_sm120")
-    from vllm_omni.diffusion.attention.ops.sage_block_sparse_attention import sage_block_sparse_attention
+    from vllm_omni.diffusion.attention.ops.sage_block_sparse_attention import flashinfer_block_sparse_attention
 
     generator = torch.Generator(device="cuda").manual_seed(7415)
     q = torch.randn(1, rows, 2, 128, device="cuda", dtype=torch.bfloat16, generator=generator)
@@ -31,9 +32,10 @@ def test_sage_sparse_against_masked_sdpa(rows, keys):
     expected = torch.nn.functional.scaled_dot_product_attention(
         q.transpose(1, 2).float(), k.transpose(1, 2).float(), v.transpose(1, 2).float(), attn_mask=mask
     ).transpose(1, 2)
-    actual = sage_block_sparse_attention(q, k, v, indices, counts, sizes, 128**-0.5)
+    block_map = torch.arange(blocks, device="cuda")[None, None, None, :] < counts[..., None]
+    actual = flashinfer_block_sparse_attention(q, k, v, block_map, sizes, 128**-0.5, precision=precision)
     torch.accelerator.synchronize()
     assert actual.shape == q.shape and actual.dtype == q.dtype
     relative_rms = (actual.float() - expected).square().mean().sqrt() / expected.square().mean().sqrt()
-    assert relative_rms.item() < 0.08
+    assert relative_rms.item() < (0.08 if precision == "sage" else 0.01)
     assert torch.isfinite(actual).all()

@@ -136,17 +136,15 @@ def flashinfer_block_sparse_attention(query, key, value, block_map, block_sizes,
     validate_sparse_inputs(query, key, value, indices, counts, block_sizes)
     from flashinfer.cute_dsl.sparse.bsa_attn_sm120 import bsa_attn_sm120_blk64_fwd
 
-    return (
-        bsa_attn_sm120_blk64_fwd(
-            query.transpose(1, 2).contiguous(),
-            key.transpose(1, 2).contiguous(),
-            value.transpose(1, 2).contiguous(),
-            indices,
-            key_blocks,
-            block_sizes=block_sizes,
-            q2k_block_nums=counts,
-            softmax_scale=softmax_scale,
-        )
-        .transpose(1, 2)
-        .contiguous()
+    # The BF16 API consumes and returns BSHD; the Sage ABI above uses BHSD.
+    output, _ = bsa_attn_sm120_blk64_fwd(
+        query.contiguous(),
+        key.contiguous(),
+        value.contiguous(),
+        indices,
+        key_blocks,
+        block_sizes=block_sizes,
+        q2k_block_nums=counts,
+        softmax_scale=softmax_scale,
     )
+    return output.contiguous()
