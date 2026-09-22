@@ -1017,6 +1017,74 @@ balanced switch order.
 > workload. The values above apply to this deployment and are not universal
 > guarantees. `lossless` remains the exact reference path.
 
+## Exact AdaLN reuse
+
+H3 enables exact AdaLN projection reuse by default, independently of the task,
+hardware, sampling schedule, quantization setting, and request `quality`.
+This applies to both original H3 (including its default 50-point schedule) and
+FastH3; no distilled adapter or explicit few-step ladder is required.
+The first occurrence of an input runs the existing projection; later identical
+time embeddings reuse its output only while the projection weights and numerical
+settings remain unchanged. This does not approximate neighboring timesteps or
+change attention, precision, sampling, or the generated audio/video contract.
+
+Each DiT keeps at most 256 MiB of runtime projection outputs. If a long schedule
+exceeds that budget, it retains a reusable subset and computes other entries
+normally, avoiding cyclic eviction on repeated original-H3 requests. All original weights
+remain loaded so new schedules and adapters can compute normally. Adapter changes,
+weight reloads, and model device moves invalidate the cache; parameter versions
+also guard individual entries. TP ranks coordinate hits before skipping a
+projection collective. Gradient-enabled execution, compilation, custom linear
+hooks, and tensors without weight version counters use the original computation.
+Offload paths that replace weight storage can therefore reduce the hit rate.
+
+For an A/B comparison, disable only this reuse at server startup:
+
+```bash
+--cache-config '{"minimax_h3_adaln_cache": false}'
+```
+
+### Optional offline sidecar
+
+An offline sidecar can seed the first projection results; it is not required to
+enable the default cache. The current builder targets native BF16 TP1 math with
+the same numerical environment as serving. Other serving configurations continue
+using the default runtime cache. From the repository root, for a fixed FastH3
+adapter and its own four-step schedule:
+
+```bash
+PYTHONPATH=. python tools/minimax_h3/build_adaln_cache.py \
+  --transformer-path "${MODEL_ROOT}/FL2VA/transformer" \
+  --model-variant fl2va --mode t2va \
+  --fasth3-adapter "${FASTH3_ADAPTER}" \
+  --num-inference-steps 4 --flow-shift 12 --audio-flow-shift 3 \
+  --device cuda --output /path/to/h3-adaln.safetensors
+```
+
+Omit `--fasth3-adapter` for base weights and use the serving step count and shifts.
+The builder accepts a native transformer directory with `config.json` and indexed
+or single-file safetensors. It streams the required inputs and refuses to overwrite
+an existing output. It does not instantiate the full DiT.
+
+Pass the resulting local artifact at startup:
+
+```bash
+--cache-config '{"minimax_h3_adaln_cache_path": "/path/to/h3-adaln.safetensors"}'
+```
+
+Combined servers can also use `minimax_h3_ref_adaln_cache_path` for their Ref2VA
+transformer. Each artifact binds the model architecture, task, schedule, shifts,
+fixed adapter file, effective time-embedding/AdaLN weights, payload checksums, and
+numerical environment. A missing, corrupt, incompatible, or outdated sidecar is
+rejected with a warning; the model still loads every weight and computes through
+the runtime path. A request with different settings similarly falls back.
+Build sidecars from trusted local inputs: checksums verify identity and integrity,
+not the correctness of an untrusted generator.
+
+This implementation saves repeated projection work. It does not remove AdaLN
+weights or claim a GPU memory reduction. End-to-end gains depend on the workload,
+offload behavior, embedding fingerprint cost, and TP coordination overhead.
+
 ## LoRA
 
 ### Turbo LoRA
