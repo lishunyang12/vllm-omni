@@ -47,7 +47,6 @@ class VideoVAEMXFP8Linear(torch.nn.Module):
 
 def quantize_video_vae_decoder(decoder, config, device):
     """Convert only the four decoder-block projections, after exact-op installation."""
-    import torch
     from vllm.model_executor.layers.quantization.utils.quant_utils import is_layer_skipped
 
     from vllm_omni.diffusion.models.minimax_h3.ops.vae import _decoder_block_linears

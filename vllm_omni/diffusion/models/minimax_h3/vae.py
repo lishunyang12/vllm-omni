@@ -967,11 +967,25 @@ class MiniMaxH3VideoVAE(nn.Module, DistributedVaeMixin):
         if getattr(self, "encode_only", False):
             raise RuntimeError("MiniMax H3 encode-only video VAE cannot decode latents")
         if os.environ.get("VLLM_OMNI_H3_VAE_BATCHING", "none") != "none":
-            chunks = []
-            self.decode_with_chunks(latent, on_chunk=lambda frames: chunks.append(frames.clone()))
-            if not chunks:
-                return latent.new_empty((1, 3, 0, 0, 0))
-            return torch.cat(chunks, dim=2)
+            output = None
+            position = 0
+
+            def consume(frames):
+                nonlocal output, position
+                if output is None:
+                    output = torch.empty(
+                        (1, 3, 362, frames.shape[-2], frames.shape[-1]), dtype=torch.uint8, device=frames.device
+                    )
+                count = frames.shape[2]
+                output[:, :, position : position + count].copy_(frames.mul(255.0).round().to(torch.uint8))
+                position += count
+
+            self.decode_with_chunks(latent, on_chunk=consume)
+            if output is None:
+                return torch.empty((1, 3, 0, 0, 0), dtype=torch.uint8, device=latent.device)
+            if position != 362:
+                raise RuntimeError(f"Paired H3 VAE produced {position} frames, expected 362")
+            return output
         with self._decode_tiling_context(latent):
             decoded = self.model.decode_base(self._denormalize_latent(latent))
         if decoded.dtype == torch.uint8:
