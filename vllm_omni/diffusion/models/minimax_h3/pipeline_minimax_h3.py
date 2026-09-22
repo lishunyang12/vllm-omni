@@ -2012,6 +2012,7 @@ class MiniMaxH3Pipeline(
                             video = self.video_vae.decode_latent(video_latent)
                     finally:
                         stream.synchronize()
+                    audio.record_stream(caller)
             video = video[..., :height, :width].contiguous()
             return video, self._offload_model_cpu_stage_output(audio)
         with self._component_on_device(self.video_vae.decoder_component):
