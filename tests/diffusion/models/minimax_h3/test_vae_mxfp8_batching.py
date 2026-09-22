@@ -56,3 +56,33 @@ def test_vae_fp32_weights_quantized_before_fp16_rounding(rows):
     assert relative_rms < 0.06
     with pytest.raises(RuntimeError, match="autocast"):
         quantized(x)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize("count", [0, 2, 362])
+def test_paired_full_output_owns_uint8_storage(monkeypatch, count):
+    from vllm_omni.diffusion.models.minimax_h3.vae import MiniMaxH3VideoVAE
+
+    monkeypatch.setenv("VLLM_OMNI_H3_VAE_BATCHING", "paired")
+    vae = MiniMaxH3VideoVAE.__new__(MiniMaxH3VideoVAE)
+    torch.nn.Module.__init__(vae)
+    tile = torch.tensor([0.0, 0.5, 1.0]).reshape(1, 3, 1, 1, 1)
+
+    def decode_chunks(latent, *, on_chunk):
+        for _ in range(count):
+            on_chunk(tile)
+
+    monkeypatch.setattr(vae, "decode_with_chunks", decode_chunks)
+    if count == 2:
+        with pytest.raises(RuntimeError, match="expected 362"):
+            vae.decode_latent(torch.empty(0))
+        return
+    output = vae.decode_latent(torch.empty(0))
+    assert output.dtype == torch.uint8
+    if count == 0:
+        assert output.shape == (1, 3, 0, 0, 0)
+    else:
+        assert output.shape == (1, 3, 362, 1, 1)
+        assert torch.equal(output[:, :, 0, 0, 0], torch.tensor([[0, 128, 255]], dtype=torch.uint8))
+        tile.zero_()
+        assert output[0, 2].eq(255).all()
