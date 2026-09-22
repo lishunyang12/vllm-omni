@@ -153,3 +153,26 @@ standard `head_size**-0.5` scaling, equal Q/K/V head counts, no attention mask,
 and no active sequence-parallel context. The MiniMax-H3 route uses 64-token
 `(4, 4, 4)` blocks and supports pure Ulysses. NPU and XPU paths do not execute
 the FastVideo VSA CUDA kernel.
+
+## FlashInfer tile64 provider
+
+MiniMax-H3 can use FlashInfer for its model-owned VSA tile64 layout. Select the
+provider and precision explicitly through the existing attention configuration:
+
+```bash
+--diffusion-attention-config '{"default":{"backend":"FASTVIDEO_VSA","fastvideo_vsa_provider":"flashinfer","fastvideo_vsa_precision":"sage"},"per_role":{"minimax_h3.token_refiner":{"backend":"TORCH_SDPA"}}}'
+```
+
+`bf16` selects the FlashInfer BF16 block-sparse kernel; `sage` selects QK INT8
+and PV FP8 arithmetic. Sage changes numerical precision and is approximate.
+This provider currently supports SM120, BF16 inputs and head dimension 128.
+Sparse selection, prefix exemptions, tile edge sizes and compression-gate
+correction remain owned by the H3 VSA implementation. RDMA is an independent
+transport selection and is not enabled by this option.
+
+The FlashInfer build must expose `bsa_attn_sm120_blk64_sage_fwd` and
+`bsa_attn_sm120_blk64_fwd`. The Sage implementation was merged in FlashInfer
+[#5127](https://github.com/flashinfer-ai/flashinfer/pull/5127).
+Selecting FlashInfer does not require the FastVideo kernel package. Other VSA
+layouts use the existing logged dense fallback; no FlashInfer tile256 path is
+claimed. Missing provider APIs fail at construction.
