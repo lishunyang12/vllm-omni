@@ -144,14 +144,28 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
             min(self.topk, video_blocks),
             kernel_blocks,
         )
-        output = fastvideo_block_sparse_attn_bshd(
-            q_tiled.contiguous(),
-            k_tiled.contiguous(),
-            v_tiled.contiguous(),
-            block_map.contiguous(),
-            kernel_sizes.contiguous(),
-            logical_blocks,
-        )[:, : logical_blocks * 64]
+        if self.provider == "flashinfer":
+            from vllm_omni.diffusion.attention.ops.sage_block_sparse_attention import flashinfer_block_sparse_attention
+
+            output = flashinfer_block_sparse_attention(
+                q_tiled[:, : logical_blocks * 64].contiguous(),
+                k_tiled[:, : logical_blocks * 64].contiguous(),
+                v_tiled[:, : logical_blocks * 64].contiguous(),
+                block_map[..., :logical_blocks, :logical_blocks].contiguous(),
+                sizes.contiguous(),
+                self.softmax_scale,
+                precision=self.precision,
+            )
+            logger.info_once("H3 VSA executing provider=flashinfer precision=%s", self.precision)
+        else:
+            output = fastvideo_block_sparse_attn_bshd(
+                q_tiled.contiguous(),
+                k_tiled.contiguous(),
+                v_tiled.contiguous(),
+                block_map.contiguous(),
+                kernel_sizes.contiguous(),
+                logical_blocks,
+            )[:, : logical_blocks * 64]
 
         if gate is not None:
             gate_tiled = torch.zeros_like(q_tiled[:, : logical_blocks * 64])

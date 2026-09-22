@@ -193,7 +193,7 @@ class FastVideoVSABackend(AttentionBackend):
 
     @classmethod
     def validate_available(cls) -> None:
-        if importlib.util.find_spec("fastvideo_kernel") is None:
+        if importlib.util.find_spec("fastvideo_kernel") is None and importlib.util.find_spec("flashinfer") is None:
             raise ImportError(
                 "FASTVIDEO_VSA requires the optional fastvideo-kernel package "
                 "included in vllm-omni[vsa]. Install with `uv pip install 'vllm-omni[vsa]'` "
@@ -238,6 +238,23 @@ class FastVideoVSAImpl(AttentionImpl):
         self.causal = causal
         self.qkv_layout = qkv_layout
 
+        self.provider = backend_kwargs.get("provider", "fastvideo")
+        self.precision = backend_kwargs.get("precision", "bf16")
+        if self.provider not in ("fastvideo", "flashinfer") or self.precision not in ("bf16", "sage"):
+            raise ValueError("VSA requires provider fastvideo/flashinfer and precision bf16/sage")
+        if self.precision == "sage" and self.provider != "flashinfer":
+            raise ValueError("Sage VSA requires the FlashInfer provider")
+        if self.provider == "flashinfer":
+            if current_omni_platform.get_device_capability() != (12, 0):
+                raise ValueError("FlashInfer tile64 VSA is supported on SM120")
+            try:
+                from flashinfer.cute_dsl.sparse import bsa_attn_sm120
+
+                required = "bsa_attn_sm120_blk64_sage_fwd" if self.precision == "sage" else "bsa_attn_sm120_blk64_fwd"
+                if not hasattr(bsa_attn_sm120, required):
+                    raise ImportError(required)
+            except ImportError as exc:
+                raise ImportError("FlashInfer VSA requires a build with SM120 block-sparse kernels") from exc
         self.topk = int(backend_kwargs.get("topk", 64))
         self.block_size = self._parse_block_size(backend_kwargs.get("block_size", (4, 8, 8)))
         self.block_elements = self.block_size[0] * self.block_size[1] * self.block_size[2]
@@ -312,6 +329,8 @@ class FastVideoVSAImpl(AttentionImpl):
         value: torch.Tensor,
         attn_metadata: AttentionMetadata | None,
     ) -> str | None:
+        if self.provider == "flashinfer":
+            return "FlashInfer VSA requires a model tile64 layout"
         if self.causal:
             return "causal attention is not supported"
         if self.block_elements != 256:
