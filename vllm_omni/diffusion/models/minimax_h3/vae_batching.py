@@ -179,7 +179,7 @@ def batch_plan(rank, world=8):
         local = round_jobs[rank]
         for start in range(0, len(local), 4):
             batch = local[start : start + 4]
-            # The checkpoint's FP16 GEMMs choose different rounding at B3.
+            # The SP8 regression observed FP16 rounding drift at B3.
             # Use the validated B4/B2/B1 geometries for an odd tail instead.
             batches.extend((batch[:2], batch[2:]) if len(batch) == 3 else (batch,))
     return tuple(batches)

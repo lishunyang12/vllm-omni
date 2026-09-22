@@ -1509,7 +1509,7 @@ A global quantization setting does not implicitly select VAE quantization.
 For the canonical 1280x704, 362-frame decode (latent `[1,24,107,44,80]`),
 `VLLM_OMNI_H3_VAE_BATCHING=paired` balances spatial tiles across pairs of temporal
 windows. `mixed` additionally batches local tile decodes at batch sizes 4/2/1 (a three-tile
-tail splits into 2+1 to preserve FP16 GEMM rounding), preserving
+tail splits into 2+1 to avoid the observed FP16 batch-three drift), preserving
 attention-output projection calls at their original batch-one geometry. Both
 require native distributed VAE tiling and reject incompatible geometry. The
 normal decode and chunk-consumer APIs share this path. Other geometries continue
