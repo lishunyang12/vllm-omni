@@ -86,3 +86,18 @@ def test_paired_full_output_owns_uint8_storage(monkeypatch, count):
         assert torch.equal(output[:, :, 0, 0, 0], torch.tensor([[0, 128, 255]], dtype=torch.uint8))
         tile.zero_()
         assert output[0, 2].eq(255).all()
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize("world", [2, 4, 8, 16])
+def test_mixed_schedule_preserves_consumer_order_without_batch_three(world):
+    from vllm_omni.diffusion.models.minimax_h3.vae_batching import batch_plan, jobs
+
+    schedule = jobs(world=world)
+    for rank in range(world):
+        batches = batch_plan(rank, world)
+        assert all(len(batch) in (1, 2, 4) for batch in batches)
+        expected = [job for round_jobs in schedule for job in round_jobs[rank]]
+        assert [job for batch in batches for job in batch] == expected
+        # Batching must not move a tile across its pair's gather boundary.
+        assert all(len({window // 2 for window, tile in batch}) == 1 for batch in batches)

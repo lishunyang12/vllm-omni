@@ -174,11 +174,15 @@ def decode_pairs(model, latent, group, callback, *, temporal_cat_dtype=None, gat
 
 @lru_cache(None)
 def batch_plan(rank, world=8):
-    return tuple(
-        tuple(round_jobs[rank][i : i + 4])
-        for round_jobs in jobs(world=world)
-        for i in range(0, len(round_jobs[rank]), 4)
-    )
+    batches = []
+    for round_jobs in jobs(world=world):
+        local = round_jobs[rank]
+        for start in range(0, len(local), 4):
+            batch = local[start : start + 4]
+            # The checkpoint's FP16 GEMMs choose different rounding at B3.
+            # Use the validated B4/B2/B1 geometries for an odd tail instead.
+            batches.extend((batch[:2], batch[2:]) if len(batch) == 3 else (batch,))
+    return tuple(batches)
 
 
 @contextmanager
