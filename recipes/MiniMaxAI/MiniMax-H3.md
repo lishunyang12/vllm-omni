@@ -1047,10 +1047,13 @@ For an A/B comparison, disable only this reuse at server startup:
 ### Optional offline sidecar
 
 An offline sidecar can seed the first projection results; it is not required to
-enable the default cache. The current builder targets native BF16 TP1 math with
-the same numerical environment as serving. Other serving configurations continue
-using the default runtime cache. From the repository root, for a fixed FastH3
-adapter and its own four-step schedule:
+enable the default cache. Sidecars require `--enforce-eager`, native BF16 TP1
+math, and the same numerical environment as the builder. With the default
+compiled execution, sidecars are rejected before reading their payloads: compiled
+H3 blocks bypass cached projections, so retaining those payloads would waste GPU
+memory. This applies to both the main and Ref2VA sidecars. Other serving
+configurations retain the default runtime-cache behavior described above.
+From the repository root, for a fixed FastH3 adapter and its own four-step schedule:
 
 ```bash
 PYTHONPATH=. python tools/minimax_h3/build_adaln_cache.py \
@@ -1066,9 +1069,10 @@ The builder accepts a native transformer directory with `config.json` and indexe
 or single-file safetensors. It streams the required inputs and refuses to overwrite
 an existing output. It does not instantiate the full DiT.
 
-Pass the resulting local artifact at startup:
+Pass the resulting local artifact at eager server startup:
 
 ```bash
+--enforce-eager \
 --cache-config '{"minimax_h3_adaln_cache_path": "/path/to/h3-adaln.safetensors"}'
 ```
 

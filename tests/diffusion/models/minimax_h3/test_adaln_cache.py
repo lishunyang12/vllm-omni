@@ -470,12 +470,42 @@ def test_inference_weights_without_versions_use_safe_runtime_path(mocker):
         assert compute.call_count == 2 and not cache._entries
 
 
+@pytest.mark.parametrize("enforce_eager", [False, True], ids=["compiled", "eager"])
+@pytest.mark.parametrize(
+    "key,mode",
+    [("minimax_h3_adaln_cache_path", "t2va"), ("minimax_h3_ref_adaln_cache_path", "ref2va-mixed")],
+)
+def test_optional_sidecar_requires_eager_before_reading_payload(tmp_path, mocker, enforce_eager, key, mode):
+    import vllm_omni.diffusion.models.minimax_h3.adaln_cache as cache_module
+
+    arch, _, _, manifest, path = _fixture(tmp_path, mode=mode)
+    open_sidecar = mocker.spy(cache_module, "safe_open")
+    pipeline = object.__new__(MiniMaxH3Pipeline)
+    torch.nn.Module.__init__(pipeline)
+    pipeline.od_config = SimpleNamespace(cache_config={key: str(path)}, enforce_eager=enforce_eager)
+    transformer = SimpleNamespace(arch=arch, adaln_cache=MiniMaxH3RuntimeAdalnCache())
+
+    pipeline._configure_adaln_sidecar(transformer, key, manifest["model_variant"], None, eligible=True)
+
+    if enforce_eager:
+        open_sidecar.assert_called_once()
+        assert isinstance(transformer._adaln_sidecar_candidate, MiniMaxH3AdalnCache)
+        assert transformer._adaln_sidecar_candidate.path == str(path)
+    else:
+        open_sidecar.assert_not_called()
+        assert not hasattr(transformer, "_adaln_sidecar_candidate")
+        # The normal load completion must not install or move a skipped payload.
+        pipeline._finish_adaln_sidecar(transformer)
+        assert transformer.adaln_cache.sidecar is None
+    assert transformer.adaln_cache.max_bytes > 0
+
+
 def test_corrupt_optional_sidecar_falls_back_without_rejecting_model(tmp_path):
     path = tmp_path / "truncated.safetensors"
     path.write_bytes(b"truncated")
     pipeline = object.__new__(MiniMaxH3Pipeline)
     torch.nn.Module.__init__(pipeline)
-    pipeline.od_config = SimpleNamespace(cache_config={"cache": str(path)})
+    pipeline.od_config = SimpleNamespace(cache_config={"cache": str(path)}, enforce_eager=True)
     transformer = SimpleNamespace(arch=h3.MiniMaxH3DiTArchConfig(), adaln_cache=MiniMaxH3RuntimeAdalnCache())
     pipeline._configure_adaln_sidecar(transformer, "cache", "fl2va", None, eligible=True)
     assert not hasattr(transformer, "_adaln_sidecar_candidate")
