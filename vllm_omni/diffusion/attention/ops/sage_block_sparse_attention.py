@@ -7,47 +7,11 @@ operand quantization, the CAKE kernel invocation, and output layout. Tensor-map
 descriptors are owned by FlashInfer's by-value launch ABI, not by a global cache.
 """
 
-import math
 from functools import cache
 
 import torch
 
-
-def validate_sparse_inputs(
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    indices: torch.Tensor,
-    counts: torch.Tensor,
-    block_sizes: torch.Tensor | None,
-) -> None:
-    """Check structural metadata without reading device values on the host."""
-    for tensor in (query, key, value):
-        if tensor.ndim != 4 or tensor.shape[-1] != 128 or min(tensor.shape) < 1:
-            raise ValueError("Sage expects nonempty BSHD inputs with head dimension 128")
-        if tensor.stride(-1) != 1:
-            raise ValueError("Sage requires a contiguous head dimension")
-    if key.shape != value.shape or query.shape[::2] != key.shape[::2]:
-        raise ValueError("Sage requires matching batch/head dimensions and matching K/V shapes")
-    if any(t.dtype != torch.bfloat16 for t in (query, key, value)):
-        raise TypeError("Sage inputs must use BF16")
-    batch, rows, heads, _ = query.shape
-    blocks = (rows + 63) // 64
-    if indices.ndim != 4 or indices.shape[:3] != (batch, heads, blocks):
-        raise ValueError("Sparse indices must have shape [B,H,ceil(Sq/64),capacity]")
-    if indices.shape[-1] < 1 or counts.shape != indices.shape[:3]:
-        raise ValueError("Sparse counts must match the query blocks and capacity must be positive")
-    metadata: tuple[torch.Tensor, ...] = (indices, counts)
-    if block_sizes is not None:
-        key_blocks = (key.shape[1] + 63) // 64
-        if block_sizes.shape not in ((key_blocks,), (batch, key_blocks), (batch, heads, key_blocks)):
-            raise ValueError("Block sizes must have shape [Kblocks], [B,Kblocks], or [B,H,Kblocks]")
-        metadata += (block_sizes,)
-    for tensor in metadata:
-        if tensor.dtype != torch.int32 or not tensor.is_contiguous():
-            raise TypeError("Sparse metadata must be contiguous INT32")
-    if any(t.device != query.device for t in (key, value, *metadata)):
-        raise ValueError("Sage inputs and sparse metadata must share one device")
+from .flashinfer_block_sparse import require_flashinfer_sparse, validate_softmax_scale, validate_sparse_inputs
 
 
 @cache
@@ -76,10 +40,7 @@ def sage_block_sparse_attention(
     FlashInfer's uniform-count nor contiguous-index specialization is enabled.
     """
     validate_sparse_inputs(query, key, value, indices, counts, block_sizes)
-    if isinstance(softmax_scale, bool) or not isinstance(softmax_scale, (int, float)):
-        raise TypeError("softmax_scale must be a real scalar")
-    if not math.isfinite(softmax_scale) or softmax_scale <= 0:
-        raise ValueError("softmax_scale must be finite and positive")
+    validate_softmax_scale(softmax_scale)
     if prepared_q is not None:
         batch, rows, heads, dim = query.shape
         expected = (((batch, heads, rows, dim), torch.int8), ((batch, heads, ((rows + 127) // 128) * 4), torch.float32))
@@ -92,7 +53,7 @@ def sage_block_sparse_attention(
                 raise ValueError("prepared_q must be contiguous")
     if query.device.type != "cuda":
         raise ValueError("Sage execution requires CUDA")
-    from flashinfer.cute_dsl.sparse.bsa_attn_sm120 import bsa_attn_sm120_blk64_sage_fwd
+    bsa_attn_sm120_blk64_sage_fwd = require_flashinfer_sparse("sage", query.device)
 
     from .sage_quantization import quantize_sage_kv_sm120, quantize_sage_qkv_sm120
 
@@ -117,34 +78,3 @@ def sage_block_sparse_attention(
         backend="cake",
     )
     return result.transpose(1, 2).contiguous()
-
-
-def flashinfer_block_sparse_attention(query, key, value, block_map, block_sizes, softmax_scale, *, precision):
-    """Dispatch generic tile64 sparse geometry without a FastVideo dependency."""
-    if block_map.ndim != 4 or block_map.dtype != torch.bool:
-        raise ValueError("block_map must be a boolean [B,H,Qblocks,Kblocks] tensor")
-    # Sort selected block IDs ahead of the sentinel; counts bound every row.
-    key_blocks = block_map.shape[-1]
-    ids = torch.arange(key_blocks, device=block_map.device, dtype=torch.int32)
-    indices = torch.where(block_map, ids, key_blocks).sort(dim=-1).values
-    indices = torch.where(indices == key_blocks, -1, indices).contiguous()
-    counts = block_map.sum(dim=-1, dtype=torch.int32).contiguous()
-    if precision == "sage":
-        return sage_block_sparse_attention(query, key, value, indices, counts, block_sizes, softmax_scale)
-    if precision != "bf16":
-        raise ValueError("FlashInfer sparse precision must be bf16 or sage")
-    validate_sparse_inputs(query, key, value, indices, counts, block_sizes)
-    from flashinfer.cute_dsl.sparse.bsa_attn_sm120 import bsa_attn_sm120_blk64_fwd
-
-    # The BF16 API consumes and returns BSHD; the Sage ABI above uses BHSD.
-    output, _ = bsa_attn_sm120_blk64_fwd(
-        query.contiguous(),
-        key.contiguous(),
-        value.contiguous(),
-        indices,
-        key_blocks,
-        block_sizes=block_sizes,
-        q2k_block_nums=counts,
-        softmax_scale=softmax_scale,
-    )
-    return output.contiguous()
