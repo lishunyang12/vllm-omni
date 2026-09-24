@@ -13,14 +13,21 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import weakref
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
 from safetensors import safe_open
 from torch import nn
+
+from vllm_omni.diffusion.cache.exact_projection_cache import (
+    ExactProjectionCache,
+    tensor_digest,
+)
+from vllm_omni.diffusion.cache.exact_projection_cache import (
+    canonical_json as canonical_json,
+)
 
 from .time_request import minimax_h3_time_shift_sigmas
 
@@ -38,33 +45,17 @@ MODES = {
 PAYLOAD_NAMES = frozenset({"plan_timesteps", "plan_lengths", "time_embeddings", "block_params", "final_params"})
 
 
-class MiniMaxH3RuntimeAdalnCache:
-    """Bounded memoization of the actual runtime projection results.
-
-    No device, task, schedule or precision is selected here. The existing
-    projection remains the builder, including quantization, LoRA and TP. The
-    input embedding is hashed once per DiT forward; each layer also checks its
-    parameter/buffer versions. TP ranks vote before skipping a collective.
-    """
+class MiniMaxH3RuntimeAdalnCache(ExactProjectionCache):
+    """Exact projection caching with optional H3 schedule-bound sidecar results."""
 
     def __init__(self, *, max_bytes: int = 256 * 1024**2) -> None:
-        if type(max_bytes) is not int or max_bytes < 0:
-            raise ValueError("AdaLN cache budget must be a nonnegative byte count")
-        self.max_bytes = max_bytes
-        self._entries: dict[tuple[str, str], tuple[Any, torch.Tensor, int]] = {}
-        self._bytes = 0
-        self._input: weakref.ReferenceType[torch.Tensor] | None = None
-        self._key: str | None = None
-        self.hits = self.misses = 0
+        super().__init__(max_bytes=max_bytes)
         self.sidecar: MiniMaxH3AdalnCache | None = None
         self._sidecar_signatures: dict[str, Any] = {}
         self._sidecar_plan: int | None = None
 
     def clear(self) -> None:
-        self._entries.clear()
-        self._bytes = 0
-        self._input = None
-        self._key = None
+        super().clear()
         self.sidecar = None
         self._sidecar_signatures.clear()
         self._sidecar_plan = None
@@ -76,127 +67,31 @@ class MiniMaxH3RuntimeAdalnCache:
         self._sidecar_signatures = signatures
 
     def prepare(self, embedding: torch.Tensor) -> None:
-        self._input = None
-        self._key = None
         self._sidecar_plan = None
-        if not self.max_bytes or torch.is_grad_enabled() or torch.compiler.is_compiling():
+        super().prepare(embedding)
+        if self._key is None or self.sidecar is None:
             return
-        self._key = tensor_digest(embedding) + canonical_json(
-            [
-                torch.get_float32_matmul_precision(),
-                torch.is_autocast_enabled(embedding.device.type),
-                str(torch.get_autocast_dtype(embedding.device.type)),
-                torch.backends.cuda.matmul.allow_tf32,
-                torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction,
-            ]
-        )
-        self._input = weakref.ref(embedding)
-        if self.sidecar is not None:
-            if math_identity(embedding.device) != self.sidecar.manifest["math"]:
-                self.sidecar = None
-                return
-            for index, count in enumerate(self.sidecar.plan_lengths.tolist()):
-                expected = self.sidecar.time_embeddings[index, :count]
-                if embedding.shape == expected.shape and torch.equal(embedding, expected):
-                    self._sidecar_plan = index
-                    break
+        if math_identity(embedding.device) != self.sidecar.manifest["math"]:
+            self.sidecar = None
+            return
+        for index, count in enumerate(self.sidecar.plan_lengths.tolist()):
+            expected = self.sidecar.time_embeddings[index, :count]
+            if embedding.shape == expected.shape and torch.equal(embedding, expected):
+                self._sidecar_plan = index
+                break
 
-    @staticmethod
-    def _signature(module: nn.Module) -> tuple[Any, ...]:
-        # A replaced or restored storage conservatively causes a miss. The
-        # containing block's offload hooks still run before this method.
-        tensors = [*module.named_parameters(), *module.named_buffers()]
-        # vLLM LoRA stores these tensors outside registered buffers. Its
-        # suspend/resume mask can change without changing the base weights.
-        for field in ("lora_a_stacked", "lora_b_stacked"):
-            tensors.extend((f"{field}.{i}", value) for i, value in enumerate(getattr(module, field, ())))
-        return (
-            id(module),
-            id(getattr(module, "quant_method", None)),
-            getattr(module, "_diffusion_lora_active_slices", None),
-            *(
-                (name, id(value), value.data_ptr(), value._version, tuple(value.shape), value.dtype, value.device)
-                for name, value in tensors
-            ),
-        )
-
-    def project(
-        self,
-        name: str,
-        module: nn.Module,
-        embedding: torch.Tensor,
-        compute: Callable[[], torch.Tensor],
-    ) -> torch.Tensor:
+    def _lookup_precomputed(self, name: str, embedding: torch.Tensor, signature: Any) -> torch.Tensor | None:
         if (
-            torch.is_grad_enabled()
-            or torch.compiler.is_compiling()
-            or self._key is None
-            or self._input is None
-            or self._input() is not embedding
+            self.sidecar is None
+            or self._sidecar_plan is None
+            or self._sidecar_signatures.get(name) != signature
+            or torch.is_autocast_enabled(embedding.device.type)
         ):
-            return compute()
-        key = self._key, name
-        try:
-            signature = self._signature(module)
-            if module._forward_pre_hooks or module._forward_hooks:
-                # A linear hook may mutate weights or transform the output;
-                # executing it only on misses would change its semantics.
-                signature = None
-        except RuntimeError:
-            # Inference tensors without version counters cannot establish that
-            # weights stayed unchanged. Still participate in the TP vote.
-            signature = None
-        cached = self._entries.get(key)
-        hit = signature is not None and cached is not None and cached[0] == signature
-        from vllm.distributed import get_tensor_model_parallel_world_size, get_tp_group
-
-        world_size = get_tensor_model_parallel_world_size()
-        if world_size > 1:
-            vote = torch.tensor([int(hit)], device=embedding.device, dtype=torch.int32)
-            hit = int(get_tp_group().all_reduce(vote).item()) == world_size
-        if hit:
-            assert cached is not None
-            self.hits += 1
-            return cached[1]
-        self.misses += 1
-        if (
-            world_size == 1
-            and self.sidecar is not None
-            and self._sidecar_plan is not None
-            and signature is not None
-            and self._sidecar_signatures.get(name) == signature
-            and not torch.is_autocast_enabled(embedding.device.type)
-        ):
-            index, count = self._sidecar_plan, embedding.shape[0]
-            if name.startswith("blocks."):
-                value = self.sidecar.block_params[index, :count, int(name.split(".")[1])].contiguous()
-            else:
-                value = self.sidecar.final_params[index, :count].contiguous()
-        else:
-            value = compute()
-        if cached is not None:
-            self._bytes -= self._entries.pop(key)[2]
-        size = value.numel() * value.element_size()
-        if signature is not None and self._bytes + size <= self.max_bytes:
-            # Retain a reusable subset when a long base-H3 schedule exceeds
-            # the budget. LRU would evict every entry before the next request
-            # reaches it, producing zero hits for a repeated cyclic schedule.
-            # Own the cached storage even if a provider returns workspace views.
-            self._entries[key] = (signature, value.detach().clone(), size)
-            self._bytes += size
-        return value
-
-
-def canonical_json(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
-
-
-def tensor_digest(tensor: torch.Tensor) -> str:
-    """Hash dtype, shape and actual bytes, including BF16, without widening."""
-    value = tensor.detach().cpu().contiguous()
-    digest = hashlib.sha256(canonical_json([str(value.dtype), list(value.shape)]).encode())
-    digest.update(memoryview(value.reshape(-1).view(torch.uint8).numpy()))
-    return digest.hexdigest()
+            return None
+        index, count = self._sidecar_plan, embedding.shape[0]
+        if name.startswith("blocks."):
+            return self.sidecar.block_params[index, :count, int(name.split(".")[1])].contiguous()
+        return self.sidecar.final_params[index, :count].contiguous()
 
 
 def file_digest(path: str | Path) -> str:

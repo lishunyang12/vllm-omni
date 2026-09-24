@@ -1038,6 +1038,12 @@ projection collective. Gradient-enabled execution, compilation, custom linear
 hooks, and tensors without weight version counters use the original computation.
 Offload paths that replace weight storage can therefore reduce the hit rate.
 
+The runtime cache uses the shared `ExactProjectionCache` implementation; H3 keeps
+only its optional sidecar adaptation. Other models can integrate the same
+[projection cache interface](../../docs/design/module/diffusion/diffusion_model_integration.md#exact-conditioning-projection-reuse).
+This cache retains projection outputs, not offloaded weights, and does not skip
+block weight prefetch.
+
 For an A/B comparison, disable only this reuse at server startup:
 
 ```bash
