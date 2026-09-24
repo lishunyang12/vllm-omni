@@ -70,8 +70,10 @@ class MiniMaxH3RuntimeAdalnCache:
         self._sidecar_plan = None
 
     def seed(self, sidecar: MiniMaxH3AdalnCache, modules: Mapping[str, nn.Module]) -> None:
+        # A rejected seed must not retain the sidecar's device payload.
+        signatures = {name: self._signature(module) for name, module in modules.items()}
         self.sidecar = sidecar
-        self._sidecar_signatures = {name: self._signature(module) for name, module in modules.items()}
+        self._sidecar_signatures = signatures
 
     def prepare(self, embedding: torch.Tensor) -> None:
         self._input = None

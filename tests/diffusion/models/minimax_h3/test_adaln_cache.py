@@ -364,6 +364,21 @@ def test_optional_sidecar_seeds_runtime_projection(tmp_path, mocker):
         assert compute.call_count == 2
 
 
+def test_failed_seed_does_not_attach_sidecar(tmp_path):
+    arch, weights, _, _, path = _fixture(tmp_path)
+    sidecar = _ready(arch, weights, path)
+    runtime = MiniMaxH3RuntimeAdalnCache()
+    linear = torch.nn.Linear(arch.time_embed_dim, 18 * arch.hidden_size, dtype=torch.bfloat16)
+    with torch.inference_mode():
+        unversioned = torch.nn.Linear(arch.time_embed_dim, 2 * arch.hidden_size, dtype=torch.bfloat16)
+
+    with pytest.raises(RuntimeError, match="Inference tensors do not track version counter"):
+        runtime.seed(sidecar, {"blocks.0.adaln_proj.linear": linear, "final_layer.adaln_proj.linear": unversioned})
+
+    assert runtime.sidecar is None
+    assert runtime._sidecar_signatures == {}
+
+
 def test_builder_rejects_missing_or_duplicate_weights(tmp_path):
     arch, weights, _, manifest, _ = _fixture(tmp_path)
     for source in (list(weights.items())[:-1], [*weights.items(), next(iter(weights.items()))]):
