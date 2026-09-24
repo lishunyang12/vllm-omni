@@ -12,6 +12,7 @@ from typing import Any
 
 import torch
 from torch import nn
+from torch.nn.modules import module as module_hooks
 
 
 class ExactProjectionCache:
@@ -40,7 +41,7 @@ class ExactProjectionCache:
         if type(max_bytes) is not int or max_bytes < 0:
             raise ValueError("Projection cache budget must be a nonnegative byte count")
         self.max_bytes = max_bytes
-        self._entries: dict[tuple[str, str], tuple[Any, torch.Tensor, int]] = {}
+        self._entries: dict[tuple[str, str, tuple[Any, ...]], tuple[Any, torch.Tensor, int]] = {}
         self._bytes = 0
         self._input: weakref.ReferenceType[torch.Tensor] | None = None
         self._key: str | None = None
@@ -57,16 +58,29 @@ class ExactProjectionCache:
         self._key = None
         if not self.max_bytes or torch.is_grad_enabled() or torch.compiler.is_compiling():
             return
-        self._key = tensor_digest(embedding) + canonical_json(
-            [
-                torch.get_float32_matmul_precision(),
-                torch.is_autocast_enabled(embedding.device.type),
-                str(torch.get_autocast_dtype(embedding.device.type)),
-                torch.backends.cuda.matmul.allow_tf32,
-                torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction,
-            ]
-        )
+        self._key = tensor_digest(embedding)
         self._input = weakref.ref(embedding)
+
+    @staticmethod
+    def _numerical_settings(device_type: str) -> tuple[Any, ...]:
+        # A projection may enter its own autocast context after prepare().
+        return (
+            torch.get_float32_matmul_precision(),
+            torch.is_autocast_enabled(device_type),
+            torch.get_autocast_dtype(device_type),
+            torch.backends.cuda.matmul.allow_tf32,
+            torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction,
+            torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction,
+        )
+
+    @staticmethod
+    def _has_forward_hooks(module: nn.Module) -> bool:
+        # Match nn.Module's global hooks as well as hooks on wrapped linears.
+        return bool(
+            module_hooks._global_forward_pre_hooks
+            or module_hooks._global_forward_hooks
+            or any(child._forward_pre_hooks or child._forward_hooks for child in module.modules())
+        )
 
     @staticmethod
     def _signature(module: nn.Module) -> tuple[Any, ...]:
@@ -102,11 +116,11 @@ class ExactProjectionCache:
             or self._input() is not embedding
         ):
             return compute()
-        key = self._key, name
+        key = self._key, name, self._numerical_settings(embedding.device.type)
         signature: tuple[Any, ...] | None
         try:
             signature = self._signature(module)
-            if module._forward_pre_hooks or module._forward_hooks:
+            if self._has_forward_hooks(module):
                 # A linear hook may mutate weights or transform the output;
                 # executing it only on misses would change its semantics.
                 signature = None

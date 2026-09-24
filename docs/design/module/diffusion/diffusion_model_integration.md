@@ -98,6 +98,9 @@ or moving the model. Weight-version checks invalidate individual entries.
 Compilation, gradient-enabled execution, projection hooks, and unversioned
 inference weights use the original computation. Validate cold/warm parity,
 invalidation, and rank-local misses when integrating another model.
+Hook checks include global hooks and hooks on wrapped submodules. Numerical
+settings are captured at each projection call, so entering an autocast context
+after `prepare()` cannot reuse an output from a different precision.
 
 Validated offline results can be supplied through `_lookup_precomputed()`;
 this extension is consulted only at TP1 on runtime-cache misses. Artifact

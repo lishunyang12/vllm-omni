@@ -252,6 +252,59 @@ def test_failed_seed_does_not_attach_sidecar(tmp_path):
     assert runtime._sidecar_signatures == {}
 
 
+@pytest.mark.parametrize("mode", MODES)
+def test_sidecar_prepare_uses_one_fingerprint_without_tensor_scan(tmp_path, mocker, mode):
+    import vllm_omni.diffusion.cache.exact_projection_cache as cache_module
+
+    arch, weights, payload, manifest, path = _fixture(tmp_path, mode=mode, base_model=True)
+    sidecar = _ready(arch, weights, path, manifest["model_variant"])
+    runtime = MiniMaxH3RuntimeAdalnCache()
+    name = "final_layer.adaln_proj.linear"
+    linear = torch.nn.Linear(arch.time_embed_dim, 2 * arch.hidden_size, dtype=torch.bfloat16)
+    with torch.no_grad():
+        linear.weight.copy_(weights[name + ".weight"])
+        linear.bias.copy_(weights[name + ".bias"])
+        runtime.seed(sidecar, {name: linear})
+        count = int(payload["plan_lengths"][-1])
+        embedding = payload["time_embeddings"][-1, :count].clone()
+        expected = linear(torch.nn.functional.silu(embedding).to(torch.bfloat16))
+        comparisons = mocker.spy(torch, "equal")
+        fingerprint = mocker.spy(cache_module, "tensor_digest")
+        compute = mocker.Mock(side_effect=AssertionError("matching sidecar must seed the projection"))
+
+        runtime.prepare(embedding)
+        actual = runtime.project(name, linear, embedding, compute)
+
+        comparisons.assert_not_called()
+        fingerprint.assert_called_once()
+        assert torch.equal(actual, expected)
+        compute.assert_not_called()
+
+
+def test_sidecar_rechecks_numerical_environment_at_projection(tmp_path, mocker):
+    arch, weights, payload, _, path = _fixture(tmp_path)
+    sidecar = _ready(arch, weights, path)
+    runtime = MiniMaxH3RuntimeAdalnCache()
+    name = "final_layer.adaln_proj.linear"
+    linear = torch.nn.Linear(arch.time_embed_dim, 2 * arch.hidden_size, dtype=torch.bfloat16)
+    with torch.no_grad():
+        linear.weight.copy_(weights[name + ".weight"])
+        linear.bias.copy_(weights[name + ".bias"])
+        runtime.seed(sidecar, {name: linear})
+        count = int(payload["plan_lengths"][-1])
+        embedding = payload["time_embeddings"][-1, :count].clone()
+        runtime.prepare(embedding)
+        compute = mocker.Mock(side_effect=lambda: linear(torch.nn.functional.silu(embedding).to(torch.bfloat16)))
+        precision = torch.get_float32_matmul_precision()
+        try:
+            torch.set_float32_matmul_precision("high" if precision == "highest" else "highest")
+            actual = runtime.project(name, linear, embedding, compute)
+            compute.assert_called_once()
+            assert torch.equal(actual, compute())
+        finally:
+            torch.set_float32_matmul_precision(precision)
+
+
 def test_builder_rejects_missing_or_duplicate_weights(tmp_path):
     arch, weights, _, manifest, _ = _fixture(tmp_path)
     for source in (list(weights.items())[:-1], [*weights.items(), next(iter(weights.items()))]):

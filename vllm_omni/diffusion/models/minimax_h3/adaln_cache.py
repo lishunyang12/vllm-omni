@@ -74,11 +74,7 @@ class MiniMaxH3RuntimeAdalnCache(ExactProjectionCache):
         if math_identity(embedding.device) != self.sidecar.manifest["math"]:
             self.sidecar = None
             return
-        for index, count in enumerate(self.sidecar.plan_lengths.tolist()):
-            expected = self.sidecar.time_embeddings[index, :count]
-            if embedding.shape == expected.shape and torch.equal(embedding, expected):
-                self._sidecar_plan = index
-                break
+        self._sidecar_plan = self.sidecar._embedding_plans.get(self._key)
 
     def _lookup_precomputed(self, name: str, embedding: torch.Tensor, signature: Any) -> torch.Tensor | None:
         if (
@@ -86,6 +82,7 @@ class MiniMaxH3RuntimeAdalnCache(ExactProjectionCache):
             or self._sidecar_plan is None
             or self._sidecar_signatures.get(name) != signature
             or torch.is_autocast_enabled(embedding.device.type)
+            or math_identity(embedding.device) != self.sidecar.manifest["math"]
         ):
             return None
         index, count = self._sidecar_plan, embedding.shape[0]
@@ -273,6 +270,12 @@ class MiniMaxH3AdalnCache(nn.Module):
             raise ValueError("AdaLN cache timestep plans do not match the declared schedule")
         self.manifest = manifest
         self.projection_names = projection_names(arch.num_layers)
+        # Index the validated CPU payload once. Runtime prepare() already hashes
+        # the actual embedding, so lookup needs no per-plan device comparisons.
+        self._embedding_plans = {
+            tensor_digest(payload["time_embeddings"][index, :count]): index
+            for index, count in enumerate(expected_lengths.tolist())
+        }
         for name, value in payload.items():
             self.register_buffer(name, value, persistent=False)
 

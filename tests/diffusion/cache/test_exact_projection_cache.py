@@ -19,6 +19,13 @@ def tp1(monkeypatch):
     monkeypatch.setattr(vllm.distributed, "get_tensor_model_parallel_world_size", lambda: 1)
 
 
+@pytest.fixture(autouse=True)
+def deterministic_weights():
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(0)
+        yield
+
+
 @pytest.mark.parametrize("batch,in_features,out_features", [(2, 4, 8), (1, 8, 48), (4, 6, 18)])
 def test_runtime_reuses_exact_outputs_and_tracks_changed_weights(mocker, batch, in_features, out_features):
     cache = ExactProjectionCache()
@@ -88,27 +95,87 @@ def test_dynamic_lora_buffers_and_suspend_mask_invalidate_entries(mocker):
         assert counted.call_count == 3
 
 
-def test_linear_hooks_run_even_after_cache_warmup():
+@pytest.mark.parametrize("scope", ["local", "global", "child"])
+@pytest.mark.parametrize("kind", ["pre", "post"])
+def test_linear_hooks_run_even_after_cache_warmup(scope, kind):
     cache = ExactProjectionCache()
     linear = torch.nn.Linear(2, 2)
+    projection = torch.nn.Sequential(linear) if scope == "child" else linear
     x = torch.ones(1, 2)
     with torch.no_grad():
         cache.prepare(x)
-        cache.project("a", linear, x, lambda: linear(x))
+        expected = projection(x)
+        cache.project("a", projection, x, lambda: projection(x))
+        calls = []
 
-        # A hook is allowed to change the projection on each invocation.
-        def change_weight(module, args):
-            module.weight.add_(1)
+        def pre_hook(module, args):
+            if module is linear:
+                calls.append(module)
+                return (args[0] + 1,)
 
-        hook = linear.register_forward_pre_hook(change_weight)
+        def post_hook(module, args, output):
+            if module is linear:
+                calls.append(module)
+                return output + 1
+
+        if kind == "pre":
+            expected = linear(x + 1)
+            register = (
+                torch.nn.modules.module.register_module_forward_pre_hook
+                if scope == "global"
+                else linear.register_forward_pre_hook
+            )
+            hook = register(pre_hook)
+        else:
+            expected = expected + 1
+            register = (
+                torch.nn.modules.module.register_module_forward_hook
+                if scope == "global"
+                else linear.register_forward_hook
+            )
+            hook = register(post_hook)
         try:
-            previous = linear.weight.clone()
-            cache.project("a", linear, x, lambda: linear(x))
-            assert torch.equal(linear.weight, previous + 1)
-            cache.project("a", linear, x, lambda: linear(x))
-            assert torch.equal(linear.weight, previous + 2)
+            for _ in range(2):
+                assert torch.equal(cache.project("a", projection, x, lambda: projection(x)), expected)
+            assert len(calls) == 2
         finally:
             hook.remove()
+        assert torch.equal(cache.project("a", projection, x, lambda: projection(x)), projection(x))
+
+
+@pytest.mark.parametrize("autocast_at_prepare", [False, True])
+def test_numerical_settings_follow_projection_context(mocker, autocast_at_prepare):
+    cache = ExactProjectionCache()
+    linear = torch.nn.Linear(4, 4)
+    x = torch.randn(2, 4)
+    compute = mocker.Mock(side_effect=lambda: linear(x))
+    with torch.no_grad():
+        with torch.autocast("cpu", dtype=torch.bfloat16, enabled=autocast_at_prepare):
+            cache.prepare(x)
+        for enabled in (False, True, False, True):
+            with torch.autocast("cpu", dtype=torch.bfloat16, enabled=enabled):
+                actual = cache.project("a", linear, x, compute)
+                expected = linear(x)
+                assert actual.dtype == expected.dtype
+                assert torch.equal(actual, expected)
+    assert compute.call_count == 2
+
+
+@pytest.mark.parametrize(
+    "setting",
+    ["allow_tf32", "allow_bf16_reduced_precision_reduction", "allow_fp16_reduced_precision_reduction"],
+)
+def test_matmul_settings_invalidate_prepared_projection(monkeypatch, mocker, setting):
+    cache = ExactProjectionCache()
+    linear = torch.nn.Linear(2, 2)
+    x = torch.ones(1, 2)
+    compute = mocker.Mock(side_effect=lambda: linear(x))
+    with torch.no_grad():
+        cache.prepare(x)
+        cache.project("a", linear, x, compute)
+        monkeypatch.setattr(torch.backends.cuda.matmul, setting, not getattr(torch.backends.cuda.matmul, setting))
+        assert torch.equal(cache.project("a", linear, x, compute), linear(x))
+    assert compute.call_count == 2
 
 
 def test_disabled_and_grad_paths_keep_original_computation(monkeypatch, mocker):
