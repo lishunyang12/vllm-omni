@@ -5,9 +5,9 @@
 import pytest
 import torch
 
+from vllm_omni.diffusion.attention.ops.flashinfer_block_sparse import validate_sparse_inputs
 from vllm_omni.diffusion.attention.ops.sage_block_sparse_attention import (
     sage_block_sparse_attention,
-    validate_sparse_inputs,
 )
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu, pytest.mark.diffusion]
