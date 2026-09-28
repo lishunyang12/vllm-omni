@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """MiniMax H3 Ref2VA reference-video preparation."""
 
 from __future__ import annotations
@@ -309,10 +310,18 @@ def _reference_video_shape(width: int, height: int) -> tuple[int, int]:
         scale = math.sqrt(MINIMAX_H3_MAX_PIXELS / area)
         target_width *= scale
         target_height *= scale
-    return (
+    canvas_width, canvas_height = (
         _nearest_multiple(target_width, MINIMAX_H3_CANVAS_MULTIPLE),
         _nearest_multiple(target_height, MINIMAX_H3_CANVAS_MULTIPLE),
     )
+    # Keep small reference videos at their own resolution, apart from
+    # rounding to the model's spatial grid.
+    if width * height < canvas_width * canvas_height:
+        return (
+            _nearest_multiple(width, MINIMAX_H3_CANVAS_MULTIPLE),
+            _nearest_multiple(height, MINIMAX_H3_CANVAS_MULTIPLE),
+        )
+    return canvas_width, canvas_height
 
 
 def _transcode_reference_video(

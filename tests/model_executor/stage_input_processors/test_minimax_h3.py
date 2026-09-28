@@ -3,6 +3,7 @@
 """Regression tests for MiniMax H3's disaggregated encoder contract."""
 
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import Mock
 
 import numpy as np
@@ -164,6 +165,40 @@ def test_prepare_ref2va_keeps_original_text_and_exact_condition_order():
     assert media.task == "ref2va"
     assert len(media.images) == 1
     assert len(media.audios) == 1
+
+
+@pytest.mark.parametrize(("mode", "expected_size"), [(None, (448, 256)), ("match", (448, 256)), ("max", (1344, 768))])
+def test_ref2va_reference_sizing_is_shared_by_qwen_and_vae(mode, expected_size):
+    from vllm_omni.model_executor.models.minimax_h3.encoder import MiniMaxH3Encoder
+    from vllm_omni.model_executor.models.minimax_h3.encoder_processing import prepare_encoder_inputs
+
+    images = [Image.new("RGB", (1344, 768), color=color) for color in ("red", "green", "blue", "white")]
+    prompt = {"prompt": "Use all four references.", "multi_modal_data": {"image": images}}
+    extra_args = {"task": "ref2va"}
+    if mode is not None:
+        extra_args["ref_image_size"] = mode
+    sampling = OmniDiffusionSamplingParams(height=256, width=448, extra_args=extra_args)
+
+    local = prepare_encoder_inputs(prompt, sampling)
+    transformed = prepare_encoder_prompt(prompt, [sampling])
+    media = MiniMaxH3Encoder._media_input(transformed["additional_information"])
+    qwen_images = transformed["multi_modal_data"]["image"]
+    assert len(qwen_images) == len(media.images) == 4
+    assert (media.width, media.height) == (448, 256)
+    for index, qwen_image in enumerate(qwen_images):
+        assert qwen_image.size == expected_size
+        np.testing.assert_array_equal(np.asarray(qwen_image), media.images[index].numpy())
+        np.testing.assert_array_equal(np.asarray(qwen_image), np.asarray(local.images[index]))
+        torch.testing.assert_close(media.images[index], local.media.images[index])
+    assert [image.size for image in images] == [(1344, 768)] * 4
+
+
+@pytest.mark.parametrize("mode", ["invalid", "MATCH", 2048, True, None, []])
+def test_ref2va_rejects_invalid_reference_image_size(mode):
+    prompt = {"prompt": "hello", "multi_modal_data": {"image": Image.new("RGB", (256, 256))}}
+    sampling = OmniDiffusionSamplingParams(extra_args={"task": "ref2va", "ref_image_size": mode})
+    with pytest.raises(OmniClientError, match="ref_image_size must be match or max"):
+        prepare_encoder_prompt(prompt, [sampling])
 
 
 def _mock_ref2va_video_with_audio(monkeypatch, *, duration_seconds: float) -> None:
@@ -581,7 +616,7 @@ def test_full_payload_hook_skips_only_absent_output():
     ],
 )
 def test_encoder_handoff_rejects_invalid_full_payload(case, message, via_connector):
-    payload = _full_encoder_output()
+    payload: Any = _full_encoder_output()
     layout = payload["kv_metadata"][MINIMAX_H3_ENCODER_LAYOUT_KEY]
     if case == "not_mapping":
         payload = []
@@ -621,7 +656,7 @@ def test_encoder_handoff_cleans_media_without_mutating_prompt_or_stripping_outpu
     incoming = _full_encoder_output()
     retained_hidden = torch.ones(1)
     media = torch.zeros(2)
-    prompt = {
+    prompt: dict[str, Any] = {
         "prompt": "hello",
         "negative_prompt": "blur",
         "multi_modal_data": {"image": object(), "audio": object(), "video": object()},

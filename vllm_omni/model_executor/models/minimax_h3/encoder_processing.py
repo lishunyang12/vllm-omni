@@ -234,13 +234,16 @@ def _prepare_encoder_images(
     *,
     height: int,
     width: int,
+    ref_image_size: str = "match",
 ) -> list[Any]:
     if not images:
         return []
     if task == "ref2va":
         return [
             image.resize(
-                resolve_minimax_h3_reference_image_shape(image),
+                resolve_minimax_h3_reference_image_shape(
+                    image, target_pixels=height * width, ref_image_size=ref_image_size
+                ),
                 Image.Resampling.LANCZOS,
             )
             for image in images
@@ -504,6 +507,7 @@ def prepare_encoder_inputs(
         raw_images,
         height=height,
         width=width,
+        ref_image_size=extra_args.get("ref_image_size", "match"),
     )
     keyframe_indices = _resolve_fl2va_keyframe_indices(extra_args, len(images)) if task == "fl2va" else []
     video_timestamps: list[list[float]] = []

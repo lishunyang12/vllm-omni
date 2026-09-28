@@ -138,7 +138,7 @@ def test_local_encoder_modes_preserve_validated_text_and_unified_handoff(task, t
         (image.height // 32) * (image.width // 32), 96
     )
     pipeline.audio_vae = Mock()
-    prompt = {"prompt": "A person waves."}
+    prompt: dict[str, Any] = {"prompt": "A person waves."}
     if task != "t2va":
         prompt["multi_modal_data"] = {"image": Image.new("RGB", (256, 256))}
     if text_key is not None:
@@ -1487,19 +1487,47 @@ def test_rainfusion_packed_padding_stays_mask_free_on_unaligned_lengths():
     assert metadata.extra["valid_kv_length"] == 5
 
 
-def test_reference_image_resize_contract():
+@pytest.mark.parametrize(
+    ("size", "target_pixels", "mode", "expected"),
+    [
+        ((1344, 768), 1344 * 768, "match", (1344, 768)),
+        ((640, 384), 1344 * 768, "match", (640, 384)),
+        ((2688, 1536), 1344 * 768, "match", (1344, 768)),
+        ((1536, 2688), 1344 * 768, "match", (768, 1344)),
+        ((1344, 768), 448 * 256, "match", (448, 256)),
+        ((1024, 1024), 1344 * 768, "match", (1024, 1024)),
+        ((1344, 768), 448 * 256, "max", (1344, 768)),
+        ((640, 384), 1344 * 768, "max", (640, 384)),
+        ((3072, 3072), 1344 * 768, "max", (2048, 2048)),
+        ((1080, 1440), 1344 * 768, "max", (1088, 1440)),
+    ],
+)
+def test_reference_image_resize_contract(size, target_pixels, mode, expected):
     from PIL import Image
 
     from vllm_omni.model_executor.models.minimax_h3.preprocessing import (
         resolve_minimax_h3_reference_image_shape,
     )
 
-    assert resolve_minimax_h3_reference_image_shape(Image.new("RGB", (1080, 1440))) == (
-        2048,
-        2720,
+    assert (
+        resolve_minimax_h3_reference_image_shape(
+            Image.new("RGB", size), target_pixels=target_pixels, ref_image_size=mode
+        )
+        == expected
     )
+
+
+def test_reference_image_resize_rejects_invalid_input():
+    from PIL import Image
+
+    from vllm_omni.model_executor.models.minimax_h3.preprocessing import (
+        resolve_minimax_h3_reference_image_shape,
+    )
+
     with pytest.raises(ValueError, match="aspect ratio"):
         resolve_minimax_h3_reference_image_shape(Image.new("RGB", (100, 501)))
+    with pytest.raises(ValueError, match="dimensions"):
+        resolve_minimax_h3_reference_image_shape(Image.new("RGB", (128, 128)))
 
 
 def test_fl2va_supports_first_last_and_explicit_frame_index_contracts():
@@ -1678,13 +1706,24 @@ def test_encoder_forward_forwards_video_inputs():
     )
 
 
-def test_reference_video_shape_uses_h3_adapt_shape_policy():
+@pytest.mark.parametrize(
+    ("size", "expected"),
+    [
+        ((640, 384), (640, 384)),
+        ((384, 640), (384, 640)),
+        ((1280, 720), (1280, 704)),
+        ((1344, 768), (1344, 768)),
+        ((3844, 2160), (1344, 768)),
+        ((2160, 3844), (768, 1344)),
+        ((2048, 2048), (768, 768)),
+    ],
+)
+def test_reference_video_shape_limits_resolution_without_upscaling(size, expected):
     from vllm_omni.model_executor.models.minimax_h3.reference_video import (
         _reference_video_shape,
     )
 
-    assert _reference_video_shape(1280, 720) == (1344, 768)
-    assert _reference_video_shape(3844, 2160) == (1344, 768)
+    assert _reference_video_shape(*size) == expected
 
 
 def test_text_encoder_stub_constructs_without_group_or_weights():
