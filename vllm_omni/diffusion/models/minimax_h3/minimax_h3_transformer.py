@@ -1263,20 +1263,23 @@ class MiniMaxH3DiTModel(nn.Module):
         )
         if type(enabled) is not bool:
             raise ValueError("minimax_h3_adaln_cache must be a boolean")
-        # Weight staging reduces device memory but adds work on cache misses.
-        # Keep it explicit, independently of eager or compiled execution.
+        offload = resolve_offload(od_config)
+        conflicting_offload = (
+            offload.strategy is not OffloadStrategy.NONE and offload.offloads(DIT_COMPONENT)
+        ) or getattr(od_config.parallel_config, "use_hsdp", False)
+        # Keep unsupported execution modes on their existing resident path.
+        # The host cache/staging boundary also works inside compiled blocks.
+        default_offload_adaln = (
+            enabled and current_omni_platform.is_cuda() and quant_config is None and not conflicting_offload
+        )
         offload_adaln = (
-            cache_config.get("minimax_h3_adaln_offload", False)
+            cache_config.get("minimax_h3_adaln_offload", default_offload_adaln)
             if isinstance(cache_config, Mapping)
-            else getattr(cache_config, "minimax_h3_adaln_offload", False)
+            else getattr(cache_config, "minimax_h3_adaln_offload", default_offload_adaln)
         )
         if type(offload_adaln) is not bool:
             raise ValueError("minimax_h3_adaln_offload must be a boolean")
         if offload_adaln:
-            offload = resolve_offload(od_config)
-            conflicting_offload = (
-                offload.strategy is not OffloadStrategy.NONE and offload.offloads(DIT_COMPONENT)
-            ) or getattr(od_config.parallel_config, "use_hsdp", False)
             if not current_omni_platform.is_cuda():
                 raise ValueError("MiniMax H3 AdaLN offload requires CUDA")
             if quant_config is not None:

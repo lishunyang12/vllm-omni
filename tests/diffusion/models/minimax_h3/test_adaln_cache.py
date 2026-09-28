@@ -300,8 +300,8 @@ def test_adaln_offload_allocates_only_projection_weights_on_host(
     with torch.device("meta"):
         model = h3.MiniMaxH3DiTModel(offload_model_config)
     for name, parameter in model.named_parameters():
-        assert parameter.device.type == ("cpu" if explicit and ".adaln_proj.linear." in name else "meta")
-    assert model.adaln_cache.offload_weights is explicit
+        assert parameter.device.type == ("cpu" if ".adaln_proj.linear." in name else "meta")
+    assert model.adaln_cache.offload_weights
     assert model.adaln_cache.max_bytes > 0
 
 
@@ -346,7 +346,7 @@ def test_adaln_offload_requires_boolean(offload_model_config, value):
 
 
 def test_adaln_offload_keeps_text_encoder_offload_independent(offload_model_config):
-    offload_model_config.cache_config = {"minimax_h3_adaln_offload": True}
+    offload_model_config.cache_config = {}
     offload_model_config.diffusion_offload_config = {"mode": "module", "components": ["text_encoder"]}
     model = h3.MiniMaxH3DiTModel(offload_model_config)
     assert model.adaln_cache.offload_weights
