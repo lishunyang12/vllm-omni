@@ -725,13 +725,8 @@ curl -sS -X POST "${API_URL}" \
 ### 3. Ref2VA: image-only, image/audio, or mixed references
 
 Run these requests against the combined service or a Ref2VA-only service.
-`extra_params.ref_image_size` defaults to `match`, which scales each reference
-image down to the output frame's pixel area while
-preserving its aspect ratio. Set it to `max` to retain more reference detail,
-up to a 2048-pixel short edge, at a higher compute cost. Neither mode enlarges
-small images apart from 32-pixel alignment. For example, add
-`"ref_image_size":"max"` to the request's `extra_params`; no server flag is needed.
-This changes the previous fixed-2048 preprocessing and can change generated results.
+Reference images keep their original resolution, with dimensions aligned to
+32 pixels. No additional request or server setting is needed.
 
 Image-only Ref2VA omits `audio_reference`; adding one or more audio references
 is optional. The typed fields accept one object or an ordered JSON list.

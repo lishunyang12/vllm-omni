@@ -1488,33 +1488,25 @@ def test_rainfusion_packed_padding_stays_mask_free_on_unaligned_lengths():
 
 
 @pytest.mark.parametrize(
-    ("size", "target_pixels", "mode", "expected"),
+    ("size", "expected"),
     [
-        ((1344, 768), 1344 * 768, "match", (1344, 768)),
-        ((640, 384), 1344 * 768, "match", (640, 384)),
-        ((2688, 1536), 1344 * 768, "match", (1344, 768)),
-        ((1536, 2688), 1344 * 768, "match", (768, 1344)),
-        ((1344, 768), 448 * 256, "match", (448, 256)),
-        ((1024, 1024), 1344 * 768, "match", (1024, 1024)),
-        ((1344, 768), 448 * 256, "max", (1344, 768)),
-        ((640, 384), 1344 * 768, "max", (640, 384)),
-        ((3072, 3072), 1344 * 768, "max", (2048, 2048)),
-        ((1080, 1440), 1344 * 768, "max", (1088, 1440)),
+        ((1344, 768), (1344, 768)),
+        ((640, 384), (640, 384)),
+        ((2688, 1536), (2688, 1536)),
+        ((1536, 2688), (1536, 2688)),
+        ((3072, 3072), (3072, 3072)),
+        ((1080, 1440), (1088, 1440)),
+        ((648, 392), (640, 384)),
     ],
 )
-def test_reference_image_resize_contract(size, target_pixels, mode, expected):
+def test_reference_image_resize_contract(size, expected):
     from PIL import Image
 
     from vllm_omni.model_executor.models.minimax_h3.preprocessing import (
         resolve_minimax_h3_reference_image_shape,
     )
 
-    assert (
-        resolve_minimax_h3_reference_image_shape(
-            Image.new("RGB", size), target_pixels=target_pixels, ref_image_size=mode
-        )
-        == expected
-    )
+    assert resolve_minimax_h3_reference_image_shape(Image.new("RGB", size)) == expected
 
 
 def test_reference_image_resize_rejects_invalid_input():

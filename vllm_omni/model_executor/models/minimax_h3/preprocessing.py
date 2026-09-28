@@ -35,7 +35,6 @@ _VIDEO_TAG = 0
 
 MINIMAX_H3_OUTPUT_SHORT_EDGE = 768
 MINIMAX_H3_OUTPUT_MAX_PIXELS = 768 * 1344
-MINIMAX_H3_REFERENCE_IMAGE_SHORT_EDGE = 2048
 MINIMAX_H3_REFERENCE_IMAGE_MULTIPLE = 32
 MINIMAX_H3_SUPPORTED_ASPECT_RATIOS = {
     "21:9": 21.0 / 9.0,
@@ -135,32 +134,17 @@ def resolve_minimax_h3_aspect_ratio(
     return numeric_value
 
 
-def resolve_minimax_h3_reference_image_shape(
-    image: Image.Image,
-    *,
-    target_pixels: int = MINIMAX_H3_OUTPUT_MAX_PIXELS,
-    ref_image_size: str = "match",
-) -> tuple[int, int]:
-    """Limit reference resolution, then round each axis to the 32-pixel grid.
-
-    ``match`` uses the generated frame's pixel area; ``max`` caps the short
-    edge at 2048. Neither mode upscales apart from alignment rounding.
-    """
+def resolve_minimax_h3_reference_image_shape(image: Image.Image) -> tuple[int, int]:
+    """Preserve reference resolution, rounding each axis to the 32-pixel grid."""
     width, height = image.size
     ratio = width / height
     if not 0.4 <= ratio <= 2.5:
         raise OmniClientError(f"reference image aspect ratio must be in [0.4, 2.5], got {width}x{height}")
     if min(width, height) < 256 or max(width, height) > 5760:
         raise OmniClientError(f"reference image dimensions must be in [256, 5760] pixels, got {width}x{height}")
-    if ref_image_size == "match":
-        scale = min(1.0, math.sqrt(target_pixels / (width * height)))
-    elif ref_image_size == "max":
-        scale = min(1.0, MINIMAX_H3_REFERENCE_IMAGE_SHORT_EDGE / min(width, height))
-    else:
-        raise OmniClientError(f"MiniMax H3 ref_image_size must be match or max, got {ref_image_size!r}")
     return (
-        _align_multiple(width * scale, MINIMAX_H3_REFERENCE_IMAGE_MULTIPLE),
-        _align_multiple(height * scale, MINIMAX_H3_REFERENCE_IMAGE_MULTIPLE),
+        _align_multiple(width, MINIMAX_H3_REFERENCE_IMAGE_MULTIPLE),
+        _align_multiple(height, MINIMAX_H3_REFERENCE_IMAGE_MULTIPLE),
     )
 
 
