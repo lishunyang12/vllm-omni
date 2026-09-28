@@ -807,21 +807,35 @@ class MiniMaxH3AdalnProj(nn.Module):
 
         return super()._apply(keep_on_host, recurse=recurse)
 
+    def _offload_signature(self) -> tuple[Any, ...] | None:
+        assert self._adaln_cache is not None
+        try:
+            return self._adaln_cache._signature(self.linear)
+        except RuntimeError:
+            # Weights created in inference_mode have no version counter.
+            # Re-snapshot on every miss instead of trusting an immutable master.
+            return None
+
     def _prepare_weight_stager(self, device: torch.device) -> None:
-        if not self._offload_weights or device.type == "cpu":
+        if not self._offload_weights:
             return
         if device.type != "cuda" or torch.is_grad_enabled() or torch.compiler.is_compiling():
             raise RuntimeError("MiniMax H3 AdaLN offload requires eager CUDA inference")
         assert self._adaln_cache is not None
         if self._adaln_cache._has_forward_hooks(self.linear):
             raise RuntimeError("MiniMax H3 AdaLN offload does not support projection forward hooks")
-        signature = self._adaln_cache._signature(self.linear)
-        if self._weight_stager is None or self._weight_stager.device != device or self._host_signature != signature:
+        signature = self._offload_signature()
+        if (
+            signature is None
+            or self._weight_stager is None
+            or self._weight_stager.device != device
+            or self._host_signature != signature
+        ):
             # Re-snapshot on parameter replacement, in-place edits or moves.
             # The CPU master remains the registered parameter storage between
             # calls, so normal cache version checks and weight loaders apply.
             self._weight_stager = PinnedModuleStager(self.linear, device, cache_retention=BoundedAllocatorCache(device))
-            self._host_signature = self._adaln_cache._signature(self.linear)
+            self._host_signature = self._offload_signature()
 
     def forward(self, t_emb: torch.Tensor) -> tuple[torch.Tensor, ...]:
         """t_emb: [M, t_dim] -> expand_ratio tensors of [M*modality_num, H]."""

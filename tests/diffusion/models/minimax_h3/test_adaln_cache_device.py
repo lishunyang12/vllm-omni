@@ -136,6 +136,19 @@ def _projection_worker(rank, world_size, rendezvous, offload_weights):
                         recovered = projection(embedding)
                         for actual, original in zip(recovered, reference, strict=True):
                             assert torch.equal(actual, original)
+                        # Parameters constructed inside inference_mode cannot
+                        # prove immutability. Offload must still compute new
+                        # weights correctly and leave cache reuse disabled.
+                        projection.linear.weight = torch.nn.Parameter(projection.linear.weight.clone())
+                        for _ in range(2):
+                            projection.linear.weight.add_(0.01)
+                            resident.load_state_dict(projection.state_dict())
+                            expected = resident(embedding)
+                            hits = cache.hits
+                            actual = projection(embedding)
+                            assert cache.hits == hits
+                            for result, original in zip(actual, expected, strict=True):
+                                assert torch.equal(result, original)
         finally:
             cleanup_dist_env_and_memory()
 
