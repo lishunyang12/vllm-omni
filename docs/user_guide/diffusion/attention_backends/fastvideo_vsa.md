@@ -156,87 +156,24 @@ and no active sequence-parallel context. The MiniMax-H3 route uses 64-token
 `(4, 4, 4)` blocks and supports pure Ulysses. NPU and XPU paths do not execute
 the FastVideo VSA CUDA kernel.
 
-## Automatic tile64 provider selection
+## Automatic provider selection
 
-MiniMax-H3 defaults to `fastvideo_vsa_provider=auto`. Existing VSA launch
-commands automatically use an available FlashInfer BF16 tile64 kernel on
-SM120/SM121 and retain FastVideo on other hardware or when that API is missing.
-This selection applies to H3's BF16, head-dimension-128 tile64 path; other
-input dtypes/head sizes retain FastVideo. The video request API is unchanged.
+MiniMax-H3 defaults to `fastvideo_vsa_provider=auto`: supported BF16 inputs
+use FlashInfer on SM120/SM121 when its kernels are installed, otherwise
+FastVideo. Wan continues to use FastVideo. Existing video API requests do not
+need to change.
 
-For Sage on SM120, choose the precision; the provider is selected automatically:
+For approximate Sage attention on SM120, select the precision explicitly:
 
 ```bash
---diffusion-attention-config '{"default":{"backend":"FASTVIDEO_VSA","fastvideo_vsa_precision":"sage"},"per_role":{"minimax_h3.token_refiner":{"backend":"TORCH_SDPA"}}}'
+--diffusion-attention-config '{"default":{"backend":"FASTVIDEO_VSA","fastvideo_vsa_precision":"sage","fastvideo_vsa_topk":64},"per_role":{"minimax_h3.token_refiner":{"backend":"TORCH_SDPA"}}}'
 ```
 
-`bf16` keeps BF16 arithmetic; `sage` selects QK INT8 and PV FP8 arithmetic.
-Sage changes numerical precision and is approximate. A Sage request requires
-the supported FlashInfer kernel and fails clearly if it is unavailable; auto
-does not silently substitute BF16 for explicitly requested Sage precision.
-Both precisions require BF16 inputs and head dimension 128. BF16 dispatch
-accepts SM120/SM121, matching the upstream kernel contract; Sage requires
-SM120. GPU qualification in this PR covers SM120 only; SM121 is not tested.
-Sparse selection, prefix exemptions, tile edge sizes and compression-gate
-correction remain owned by the H3 VSA implementation. RDMA is an independent
-transport selection and is not enabled by this option.
+Sage uses QK INT8 / PV FP8 arithmetic and requires a FlashInfer build containing
+[#5127](https://github.com/flashinfer-ai/flashinfer/pull/5127). The default
+precision remains BF16. Unsupported Sage requests fail clearly.
 
-Set `fastvideo_vsa_provider` to `fastvideo` or `flashinfer` to pin a provider.
-Explicit FlashInfer selection checks hardware and dependency support instead
-of switching providers. Pin FastVideo to retain the previous provider choice;
-equal precision across providers does not promise byte-identical videos.
-
-The FlashInfer build must expose the selected API:
-`bsa_attn_sm120_blk64_fwd` for BF16 or `bsa_attn_sm120_blk64_sage_fwd` for Sage.
-The Sage implementation was merged in FlashInfer
-[#5127](https://github.com/flashinfer-ai/flashinfer/pull/5127).
-Selecting FlashInfer does not require the FastVideo kernel package. Other VSA
-layouts use the existing logged dense fallback; no FlashInfer tile256 path is
-claimed. Explicit FlashInfer requests check availability at construction;
-auto selection resolves once per device/dtype on the first H3 forward, before
-launching kernels. Runtime device faults propagate instead of triggering a
-provider switch. Logs identify the selected provider and precision.
-
-## Reuse across models and hardware
-
-The reusable operators live under `vllm_omni.diffusion.attention.ops`. A model
-does not need to inherit the H3 implementation to use them:
-
-| Component | Shared module | Reuse boundary |
-| --- | --- | --- |
-| 3-D partition, edge sizes, padding and inverse indices | `video_tiles.py` | Shared by H3 tile64 and Wan tile256; ordinary PyTorch operations with no CUDA kernel dependency |
-| Pooling, prefix-aware top-k map and map-to-index conversion | `block_sparse.py` | Model-independent tensor operations; the caller chooses its routing policy and tile size |
-| Explicit tile64 provider dispatch and FastVideo paired-CTA padding | `block_sparse.py` | Other models can pass their own sparse map; FastVideo hardware support is delegated to its existing CUDA providers |
-| FlashInfer BF16/Sage ABI and capability checks | `flashinfer_block_sparse.py` | BF16 BSHD, head dimension 128, equal Q/K/V head counts; rectangular Q/K lengths and per-batch/head sparse layouts |
-| Sage quantization and prepared-Q execution | `sage_quantization.py`, `sage_block_sparse_attention.py` | Reusable across models on SM120; the INT8/FP8 scale layout and V permutation are specific to this kernel ABI |
-
-For an existing 64-token sparse layout, call the shared operator directly:
-
-```python
-from vllm_omni.diffusion.attention.ops.block_sparse import block_sparse_attn_bshd
-
-output = block_sparse_attn_bshd(
-    query, key, value,  # BF16 [batch, sequence, heads, 128]
-    block_map,  # bool [batch, heads, ceil(Sq/64), ceil(Sk/64)]
-    block_sizes,  # int32 [Kblocks], [B,Kblocks], [B,H,Kblocks], or None
-    softmax_scale=128**-0.5,
-    provider="flashinfer",
-    precision="sage",  # or "bf16"
-)
-```
-
-`block_sizes` counts valid tokens at the beginning of each key tile; inputs
-with edge padding must provide these sizes. The caller restores original token
-order and discards padded query rows. The shared operator does not select
-blocks, add a causal mask or apply a learned compression gate.
-
-H3's multimodal prefix segmentation, target-video layout and trained gate
-remain in the model adapter. Wan already reuses the tiling helpers, but its
-256-token sparse kernel and learned correction do not become a FlashInfer
-tile64 integration automatically. Qwen-Image, Flux/Flux2 and HunyuanVideo 1.5
-have transformer configurations with head dimension 128, making them
-candidates for the shared FlashInfer operator. They still need model-specific
-block selection, text/image or text/video masking, and quality validation;
-this PR does not enable sparse attention for these models. Likewise, shared
-PyTorch metadata helpers do not make the CUDA kernels usable on ROCm, NPU or
-XPU. No FlashInfer SM80/SM90/SM100 execution or Sage SM121 support is claimed.
+Set `fastvideo_vsa_provider` to `fastvideo` or `flashinfer` to choose a fixed
+provider. Explicit FlashInfer selection requires compatible hardware and
+installed kernels. Logs show the selected provider and precision. GPU testing
+covers SM120; SM121 BF16 support follows the upstream kernel requirements.

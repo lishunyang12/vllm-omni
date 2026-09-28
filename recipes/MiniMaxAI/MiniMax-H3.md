@@ -1034,14 +1034,13 @@ normally, avoiding cyclic eviction on repeated original-H3 requests. All origina
 remain loaded so new schedules and adapters can compute normally. Adapter changes,
 weight reloads, and model device moves invalidate the cache; parameter versions
 also guard individual entries. TP ranks coordinate hits before skipping a
-projection collective. Gradient-enabled execution, custom linear hooks, and tensors without weight
-version counters use the original computation. H3 keeps cache decisions outside
-compiled tensor regions, so regional and full-model compilation can reuse
-projections without disabling compilation of the surrounding block.
+projection collective. Gradient-enabled execution, custom linear hooks, and
+tensors without weight version counters use the original computation. Both
+eager and compiled execution support projection reuse.
 Offload paths that replace weight storage can therefore reduce the hit rate.
 
 The runtime cache uses the shared `ExactProjectionCache` implementation; H3 owns
-its sidecar adaptation and projection weight offload. Other models can integrate the same
+its sidecar adaptation and projection weight offload. Other models can use the same
 [projection cache interface](../../docs/design/module/diffusion/diffusion_model_integration.md#exact-conditioning-projection-reuse).
 This cache retains projection outputs, not offloaded weights, and does not skip
 block weight prefetch.
@@ -1055,45 +1054,21 @@ For an A/B comparison, disable only this reuse at server startup:
 ### Default AdaLN weight offload
 
 AdaLN weight offload is enabled automatically for unquantized BF16 CUDA
-inference when the exact result cache is enabled. No additional flag or
-`--enforce-eager` is required. Compilation remains enabled unless the caller
-selects eager execution. To retain AdaLN weights on the GPU while keeping exact
-result caching enabled:
+inference with the default exact result cache. It reduces GPU memory usage by
+keeping projection weights in host memory and reusing exact cached results.
+Both compiled and eager execution are supported; no extra enable flag is needed.
+Allow additional host RAM for the offloaded weights.
+
+To keep AdaLN weights on the GPU while retaining result caching:
 
 ```bash
 --cache-config '{"minimax_h3_adaln_offload": false}'
 ```
 
-Non-CUDA platforms, quantized models, DiT module/layer offload and HSDP retain
-their existing weight-residency behavior by default. Disabling the result cache
-also keeps weights resident unless weight offload is explicitly requested.
-Explicitly setting `minimax_h3_adaln_offload=true` in an incompatible mode
-raises an error. This default does not change the selected execution mode.
-
-AdaLN projection weights are allocated and loaded on CPU. On a cache miss, the
-current projection stages its weights to CUDA, executes the original vLLM
-linear (including TP collectives), and restores its CPU storage even if the
-projection fails. A cache hit performs no weight transfer. Original weights
-remain available for uncovered timesteps and schedules; this does not replace
-weights with a fixed-schedule artifact or approximate neighboring timesteps.
-Parameter edits, reloads, and model moves invalidate reuse.
-
-The native 50-block FL2VA checkpoint has about 24.3 GiB of BF16 AdaLN projection
-weights at TP1. Offload trades their persistent GPU allocation for pinned host
-memory and one projection's temporary device storage per rank. Cache misses
-require transfers; repeated schedules benefit from exact cached outputs.
-The output cache remains bounded at 256 MiB, so schedules exceeding that budget
-still transfer and compute uncached projections. Disabling the runtime cache
-while retaining offload makes every projection transfer its weights.
-
-This path requires CUDA inference and unquantized BF16 weights. It supports
-TP and pure Ulysses, including TP1/SP8, and fixed FastH3 adapters fused at load.
-Cache lookup, TP hit voting, and weight staging execute outside compiled tensor
-regions; the surrounding H3 block remains eligible for compilation.
-Do not combine it with DiT module/layer offload or HSDP. Text-encoder offload is
-independent. Projection forward hooks and gradient-enabled offload are rejected.
-Memory savings do not guarantee lower latency: cache misses and the host cache
-boundary must be included in performance comparisons.
+Non-CUDA platforms, quantized models, DiT-wide offload and HSDP retain their
+existing weight placement. Disabling the result cache also disables automatic
+AdaLN offload. Explicitly enabling it in an incompatible configuration raises
+an error.
 
 ### Optional offline sidecar
 
@@ -1134,7 +1109,7 @@ Build sidecars from trusted local inputs: checksums verify identity and integrit
 not the correctness of an untrusted generator.
 
 Caching and sidecars alone save repeated projection work; GPU residency changes
-only when the separate weight-offload option is enabled. End-to-end gains depend on the workload,
+with weight offload, which is enabled by default where supported. Gains depend on the workload,
 offload behavior, embedding fingerprint cost, and TP coordination overhead.
 
 ## LoRA
@@ -1352,11 +1327,9 @@ To use approximate Sage attention on SM120, replace those two flags with:
 --diffusion-attention-config '{"default":{"backend":"FASTVIDEO_VSA","fastvideo_vsa_precision":"sage","fastvideo_vsa_topk":64},"per_role":{"minimax_h3.token_refiner":{"backend":"TORCH_SDPA"}}}'
 ```
 
-Sage requires a compatible FlashInfer build and is never enabled just by GPU
-detection. The default `fastvideo_vsa_provider=auto` preserves the requested
-precision. Set this field to `fastvideo` or `flashinfer` to pin the provider;
-an explicit unsupported FlashInfer request fails clearly. See
-[provider requirements](../../docs/user_guide/diffusion/attention_backends/fastvideo_vsa.md#automatic-tile64-provider-selection).
+Sage requires a compatible FlashInfer build; BF16 remains the default. See
+[provider selection](../../docs/user_guide/diffusion/attention_backends/fastvideo_vsa.md#automatic-provider-selection)
+for hardware requirements and provider overrides.
 
 FastH3 VSA applies its learned `.set_weight` compression gates to the complete
 packed `[text | cond | audio | video]` document using the official H3 geometry:
