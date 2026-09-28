@@ -10,6 +10,35 @@ pytestmark = [pytest.mark.core_model, pytest.mark.diffusion]
 
 
 @hardware_test(res={"cuda": ["B200"]}, num_cards=1)
+@pytest.mark.parametrize("precision", ["bf16", "sage"])
+def test_h3_auto_provider_matches_explicit_flashinfer(precision):
+    from vllm_omni.diffusion.attention.backends.abstract import AttentionMetadata, VideoTokenLayout, VideoTokenSpan
+    from vllm_omni.diffusion.attention.ops.block_sparse import resolve_block_sparse_provider
+    from vllm_omni.diffusion.models.minimax_h3.attention.fastvideo_h3 import MiniMaxH3VSAImpl
+    from vllm_omni.platforms import current_omni_platform
+
+    if current_omni_platform.get_device_capability() != (12, 0):
+        pytest.skip("requires SM120")
+    pytest.importorskip("flashinfer.cute_dsl.sparse.bsa_attn_sm120")
+    q = torch.randn(1, 133, 2, 128, device="cuda", dtype=torch.bfloat16)
+    metadata = AttentionMetadata(
+        extra={"vsa_h3_prefix_segments": (5,)},
+        video_layout=VideoTokenLayout(
+            used_len=133, video_spans=(VideoTokenSpan(start=5, latent_grid=(8, 4, 4), role="target"),)
+        ),
+    )
+    kwargs = dict(num_heads=2, head_size=128, softmax_scale=128**-0.5)
+    auto = MiniMaxH3VSAImpl(**kwargs, backend_kwargs={"precision": precision, "topk": 1})
+    explicit = MiniMaxH3VSAImpl(**kwargs, backend_kwargs={"provider": "flashinfer", "precision": precision, "topk": 1})
+    assert auto.provider == "auto"
+    assert resolve_block_sparse_provider(auto.provider, precision, q.device, q.dtype, 128) == "flashinfer"
+    actual = auto.forward_cuda(q, q, q, metadata)
+    expected = explicit.forward_cuda(q, q, q, metadata)
+    torch.accelerator.synchronize()
+    torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+
+
+@hardware_test(res={"cuda": ["B200"]}, num_cards=1)
 @pytest.mark.parametrize("rows,keys", [(128, 192), (129, 191), (256, 256)])
 @pytest.mark.parametrize("precision", ["sage", "bf16"])
 def test_sage_sparse_against_masked_sdpa(rows, keys, precision):

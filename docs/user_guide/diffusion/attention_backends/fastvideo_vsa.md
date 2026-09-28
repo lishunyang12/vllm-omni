@@ -24,10 +24,12 @@ The extra installs the tested kernel dependency automatically. Prebuilt kernels 
 Linux, Python 3.12, and glibc 2.34 or newer (x86-64 or aarch64). The full
 FastVideo framework and provider environment variables are not required.
 
-`FASTVIDEO_VSA` selects the attention algorithm. By default, the H3 integration
-on SM120 executes FastVideo's 64-token Triton block-sparse kernel. The `vsa`
-extra installs `fastvideo-kernel==0.3.4` for this execution path. FlashInfer is
-an explicitly selected alternative described below.
+`FASTVIDEO_VSA` selects the attention algorithm. H3 automatically selects the
+tile64 provider using the input device, dtype, and installed kernels. BF16
+inputs on SM120/SM121 use FlashInfer when its tile64 API is available;
+otherwise H3 uses FastVideo. The `vsa` extra installs
+`fastvideo-kernel==0.3.4` for that path. Wan's tile256 route keeps FastVideo.
+The default precision remains BF16; auto selection never enables Sage itself.
 
 ## Enable the backend
 
@@ -127,7 +129,7 @@ selecting VSA does not turn a native checkpoint into a distilled model.
 
 ## Verify routing and fallback
 
-VSA is a CUDA-only, explicitly selected backend. Its default provider requires
+VSA is a CUDA-only, explicitly selected backend. The FastVideo provider requires
 the `fastvideo-kernel` package and currently supports non-causal self-attention
 with equal query and key/value sequence lengths. Unsupported shapes, masks,
 dtypes, sequence-parallel execution, or kernel failures fall back to
@@ -154,17 +156,24 @@ and no active sequence-parallel context. The MiniMax-H3 route uses 64-token
 `(4, 4, 4)` blocks and supports pure Ulysses. NPU and XPU paths do not execute
 the FastVideo VSA CUDA kernel.
 
-## FlashInfer tile64 provider
+## Automatic tile64 provider selection
 
-MiniMax-H3 can use FlashInfer for its model-owned VSA tile64 layout. Select the
-provider and precision explicitly through the existing attention configuration:
+MiniMax-H3 defaults to `fastvideo_vsa_provider=auto`. Existing VSA launch
+commands automatically use an available FlashInfer BF16 tile64 kernel on
+SM120/SM121 and retain FastVideo on other hardware or when that API is missing.
+This selection applies to H3's BF16, head-dimension-128 tile64 path; other
+input dtypes/head sizes retain FastVideo. The video request API is unchanged.
+
+For Sage on SM120, choose the precision; the provider is selected automatically:
 
 ```bash
---diffusion-attention-config '{"default":{"backend":"FASTVIDEO_VSA","fastvideo_vsa_provider":"flashinfer","fastvideo_vsa_precision":"sage"},"per_role":{"minimax_h3.token_refiner":{"backend":"TORCH_SDPA"}}}'
+--diffusion-attention-config '{"default":{"backend":"FASTVIDEO_VSA","fastvideo_vsa_precision":"sage"},"per_role":{"minimax_h3.token_refiner":{"backend":"TORCH_SDPA"}}}'
 ```
 
-`bf16` selects the FlashInfer BF16 block-sparse kernel; `sage` selects QK INT8
-and PV FP8 arithmetic. Sage changes numerical precision and is approximate.
+`bf16` keeps BF16 arithmetic; `sage` selects QK INT8 and PV FP8 arithmetic.
+Sage changes numerical precision and is approximate. A Sage request requires
+the supported FlashInfer kernel and fails clearly if it is unavailable; auto
+does not silently substitute BF16 for explicitly requested Sage precision.
 Both precisions require BF16 inputs and head dimension 128. BF16 dispatch
 accepts SM120/SM121, matching the upstream kernel contract; Sage requires
 SM120. GPU qualification in this PR covers SM120 only; SM121 is not tested.
@@ -172,12 +181,21 @@ Sparse selection, prefix exemptions, tile edge sizes and compression-gate
 correction remain owned by the H3 VSA implementation. RDMA is an independent
 transport selection and is not enabled by this option.
 
-The FlashInfer build must expose `bsa_attn_sm120_blk64_sage_fwd` and
-`bsa_attn_sm120_blk64_fwd`. The Sage implementation was merged in FlashInfer
+Set `fastvideo_vsa_provider` to `fastvideo` or `flashinfer` to pin a provider.
+Explicit FlashInfer selection checks hardware and dependency support instead
+of switching providers. Pin FastVideo to retain the previous provider choice;
+equal precision across providers does not promise byte-identical videos.
+
+The FlashInfer build must expose the selected API:
+`bsa_attn_sm120_blk64_fwd` for BF16 or `bsa_attn_sm120_blk64_sage_fwd` for Sage.
+The Sage implementation was merged in FlashInfer
 [#5127](https://github.com/flashinfer-ai/flashinfer/pull/5127).
 Selecting FlashInfer does not require the FastVideo kernel package. Other VSA
 layouts use the existing logged dense fallback; no FlashInfer tile256 path is
-claimed. Missing provider APIs fail at construction.
+claimed. Explicit FlashInfer requests check availability at construction;
+auto selection resolves once per device/dtype on the first H3 forward, before
+launching kernels. Runtime device faults propagate instead of triggering a
+provider switch. Logs identify the selected provider and precision.
 
 ## Reuse across models and hardware
 

@@ -1080,8 +1080,8 @@ Parameter edits, reloads, and model moves invalidate reuse.
 
 The native 50-block FL2VA checkpoint has about 24.3 GiB of BF16 AdaLN projection
 weights at TP1. Offload trades their persistent GPU allocation for pinned host
-memory and one projection's temporary device storage per rank. Cold requests
-pay transfer costs; repeated schedules benefit from exact cached outputs.
+memory and one projection's temporary device storage per rank. Cache misses
+require transfers; repeated schedules benefit from exact cached outputs.
 The output cache remains bounded at 256 MiB, so schedules exceeding that budget
 still transfer and compute uncached projections. Disabling the runtime cache
 while retaining offload makes every projection transfer its weights.
@@ -1092,8 +1092,8 @@ Cache lookup, TP hit voting, and weight staging execute outside compiled tensor
 regions; the surrounding H3 block remains eligible for compilation.
 Do not combine it with DiT module/layer offload or HSDP. Text-encoder offload is
 independent. Projection forward hooks and gradient-enabled offload are rejected.
-Memory savings do not guarantee lower latency: cold transfers, cache misses,
-and the host cache boundary must be included in performance comparisons.
+Memory savings do not guarantee lower latency: cache misses and the host cache
+boundary must be included in performance comparisons.
 
 ### Optional offline sidecar
 
@@ -1310,8 +1310,8 @@ hf download FastVideo/FastVideo-FastH3-4-step-Preview-v1-LoRA \
 export FASTH3_LORA="${FASTH3_DIR}/dense-datafree/adapter_model.safetensors"
 ```
 
-Add `--task-type fl2va --lora-path "${FASTH3_LORA}"` to a non-offloaded server
-command. T2VA is served by the FL2VA partition, so `--task-type fl2va` is
+Add `--task-type fl2va --lora-path "${FASTH3_LORA}"` to a server command without
+DiT-wide offload. T2VA is served by the FL2VA partition, so `--task-type fl2va` is
 correct even though FastH3 preview v1 distills T2VA only. Because the adapter is
 fused, `--lora-backend` does not apply and a request carrying a `lora=` field is
 rejected rather than served without the adapter it asked for.
@@ -1332,18 +1332,31 @@ Only a release that identifies itself as FastH3 is fused; any other
 `fastvideo-lora-v2` adapter stays on the dynamic LoRA route. A claimed artifact
 is then held to its own metadata: one that misdeclares its tensor counts or
 leaves a transformer block unedited is refused at startup instead of serving
-mostly base H3 weights on a four-step schedule. Offload is refused for the same
+mostly base H3 weights on a four-step schedule. DiT-wide offload is refused for the same
 reason - `--enable-cpu-offload`, `--enable-layerwise-offload` and
 `--enable-distributed-layerwise-offload` all bypass the fusion, so they fail fast.
 
-The VSA variants are supported through FastVideo's external kernel. Install a
-`fastvideo-kernel` build that provides the `fastvideo_kernel` Python module,
-then add the following flags to the same command:
+For the VSA variants, add the following flags to the same command. H3 selects
+FlashInfer BF16 automatically on SM120/SM121 when the required tile64 API is
+installed; otherwise it uses FastVideo's external kernel, supplied by the
+`vllm-omni[vsa]` extra. The video request API is unchanged:
 
 ```bash
 --diffusion-attention-backend FASTVIDEO_VSA \
 --fastvideo-vsa-topk 64
 ```
+
+To use approximate Sage attention on SM120, replace those two flags with:
+
+```bash
+--diffusion-attention-config '{"default":{"backend":"FASTVIDEO_VSA","fastvideo_vsa_precision":"sage","fastvideo_vsa_topk":64},"per_role":{"minimax_h3.token_refiner":{"backend":"TORCH_SDPA"}}}'
+```
+
+Sage requires a compatible FlashInfer build and is never enabled just by GPU
+detection. The default `fastvideo_vsa_provider=auto` preserves the requested
+precision. Set this field to `fastvideo` or `flashinfer` to pin the provider;
+an explicit unsupported FlashInfer request fails clearly. See
+[provider requirements](../../docs/user_guide/diffusion/attention_backends/fastvideo_vsa.md#automatic-tile64-provider-selection).
 
 FastH3 VSA applies its learned `.set_weight` compression gates to the complete
 packed `[text | cond | audio | video]` document using the official H3 geometry:

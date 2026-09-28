@@ -151,6 +151,8 @@ class FastVideoVSABackend(AttentionBackend):
 
 
 class FastVideoVSAImpl(AttentionImpl):
+    _supports_tile64_provider = False
+
     def __init__(
         self,
         num_heads: int,
@@ -171,11 +173,13 @@ class FastVideoVSAImpl(AttentionImpl):
         self.causal = causal
         self.qkv_layout = qkv_layout
 
-        self.provider = backend_kwargs.get("provider", "fastvideo")
+        self.provider = backend_kwargs.get("provider", "auto")
         self.precision = backend_kwargs.get("precision", "bf16")
-        if self.provider not in ("fastvideo", "flashinfer") or self.precision not in ("bf16", "sage"):
-            raise ValueError("VSA requires provider fastvideo/flashinfer and precision bf16/sage")
-        if self.precision == "sage" and self.provider != "flashinfer":
+        if self.provider not in ("auto", "fastvideo", "flashinfer") or self.precision not in ("bf16", "sage"):
+            raise ValueError("VSA requires provider auto/fastvideo/flashinfer and precision bf16/sage")
+        if self.provider == "auto" and not self._supports_tile64_provider:
+            self.provider = "fastvideo"
+        if self.precision == "sage" and self.provider == "fastvideo":
             raise ValueError("Sage VSA requires the FlashInfer provider")
         if self.provider == "flashinfer":
             from vllm_omni.diffusion.attention.ops.flashinfer_block_sparse import require_flashinfer_sparse

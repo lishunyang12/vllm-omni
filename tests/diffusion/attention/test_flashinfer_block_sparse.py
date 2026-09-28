@@ -3,12 +3,17 @@
 """Provider contracts need neither an H3 model nor a CUDA runtime."""
 
 import sys
+import types
 
 import pytest
 import torch
 
 from vllm_omni.diffusion.attention.ops import flashinfer_block_sparse as provider
-from vllm_omni.diffusion.attention.ops.block_sparse import block_map_to_indices, block_sparse_attn_bshd
+from vllm_omni.diffusion.attention.ops.block_sparse import (
+    block_map_to_indices,
+    block_sparse_attn_bshd,
+    resolve_block_sparse_provider,
+)
 from vllm_omni.diffusion.attention.ops.video_tiles import get_tile_metadata
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu, pytest.mark.diffusion]
@@ -123,3 +128,97 @@ def test_provider_uses_operand_device_for_hardware_check(monkeypatch):
     with pytest.raises(ValueError, match="requires SM120"):
         provider.require_flashinfer_sparse("sage", torch.device("cuda:3"))
     assert seen == [3]
+
+
+@pytest.fixture
+def auto_providers(monkeypatch):
+    resolve_block_sparse_provider.cache_clear()
+    calls = []
+    state = {"capability": (12, 0), "available": True}
+
+    def require(precision, device):
+        calls.append((precision, device.index))
+        provider.validate_flashinfer_sparse_capability(precision, state["capability"])
+        if not state["available"]:
+            raise ImportError("FlashInfer API missing")
+        return lambda *args: None
+
+    monkeypatch.setattr(provider, "require_flashinfer_sparse", require)
+    fastvideo = types.ModuleType("fastvideo_kernel.block_sparse_attn")
+    setattr(fastvideo, "block_sparse_attn", lambda *args: None)
+    monkeypatch.setitem(sys.modules, "fastvideo_kernel.block_sparse_attn", fastvideo)
+    yield state, calls
+    resolve_block_sparse_provider.cache_clear()
+
+
+@pytest.mark.parametrize("capability", [(8, 0), (8, 9), (9, 0), (10, 0), (12, 0), (12, 1)])
+@pytest.mark.parametrize("available", [False, True])
+def test_auto_bf16_uses_hardware_and_installed_api(auto_providers, capability, available):
+    state, calls = auto_providers
+    state.update(capability=capability, available=available)
+    device = torch.device("cuda:3")
+    expected = "flashinfer" if capability in ((12, 0), (12, 1)) and available else "fastvideo"
+    for _ in range(2):
+        assert resolve_block_sparse_provider("auto", "bf16", device, torch.bfloat16, 128) == expected
+    assert calls == [("bf16", 3)], "resolve once and use the operand's device"
+
+
+@pytest.mark.parametrize(
+    "device,dtype,head_size",
+    [("cpu", torch.bfloat16, 128), ("cuda:2", torch.float16, 128), ("cuda:2", torch.bfloat16, 64)],
+)
+def test_auto_preserves_fastvideo_for_other_input_contracts(auto_providers, device, dtype, head_size):
+    _, calls = auto_providers
+    assert resolve_block_sparse_provider("auto", "bf16", torch.device(device), dtype, head_size) == "fastvideo"
+    assert calls == []
+
+
+@pytest.mark.parametrize("capability", [(12, 1), (10, 0)])
+def test_auto_does_not_downgrade_requested_sage_precision(auto_providers, capability):
+    state, _ = auto_providers
+    state["capability"] = capability
+    with pytest.raises(ValueError, match="requires SM120"):
+        resolve_block_sparse_provider("auto", "sage", torch.device("cuda:3"), torch.bfloat16, 128)
+
+
+def test_auto_sage_requires_installed_kernel(auto_providers):
+    state, _ = auto_providers
+    state["available"] = False
+    with pytest.raises(ImportError, match="FlashInfer API missing"):
+        resolve_block_sparse_provider("auto", "sage", torch.device("cuda:3"), torch.bfloat16, 128)
+
+
+def test_auto_sage_selects_flashinfer_on_sm120(auto_providers):
+    assert resolve_block_sparse_provider("auto", "sage", torch.device("cuda:3"), torch.bfloat16, 128) == "flashinfer"
+
+
+def test_auto_cache_is_per_device(auto_providers):
+    state, calls = auto_providers
+    assert resolve_block_sparse_provider("auto", "bf16", torch.device("cuda:3"), torch.bfloat16, 128) == "flashinfer"
+    state["capability"] = (9, 0)
+    assert resolve_block_sparse_provider("auto", "bf16", torch.device("cuda:4"), torch.bfloat16, 128) == "fastvideo"
+    assert calls == [("bf16", 3), ("bf16", 4)]
+
+
+def test_auto_reports_no_available_provider(auto_providers, monkeypatch):
+    state, _ = auto_providers
+    state["available"] = False
+    monkeypatch.setitem(sys.modules, "fastvideo_kernel.block_sparse_attn", None)
+    with pytest.raises(ImportError, match="fastvideo-kernel is unavailable"):
+        resolve_block_sparse_provider("auto", "bf16", torch.device("cuda:3"), torch.bfloat16, 128)
+
+
+def test_auto_does_not_hide_runtime_faults(auto_providers, monkeypatch):
+    def fail(*args):
+        raise RuntimeError("initialization failure")
+
+    monkeypatch.setattr(provider, "require_flashinfer_sparse", fail)
+    with pytest.raises(RuntimeError, match="initialization failure"):
+        resolve_block_sparse_provider("auto", "bf16", torch.device("cuda:3"), torch.bfloat16, 128)
+
+
+@pytest.mark.parametrize("explicit", ["fastvideo", "flashinfer"])
+def test_explicit_provider_is_not_reselected(auto_providers, explicit):
+    _, calls = auto_providers
+    assert resolve_block_sparse_provider(explicit, "bf16", torch.device("cuda:3"), torch.bfloat16, 128) == explicit
+    assert calls == []

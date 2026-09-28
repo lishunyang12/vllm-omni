@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """Shared pooling, routing and provider calls for explicit block-sparse attention."""
 
+import functools
+import importlib
 import math
 import os
 
@@ -84,6 +86,55 @@ if not hasattr(torch.ops.vllm_omni, "fastvideo_block_sparse_attn_bshd"):
 
 
 fastvideo_block_sparse_attn_bshd = torch.ops.vllm_omni.fastvideo_block_sparse_attn_bshd
+
+
+@functools.lru_cache(maxsize=32)
+def resolve_block_sparse_provider(
+    provider: str, precision: str, device: torch.device, dtype: torch.dtype, head_size: int
+) -> str:
+    """Resolve auto tile64 dispatch once per device/dtype, without changing precision.
+
+    Use the operand's device, not device zero: each worker may own a different
+    accelerator. Explicit provider requests retain their strict validation.
+    Availability checks run before any kernel launch, so execution faults are
+    never treated as a reason to try another provider.
+    """
+    if provider != "auto":
+        return provider
+    if precision not in ("bf16", "sage"):
+        raise ValueError("VSA precision must be bf16 or sage")
+    reason = "FlashInfer tile64 requires CUDA BF16 inputs with head dimension 128"
+    if device.type != "cuda":
+        if precision == "sage":
+            raise ValueError(reason)
+        # Non-CUDA dispatch belongs to the existing backend fallback; do not
+        # import accelerator kernels while resolving its host-side metadata.
+        return "fastvideo"
+    if dtype == torch.bfloat16 and head_size == 128:
+        from .flashinfer_block_sparse import require_flashinfer_sparse
+
+        try:
+            require_flashinfer_sparse(precision, device)
+        except (ImportError, ValueError) as exc:
+            if precision == "sage":
+                raise
+            reason = str(exc)
+        else:
+            logger.info_once("VSA auto selected FlashInfer %s on %s", precision, device)
+            return "flashinfer"
+    elif precision == "sage":
+        raise ValueError(reason)
+    try:
+        kernel = importlib.import_module("fastvideo_kernel.block_sparse_attn").block_sparse_attn
+        if not callable(kernel):
+            raise ImportError("FastVideo block_sparse_attn is unavailable")
+    except (ImportError, AttributeError) as exc:
+        raise ImportError(
+            f"VSA auto cannot use FlashInfer ({reason}) and fastvideo-kernel is unavailable. "
+            "Install vllm-omni[vsa] for the FastVideo provider."
+        ) from exc
+    logger.info_once("VSA auto selected FastVideo on %s: %s", device, reason)
+    return "fastvideo"
 
 
 def block_map_to_indices(block_map: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:

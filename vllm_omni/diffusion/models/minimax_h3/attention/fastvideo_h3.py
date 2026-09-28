@@ -19,6 +19,7 @@ from vllm_omni.diffusion.attention.ops.block_sparse import (
     block_sparse_attn_bshd,
     build_prefix_dense_block_map,
     mean_pool_tiles,
+    resolve_block_sparse_provider,
 )
 from vllm_omni.diffusion.attention.ops.video_tiles import (
     construct_variable_block_sizes,
@@ -81,12 +82,16 @@ def _get_h3_layout(
 class MiniMaxH3VSAImpl(FastVideoVSAImpl):
     """Apply H3 tile64 routing after shared parallel attention dispatch."""
 
+    _supports_tile64_provider = True
+
     def _forward_h3(
         self,
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
         attn_metadata: AttentionMetadata,
+        *,
+        provider: str,
     ) -> torch.Tensor:
         layout = _get_h3_layout(attn_metadata)
         if layout is None:
@@ -143,10 +148,10 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
             block_map,
             sizes,
             self.softmax_scale,
-            provider=self.provider,
+            provider=provider,
             precision=self.precision,
         )
-        logger.info_once("H3 VSA executing provider=%s precision=%s", self.provider, self.precision)
+        logger.info_once("H3 VSA executing provider=%s precision=%s", provider, self.precision)
 
         if gate is not None:
             gate_tiled = torch.zeros_like(q_tiled[:, : logical_blocks * 64])
@@ -171,6 +176,9 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
         if _get_h3_layout(attn_metadata) is None:
             return super().forward_cuda(query, key, value, attn_metadata)
 
+        provider = resolve_block_sparse_provider(
+            self.provider, self.precision, query.device, query.dtype, self.head_size
+        )
         original_query, original_key, original_value = query, key, value
         original_seq_len = query.shape[1]
         valid_seq_len = original_seq_len
@@ -185,7 +193,7 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
             value = value[:, :valid_seq_len]
 
         try:
-            output = self._forward_h3(query, key, value, attn_metadata)
+            output = self._forward_h3(query, key, value, attn_metadata, provider=provider)
             if valid_seq_len == original_seq_len:
                 return output
             restored = torch.zeros_like(original_query)
