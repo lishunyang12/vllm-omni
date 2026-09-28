@@ -1705,12 +1705,12 @@ def test_encoder_forward_forwards_video_inputs():
         ((384, 640), (384, 640)),
         ((1280, 720), (1280, 704)),
         ((1344, 768), (1344, 768)),
-        ((3844, 2160), (1344, 768)),
-        ((2160, 3844), (768, 1344)),
-        ((2048, 2048), (768, 768)),
+        ((3844, 2160), (3840, 2176)),
+        ((2160, 3844), (2176, 3840)),
+        ((2048, 2048), (2048, 2048)),
     ],
 )
-def test_reference_video_shape_limits_resolution_without_upscaling(size, expected):
+def test_reference_video_shape_preserves_resolution_with_alignment(size, expected):
     from vllm_omni.model_executor.models.minimax_h3.reference_video import (
         _reference_video_shape,
     )
@@ -2429,20 +2429,22 @@ def test_ref2va_reference_count_validation_preserves_client_error_metadata():
 
 
 @pytest.mark.parametrize(
-    ("case", "start_time", "expected_duration"),
+    ("case", "start_time", "expected_duration", "input_size", "expected_size"),
     [
-        ("R7", None, 10.0),
-        ("R8", 4.0, 6.0),
+        ("R7", None, 10.0, (3844, 2160), (3840, 2176)),
+        ("R8", 4.0, 6.0, (640, 384), (640, 384)),
     ],
 )
-def test_r7_r8_ref2va_video_segment_matrix(monkeypatch, tmp_path, case, start_time, expected_duration):
+def test_r7_r8_ref2va_video_segment_matrix(
+    monkeypatch, tmp_path, case, start_time, expected_duration, input_size, expected_size
+):
     from vllm_omni.diffusion.models.minimax_h3 import reference_video as reference_video_module
 
     source = tmp_path / f"{case}.mp4"
     source.touch()
     metadata = {
-        "width": 1280,
-        "height": 720,
+        "width": input_size[0],
+        "height": input_size[1],
         "fps": 24.0,
         "frame_count": 240,
         "duration": 10.0,
@@ -2471,6 +2473,8 @@ def test_r7_r8_ref2va_video_segment_matrix(monkeypatch, tmp_path, case, start_ti
     assert prepared[0]["start_time_seconds"] == pytest.approx(start_time or 0.0)
     assert transcode_calls[0][1]["duration_seconds"] == pytest.approx(expected_duration)
     assert transcode_calls[0][1]["target_frame_count"] == 209
+    assert (prepared[0]["width"], prepared[0]["height"]) == expected_size
+    assert (transcode_calls[0][1]["target_width"], transcode_calls[0][1]["target_height"]) == expected_size
 
 
 def test_ref2va_transcode_zero_frame_count_keeps_video_stream(monkeypatch, tmp_path):
