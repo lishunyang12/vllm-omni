@@ -271,8 +271,7 @@ For a combined service on four high-memory GPUs, use:
 - regional `torch.compile` for the repeated DiT blocks;
 - dense BF16 `TRTLLM_ATTN`, with Ring and TP left at 1.
 
-Both DiTs remain resident except for their default AdaLN projection weight
-offload. If they do not fit, use model-level CPU offload.
+Both DiTs remain resident. If they do not fit, use model-level CPU offload.
 
 ```bash
 export MODEL=MiniMaxAI/MiniMax-H3
@@ -1052,23 +1051,23 @@ For an A/B comparison, disable only this reuse at server startup:
 --cache-config '{"minimax_h3_adaln_cache": false}'
 ```
 
-### Default AdaLN weight offload
+### Optional AdaLN weight offload
 
-AdaLN weight offload is enabled automatically for unquantized BF16 CUDA
-inference when the exact result cache is enabled. No additional flag or
-`--enforce-eager` is required. Compilation remains enabled unless the caller
-selects eager execution. To retain AdaLN weights on the GPU while keeping exact
-result caching enabled:
+Exact result caching is enabled by default; AdaLN weights remain on the GPU
+unless weight offload is explicitly requested. Offload saves device memory but
+adds transfers on cache misses, so it is not a latency-neutral default for cold
+requests or new schedules. Enable it for unquantized BF16 CUDA inference with:
 
 ```bash
---cache-config '{"minimax_h3_adaln_offload": false}'
+--cache-config '{"minimax_h3_adaln_offload": true}'
 ```
 
-Non-CUDA platforms, quantized models, DiT module/layer offload and HSDP retain
-their existing weight-residency behavior by default. Disabling the result cache
-also keeps weights resident unless weight offload is explicitly requested.
-Explicitly setting `minimax_h3_adaln_offload=true` in an incompatible mode
-raises an error. This default does not change the selected execution mode.
+`--enforce-eager` is not required: both compiled and eager execution support
+offload through the same host cache boundary. This option does not change the
+selected execution mode. Non-CUDA platforms, quantized models, DiT module/layer
+offload and HSDP reject this option; their existing weight-residency behavior
+is unchanged when it is omitted. To disable weight offload while keeping exact
+result caching, set `minimax_h3_adaln_offload=false`.
 
 AdaLN projection weights are allocated and loaded on CPU. On a cache miss, the
 current projection stages its weights to CUDA, executes the original vLLM
