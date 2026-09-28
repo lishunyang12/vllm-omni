@@ -1038,8 +1038,8 @@ projection collective. Gradient-enabled execution, compilation, custom linear
 hooks, and tensors without weight version counters use the original computation.
 Offload paths that replace weight storage can therefore reduce the hit rate.
 
-The runtime cache uses the shared `ExactProjectionCache` implementation; H3 keeps
-only its optional sidecar adaptation. Other models can integrate the same
+The runtime cache uses the shared `ExactProjectionCache` implementation; H3 owns
+its sidecar adaptation and optional projection weight offload. Other models can integrate the same
 [projection cache interface](../../docs/design/module/diffusion/diffusion_model_integration.md#exact-conditioning-projection-reuse).
 This cache retains projection outputs, not offloaded weights, and does not skip
 block weight prefetch.
@@ -1049,6 +1049,37 @@ For an A/B comparison, disable only this reuse at server startup:
 ```bash
 --cache-config '{"minimax_h3_adaln_cache": false}'
 ```
+
+### Optional AdaLN weight offload
+
+Exact caching is enabled by default; weight offload is a separate opt-in:
+
+```bash
+--enforce-eager \
+--cache-config '{"minimax_h3_adaln_offload": true}'
+```
+
+AdaLN projection weights are allocated and loaded on CPU. On a cache miss, the
+current projection stages its weights to CUDA, executes the original vLLM
+linear (including TP collectives), and restores its CPU storage even if the
+projection fails. A cache hit performs no weight transfer. Original weights
+remain available for uncovered timesteps and schedules; this does not replace
+weights with a fixed-schedule artifact or approximate neighboring timesteps.
+Parameter edits, reloads, and model moves invalidate reuse.
+
+The native 50-block FL2VA checkpoint has about 24.3 GiB of BF16 AdaLN projection
+weights at TP1. Offload trades their persistent GPU allocation for pinned host
+memory and one projection's temporary device storage per rank. Cold requests
+pay transfer costs; repeated schedules benefit from exact cached outputs.
+The output cache remains bounded at 256 MiB, so schedules exceeding that budget
+still transfer and compute uncached projections. Disabling the runtime cache
+while retaining offload makes every projection transfer its weights.
+
+This path requires eager CUDA inference and unquantized BF16 weights. It supports
+TP and pure Ulysses, including TP1/SP8, and fixed FastH3 adapters fused at load.
+Do not combine it with DiT module/layer offload or HSDP. Text-encoder offload is
+independent. Projection forward hooks and compiled or gradient-enabled execution
+are rejected instead of bypassed.
 
 ### Optional offline sidecar
 
@@ -1091,8 +1122,8 @@ the runtime path. A request with different settings similarly falls back.
 Build sidecars from trusted local inputs: checksums verify identity and integrity,
 not the correctness of an untrusted generator.
 
-This implementation saves repeated projection work. It does not remove AdaLN
-weights or claim a GPU memory reduction. End-to-end gains depend on the workload,
+Caching and sidecars alone save repeated projection work; GPU residency changes
+only when the separate weight-offload option is enabled. End-to-end gains depend on the workload,
 offload behavior, embedding fingerprint cost, and TP coordination overhead.
 
 ## LoRA

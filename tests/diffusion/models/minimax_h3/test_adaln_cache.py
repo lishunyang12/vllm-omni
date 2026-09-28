@@ -216,6 +216,59 @@ def test_native_constructor_enables_cache_by_default(monkeypatch, tp_size):
     assert disabled.adaln_cache.max_bytes == 0
 
 
+@pytest.fixture
+def offload_model_config(monkeypatch):
+    from tests.diffusion.models.minimax_h3.test_minimax_h3_quantization import (
+        _FakeAttention,
+        _FakeLinear,
+        _small_od_config,
+    )
+
+    for name in ("ColumnParallelLinear", "RowParallelLinear", "MergedColumnParallelLinear", "QKVParallelLinear"):
+        monkeypatch.setattr(h3, name, _FakeLinear)
+    monkeypatch.setattr(h3, "Attention", _FakeAttention)
+    monkeypatch.setattr(h3, "get_tensor_model_parallel_world_size", lambda: 1)
+    config = _small_od_config()
+    config.enforce_eager = True
+    config.cache_config = {"minimax_h3_adaln_offload": True}
+    return config
+
+
+def test_adaln_offload_allocates_only_projection_weights_on_host(offload_model_config):
+    # A non-CPU construction context reproduces how the loader allocates the
+    # model, without requiring a large checkpoint or a GPU in this CPU test.
+    with torch.device("meta"):
+        model = h3.MiniMaxH3DiTModel(offload_model_config)
+    for name, parameter in model.named_parameters():
+        assert parameter.device.type == ("cpu" if ".adaln_proj.linear." in name else "meta")
+    assert model.adaln_cache.offload_weights
+    assert model.adaln_cache.max_bytes > 0
+
+
+@pytest.mark.parametrize("setting", ["type", "compile", "module", "layer", "hsdp", "quantized"])
+def test_adaln_offload_rejects_incompatible_configuration(offload_model_config, setting):
+    config = offload_model_config
+    quant = None
+    if setting == "type":
+        config.cache_config["minimax_h3_adaln_offload"] = "true"
+    elif setting == "compile":
+        config.enforce_eager = False
+    elif setting in {"module", "layer"}:
+        config.diffusion_offload_config = {"mode": setting, "components": ["dit"]}
+    elif setting == "hsdp":
+        config.parallel_config.use_hsdp = True
+    else:
+        quant = object()
+    with pytest.raises(ValueError, match="[Aa]da[Ll][Nn]|adaln"):
+        h3.MiniMaxH3DiTModel(config, quant_config=quant)
+
+
+def test_adaln_offload_keeps_text_encoder_offload_independent(offload_model_config):
+    offload_model_config.diffusion_offload_config = {"mode": "module", "components": ["text_encoder"]}
+    model = h3.MiniMaxH3DiTModel(offload_model_config)
+    assert model.adaln_cache.offload_weights
+
+
 def test_optional_sidecar_seeds_runtime_projection(tmp_path, mocker):
     arch, weights, payload, _, path = _fixture(tmp_path)
     sidecar = _ready(arch, weights, path)
