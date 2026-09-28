@@ -785,8 +785,9 @@ Run this request against the combined service. Repeat the
 `input_references` multipart field once per source video. H3 consumes the
 videos in form order and preserves their original soundtracks during
 conditioning.
-Reference videos keep their original resolution, with dimensions aligned to
-32 pixels. No additional request or server setting is needed.
+Small reference videos retain their original size; larger videos are scaled
+down to the reference canvas. Dimensions are aligned to 32 pixels. No
+additional request or server setting is needed.
 
 ```bash
 export SUBJECT_VIDEO=/path/to/green_screen_subject.mp4

@@ -67,6 +67,8 @@ MINIMAX_H3_FPS = 24.0
 MINIMAX_H3_QWEN_VIDEO_SAMPLE_FPS = 2.0
 MINIMAX_H3_QWEN_TEMPORAL_PATCH = 2
 MINIMAX_H3_CANVAS_MULTIPLE = 32
+MINIMAX_H3_BASE_SHORT_EDGE = 768
+MINIMAX_H3_MAX_PIXELS = 768 * 1344
 MINIMAX_H3_MIN_REFERENCE_DIMENSION = 256
 MINIMAX_H3_MAX_REFERENCE_DIMENSION = 5760
 MINIMAX_H3_MIN_REFERENCE_FPS = 23.976
@@ -289,7 +291,7 @@ def validate_reference_audio_waveforms(values: list[tuple[torch.Tensor, int]]) -
 
 
 def _reference_video_shape(width: int, height: int) -> tuple[int, int]:
-    """Preserve reference resolution, rounding each axis to the 32-pixel grid."""
+    """Fit large references to the video canvas without enlarging small inputs."""
     if (
         min(width, height) < MINIMAX_H3_MIN_REFERENCE_DIMENSION
         or max(width, height) > MINIMAX_H3_MAX_REFERENCE_DIMENSION
@@ -298,10 +300,25 @@ def _reference_video_shape(width: int, height: int) -> tuple[int, int]:
     ratio = float(width) / float(height)
     if not 0.4 <= ratio <= 2.5:
         raise OmniClientError(f"reference video aspect ratio must be in [0.4, 2.5], got {width}x{height}")
-    return (
-        _nearest_multiple(width, MINIMAX_H3_CANVAS_MULTIPLE),
-        _nearest_multiple(height, MINIMAX_H3_CANVAS_MULTIPLE),
-    )
+    if ratio >= 1.0:
+        target_width = MINIMAX_H3_BASE_SHORT_EDGE * ratio
+        target_height = float(MINIMAX_H3_BASE_SHORT_EDGE)
+    else:
+        target_width = float(MINIMAX_H3_BASE_SHORT_EDGE)
+        target_height = MINIMAX_H3_BASE_SHORT_EDGE / ratio
+    area = target_width * target_height
+    if area > MINIMAX_H3_MAX_PIXELS:
+        scale = math.sqrt(MINIMAX_H3_MAX_PIXELS / area)
+        target_width *= scale
+        target_height *= scale
+    canvas_width = _nearest_multiple(target_width, MINIMAX_H3_CANVAS_MULTIPLE)
+    canvas_height = _nearest_multiple(target_height, MINIMAX_H3_CANVAS_MULTIPLE)
+    if width * height < canvas_width * canvas_height:
+        return (
+            _nearest_multiple(width, MINIMAX_H3_CANVAS_MULTIPLE),
+            _nearest_multiple(height, MINIMAX_H3_CANVAS_MULTIPLE),
+        )
+    return canvas_width, canvas_height
 
 
 def _transcode_reference_video(

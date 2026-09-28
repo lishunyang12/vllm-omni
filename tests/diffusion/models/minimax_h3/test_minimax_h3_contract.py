@@ -1705,12 +1705,14 @@ def test_encoder_forward_forwards_video_inputs():
         ((384, 640), (384, 640)),
         ((1280, 720), (1280, 704)),
         ((1344, 768), (1344, 768)),
-        ((3844, 2160), (3840, 2176)),
-        ((2160, 3844), (2176, 3840)),
-        ((2048, 2048), (2048, 2048)),
+        ((1920, 1152), (1280, 768)),
+        ((1152, 1920), (768, 1280)),
+        ((3844, 2160), (1344, 768)),
+        ((2160, 3844), (768, 1344)),
+        ((2048, 2048), (768, 768)),
     ],
 )
-def test_reference_video_shape_preserves_resolution_with_alignment(size, expected):
+def test_reference_video_shape_caps_large_inputs_without_enlarging_small_inputs(size, expected):
     from vllm_omni.model_executor.models.minimax_h3.reference_video import (
         _reference_video_shape,
     )
@@ -2431,7 +2433,7 @@ def test_ref2va_reference_count_validation_preserves_client_error_metadata():
 @pytest.mark.parametrize(
     ("case", "start_time", "expected_duration", "input_size", "expected_size"),
     [
-        ("R7", None, 10.0, (3844, 2160), (3840, 2176)),
+        ("R7", None, 10.0, (3844, 2160), (1344, 768)),
         ("R8", 4.0, 6.0, (640, 384), (640, 384)),
     ],
 )
