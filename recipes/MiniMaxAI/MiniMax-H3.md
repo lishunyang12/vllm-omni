@@ -271,8 +271,8 @@ For a combined service on four high-memory GPUs, use:
 - regional `torch.compile` for the repeated DiT blocks;
 - dense BF16 `TRTLLM_ATTN`, with Ring and TP left at 1.
 
-Both DiTs remain resident in this no-offload configuration. If they do not fit,
-use model-level CPU offload.
+Both DiTs remain resident except for their default AdaLN projection weight
+offload. If they do not fit, use model-level CPU offload.
 
 ```bash
 export MODEL=MiniMaxAI/MiniMax-H3
@@ -1034,12 +1034,14 @@ normally, avoiding cyclic eviction on repeated original-H3 requests. All origina
 remain loaded so new schedules and adapters can compute normally. Adapter changes,
 weight reloads, and model device moves invalidate the cache; parameter versions
 also guard individual entries. TP ranks coordinate hits before skipping a
-projection collective. Gradient-enabled execution, compilation, custom linear
-hooks, and tensors without weight version counters use the original computation.
+projection collective. Gradient-enabled execution, custom linear hooks, and tensors without weight
+version counters use the original computation. H3 keeps cache decisions outside
+compiled tensor regions, so regional and full-model compilation can reuse
+projections without disabling compilation of the surrounding block.
 Offload paths that replace weight storage can therefore reduce the hit rate.
 
 The runtime cache uses the shared `ExactProjectionCache` implementation; H3 owns
-its sidecar adaptation and optional projection weight offload. Other models can integrate the same
+its sidecar adaptation and projection weight offload. Other models can integrate the same
 [projection cache interface](../../docs/design/module/diffusion/diffusion_model_integration.md#exact-conditioning-projection-reuse).
 This cache retains projection outputs, not offloaded weights, and does not skip
 block weight prefetch.
@@ -1050,14 +1052,23 @@ For an A/B comparison, disable only this reuse at server startup:
 --cache-config '{"minimax_h3_adaln_cache": false}'
 ```
 
-### Optional AdaLN weight offload
+### Default AdaLN weight offload
 
-Exact caching is enabled by default; weight offload is a separate opt-in:
+AdaLN weight offload is enabled automatically for unquantized BF16 CUDA
+inference when the exact result cache is enabled. No additional flag or
+`--enforce-eager` is required. Compilation remains enabled unless the caller
+selects eager execution. To retain AdaLN weights on the GPU while keeping exact
+result caching enabled:
 
 ```bash
---enforce-eager \
---cache-config '{"minimax_h3_adaln_offload": true}'
+--cache-config '{"minimax_h3_adaln_offload": false}'
 ```
+
+Non-CUDA platforms, quantized models, DiT module/layer offload and HSDP retain
+their existing weight-residency behavior by default. Disabling the result cache
+also keeps weights resident unless weight offload is explicitly requested.
+Explicitly setting `minimax_h3_adaln_offload=true` in an incompatible mode
+raises an error. This default does not change the selected execution mode.
 
 AdaLN projection weights are allocated and loaded on CPU. On a cache miss, the
 current projection stages its weights to CUDA, executes the original vLLM
@@ -1075,21 +1086,22 @@ The output cache remains bounded at 256 MiB, so schedules exceeding that budget
 still transfer and compute uncached projections. Disabling the runtime cache
 while retaining offload makes every projection transfer its weights.
 
-This path requires eager CUDA inference and unquantized BF16 weights. It supports
+This path requires CUDA inference and unquantized BF16 weights. It supports
 TP and pure Ulysses, including TP1/SP8, and fixed FastH3 adapters fused at load.
+Cache lookup, TP hit voting, and weight staging execute outside compiled tensor
+regions; the surrounding H3 block remains eligible for compilation.
 Do not combine it with DiT module/layer offload or HSDP. Text-encoder offload is
-independent. Projection forward hooks and compiled or gradient-enabled execution
-are rejected instead of bypassed.
+independent. Projection forward hooks and gradient-enabled offload are rejected.
+Memory savings do not guarantee lower latency: cold transfers, cache misses,
+and the host cache boundary must be included in performance comparisons.
 
 ### Optional offline sidecar
 
 An offline sidecar can seed the first projection results; it is not required to
-enable the default cache. Sidecars require `--enforce-eager`, native BF16 TP1
-math, and the same numerical environment as the builder. With the default
-compiled execution, sidecars are rejected before reading their payloads: compiled
-H3 blocks bypass cached projections, so retaining those payloads would waste GPU
-memory. This applies to both the main and Ref2VA sidecars. Other serving
-configurations retain the default runtime-cache behavior described above.
+enable the default cache. Sidecars require native BF16 TP1 math and the same
+numerical environment as the builder. Both eager and compiled H3 execution
+consult sidecars through the host cache boundary. Uncovered or incompatible
+inputs use the original projection instead.
 From the repository root, for a fixed FastH3 adapter and its own four-step schedule:
 
 ```bash
@@ -1106,10 +1118,9 @@ The builder accepts a native transformer directory with `config.json` and indexe
 or single-file safetensors. It streams the required inputs and refuses to overwrite
 an existing output. It does not instantiate the full DiT.
 
-Pass the resulting local artifact at eager server startup:
+Pass the resulting local artifact at server startup:
 
 ```bash
---enforce-eager \
 --cache-config '{"minimax_h3_adaln_cache_path": "/path/to/h3-adaln.safetensors"}'
 ```
 

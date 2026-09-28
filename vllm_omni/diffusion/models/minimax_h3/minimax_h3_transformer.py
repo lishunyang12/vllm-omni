@@ -837,8 +837,7 @@ class MiniMaxH3AdalnProj(nn.Module):
             self._weight_stager = PinnedModuleStager(self.linear, device, cache_retention=BoundedAllocatorCache(device))
             self._host_signature = self._offload_signature()
 
-    def forward(self, t_emb: torch.Tensor) -> tuple[torch.Tensor, ...]:
-        """t_emb: [M, t_dim] -> expand_ratio tensors of [M*modality_num, H]."""
+    def _project(self, t_emb: torch.Tensor) -> torch.Tensor:
         self._prepare_weight_stager(t_emb.device)
 
         def project() -> torch.Tensor:
@@ -851,11 +850,25 @@ class MiniMaxH3AdalnProj(nn.Module):
             finally:
                 self._weight_stager.offload()
 
-        x = (
+        return (
             project()
             if self._adaln_cache is None
             else self._adaln_cache.project(self._cache_name, self.linear, t_emb, project)
         )
+
+    @torch.compiler.disable
+    def _project_cached(self, t_emb: torch.Tensor) -> torch.Tensor:
+        # Cache decisions, TP hit voting and CPU storage rebinding are host
+        # control flow. Keep this small boundary eager while the surrounding
+        # norms, attention projections and MLP remain eligible for compilation.
+        return self._project(t_emb)
+
+    def forward(self, t_emb: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        """t_emb: [M, t_dim] -> expand_ratio tensors of [M*modality_num, H]."""
+        use_cache_boundary = self._adaln_cache is not None and (
+            self._adaln_cache.max_bytes > 0 or self._offload_weights
+        )
+        x = self._project_cached(t_emb) if use_cache_boundary else self._project(t_emb)
         m = x.shape[0]
         x = x.view(m * self.modality_num, self.expand_ratio * self.hidden_size)
         return tuple(x.chunk(self.expand_ratio, dim=-1))
@@ -1250,22 +1263,28 @@ class MiniMaxH3DiTModel(nn.Module):
         )
         if type(enabled) is not bool:
             raise ValueError("minimax_h3_adaln_cache must be a boolean")
+        offload = resolve_offload(od_config)
+        conflicting_offload = (
+            offload.strategy is not OffloadStrategy.NONE and offload.offloads(DIT_COMPONENT)
+        ) or getattr(od_config.parallel_config, "use_hsdp", False)
+        # Keep unsupported execution modes on their existing resident path.
+        # The host cache/staging boundary also works inside compiled blocks.
+        default_offload_adaln = (
+            enabled and current_omni_platform.is_cuda() and quant_config is None and not conflicting_offload
+        )
         offload_adaln = (
-            cache_config.get("minimax_h3_adaln_offload", False)
+            cache_config.get("minimax_h3_adaln_offload", default_offload_adaln)
             if isinstance(cache_config, Mapping)
-            else getattr(cache_config, "minimax_h3_adaln_offload", False)
+            else getattr(cache_config, "minimax_h3_adaln_offload", default_offload_adaln)
         )
         if type(offload_adaln) is not bool:
             raise ValueError("minimax_h3_adaln_offload must be a boolean")
         if offload_adaln:
+            if not current_omni_platform.is_cuda():
+                raise ValueError("MiniMax H3 AdaLN offload requires CUDA")
             if quant_config is not None:
                 raise ValueError("MiniMax H3 AdaLN offload requires unquantized BF16 weights")
-            if not getattr(od_config, "enforce_eager", False):
-                raise ValueError("MiniMax H3 AdaLN offload requires enforce_eager=True")
-            offload = resolve_offload(od_config)
-            if (offload.strategy is not OffloadStrategy.NONE and offload.offloads(DIT_COMPONENT)) or getattr(
-                od_config.parallel_config, "use_hsdp", False
-            ):
+            if conflicting_offload:
                 raise ValueError("MiniMax H3 AdaLN offload cannot be combined with DiT offload or HSDP")
             logger.info("MiniMax H3 AdaLN weights remain on CPU; projections stage on cache misses only")
         self.adaln_cache = MiniMaxH3RuntimeAdalnCache(

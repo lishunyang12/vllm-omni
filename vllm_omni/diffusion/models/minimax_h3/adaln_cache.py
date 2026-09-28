@@ -67,7 +67,11 @@ class MiniMaxH3RuntimeAdalnCache(ExactProjectionCache):
         self.sidecar = sidecar
         self._sidecar_signatures = signatures
 
+    @torch.compiler.disable
     def prepare(self, embedding: torch.Tensor) -> None:
+        # Hashing and cache bookkeeping stay outside compiled tensor compute.
+        # Regional compilation already calls this from the model's outer loop;
+        # this boundary also preserves reuse under full-model compilation.
         self._sidecar_plan = None
         super().prepare(embedding)
         if self._key is None or self.sidecar is None:

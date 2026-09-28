@@ -16,7 +16,7 @@ from vllm_omni.platforms import current_omni_platform
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cuda]
 
 
-def _projection_worker(rank, world_size, rendezvous, offload_weights):
+def _projection_worker(rank, world_size, rendezvous, offload_weights, compiled):
     from vllm.config import DeviceConfig, VllmConfig, set_current_vllm_config
     from vllm.distributed.parallel_state import (
         cleanup_dist_env_and_memory,
@@ -76,6 +76,7 @@ def _projection_worker(rank, world_size, rendezvous, offload_weights):
                 resident.load_state_dict(projection.state_dict())
                 if offload_weights:
                     assert all(p.device.type == "cpu" for p in projection.parameters())
+                execute = torch.compile(projection, dynamic=True) if compiled else projection
                 with torch.inference_mode():
                     for width in (1, 2, 3, 4):
                         embedding = torch.randn(width, arch.time_embed_dim, device=device, generator=generator)
@@ -84,7 +85,7 @@ def _projection_worker(rank, world_size, rendezvous, offload_weights):
                         resident.load_state_dict(projection.state_dict())
                         expected = resident(embedding)
                         cache.prepare(embedding)
-                        first = projection(embedding)
+                        first = execute(embedding)
                         hits = cache.hits
                         with ExitStack() as stack:
                             if offload_weights:
@@ -95,7 +96,7 @@ def _projection_worker(rank, world_size, rendezvous, offload_weights):
                                         side_effect=AssertionError("warm hit transferred weights"),
                                     )
                                 )
-                            second = projection(embedding)
+                            second = execute(embedding)
                         if offload_weights:
                             assert not projection._weight_stager.loaded
                             assert all(p.device.type == "cpu" for p in projection.parameters())
@@ -110,7 +111,7 @@ def _projection_worker(rank, world_size, rendezvous, offload_weights):
                             cache.clear()
                         cache.prepare(embedding)
                         misses = cache.misses
-                        rebuilt = projection(embedding)
+                        rebuilt = execute(embedding)
                         assert cache.misses == misses + 1
                         for reference, actual in zip(expected, rebuilt, strict=True):
                             assert torch.equal(reference, actual)
@@ -118,7 +119,7 @@ def _projection_worker(rank, world_size, rendezvous, offload_weights):
                         if rank == world_size - 1:
                             projection.linear.weight.add_(0.01)
                         misses = cache.misses
-                        changed = projection(embedding)
+                        changed = execute(embedding)
                         assert cache.misses == misses + 1
                         cache.clear()
                         resident.load_state_dict(projection.state_dict())
@@ -130,10 +131,10 @@ def _projection_worker(rank, world_size, rendezvous, offload_weights):
                         cache.prepare(embedding)
                         with patch.object(projection.linear, "forward", side_effect=RuntimeError("projection failed")):
                             with pytest.raises(RuntimeError, match="projection failed"):
-                                projection(embedding)
+                                execute(embedding)
                         assert not projection._weight_stager.loaded
                         assert all(p.device.type == "cpu" for p in projection.parameters())
-                        recovered = projection(embedding)
+                        recovered = execute(embedding)
                         for actual, original in zip(recovered, reference, strict=True):
                             assert torch.equal(actual, original)
                         # Parameters constructed inside inference_mode cannot
@@ -145,7 +146,7 @@ def _projection_worker(rank, world_size, rendezvous, offload_weights):
                             resident.load_state_dict(projection.state_dict())
                             expected = resident(embedding)
                             hits = cache.hits
-                            actual = projection(embedding)
+                            actual = execute(embedding)
                             assert cache.hits == hits
                             for result, original in zip(actual, expected, strict=True):
                                 assert torch.equal(result, original)
@@ -161,17 +162,18 @@ def _projection_worker(rank, world_size, rendezvous, offload_weights):
     ],
 )
 @pytest.mark.parametrize("offload_weights", [False, True], ids=["resident", "offloaded"])
-def test_real_projection_cache_parity_and_rank_local_invalidation(tmp_path, world_size, offload_weights):
+@pytest.mark.parametrize("compiled", [False, True], ids=["eager", "compiled"])
+def test_real_projection_cache_parity_and_rank_local_invalidation(tmp_path, world_size, offload_weights, compiled):
     if not current_omni_platform.is_cuda():
         pytest.skip("Requires CUDA")
     context = mp.spawn(
         _projection_worker,
-        args=(world_size, str(tmp_path / "rendezvous"), offload_weights),
+        args=(world_size, str(tmp_path / "rendezvous"), offload_weights, compiled),
         nprocs=world_size,
         join=False,
     )
     try:
-        if not context.join(timeout=90):
+        if not context.join(timeout=300 if compiled else 90):
             # ProcessContext may reap one successful worker per join.
             if not context.join(timeout=30):
                 pytest.fail("AdaLN projection workers timed out")
