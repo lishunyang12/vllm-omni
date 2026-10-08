@@ -2192,7 +2192,15 @@ class AttentionConfig:
             normalized[role] = node
             return
 
-        spec_keys = {"backend", "skip_softmax", "quant", "fastvideo_vsa_topk", "block_sparse"}
+        spec_keys = {
+            "backend",
+            "skip_softmax",
+            "quant",
+            "fastvideo_vsa_topk",
+            "fastvideo_vsa_provider",
+            "fastvideo_vsa_precision",
+            "block_sparse",
+        }
         node_dict = dict(node)
         node_keys = set(node_dict)
         if node_keys & spec_keys:

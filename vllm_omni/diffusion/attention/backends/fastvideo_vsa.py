@@ -186,6 +186,8 @@ class FastVideoVSAImpl(AttentionImpl):
 
             require_flashinfer_sparse(self.precision)
         self.topk = int(backend_kwargs.get("topk", 64))
+        if self.topk <= 0:
+            raise ValueError("VSA topk must be positive")
         self.block_size = self._parse_block_size(backend_kwargs.get("block_size", (4, 8, 8)))
         self.block_elements = self.block_size[0] * self.block_size[1] * self.block_size[2]
         self.min_seq_len = int(backend_kwargs.get("min_seq_len", self.block_elements * 2))

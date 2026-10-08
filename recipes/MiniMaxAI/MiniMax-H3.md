@@ -271,8 +271,10 @@ For a combined service on four high-memory GPUs, use:
 - regional `torch.compile` for the repeated DiT blocks;
 - dense BF16 `TRTLLM_ATTN`, with Ring and TP left at 1.
 
-Both DiTs remain resident except for their default AdaLN projection weight
-offload. If they do not fit, use model-level CPU offload.
+Both DiTs remain resident, except that supported SM120 deployments offload
+AdaLN projection weights by default. Other GPU architectures keep those weights
+resident unless explicitly opted in. If the models do not fit, use model-level
+CPU offload.
 
 ```bash
 export MODEL=MiniMaxAI/MiniMax-H3
@@ -1053,11 +1055,25 @@ For an A/B comparison, disable only this reuse at server startup:
 
 ### Default AdaLN weight offload
 
-AdaLN weight offload is enabled automatically for unquantized BF16 CUDA
-inference with the default exact result cache. It reduces GPU memory usage by
+AdaLN weight offload is enabled automatically on **SM120** for unquantized BF16
+CUDA inference with the default exact result cache. The default uses each
+worker's device capability; other GPU architectures keep their existing weight
+placement. It reduces GPU memory usage by
 keeping projection weights in host memory and reusing exact cached results.
 Both compiled and eager execution are supported; no extra enable flag is needed.
-Allow additional host RAM for the offloaded weights.
+Allow additional host RAM for the offloaded weights and pinned staging copies.
+Cache misses, including a cold request or a new timestep schedule, transfer
+weights to the GPU and synchronize staging; warmed cache hits avoid that work.
+Measure both cold latency and warmed throughput for the intended workload.
+
+Other compatible CUDA deployments can opt in explicitly:
+
+```bash
+--cache-config '{"minimax_h3_adaln_offload": true}'
+```
+
+The automatic default is limited to the tested SM120 path and does not depend
+on the attention provider or require FlashInfer.
 
 To keep AdaLN weights on the GPU while retaining result caching:
 
@@ -1109,7 +1125,7 @@ Build sidecars from trusted local inputs: checksums verify identity and integrit
 not the correctness of an untrusted generator.
 
 Caching and sidecars alone save repeated projection work; GPU residency changes
-with weight offload, which is enabled by default where supported. Gains depend on the workload,
+with weight offload, which is enabled by default on supported SM120 configurations. Gains depend on the workload,
 offload behavior, embedding fingerprint cost, and TP coordination overhead.
 
 ## LoRA

@@ -110,12 +110,14 @@ def test_missing_provider_api_is_clear(monkeypatch):
     from vllm_omni.platforms import current_omni_platform
 
     monkeypatch.setattr(current_omni_platform, "get_device_capability", lambda *_: (12, 0))
+    monkeypatch.setattr(torch.accelerator, "current_device_index", lambda: 3)
     monkeypatch.setitem(sys.modules, "flashinfer", None)
     with pytest.raises(ImportError, match="requires a build with bsa_attn_sm120_blk64_sage_fwd"):
         provider.require_flashinfer_sparse("sage")
 
 
-def test_provider_uses_operand_device_for_hardware_check(monkeypatch):
+@pytest.mark.parametrize("device", [None, torch.device("cuda"), torch.device("cuda:3")])
+def test_provider_uses_operand_or_current_worker_device_for_hardware_check(monkeypatch, device):
     from vllm_omni.platforms import current_omni_platform
 
     seen = []
@@ -125,8 +127,9 @@ def test_provider_uses_operand_device_for_hardware_check(monkeypatch):
         return (9, 0)
 
     monkeypatch.setattr(current_omni_platform, "get_device_capability", capability)
+    monkeypatch.setattr(torch.accelerator, "current_device_index", lambda: 3)
     with pytest.raises(ValueError, match="requires SM120"):
-        provider.require_flashinfer_sparse("sage", torch.device("cuda:3"))
+        provider.require_flashinfer_sparse("sage", device)
     assert seen == [3]
 
 

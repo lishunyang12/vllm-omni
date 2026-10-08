@@ -229,6 +229,8 @@ def offload_model_config(monkeypatch):
     monkeypatch.setattr(h3, "Attention", _FakeAttention)
     monkeypatch.setattr(h3, "get_tensor_model_parallel_world_size", lambda: 1)
     monkeypatch.setattr(h3.current_omni_platform, "is_cuda", lambda: True)
+    monkeypatch.setattr(torch.accelerator, "current_device_index", lambda: 3)
+    monkeypatch.setattr(h3.current_omni_platform, "get_device_capability", lambda device_id: (12, 0))
     config = _small_od_config()
     config.enforce_eager = True
     config.cache_config = {"minimax_h3_adaln_offload": True}
@@ -350,6 +352,26 @@ def test_adaln_offload_keeps_text_encoder_offload_independent(offload_model_conf
     offload_model_config.diffusion_offload_config = {"mode": "module", "components": ["text_encoder"]}
     model = h3.MiniMaxH3DiTModel(offload_model_config)
     assert model.adaln_cache.offload_weights
+
+
+@pytest.mark.parametrize("capability", [(8, 0), (9, 0), (10, 0), (12, 0), (12, 1), None])
+@pytest.mark.parametrize("explicit", [False, True], ids=["default", "explicit"])
+def test_adaln_offload_default_is_limited_to_worker_sm120(offload_model_config, monkeypatch, capability, explicit):
+    seen = []
+
+    def get_capability(device_id):
+        seen.append(device_id)
+        return capability
+
+    monkeypatch.setattr(h3.current_omni_platform, "get_device_capability", get_capability)
+    offload_model_config.cache_config = {"minimax_h3_adaln_offload": True} if explicit else {}
+    with torch.device("meta"):
+        model = h3.MiniMaxH3DiTModel(offload_model_config)
+    expected = explicit or capability == (12, 0)
+    assert model.adaln_cache.offload_weights is expected
+    assert seen == [3]
+    assert model.blocks[0].adaln_proj.linear.weight.device.type == ("cpu" if expected else "meta")
+    assert model.adaln_cache.max_bytes > 0
 
 
 def test_disabling_adaln_cache_keeps_weights_resident_by_default(offload_model_config):

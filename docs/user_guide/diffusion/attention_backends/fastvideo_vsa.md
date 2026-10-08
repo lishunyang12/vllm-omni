@@ -173,6 +173,21 @@ Sage uses QK INT8 / PV FP8 arithmetic and requires a FlashInfer build containing
 [#5127](https://github.com/flashinfer-ai/flashinfer/pull/5127). The default
 precision remains BF16. Unsupported Sage requests fail clearly.
 
+The `vsa` extra supplies FastVideo; it does not install this optional FlashInfer
+Sage API. Check the FlashInfer build in the serving environment before choosing
+it explicitly:
+
+```bash
+python -c 'from flashinfer.cute_dsl.sparse.bsa_attn_sm120 import bsa_attn_sm120_blk64_fwd, bsa_attn_sm120_blk64_sage_fwd'
+```
+
+This checks API availability. Execution also requires the compatible GPU and
+CUDA build described above. Provider and precision settings can be supplied in
+either `diffusion_attention_config.default` or a `per_role` entry alongside
+`backend: FASTVIDEO_VSA`. They do not change AdaLN weight placement; see
+[H3 AdaLN offload](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#default-adaln-weight-offload)
+for its separate SM120 default and overrides.
+
 Set `fastvideo_vsa_provider` to `fastvideo` or `flashinfer` to choose a fixed
 provider. Explicit FlashInfer selection requires compatible hardware and
 installed kernels. Logs show the selected provider and precision. GPU testing

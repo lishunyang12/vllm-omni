@@ -73,7 +73,9 @@ def require_flashinfer_sparse(precision: str, device: torch.device | None = None
 
     if device is not None and device.type != "cuda":
         raise ValueError("FlashInfer sparse execution requires CUDA")
-    device_id = device.index if device is not None and device.index is not None else 0
+    device_id = (
+        device.index if device is not None and device.index is not None else torch.accelerator.current_device_index()
+    )
     validate_flashinfer_sparse_capability(precision, current_omni_platform.get_device_capability(device_id))
     name = "bsa_attn_sm120_blk64_sage_fwd" if precision == "sage" else "bsa_attn_sm120_blk64_fwd"
     try:

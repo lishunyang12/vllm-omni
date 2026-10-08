@@ -138,7 +138,7 @@ def test_local_encoder_modes_preserve_validated_text_and_unified_handoff(task, t
         (image.height // 32) * (image.width // 32), 96
     )
     pipeline.audio_vae = Mock()
-    prompt = {"prompt": "A person waves."}
+    prompt: dict[str, Any] = {"prompt": "A person waves."}
     if task != "t2va":
         prompt["multi_modal_data"] = {"image": Image.new("RGB", (256, 256))}
     if text_key is not None:
@@ -729,6 +729,10 @@ def test_pipeline_loads_task_selected_components_with_encoder_ownership(
         "download_weights_from_hf_specific",
         fake_download,
     )
+
+    # The pipeline download is mocked above; config normalization must not
+    # independently resolve the gated repository through the local HF cache.
+    monkeypatch.setattr("vllm_omni.diffusion.data.get_model_path", lambda model, revision: model)
 
     od_config = OmniDiffusionConfig(
         model="MiniMaxAI/MiniMax-H3",

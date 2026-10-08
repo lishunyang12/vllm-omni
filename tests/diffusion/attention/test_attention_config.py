@@ -12,6 +12,7 @@ Tests cover:
 
 from dataclasses import replace
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -231,6 +232,22 @@ class TestAttentionConfig:
         )
         assert config.per_role["ltx2.audio_self"].backend == "FLASH_ATTN"
         assert config.per_role["ltx2.audio_to_video"].backend == "SAGE_ATTN"
+
+    @pytest.mark.parametrize("nested", [False, True])
+    def test_vsa_provider_precision_in_per_role_mapping(self, nested):
+        spec = {
+            "backend": "FASTVIDEO_VSA",
+            "fastvideo_vsa_provider": "flashinfer",
+            "fastvideo_vsa_precision": "sage",
+            "fastvideo_vsa_topk": 32,
+        }
+        roles: dict[str, Any] = {"minimax_h3": {"main": spec}} if nested else {"minimax_h3.main": spec}
+        config = AttentionConfig(per_role=roles)
+        assert config.per_role["minimax_h3.main"].backend_kwargs() == {
+            "provider": "flashinfer",
+            "precision": "sage",
+            "topk": 32,
+        }
 
     def test_constructor_normalizes_auto_to_unset(self):
         config = AttentionConfig(

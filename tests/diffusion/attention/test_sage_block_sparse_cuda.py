@@ -138,3 +138,30 @@ def test_prepared_query_matches_inline_quantization():
     inline = sage_block_sparse_attention(q, k, v, indices, counts, None, 0.125)
     reused = sage_block_sparse_attention(q, k, v, indices, counts, None, 0.125, prepared_q=prepared)
     torch.testing.assert_close(inline, reused, rtol=0, atol=0)
+
+
+@hardware_test(res={"cuda": ["B200"]}, num_cards=1)
+def test_sage_value_layout_preserves_partial_tile_token_order():
+    """Pin the V packing ABI using distinguishable tokens and partial tiles."""
+    from vllm_omni.platforms import current_omni_platform
+
+    if current_omni_platform.get_device_capability() != (12, 0):
+        pytest.skip("requires SM120")
+    pytest.importorskip("flashinfer.cute_dsl.sparse.bsa_attn_sm120")
+    from vllm_omni.diffusion.attention.ops.block_sparse import block_sparse_attn_bshd
+
+    q = torch.zeros(1, 129, 2, 128, device="cuda", dtype=torch.bfloat16)
+    k = torch.zeros(1, 192, 2, 128, device="cuda", dtype=torch.bfloat16)
+    positions = torch.arange(192, device="cuda")
+    features = torch.arange(128, device="cuda")
+    v = ((positions[:, None] % 64) / 16 + features[None, :] / 128).to(torch.bfloat16)
+    v = v[None, :, None, :].expand(1, 192, 2, 128).contiguous()
+    sizes = torch.tensor([17, 33, 3], device="cuda", dtype=torch.int32)
+    block_map = torch.eye(3, device="cuda", dtype=torch.bool)[None, None].expand(1, 2, 3, 3).contiguous()
+    mask = block_map.repeat_interleave(64, -2).repeat_interleave(64, -1)[..., :129, :192]
+    mask &= (positions % 64 < sizes.repeat_interleave(64))[None, None, None, :]
+    expected = torch.nn.functional.scaled_dot_product_attention(
+        q.transpose(1, 2).float(), k.transpose(1, 2).float(), v.transpose(1, 2).float(), attn_mask=mask
+    ).transpose(1, 2)
+    actual = block_sparse_attn_bshd(q, k, v, block_map, sizes, 128**-0.5, provider="flashinfer", precision="sage")
+    torch.testing.assert_close(actual.float(), expected, atol=0.04, rtol=0.04)
