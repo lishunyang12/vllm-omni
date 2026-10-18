@@ -76,8 +76,78 @@ def _get_h3_layout(
     return tuple(int(x) for x in prefix if int(x) > 0), target.latent_grid, target.start
 
 
+@functools.lru_cache(maxsize=32)
+def _get_h3_multiregion_tile_metadata(
+    prefix_segments: tuple[int, ...],
+    regions: tuple[tuple[int, tuple[int, int, int]], ...],
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int, tuple[tuple[int, int], ...]]:
+    """P2 layout: dense modality chunks first, then each independently tiled video.
+
+    Reference images stay dense. Video spans come from packed Ref2VA metadata,
+    so audio/video references may be interleaved in their original input order.
+    """
+    tile_shape, block_size = (4, 4, 8), 128
+    if not regions or regions[-1][0] != sum(prefix_segments):
+        raise ValueError("P2 video regions must end with the target at the prefix boundary")
+    intervals = [(start, start + math.prod(shape)) for start, shape in regions]
+    if any(start < 0 or any(d <= 0 for d in shape) for start, shape in regions):
+        raise ValueError("P2 video regions require nonnegative offsets and positive grids")
+    if any(left[1] > right[0] for left, right in zip(intervals, intervals[1:])):
+        raise ValueError("P2 video regions must be ordered and non-overlapping")
+    dense_indices, dense_sizes = [], []
+    cursor = 0
+    for length in prefix_segments:
+        end = cursor + length
+        remaining = [(cursor, end)]
+        for video_start, video_end in intervals[:-1]:
+            remaining = [
+                piece
+                for start, stop in remaining
+                for piece in ((start, min(stop, video_start)), (max(start, video_end), stop))
+                if piece[0] < piece[1]
+            ]
+        for start, stop in remaining:
+            dense_indices.append(torch.arange(start, stop, device=device, dtype=torch.long))
+            dense_sizes.extend(min(block_size, stop - pos) for pos in range(start, stop, block_size))
+        cursor = end
+    partitions = dense_indices
+    size_parts = [torch.tensor(dense_sizes, device=device, dtype=torch.int32)]
+    block_cursor = len(dense_sizes)
+    spans = []
+    for start, shape in regions:
+        partitions.append(_get_tile_partition_indices(shape, tile_shape, device) + start)
+        sizes = _construct_variable_block_sizes(shape, tile_shape, device).to(torch.int32)
+        size_parts.append(sizes)
+        spans.append((block_cursor, block_cursor + sizes.numel()))
+        block_cursor += sizes.numel()
+    partition, sizes = torch.cat(partitions), torch.cat(size_parts)
+    total = intervals[-1][1]
+    if partition.numel() != total or not torch.equal(partition.sort().values, torch.arange(total, device=device)):
+        raise ValueError("P2 geometry must cover every packed row exactly once")
+    non_pad = _get_non_pad_index(sizes, block_size)
+    return partition, sizes, non_pad, non_pad[torch.argsort(partition)], len(dense_sizes), tuple(spans)
+
+
+def _build_h3_region_block_map(
+    scores: torch.Tensor,
+    prefix_blocks: int,
+    spans: tuple[tuple[int, int], ...],
+    keep_rates: tuple[float, ...],
+) -> torch.Tensor:
+    """Dense prefix queries/keys, with an independent top-k budget per video."""
+    mask = torch.zeros_like(scores, dtype=torch.bool)
+    for (start, end), rate in zip(spans, keep_rates, strict=True):
+        count = max(1, min(math.ceil(rate * (end - start)), end - start))
+        indices = scores[..., start:end].topk(count, dim=-1).indices + start
+        mask.scatter_(-1, indices, True)
+    mask[..., :prefix_blocks] = True
+    mask[..., :prefix_blocks, :] = True
+    return mask
+
+
 class MiniMaxH3VSAImpl(FastVideoVSAImpl):
-    """Apply H3 tile64 routing after shared parallel attention dispatch."""
+    """Apply release-specific H3 routing after parallel attention dispatch."""
 
     def _forward_h3(
         self,
@@ -107,16 +177,30 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
                 raise ValueError(f"gate_compress shape {gate.shape} cannot cover query shape {query.shape}")
             gate = gate[:, : query.shape[1]]
 
-        partition, sizes, non_pad, untile, prefix_blocks, video_blocks = _get_h3_tile_metadata(
-            prefix_segments, video_shape, query.device
-        )
+        block_size = attn_metadata.extra.get("vsa_h3_tile_size", 64)
+        sparsity = attn_metadata.extra.get("vsa_h3_sparsity")
+        if block_size == 128:
+            if attn_metadata.extra.get("vsa_h3_ref_policy") != "p2_multi_region":
+                raise ValueError("FastH3 Omni tile 128 requires p2_multi_region routing")
+            regions = tuple((span.start, span.latent_grid) for span in attn_metadata.video_layout.video_spans)
+            partition, sizes, non_pad, untile, prefix_blocks, spans = _get_h3_multiregion_tile_metadata(
+                prefix_segments, regions, query.device
+            )
+            video_blocks = sum(end - start for start, end in spans)
+        elif block_size == 64:
+            partition, sizes, non_pad, untile, prefix_blocks, video_blocks = _get_h3_tile_metadata(
+                prefix_segments, video_shape, query.device
+            )
+            spans = ((prefix_blocks, prefix_blocks + video_blocks),)
+        else:
+            raise ValueError(f"unsupported VSA-H3 tile size: {block_size}")
         logical_blocks = int(sizes.numel())
         # The native sm100a kernel assigns pairs of query blocks to CTAs. Its
         # contract requires an even block count; the synthetic partner is
         # transport-only and is removed before returning.
         pair_pad = logical_blocks % 2
         kernel_blocks = logical_blocks + pair_pad
-        target_shape = (query.shape[0], kernel_blocks * 64, query.shape[2], query.shape[3])
+        target_shape = (query.shape[0], kernel_blocks * block_size, query.shape[2], query.shape[3])
         q_tiled = torch.zeros(target_shape, device=query.device, dtype=query.dtype)
         k_tiled = torch.zeros_like(q_tiled)
         v_tiled = torch.zeros_like(q_tiled)
@@ -124,10 +208,23 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
         k_tiled[:, non_pad] = key[:, partition]
         v_tiled[:, non_pad] = value[:, partition]
 
-        q_pool = mean_pool_tiles(q_tiled[:, : logical_blocks * 64], sizes, block_size=64)
-        k_pool = mean_pool_tiles(k_tiled[:, : logical_blocks * 64], sizes, block_size=64)
+        q_pool = mean_pool_tiles(q_tiled[:, : logical_blocks * block_size], sizes, block_size=block_size)
+        k_pool = mean_pool_tiles(k_tiled[:, : logical_blocks * block_size], sizes, block_size=block_size)
         scores = torch.matmul(q_pool, k_pool.transpose(-2, -1)) * self.softmax_scale
-        block_map = build_prefix_dense_block_map(scores, prefix_blocks, video_blocks, self.topk)
+        if sparsity is None and block_size == 64:
+            block_map = build_prefix_dense_block_map(scores, prefix_blocks, video_blocks, self.topk)
+            topk_by_region = (min(self.topk, video_blocks),)
+        else:
+            target_rate = 1.0 - float(sparsity)
+            ref_rate = attn_metadata.extra.get("vsa_h3_ref_keep_rate")
+            # Match upstream's 1 - (1 - ref_keep_rate) rounding in ceil(topk).
+            ref_rate = target_rate if ref_rate is None else 1.0 - (1.0 - float(ref_rate))
+            rates = (ref_rate,) * (len(spans) - 1) + (target_rate,)
+            block_map = _build_h3_region_block_map(scores, prefix_blocks, spans, rates)
+            topk_by_region = tuple(
+                max(1, min(math.ceil(rate * (end - start)), end - start))
+                for (start, end), rate in zip(spans, rates, strict=True)
+            )
         kernel_sizes = sizes
         if pair_pad:
             block_map = torch.nn.functional.pad(block_map, (0, 1, 0, 1), value=False)
@@ -135,13 +232,13 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
 
         logger.info_once(
             "FASTVIDEO_VSA H3 routing: seq_len=%d, prefix_segments=%s, video_shape=%s, "
-            "prefix_blocks=%d, video_blocks=%d, topk=%d, kernel_blocks=%d",
+            "prefix_blocks=%d, video_blocks=%d, video_topk_by_region=%s, kernel_blocks=%d",
             query.shape[1],
             prefix_segments,
             video_shape,
             prefix_blocks,
             video_blocks,
-            min(self.topk, video_blocks),
+            topk_by_region,
             kernel_blocks,
         )
         output = fastvideo_block_sparse_attn_bshd(
@@ -151,18 +248,21 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
             block_map.contiguous(),
             kernel_sizes.contiguous(),
             logical_blocks,
-        )[:, : logical_blocks * 64]
+            block_size,
+        )[:, : logical_blocks * block_size]
 
         if gate is not None:
-            gate_tiled = torch.zeros_like(q_tiled[:, : logical_blocks * 64])
+            gate_tiled = torch.zeros_like(q_tiled[:, : logical_blocks * block_size])
             gate_tiled[:, non_pad] = gate[:, partition]
-            v_pool = mean_pool_tiles(v_tiled[:, : logical_blocks * 64], sizes, block_size=64)
+            v_pool = mean_pool_tiles(v_tiled[:, : logical_blocks * block_size], sizes, block_size=block_size)
             compressed = torch.matmul(torch.softmax(scores, dim=-1), v_pool)
             compressed = compressed.permute(0, 2, 1, 3).to(output.dtype)
             output = (
-                output.view(output.shape[0], logical_blocks, 64, output.shape[2], output.shape[3])
+                output.view(output.shape[0], logical_blocks, block_size, output.shape[2], output.shape[3])
                 + compressed.unsqueeze(2)
-                * gate_tiled.view(gate_tiled.shape[0], logical_blocks, 64, gate_tiled.shape[2], gate_tiled.shape[3])
+                * gate_tiled.view(
+                    gate_tiled.shape[0], logical_blocks, block_size, gate_tiled.shape[2], gate_tiled.shape[3]
+                )
             ).view_as(output)
         return output[:, untile].contiguous()
 
@@ -173,7 +273,10 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
         value: torch.Tensor,
         attn_metadata: AttentionMetadata | None = None,
     ) -> torch.Tensor:
+        requires_tile128 = attn_metadata is not None and attn_metadata.extra.get("vsa_h3_tile_size", 64) == 128
         if _get_h3_layout(attn_metadata) is None:
+            if requires_tile128:
+                raise ValueError("FastH3 Omni requires complete packed video layout metadata")
             return super().forward_cuda(query, key, value, attn_metadata)
 
         original_query, original_key, original_value = query, key, value
@@ -182,6 +285,8 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
         if attn_metadata is not None and attn_metadata.packed_padding is not None:
             valid_seq_len = attn_metadata.packed_padding.q_length
             if attn_metadata.packed_padding.kv_length != valid_seq_len:
+                if requires_tile128:
+                    raise ValueError("FastH3 Omni packed Q/KV lengths must match")
                 return self._fallback(
                     original_query, original_key, original_value, attn_metadata, "packed Q/KV lengths must match"
                 )
@@ -202,7 +307,7 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
             # recover the request.
             if isinstance(exc, torch.AcceleratorError):
                 raise
-            if not self.fallback_on_error:
+            if attn_metadata.extra.get("vsa_h3_tile_size", 64) == 128 or not self.fallback_on_error:
                 raise
             return self._fallback(
                 original_query, original_key, original_value, attn_metadata, f"VSA-H3 kernel failed: {exc}"

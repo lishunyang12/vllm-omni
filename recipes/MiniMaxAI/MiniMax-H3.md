@@ -71,6 +71,29 @@ On AMD ROCm, install without the `[fa4]` extra (FA4 is CUDA-only) and use
 `ffmpeg` and `ffprobe` must be available on `PATH`. They are used for
 reference-video preparation and MP4 output.
 
+## FlashInfer PCIe/RDMA Ulysses
+
+The opt-in BF16 transport uses [FlashInfer PR #4876](https://github.com/flashinfer-ai/flashinfer/pull/4876).
+Install a FlashInfer source tree containing that PR, including its native PCIe
+transport and rdma-core build dependencies. Selecting a FlashInfer attention
+backend alone does not enable this communication path.
+
+```bash
+export VLLM_OMNI_ULYSSES_A2A_BACKEND=flashinfer-pcie
+export FLASHINFER_ULYSSES_PCIE_ROUTE=rdma
+# Maximum bytes of one operand, computed from the deployment's largest shape.
+# Example: [1,6520,56,128] BF16 for the 124-frame Omni8 USP8 qualification.
+export VLLM_OMNI_FLASHINFER_ULYSSES_MAX_BYTES=93470720
+```
+
+Also enable `--ulysses-a2a-permute` and `--enforce-eager`. This integration
+requires strict Ulysses mode, batch size one, BF16 operands, and a single-host
+group of 2, 4, or 8 CUDA devices supported by the PR. Every rank must log
+`FlashInfer PR4876 Ulysses armed` with `transport=rdma`; unavailable RDMA raises
+an error. Q/K/V, VSA gates, and reverse outputs use separate registered slots,
+reused between layers and requests and closed collectively before group teardown.
+The transport keeps BF16 payloads and performs no numerical reduction.
+
 ## CPU MP4 response encoding
 
 For CUDA and ROCm deployments, non-streaming MP4 responses are encoded on the
@@ -1391,6 +1414,130 @@ with dense attention.
 This release supports T2VA only, with local or pure Ulysses attention. Additional
 LoRA adapters, Ref2VA and FL2VA conditioning are unsupported. The legacy
 four-step adapter keeps its original sampling and fixed-top-k behavior.
+
+### FastH3 Omni 8-Step V1 (experimental)
+
+[FastH3 Omni 8-Step V1](https://huggingface.co/FastVideo/FastVideo-FastH3-Omni-8-Step-V1)
+is a reference-conditioned PDD student. Access to the private release is required.
+Authenticate with `hf auth login` or provide `HF_TOKEN` through your environment.
+The loader reads `transformer_ref/` directly and fetches the native text encoder,
+tokenizer, processor, and VAEs from the MiniMax-H3 revision pinned in
+`fastvideo_inference.json`. Neither base transformer is downloaded.
+
+The sparse attention provider is selected automatically:
+
+- SM100/SM103 uses `fastvideo-kernel`'s native **128-token** VSA entry point.
+- SM120/SM121 uses FlashInfer's `bsa_attn_sm120_blk64_fwd` API. Each logical
+  128-token query/key tile is split into 64-token compute blocks, preserving the
+  selected keys and one softmax reduction over all selected keys. Pooling,
+  top-k selection, reference-region budgets and compression remain tile-128.
+
+Install a FlashInfer build exposing that API for SM120; older packages may not
+contain it. The tested upstream FlashInfer revision is
+`f75bed5da7112103b75f82a4d4b5faf4be335154`, with PyTorch `2.13.0+cu130`,
+Triton `3.7.1` and CUTLASS DSL `4.6.2`. Check the provider before loading weights:
+
+```bash
+python -c 'from flashinfer.cute_dsl.sparse.bsa_attn_sm120 import bsa_attn_sm120_blk64_fwd'
+```
+
+The SM120 integration uses this existing BF16 FlashInfer kernel automatically;
+it does not require a custom `fastvideo-kernel[sm120]` build. The former
+experimental `FASTVIDEO_VSA_SM120` and `FASTVIDEO_VSA_SM120_SPLITS` variables
+no longer select a provider. Standard FastVideo helpers are still required for
+VSA layout and pooling. Partial KV blocks retain their valid token counts;
+empty KV halves are excluded. Transport-only padding is removed before the
+kernel and restored as zero rows afterward. Missing kernels, device faults and
+incompatible hardware raise an error; no dense attention fallback is used.
+
+```bash
+export FASTH3_OMNI_MODEL=FastVideo/FastVideo-FastH3-Omni-8-Step-V1
+
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+VLLM_WORKER_MULTIPROC_METHOD=spawn \
+VLLM_OMNI_VIDEO_SYNC_TIMEOUT=14400 \
+vllm serve "${FASTH3_OMNI_MODEL}" --omni \
+  --revision 88d512c5e7cc38dda499fbb65688ce58611f9c80 \
+  --host 127.0.0.1 --port 8096 --trust-remote-code --task-type ref2va \
+  --served-model-name FastH3-Omni \
+  --num-gpus 8 --tensor-parallel-size 1 --usp 8 --ring 1 --enforce-eager \
+  --use-hsdp --hsdp-shard-size 8 --hsdp-replicate-size 1 \
+  --text-encoder-tp-size 8 \
+  --vae-patch-parallel-size 8 --vae-parallel-mode tile --vae-use-tiling \
+  --diffusion-attention-backend FASTVIDEO_VSA
+
+# Write a six-section H3 prompt to prompt.txt and set REF_IMAGE to your image.
+curl --fail-with-body -sS http://127.0.0.1:8096/v1/videos/sync \
+  -F 'model=FastH3-Omni' -F 'prompt=<prompt.txt' \
+  -F "input_reference=@${REF_IMAGE};type=image/png" \
+  -F 'width=1344' -F 'height=768' -F 'aspect_ratio=16:9' -F 'fps=24' \
+  -F 'num_inference_steps=8' -F 'guidance_scale=1' -F 'flow_shift=12' \
+  -F 'seed=43' \
+  -F 'extra_params={"task":"ref2va","duration":5.2,"audio_flow_shift":3.0}' \
+  -o fasth3_omni.mp4
+```
+
+These eight-GPU parallel settings were validated through offline generation;
+the HTTP endpoint was not part of that check. HSDP shards the BF16 weights
+without quantization. For four GPUs, use TP2/Ulysses2, text encoder TP4 and
+VAE patch parallelism 4, and omit the HSDP options.
+
+Use H3's existing image/video/audio reference fields; at least one image or
+video is required. The API preserves order within each modality and packs
+images, videos (with their soundtracks), then standalone audio. When comparing
+with FastVideo, supply references in this same order. Arbitrary cross-modality
+CLI ordering from the upstream example is not an additional Omni API feature.
+
+The checkpoint pins eight forwards over Grid32 blocks `[0,4,8,12,16,20,24,28,32]`,
+video/audio shifts **12/3**, and guidance **1**. Each forward fuses four output
+heads using modality-specific integration weights. The rational shift fixes
+the training endpoint **0.999**, and initial target noise is scaled by that
+endpoint. Reference rows remain fixed during denoising. This is a different
+sampling rule from the T2VA V2 checkpoint above.
+
+Attention uses `(4,4,8)` video tiles, **90% sparsity**, and the trained
+`p2_multi_region` reference policy. Every reference video has its own 10% tile
+budget; images, text, and audio remain dense. Local attention, pure Ulysses,
+and TP2 with Ulysses2 are supported. Fixed top-k overrides, custom timesteps/sigmas, and additional
+LoRA adapters are rejected.
+
+CPU regression tests cover head integration, schedules, component resolution,
+and reference-region routing. Synthetic SM120 kernel tests compare outputs and
+softmax normalization against FP32 references, including partial/empty blocks,
+14/56 heads and sequences up to 41,472 tokens (sampled query rows for long
+sequences). CUDA Graph replay with changed queries and masks is also checked.
+The repository's SM120 GPU regression also tests transport padding, empty
+routes, and CUDA Graph replay with changed Q/K/V, masks and valid lengths.
+These kernel tests do not compare against the native SM100/SM103 kernel.
+
+On four SM120 GPUs with approximately 72 GiB each, the pinned checkpoint
+completed 1344x768 Ref2VA generation with 124 and 345 frames, including 32 kHz
+stereo audio. For 124 frames, TP2/Ulysses2 with FlashInfer took a median
+**70.20 s** across three warm requests; HSDP4/Ulysses4 took **76.56 s**.
+Initialization, JIT warmup and activation-capture cases are excluded. A local
+experimental block128 kernel reached **69.98 s** with TP2/Ulysses2, only about
+0.3% faster end to end, so the SM120 integration uses the existing provider.
+These are measurements for one reference image, prompt and seed, not a general
+quality or speed guarantee. TP2/Ulysses2 uses about 64 GiB at 124 frames and
+approaches device capacity at 345 frames; HSDP4/Ulysses4 uses less memory.
+
+On eight of the same SM120 GPUs, TP1/Ulysses8 with HSDP8, text encoder TP8 and
+VAE patch parallelism 8 took **41.04 s** for 124 frames (median of three warm
+requests: 41.040, 41.056 and 41.028 s). Reported peak memory was approximately
+35.2 GiB per GPU. A 345-frame request completed in **95.93 s** with approximately
+38.9 GiB reported peak memory per GPU; this longer shape was measured once.
+All five requests passed full audio/video decoding and frame-count checks.
+This is a comparison between four- and eight-GPU deployments,
+not a kernel-only improvement. All runs retain BF16 DiT weights, eight model
+forwards, tile-128 routing and the full native VAE. Different parallel degrees
+can change floating-point rounding, so this is not a bitwise equivalence claim.
+
+BF16 provider outputs are not bitwise interchangeable: same-seed video SSIM
+between the experimental block128 and FlashInfer paths was 0.740 at 124 frames.
+Both providers also exceeded the original strict per-element FP32 error gate
+on some captured layers. Preserve these limitations when interpreting the
+synthetic regression results. Full output quality still needs validation
+against the upstream SM100/SM103 implementation before production use.
 
 ## Key parameters
 

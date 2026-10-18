@@ -1021,6 +1021,10 @@ def destroy_model_parallel():
     """Set the groups to none and destroy them."""
     global _DP, _CFG, _SP, _PP, _FS, _HSDP_REPLICATE, _EXPERT_PARALLEL_GROUP_RANKS
 
+    from vllm_omni.diffusion.distributed.flashinfer_ulysses import clear_flashinfer_ulysses_communicators
+
+    clear_flashinfer_ulysses_communicators()
+
     if vllm_parallel_state._DP and vllm_parallel_state._DP is not _DP:
         vllm_parallel_state._DP.destroy()
     vllm_parallel_state._DP = None
