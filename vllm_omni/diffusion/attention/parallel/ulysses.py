@@ -254,7 +254,17 @@ class UlyssesParallelAttention:
         self._gather_idx = gather_idx
         self._use_sync = use_sync
         self._ulysses_a2a_permute = ulysses_a2a_permute
-        if _a2a_permute_enabled(
+        from vllm_omni.diffusion.distributed.flashinfer_ulysses import (
+            ensure_flashinfer_pcie_available,
+            is_flashinfer_pcie_enabled,
+        )
+
+        self._flashinfer_pcie = is_flashinfer_pcie_enabled() and sp_group.ulysses_world_size > 1
+        if self._flashinfer_pcie:
+            if not _a2a_permute_enabled(ulysses_a2a_permute, scatter_idx, gather_idx, sp_group.ulysses_world_size):
+                raise ValueError("FlashInfer RDMA requires ulysses_a2a_permute=True and scatter=2, gather=1")
+            ensure_flashinfer_pcie_available()
+        elif _a2a_permute_enabled(
             ulysses_a2a_permute,
             scatter_idx,
             gather_idx,
@@ -280,6 +290,8 @@ class UlyssesParallelAttention:
         attn_metadata: AttentionMetadata | None,
     ):
         mode = get_ulysses_mode(default="strict")
+        if self._flashinfer_pcie and mode != "strict":
+            raise ValueError("FlashInfer RDMA requires ulysses_mode='strict'")
         ulysses_world_size = self._sp_group.ulysses_world_size
         gate_compress = None
         if attn_metadata is not None:
@@ -520,7 +532,16 @@ class UlyssesParallelAttention:
                     )
 
             # (bs, seq_len/P, head_cnt, head_size) -> (bs, seq_len, head_cnt/P, head_size)
-            if _a2a_permute_enabled(
+            if self._flashinfer_pcie:
+                from vllm_omni.diffusion.distributed.flashinfer_ulysses import flashinfer_ulysses_qkv_fwd
+
+                group_name = self._ulysses_pg.group_name
+                query = flashinfer_ulysses_qkv_fwd(query, group_name, ulysses_world_size, "q")
+                key = flashinfer_ulysses_qkv_fwd(key, group_name, ulysses_world_size, "k")
+                value = flashinfer_ulysses_qkv_fwd(value, group_name, ulysses_world_size, "v")
+                if gate_compress is not None:
+                    gate_compress = flashinfer_ulysses_qkv_fwd(gate_compress, group_name, ulysses_world_size, "g")
+            elif _a2a_permute_enabled(
                 self._ulysses_a2a_permute,
                 self._scatter_idx,
                 self._gather_idx,
@@ -660,6 +681,12 @@ class UlyssesParallelAttention:
                     orig_head_cnt=ctx.orig_head_cnt,
                     use_sync=ctx.use_sync,
                 )
+            elif self._flashinfer_pcie:
+                from vllm_omni.diffusion.distributed.flashinfer_ulysses import flashinfer_ulysses_o_rev
+
+                output_img = flashinfer_ulysses_o_rev(
+                    output_img, ctx.ulysses_pg.group_name, dist.get_world_size(ctx.ulysses_pg)
+                )
             elif _a2a_permute_enabled(
                 self._ulysses_a2a_permute,
                 ctx.scatter_idx,
@@ -705,6 +732,10 @@ class UlyssesParallelAttention:
                 orig_head_cnt=ctx.orig_head_cnt,
                 use_sync=ctx.use_sync,
             )
+        if self._flashinfer_pcie:
+            from vllm_omni.diffusion.distributed.flashinfer_ulysses import flashinfer_ulysses_o_rev
+
+            return flashinfer_ulysses_o_rev(attn_output, ctx.ulysses_pg.group_name, dist.get_world_size(ctx.ulysses_pg))
         if _a2a_permute_enabled(
             self._ulysses_a2a_permute,
             ctx.scatter_idx,

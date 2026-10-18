@@ -118,6 +118,7 @@ class MiniMaxH3DiTArchConfig:
     norm_eps: float = 1e-5
     qk_norm_eps: float = 1e-5
     final_norm_eps: float = 1e-5
+    pdd_steps: int | None = None
 
     @classmethod
     def from_mapping(cls, config: Mapping[str, Any]) -> MiniMaxH3DiTArchConfig:
@@ -209,6 +210,7 @@ _FORWARD_SUPPORTED_KWARGS = frozenset(
         "refiner_packed_seq_params",
         "video_token_layout",
         "rope_table",
+        "pdd_step",
     }
 )
 
@@ -411,6 +413,9 @@ def _sdpa_varlen_attention(
 class MiniMaxH3Attention(nn.Module):
     # Full sparse checkpoints pin a ratio; legacy adapters use backend top-k.
     vsa_sparsity: float | None = None
+    vsa_tile_size: int = 64
+    vsa_ref_policy: str | None = None
+    vsa_ref_keep_rate: float | None = None
 
     def __init__(
         self,
@@ -607,6 +612,9 @@ class MiniMaxH3Attention(nn.Module):
                 # backend/path.
                 "laser_input_scale": MINIMAX_H3_LASER_INPUT_SCALE,
                 **({"vsa_h3_sparsity": self.vsa_sparsity} if self.vsa_sparsity is not None else {}),
+                "vsa_h3_tile_size": self.vsa_tile_size,
+                "vsa_h3_ref_policy": self.vsa_ref_policy,
+                "vsa_h3_ref_keep_rate": self.vsa_ref_keep_rate,
                 # Present only for a VSA artifact; the VSA backend reads it as
                 # the learned compression gate and every other backend ignores it.
                 **({"gate_compress": gate_compress.unsqueeze(0)} if gate_compress is not None else {}),
@@ -1003,24 +1011,33 @@ class MiniMaxH3FinalLayer(nn.Module):
             prefix=f"{prefix}.adaln_proj",
             adaln_cache=adaln_cache,
         )
-        self.video_out = ColumnParallelLinear(
-            arch.hidden_size,
-            video_patch_dim,
-            bias=True,
-            gather_output=True,
-            params_dtype=_FP32_DTYPE,
-            quant_config=None,
-            prefix=f"{prefix}.video_out",
-        )
-        self.audio_out = ColumnParallelLinear(
-            arch.hidden_size,
-            arch.audio_latents_dim,
-            bias=True,
-            gather_output=True,
-            params_dtype=_FP32_DTYPE,
-            quant_config=None,
-            prefix=f"{prefix}.audio_out",
-        )
+        self.pdd_steps = arch.pdd_steps
+        if arch.pdd_steps is not None:
+            from .pdd import PDD_STEPS, MiniMaxH3PDDOutput
+
+            if type(arch.pdd_steps) is not int or arch.pdd_steps != PDD_STEPS:
+                raise ValueError("FastH3 Omni requires pdd_steps=32")
+            self.video_out = MiniMaxH3PDDOutput(arch.hidden_size, video_patch_dim, shift=12.0)
+            self.audio_out = MiniMaxH3PDDOutput(arch.hidden_size, arch.audio_latents_dim, shift=3.0)
+        else:
+            self.video_out = ColumnParallelLinear(
+                arch.hidden_size,
+                video_patch_dim,
+                bias=True,
+                gather_output=True,
+                params_dtype=_FP32_DTYPE,
+                quant_config=None,
+                prefix=f"{prefix}.video_out",
+            )
+            self.audio_out = ColumnParallelLinear(
+                arch.hidden_size,
+                arch.audio_latents_dim,
+                bias=True,
+                gather_output=True,
+                params_dtype=_FP32_DTYPE,
+                quant_config=None,
+                prefix=f"{prefix}.audio_out",
+            )
 
     def forward(
         self,
@@ -1028,6 +1045,7 @@ class MiniMaxH3FinalLayer(nn.Module):
         *,
         t_emb: torch.Tensor,
         inverse_indices: torch.Tensor,
+        pdd_step: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """x: [T, H] -> (video_logits [T, 96] fp32, audio_logits [T, 32] fp32).
 
@@ -1039,6 +1057,8 @@ class MiniMaxH3FinalLayer(nn.Module):
         h = indexed_scale_shift_(h, shift, scale, inverse_indices)
         # Preserve full precision through both final output projections.
         h = h.to(_FP32_DTYPE)
+        if self.pdd_steps is not None:
+            return self.video_out(h, pdd_step), self.audio_out(h, pdd_step)
         video, _ = self.video_out(h)
         audio, _ = self.audio_out(h)
         return video, audio
@@ -1269,7 +1289,14 @@ class MiniMaxH3DiTModel(nn.Module):
         )
         self._mark_missing_params_required()
 
-    def enable_vsa_gates(self, *, sparsity: float | None = None) -> None:
+    def enable_vsa_gates(
+        self,
+        *,
+        sparsity: float | None = None,
+        tile_size: int = 64,
+        ref_policy: str | None = None,
+        ref_keep_rate: float | None = None,
+    ) -> None:
         """Give every DiT block's attention a VSA compression gate.
 
         A FastH3 VSA artifact assigns these projections rather than adding to
@@ -1282,6 +1309,9 @@ class MiniMaxH3DiTModel(nn.Module):
         for block in self.blocks:
             block.attn.enable_vsa_gate()
             block.attn.vsa_sparsity = sparsity
+            block.attn.vsa_tile_size = tile_size
+            block.attn.vsa_ref_policy = ref_policy
+            block.attn.vsa_ref_keep_rate = ref_keep_rate
             if sparsity is not None:
                 block.attn.to_gate_compress.weight.missing_param_init = "error"
         self.vsa_gates_enabled = True
@@ -1683,6 +1713,7 @@ class MiniMaxH3DiTModel(nn.Module):
                 hidden,
                 t_emb=t_emb,
                 inverse_indices=inverse_indices,
+                pdd_step=kwargs.get("pdd_step"),
             )
         else:
             local_inverse_indices = inverse_indices.narrow(
@@ -1694,6 +1725,7 @@ class MiniMaxH3DiTModel(nn.Module):
                 hidden,
                 t_emb=t_emb,
                 inverse_indices=local_inverse_indices,
+                pdd_step=kwargs.get("pdd_step"),
             )
             compact_logits = torch.cat((video_logits, audio_logits), dim=-1)
             compact_logits = self.sp_gather(compact_logits)
