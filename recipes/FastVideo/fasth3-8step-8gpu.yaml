@@ -11,6 +11,7 @@ vae-use-tiling: true
 diffusion-attention-config:
   default:
     backend: FASTVIDEO_VSA
+    fastvideo_vsa_provider: cudnn
 default-sampling-params:
   "0":
     num_inference_steps: 8

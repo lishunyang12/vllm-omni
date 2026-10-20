@@ -11,7 +11,8 @@ It does not use the four-step FastH3 adapter.
 
 Follow the [CUDA installation guide](../../docs/getting_started/installation/gpu.md),
 install `ffmpeg`, and satisfy the [VSA provider requirements](../../docs/user_guide/diffusion/attention_backends/fastvideo_vsa.md).
-Compatible CUDA GPUs use FastVideo tile64; SM120/SM121 uses FlashInfer BF16.
+Install `uv pip install -e '.[cudnn-bsa]'` for the profile's cuDNN BF16
+tile64 provider.
 Authenticate with `hf auth login` if the native MiniMax-H3 VAEs require access.
 
 ## Serve
@@ -20,12 +21,13 @@ From the repository root:
 
 ```bash
 vllm serve FastVideo/FastVideo-FastH3-8-Step-V2 --omni \
+  --revision 3da2ddfe1954d9cda4c05b643dc0f26007a655c5 \
   --config recipes/FastVideo/fasth3-8step-8gpu.yaml
 ```
 
 The [shared eight-GPU configuration](fasth3-8step-8gpu.yaml) sets parallelism,
 eight sampling steps, and guidance 1. The checkpoint selects the T2VA partition,
-schedule, and sparsity; the installed GPU selects the attention provider.
+schedule, and sparsity; cuDNN selects the kernel for the GPU.
 A local checkpoint directory can replace the model ID.
 
 ## Generate

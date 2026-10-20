@@ -305,17 +305,21 @@ def test_omni_selects_a_separate_budget_from_every_reference_region():
         assert (mask[..., 3:, start:end].sum(-1) == expected).all()
 
 
-@pytest.mark.parametrize("provider,precision", [("fastvideo", "bf16"), ("auto", "sage")])
-def test_omni_tile128_rejects_tile64_provider_overrides(provider, precision):
+@pytest.mark.parametrize("provider,precision", [("flashinfer", "sage"), ("auto", "sage")])
+def test_omni_tile128_rejects_non_bf16_precision(provider, precision):
     impl = _h3_impl(provider=provider, precision=precision)
     metadata = _h3_metadata((5,), (4, 4, 8))
     metadata.extra["vsa_h3_tile_size"] = 128
     query = torch.zeros(1, 133, 2, 8, dtype=torch.bfloat16)
-    with pytest.raises(ValueError, match="provider=auto and precision=bf16"):
+    with pytest.raises(ValueError, match="BF16"):
         impl.forward_cuda(query, query, query, metadata)
 
 
 def test_omni_tile128_uses_native_provider_without_opt_in(monkeypatch):
+    monkeypatch.setattr(
+        "vllm_omni.diffusion.models.minimax_h3.attention.fastvideo_h3.resolve_block_sparse_provider",
+        lambda *args, **kwargs: "fastvideo",
+    )
     calls = {}
 
     def kernel(q, k, v, indices, counts, sizes, **kwargs):
@@ -363,6 +367,10 @@ def test_omni_tile128_uses_native_provider_without_opt_in(monkeypatch):
 
 
 def test_omni_tile128_does_not_fall_back_to_dense_on_kernel_failure(monkeypatch):
+    monkeypatch.setattr(
+        "vllm_omni.diffusion.models.minimax_h3.attention.fastvideo_h3.resolve_block_sparse_provider",
+        lambda *args, **kwargs: "fastvideo",
+    )
     impl = _h3_impl(fallback_on_error=True)
     metadata = _h3_metadata((5,), (2, 4, 4))
     metadata.extra["vsa_h3_tile_size"] = 128

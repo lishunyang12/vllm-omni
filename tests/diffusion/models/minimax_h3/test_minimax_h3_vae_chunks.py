@@ -3,6 +3,7 @@
 
 import gc
 import tempfile
+from collections.abc import Callable
 from types import SimpleNamespace
 
 import pytest
@@ -72,6 +73,8 @@ class _FakeTemporalModel:
 
 
 class _FakeHost:
+    _pixel_transform: Callable[[torch.Tensor], torch.Tensor] | None = None
+
     def __init__(self):
         self.model = _FakeTemporalModel()
 
@@ -87,7 +90,7 @@ class _FakeHost:
 def test_temporal_chunks_emit_ordered_frames_and_collect_when_unconsumed():
     model = _FakeTemporalModel()
     latent = torch.arange(8, dtype=torch.float32).view(1, 1, 8, 1, 1)
-    chunks = []
+    chunks: list[torch.Tensor] = []
     marker = decode_temporal_chunks(model, latent, chunks.append)
 
     assert marker.shape == (0,)
@@ -109,13 +112,24 @@ def test_h3_callback_failure_is_deferred_until_temporal_decode_finishes():
     assert seen == [17]
 
 
+def test_replacement_decoder_pixel_transform_applies_to_full_and_chunked_decode():
+    host = _FakeHost()
+    host._pixel_transform = lambda raw: raw + 0.25
+    latent = torch.zeros(1, 1, 8, 1, 1)
+    full = decode_h3_chunks(host, latent, None, group=None)
+    chunks: list[torch.Tensor] = []
+    decode_h3_chunks(host, latent, chunks.append, group=None)
+    assert torch.equal(full, torch.cat(chunks, dim=2))
+    assert torch.all(full == 0.25)
+
+
 def test_h3_without_callback_is_a_plain_full_decode_on_a_vae_group(cpu_process_group):
     host = _FakeHost()
     latent = torch.arange(8, dtype=torch.float32).view(1, 1, 8, 1, 1)
 
     full = decode_h3_chunks(host, latent, None, group=cpu_process_group)
 
-    chunks = []
+    chunks: list[torch.Tensor] = []
     decode_h3_chunks(host, latent, chunks.append, group=cpu_process_group)
     assert torch.equal(torch.cat(chunks, dim=2), full)
 

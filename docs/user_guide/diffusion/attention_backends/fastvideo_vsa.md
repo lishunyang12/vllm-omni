@@ -33,6 +33,18 @@ otherwise H3 uses FastVideo. The `vsa` extra installs
 `fastvideo-kernel==0.3.4` for that path. Wan's tile256 route keeps FastVideo.
 The default precision remains BF16; auto selection never enables Sage itself.
 
+For H3 tile64/128 on Ada, select `fastvideo_vsa_provider: triton`.
+The portable FastVideo Triton kernel accepts BF16 on SM80 and newer;
+tile128 auto selection also chooses this route on SM8x. It computes a
+logical tile128 mask using 64-token query/key blocks with one softmax over
+all selected keys. Pooling, sparse selection and H3 compression remain at
+the checkpoint's logical tile size. It does not require FP4 hardware or a
+Blackwell native attention extension. Empty selected rows produce zeros.
+
+The provider is opt-in on other architectures. The
+[consumer recipes](https://github.com/vllm-project/vllm-omni/blob/main/recipes/FastVideo/FastH3-Omni.md#single-device-configurations)
+separate target-device configuration from actual hardware qualification.
+
 ## Enable the backend
 
 For online serving, select the backend with the existing attention backend
@@ -176,11 +188,32 @@ use FlashInfer on SM120/SM121 when its kernels are installed, otherwise
 FastVideo. Wan continues to use FastVideo. Existing video API requests do not
 need to change.
 
-FastH3 Omni's logical tile128 path requires `provider=auto` and BF16.
-On SM120/SM121 it splits each already-selected 128-token block into two
-FlashInfer compute blocks. Pooling, top-k and region budgets remain logical
-tile128. Unsupported explicit provider or precision overrides raise an error.
-On SM100/SM103 it uses the native FastVideo tile128 kernel.
+FastH3 Omni requires BF16 with logical tile128 routing. On SM8x, automatic
+selection uses the portable Triton provider described above. Otherwise it uses
+native FastVideo tile128 on SM100/SM103 and splits each already-selected block
+into two FlashInfer compute blocks on SM120/SM121. Pooling, top-k and region
+budgets remain logical tile128. Explicit provider selection is validated before
+loading the Omni model; an unavailable provider never falls back to dense attention.
+
+For native tile64 or tile128 through the public cuDNN BSA API, install
+`uv pip install -e '.[cudnn-bsa]'` and set:
+
+```yaml
+diffusion-attention-config:
+  default:
+    backend: FASTVIDEO_VSA
+    fastvideo_vsa_provider: cudnn
+```
+
+This provider accepts BF16 with head dimension 128 and explicit block routing,
+as used by MiniMax-H3 and FastH3. It preserves the selected blocks and learned
+compression; zero-length KV blocks are omitted from the active sparse indices.
+cuDNN owns architecture dispatch, including native tile128 on SM120 and SM90.
+The optional extra pins `nvidia-cudnn-frontend==1.31.0`; its
+[BSA API](https://github.com/NVIDIA/cudnn-frontend/blob/develop/docs/fe-oss-apis/bsa.md)
+is experimental. The eight-GPU FastH3 profile selects this provider explicitly.
+SM120 is tested locally; other cuDNN-supported architectures need full-model
+qualification. Wan's implicit routing continues to use FastVideo.
 
 For approximate Sage attention on SM120, select the precision explicitly:
 
@@ -207,7 +240,7 @@ either `diffusion_attention_config.default` or a `per_role` entry alongside
 [H3 AdaLN offload](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#default-adaln-weight-offload)
 for its separate SM120 default and overrides.
 
-Set `fastvideo_vsa_provider` to `fastvideo` or `flashinfer` to choose a fixed
+Set `fastvideo_vsa_provider` to `fastvideo`, `flashinfer`, `cudnn`, or `triton` to choose a fixed
 provider. Explicit FlashInfer selection requires compatible hardware and
 installed kernels. Logs show the selected provider and precision. GPU testing
 covers SM120; SM121 BF16 support follows the upstream kernel requirements.

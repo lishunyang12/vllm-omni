@@ -18,7 +18,6 @@ from vllm_omni.diffusion.attention.backends.fastvideo_vsa import (
 from vllm_omni.diffusion.attention.ops.block_sparse import (
     block_sparse_attn_bshd,
     build_prefix_dense_block_map,
-    fastvideo_block_sparse_attn_bshd,
     mean_pool_tiles,
     resolve_block_sparse_provider,
 )
@@ -203,12 +202,7 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
         else:
             raise ValueError(f"unsupported VSA-H3 tile size: {block_size}")
         logical_blocks = int(sizes.numel())
-        # The native sm100a kernel assigns pairs of query blocks to CTAs. Its
-        # contract requires an even block count; the synthetic partner is
-        # transport-only and is removed before returning.
-        pair_pad = logical_blocks % 2 if block_size == 128 else 0
-        kernel_blocks = logical_blocks + pair_pad
-        target_shape = (query.shape[0], kernel_blocks * block_size, query.shape[2], query.shape[3])
+        target_shape = (query.shape[0], logical_blocks * block_size, query.shape[2], query.shape[3])
         q_tiled = torch.zeros(target_shape, device=query.device, dtype=query.dtype)
         k_tiled = torch.zeros_like(q_tiled)
         v_tiled = torch.zeros_like(q_tiled)
@@ -233,44 +227,31 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
                 max(1, min(math.ceil(rate * (end - start)), end - start))
                 for (start, end), rate in zip(spans, rates, strict=True)
             )
-        kernel_sizes = sizes
-        if pair_pad:
-            block_map = torch.nn.functional.pad(block_map, (0, 1, 0, 1), value=False)
-            kernel_sizes = torch.nn.functional.pad(sizes, (0, 1), value=0)
-
         logger.info_once(
             "FASTVIDEO_VSA H3 routing: seq_len=%d, prefix_segments=%s, video_shape=%s, "
-            "prefix_blocks=%d, video_blocks=%d, video_topk_by_region=%s, kernel_blocks=%d",
+            "prefix_blocks=%d, video_blocks=%d, video_topk_by_region=%s, logical_blocks=%d",
             query.shape[1],
             prefix_segments,
             video_shape,
             prefix_blocks,
             video_blocks,
             topk_by_region,
-            kernel_blocks,
+            logical_blocks,
         )
-        if block_size == 128:
-            output = fastvideo_block_sparse_attn_bshd(
-                q_tiled.contiguous(),
-                k_tiled.contiguous(),
-                v_tiled.contiguous(),
-                block_map.contiguous(),
-                kernel_sizes.contiguous(),
-                logical_blocks,
-                block_size,
-            )[:, : logical_blocks * block_size]
-        else:
-            output = block_sparse_attn_bshd(
-                q_tiled,
-                k_tiled,
-                v_tiled,
-                block_map,
-                sizes,
-                self.softmax_scale,
-                provider=provider,
-                precision=self.precision,
-            )
-            logger.info_once("H3 VSA executing provider=%s precision=%s", provider, self.precision)
+        output = block_sparse_attn_bshd(
+            q_tiled,
+            k_tiled,
+            v_tiled,
+            block_map,
+            sizes,
+            self.softmax_scale,
+            provider=provider,
+            precision=self.precision,
+            block_size=block_size,
+        )
+        logger.info_once(
+            "H3 VSA executing provider=%s precision=%s block_size=%d", provider, self.precision, block_size
+        )
 
         if gate is not None:
             gate_tiled = torch.zeros_like(q_tiled[:, : logical_blocks * block_size])
@@ -303,14 +284,14 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
                 raise ValueError("FastH3 requires complete packed video layout metadata")
             return super().forward_cuda(query, key, value, attn_metadata)
 
-        if requires_tile128:
-            if self.provider != "auto" or self.precision != "bf16":
-                raise ValueError("FastH3 Omni tile128 requires provider=auto and precision=bf16")
-            provider = "auto"
-        else:
-            provider = resolve_block_sparse_provider(
-                self.provider, self.precision, query.device, query.dtype, self.head_size
-            )
+        provider = resolve_block_sparse_provider(
+            self.provider,
+            self.precision,
+            query.device,
+            query.dtype,
+            self.head_size,
+            block_size=128 if requires_tile128 else 64,
+        )
         original_query, original_key, original_value = query, key, value
         original_seq_len = query.shape[1]
         valid_seq_len = original_seq_len

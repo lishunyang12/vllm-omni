@@ -64,6 +64,11 @@ and validation status.
 | [`FastVideo/FastH3.md`](./FastVideo/FastH3.md) | FastH3 four-step Preview V1 T2VA adapter | CUDA; dense/VSA provider requirements in recipe, historical B300 measurements |
 | [`FastVideo/FastH3-V2.md`](./FastVideo/FastH3-V2.md) | FastH3 V2 eight-step T2VA checkpoint | CUDA with FastVideo tile64 or FlashInfer on SM120/SM121; full-model qualification pending |
 | [`FastVideo/FastH3-Omni.md`](./FastVideo/FastH3-Omni.md) | FastH3 Omni eight-step Ref2VA checkpoint | SM100/SM103 native tile128; SM120/SM121 FlashInfer; validation scope in recipe |
+| [FastH3 RefOmni Single Card](<./FastVideo/FastH3 RefOmni Single Card.md>) | Single-card installation, serving, and generation guide | RTX 4090 / 5090 / DGX Spark / RTX PRO 6000 Blackwell |
+| [FastH3 Omni — RTX 4090](./FastVideo/FastH3-Omni-rtx4090.md) | Ref2VA, online FP8 and layerwise offload | 1× RTX 4090 24 GB |
+| [FastH3 Omni — RTX 5090](./FastVideo/FastH3-Omni-rtx5090.md) | Ref2VA, online FP8 and NVFP4 VAE | 1× RTX 5090 32 GB |
+| [FastH3 Omni — DGX Spark](./FastVideo/FastH3-Omni-spark.md) | Ref2VA, resident online FP8 and NVFP4 VAE | 1× GB10, 128 GB unified memory |
+| [FastH3 Omni — RTX PRO 6000 Blackwell](./FastVideo/FastH3-Omni-rtx-pro6000.md) | Ref2VA, online FP8, text-encoder offload, NVFP4 VAE | 1× 96 GB Blackwell |
 | [`fishaudio/Drama-3.md`](./fishaudio/Drama-3.md) | Online serving for TTS | 1x H100 80GB |
 | [`fishaudio/Fish-Speech-S2-Pro.md`](./fishaudio/Fish-Speech-S2-Pro.md) | Online serving for TTS | 1x A800 80GB |
 | [`Helios/Helios.md`](./Helios/Helios.md) | Text-to-video, image-to-video, and video-to-video generation | 1x NVIDIA H20 |

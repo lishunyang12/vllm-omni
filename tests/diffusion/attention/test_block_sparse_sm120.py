@@ -9,7 +9,7 @@ import pytest
 import torch
 
 from tests.helpers.mark import hardware_marks
-from vllm_omni.diffusion.attention.ops.block_sparse import fastvideo_block_sparse_attn_bshd
+from vllm_omni.diffusion.attention.ops.block_sparse import block_sparse_attn_bshd
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, *hardware_marks(res={"cuda": "RTX5090"})]
 
@@ -72,10 +72,11 @@ def test_flashinfer_sm120_preserves_token_attention(batch, heads, sizes_list, em
     if transport:
         q, k, v = [torch.nn.functional.pad(x, (0, 0, 0, 0, 0, 128), value=50) for x in (q, k, v)]
         block_map = torch.nn.functional.pad(block_map, (0, 1, 0, 1), value=True)
-        sizes = torch.nn.functional.pad(sizes, (0, 1), value=128)
+        sizes = torch.nn.functional.pad(sizes, (0, 1), value=0)
+        block_map[..., -1, :] = False
         expected = torch.nn.functional.pad(expected, (0, 0, 0, 0, 0, 128))
 
-    actual = fastvideo_block_sparse_attn_bshd(q, k, v, block_map, sizes, blocks, 128)
+    actual = block_sparse_attn_bshd(q, k, v, block_map, sizes, 128**-0.5, provider="flashinfer", block_size=128)
     torch.testing.assert_close(actual.float(), expected, atol=0.01, rtol=0.01)
     assert ((actual.float() - expected).norm() / expected.norm().clamp_min(1e-10)).item() < 0.005
     assert actual.shape == q.shape and actual.dtype == q.dtype
@@ -93,11 +94,11 @@ def test_flashinfer_sm120_cuda_graph_reloads_queries_routing_and_partial_sizes()
     stream.wait_stream(torch.cuda.current_stream())
     with torch.cuda.stream(stream):
         for _ in range(3):
-            fastvideo_block_sparse_attn_bshd(q, k, v, block_map, sizes, 5, 128)
+            block_sparse_attn_bshd(q, k, v, block_map, sizes, 128**-0.5, provider="flashinfer", block_size=128)
     torch.cuda.current_stream().wait_stream(stream)
     graph = torch.cuda.CUDAGraph()
     with torch.cuda.graph(graph):
-        actual = fastvideo_block_sparse_attn_bshd(q, k, v, block_map, sizes, 5, 128)
+        actual = block_sparse_attn_bshd(q, k, v, block_map, sizes, 128**-0.5, provider="flashinfer", block_size=128)
     graph.replay()
     before = actual.clone()
 

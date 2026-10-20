@@ -14,6 +14,14 @@ from .temporal_chunks import decode_temporal_chunks
 MiniMaxH3VideoChunkCallback = Callable[[torch.Tensor], None]
 
 
+def _decode_pixels(host, raw: torch.Tensor) -> torch.Tensor:
+    pixel_transform = getattr(host, "_pixel_transform", None)
+    if pixel_transform is not None:
+        return pixel_transform(raw)
+    processor = getattr(host.model, "processor", None)
+    return raw if processor is None else processor.revert_tensor(raw)
+
+
 def decode_h3_chunks(
     host,
     latent: torch.Tensor,
@@ -51,8 +59,7 @@ def decode_h3_chunks(
         if not owner or error is not None:
             return
         try:
-            processor = getattr(host.model, "processor", None)
-            decoded = raw if processor is None else processor.revert_tensor(raw)
+            decoded = _decode_pixels(host, raw)
             frames = host._normalize_decoded_frames(decoded).contiguous()
             assert callback is not None
             callback(frames)
@@ -80,6 +87,5 @@ def decode_h3_chunks(
 
     if not result.numel():
         return result
-    processor = getattr(host.model, "processor", None)
-    decoded = result if processor is None else processor.revert_tensor(result)
+    decoded = _decode_pixels(host, result)
     return host._normalize_decoded_frames(decoded)

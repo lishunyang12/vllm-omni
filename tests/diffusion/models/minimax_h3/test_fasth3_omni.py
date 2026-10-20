@@ -2,9 +2,12 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 import json
+import sys
 
 import pytest
+import torch
 
+from vllm_omni.diffusion.data import AttentionConfig, AttentionSpec, OmniDiffusionConfig
 from vllm_omni.diffusion.models.minimax_h3.fasth3_checkpoint import FastH3CheckpointSpec, FastH3OmniCheckpointSpec
 from vllm_omni.errors import OmniClientError
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
@@ -135,3 +138,44 @@ def test_omni_base_components_do_not_download_either_base_transformer(monkeypatc
         "Ref2VA/tokenizer/**",
         "Ref2VA/processor/**",
     }
+
+
+@pytest.mark.parametrize(
+    "device,capability,missing_module,message",
+    [
+        ("cpu", None, None, "CUDA"),
+        ("cuda:3", (9, 0), None, "SM100/SM103"),
+        ("cuda:3", (10, 1), None, "SM100/SM103"),
+        ("cuda:3", (10, 0), "fastvideo_kernel", "fastvideo-kernel"),
+        ("cuda:3", (10, 3), "fastvideo_kernel", "fastvideo-kernel"),
+        ("cuda:3", (12, 0), "flashinfer.cute_dsl.sparse", "bsa_attn_sm120_blk64_fwd"),
+        ("cuda:3", (12, 1), "flashinfer.cute_dsl.sparse", "bsa_attn_sm120_blk64_fwd"),
+    ],
+)
+def test_omni_serving_rejects_unavailable_tile128_provider(monkeypatch, device, capability, missing_module, message):
+    from vllm_omni.diffusion.attention.ops import block_sparse
+
+    monkeypatch.setattr("vllm_omni.diffusion.distributed.utils.get_local_device", lambda: torch.device(device))
+    monkeypatch.setattr(block_sparse.current_omni_platform, "get_device_capability", lambda index: capability)
+    if missing_module:
+        monkeypatch.setitem(sys.modules, missing_module, None)
+    config = OmniDiffusionConfig(
+        diffusion_attention_config=AttentionConfig(default=AttentionSpec(backend="FASTVIDEO_VSA"))
+    )
+    with pytest.raises((ValueError, ImportError), match=message):
+        FastH3OmniCheckpointSpec().check_serving_contract(partition="ref2va", od_config=config)
+
+
+def test_omni_serving_checks_flashinfer_on_the_worker_device(monkeypatch, mocker):
+    from vllm_omni.diffusion.attention.ops import block_sparse, flashinfer_block_sparse
+
+    device = torch.device("cuda:3")
+    monkeypatch.setattr("vllm_omni.diffusion.distributed.utils.get_local_device", lambda: device)
+    capability = mocker.patch.object(block_sparse.current_omni_platform, "get_device_capability", return_value=(12, 0))
+    require_kernel = mocker.patch.object(flashinfer_block_sparse, "require_flashinfer_sparse")
+    config = OmniDiffusionConfig(
+        diffusion_attention_config=AttentionConfig(default=AttentionSpec(backend="FASTVIDEO_VSA"))
+    )
+    FastH3OmniCheckpointSpec().check_serving_contract(partition="ref2va", od_config=config)
+    capability.assert_called_once_with(3)
+    require_kernel.assert_called_once_with("bf16", device)

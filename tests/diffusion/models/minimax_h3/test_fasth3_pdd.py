@@ -53,7 +53,27 @@ def test_pdd_interleaved_requests_do_not_share_step_state():
     assert set(layer.state_dict()) == {"weight", "bias"}
 
 
+def test_pdd_forward_reuses_coefficients_without_rebuilding_grid(monkeypatch):
+    layer = MiniMaxH3PDDOutput(2, 1, shift=12)
+    with torch.no_grad():
+        layer.weight.fill_(1)
+        layer.bias.zero_()
+    x = torch.ones(1, 2)
+    expected = [layer(x, step) for step in range(8)]
+
+    def unexpected_grid(*args, **kwargs):
+        pytest.fail("PDD forward must not rebuild or transfer its integration grid")
+
+    monkeypatch.setattr(torch, "linspace", unexpected_grid)
+    for step in range(8):
+        torch.testing.assert_close(layer(x, step), expected[step], rtol=0, atol=0)
+    assert set(layer.state_dict()) == {"weight", "bias"}
+
+
 @pytest.mark.parametrize("step", [-1, 8, None, True, 1.5, "0"])
 def test_pdd_rejects_missing_or_invalid_step(step):
     with pytest.raises(ValueError, match="pdd_step"):
         pdd_head_weights(12, step)
+    layer = MiniMaxH3PDDOutput(2, 1, shift=12)
+    with pytest.raises(ValueError, match="pdd_step"):
+        layer(torch.ones(1, 2), step)

@@ -23,9 +23,13 @@ def pdd_sigmas(shift: float) -> list[float]:
     return (shift * base * PDD_MAX_T / (base * (shift - 1.0) + PDD_MAX_T)).float().tolist()
 
 
-def pdd_head_weights(shift: float, step: int) -> torch.Tensor:
+def _validate_pdd_step(step: int) -> None:
     if isinstance(step, bool) or not isinstance(step, int) or not 0 <= step < len(PDD_INDICES) - 1:
         raise ValueError(f"FastH3 Omni pdd_step must be an integer in [0, 7], got {step!r}")
+
+
+def pdd_head_weights(shift: float, step: int) -> torch.Tensor:
+    _validate_pdd_step(step)
     grid = torch.linspace(PDD_MAX_T, 0.0, PDD_STEPS + 1, dtype=torch.float64)
     start, end = PDD_INDICES[step : step + 2]
     a, b = grid[start:end], grid[start + 1 : end + 1]
@@ -48,10 +52,15 @@ class MiniMaxH3PDDOutput(nn.Module):
         self.weight = nn.Parameter(torch.empty(PDD_STEPS * output_size, input_size, dtype=torch.float32))
         self.bias = nn.Parameter(torch.empty(PDD_STEPS * output_size, dtype=torch.float32))
         self.output_size = output_size
-        self.shift = shift
+        self.register_buffer(
+            "coefficients",
+            torch.stack([pdd_head_weights(shift, step) for step in range(len(PDD_INDICES) - 1)]),
+            persistent=False,
+        )
 
     def forward(self, x: torch.Tensor, step: int) -> torch.Tensor:
-        coefficients = pdd_head_weights(self.shift, step).to(device=self.weight.device)
+        _validate_pdd_step(step)
+        coefficients = self.coefficients[step]
         start, end = PDD_INDICES[step : step + 2]
 
         def fuse(parameter: torch.Tensor) -> torch.Tensor:

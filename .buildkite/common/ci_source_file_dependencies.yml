@@ -210,6 +210,18 @@ source_file_dependencies:
     - vllm_omni/diffusion/hooks/sequence_parallel.py
     - vllm_omni/diffusion/models/
 
+  diffusion_cudnn_bsa:
+    - tests/diffusion/attention/test_cudnn_block_sparse
+    - vllm_omni/diffusion/attention/
+    - vllm_omni/diffusion/data.py
+    - pyproject.toml
+
+  diffusion_triton_bsa:
+    - tests/diffusion/attention/test_triton_block_sparse
+    - vllm_omni/diffusion/attention/
+    - vllm_omni/diffusion/data.py
+    - pyproject.toml
+
   custom_pipeline:
     - tests/e2e/features/custom_pipeline/
     - tests/e2e/features/helpers/custom_pipeline.py

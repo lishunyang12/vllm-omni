@@ -169,7 +169,9 @@ MINIMAX_H3_FP32_PARAM_NAMES = frozenset(
         "final_layer.audio_out.bias",
     }
 )
-MINIMAX_H3_FP32_BUFFER_NAMES = frozenset({"rope.inv_freq"})
+MINIMAX_H3_FP32_BUFFER_NAMES = frozenset(
+    {"rope.inv_freq", "final_layer.video_out.coefficients", "final_layer.audio_out.coefficients"}
+)
 
 # AdaLN modality count: token tags carry -1 for padding and 0/1/2 for
 # video/text/audio tokens (padding is clamped to 0 before the embedding

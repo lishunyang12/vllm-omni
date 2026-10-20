@@ -166,6 +166,22 @@ class FastH3OmniCheckpointSpec(FastH3CheckpointSpec):
     vsa_sparsity: float = 0.9
     base_revision: str = ""
 
+    def check_serving_contract(self, *, partition: str, od_config: OmniDiffusionConfig) -> None:
+        super().check_serving_contract(partition=partition, od_config=od_config)
+        from vllm_omni.diffusion.attention.ops.block_sparse import resolve_block_sparse_provider
+        from vllm_omni.diffusion.distributed.utils import get_local_device
+
+        config = od_config.diffusion_attention_config
+        attention = config.resolve_with_source("self")[0] if config is not None else None
+        resolve_block_sparse_provider(
+            attention.fastvideo_vsa_provider if attention is not None else "auto",
+            attention.fastvideo_vsa_precision if attention is not None else "bf16",
+            get_local_device(),
+            od_config.dtype,
+            128,
+            block_size=self.vsa_tile_size,
+        )
+
     @classmethod
     def from_metadata(cls, metadata: Mapping[str, object]) -> FastH3OmniCheckpointSpec:
         from vllm_omni.model_executor.models.minimax_h3.checkpoint import fasth3_base_revision

@@ -24,15 +24,28 @@ sigma nodes. Do not apply the four-step adapter to either full checkpoint.
 | Release / variant | Execution route | Qualification |
 | --- | --- | --- |
 | FastH3 Dense | A dense backend supported by H3 and the installed CUDA platform | Historical B300 measurements; choose a backend for the target GPU |
-| FastH3 VSA / FastH3 V2 | FastVideo tile64 on compatible CUDA GPUs, including SM90 and SM100/SM103; automatic FlashInfer BF16 selection on SM120/SM121 when installed | SM120 kernel regressions; V2 full-model qualification pending |
-| FastH3 Omni | Native FastVideo tile128 on SM100/SM103; logical tile128 executed through FlashInfer block64 on SM120/SM121 | SM120 kernel and HTTP generation checks on 8× PRO 5000; cross-provider quality equivalence unverified |
+| FastH3 VSA / FastH3 V2 | cuDNN BF16 tile64 in the eight-step profile; automatic FlashInfer/FastVideo selection remains available | SM120 kernel regressions; V2 full-model qualification pending |
+| FastH3 Omni | cuDNN native tile128 in the eight-step profile; automatic FastVideo tile128 on SM100/SM103 or FlashInfer block64 on SM120/SM121 remains available | SM120 kernel and cuDNN HTTP generation checks on 8× PRO 5000; cross-provider quality equivalence unverified |
 
 The model names, sampling contracts, and HTTP requests are independent of the
 chosen provider. Install a compatible kernel and size the parallel deployment
 for the GPU memory and interconnect. Provider availability alone does not
 establish full-model quality, throughput, or cross-provider equivalence.
-Omni currently needs one of its Blackwell sparse backends; other platforms
-need an additional compatible tile128 implementation.
+cuDNN also provides tile128 on SM90. That provider capability does not establish
+full-model qualification on an untested GPU.
+
+The BF16 Omni recipe also documents an optional
+[released NVFP4 VAE decoder](FastH3-Omni.md#optional-nvfp4-video-decoder).
+That decoder option does not establish support for the separate OmniRef FP8,
+OmniRef NVFP4-QAD, or FastH3-QAD-v2 full checkpoints.
+
+Single-device Omni configurations are available for
+[RTX 4090](FastH3-Omni-rtx4090.md), [RTX 5090](FastH3-Omni-rtx5090.md),
+[DGX Spark](FastH3-Omni-spark.md), and
+[RTX PRO 6000 Blackwell](FastH3-Omni-rtx-pro6000.md).
+They use online FP8 and BF16 attention. Follow
+[FastH3 RefOmni Single Card](<FastH3 RefOmni Single Card.md>) for installation,
+server commands, generation, and memory settings.
 
 ## Performance
 

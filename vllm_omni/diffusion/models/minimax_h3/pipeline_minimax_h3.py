@@ -1155,6 +1155,7 @@ class MiniMaxH3Pipeline(
                 load_device=component_load_device,
                 decode_only=not self.load_vae_encoder,
                 trust_remote_code=od_config.trust_remote_code,
+                decoder_source=(od_config.additional_config or {}).get("video_vae_decoder"),
             )
             self.audio_vae = MiniMaxH3AudioVAE(
                 os.path.join(vae_model_path, "audio_vae"),
@@ -2264,7 +2265,7 @@ class MiniMaxH3Pipeline(
         with self._component_on_device(self.video_vae):
             with current_omni_platform.create_autocast_context(
                 device_type=self.device.type,
-                dtype=torch.float16,
+                dtype=self.video_vae.decode_dtype,
                 enabled=True,
             ):
                 videos = decode_chunks_to_mp4(
@@ -2319,7 +2320,7 @@ class MiniMaxH3Pipeline(
         with self._component_on_device(self.video_vae.decoder_component):
             with current_omni_platform.create_autocast_context(
                 device_type=self.device.type,
-                dtype=torch.float16,
+                dtype=self.video_vae.decode_dtype,
                 enabled=True,
             ):
                 video = self.video_vae.decode_latent(video_latent)
@@ -3587,7 +3588,12 @@ class MiniMaxH3Pipeline(
 
         pdd = isinstance(self._fasth3_checkpoint, FastH3OmniCheckpointSpec)
         if pdd or (len(batch_states) > 1 and (mixed_transformers or not self._packed_batch_supported(transformers[0]))):
-            if mixed_transformers:
+            if pdd:
+                logger.debug(
+                    "FastH3 Omni PDD executes %d request(s) separately with request-local step indices.",
+                    len(batch_states),
+                )
+            elif mixed_transformers:
                 logger.warning_once(
                     "MiniMax H3 step batch contains requests for different task-specific DiTs; "
                     "running %d requests one forward at a time.",
