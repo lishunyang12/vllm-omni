@@ -8,7 +8,7 @@ and attention policy. Hardware determines the attention provider and deployment 
 | --- | --- | --- | ---: | --- | --- | --- |
 | **FastH3** | T2VA: text to video and audio | Four-step Preview V1 adapter fused into native H3 | 4 | Native H3 12/3; request overrides rejected | Dense or VSA variant; VSA uses fixed top-k | [FastH3](FastH3.md) |
 | **FastH3 V2** | T2VA: text to video and audio | Full 8-Step V2 checkpoint | 8 | 10/3 | 64-token VSA, 80% sparsity | [FastH3 V2](FastH3-V2.md) |
-| **FastH3 Omni** | Ref2VA: references plus text to video and audio | Full Omni 8-Step V1 checkpoint | 8 | 12/3 | Logical 128-token VSA, 90% sparsity, separate reference-video budgets | [FastH3 Omni](FastH3-Omni.md) |
+| **FastH3 Omni** | Ref2VA: references plus text to video and audio | Full Omni 8-Step V1 checkpoint | 8 | 12/3 | Logical 128-token VSA, 90% sparsity, separate reference-video budgets | [Single card](<FastH3 RefOmni Single Card.md>) · [Multi-GPU](FastH3-Omni.md) |
 
 T2VA requires no reference media. Omni Ref2VA requires at least one image or
 video and can also use audio references. All three use the existing
@@ -39,13 +39,10 @@ The BF16 Omni recipe also documents an optional
 That decoder option does not establish support for the separate OmniRef FP8,
 OmniRef NVFP4-QAD, or FastH3-QAD-v2 full checkpoints.
 
-Single-device Omni configurations are available for
-[RTX 4090](FastH3-Omni-rtx4090.md), [RTX 5090](FastH3-Omni-rtx5090.md),
-[DGX Spark](FastH3-Omni-spark.md), and
-[RTX PRO 6000 Blackwell](FastH3-Omni-rtx-pro6000.md).
-They use online FP8 and BF16 attention. Follow
-[FastH3 RefOmni Single Card](<FastH3 RefOmni Single Card.md>) for installation,
-server commands, generation, and memory settings.
+The [single-card guide](<FastH3 RefOmni Single Card.md>) brings together
+RTX 4090, RTX 5090, DGX Spark, and RTX PRO 6000 Blackwell configurations.
+It covers installation, server commands, generation, decoder selection,
+and memory settings in one place.
 
 ## Performance
 

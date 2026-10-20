@@ -1,5 +1,7 @@
 # FastH3 RefOmni Single Card
 
+[FastH3 family](README.md) · [Omni multi-GPU serving](FastH3-Omni.md)
+
 Run FastH3 reference-conditioned video and audio generation in vLLM-Omni on
 one RTX 4090, RTX 5090, DGX Spark, or RTX PRO 6000 Blackwell. Supply a text
 prompt and a reference image to generate an MP4 with stereo audio.
@@ -13,10 +15,10 @@ eight inference steps, and guidance scale 1.
 
 | Device | Memory | Attention | Memory placement | Video decoder | Configuration |
 | --- | --- | --- | --- | --- | --- |
-| [RTX 4090](FastH3-Omni-rtx4090.md) | 24 GB | Triton BF16 | DiT/text layer offload; stage VAEs when needed | Native, FP16 decode | [rtx4090 YAML](fasth3-omni-rtx4090.yaml) |
-| [RTX 5090](FastH3-Omni-rtx5090.md) | 32 GB | FlashInfer BF16 | DiT/text layer offload | NVFP4 8L | [rtx5090 YAML](fasth3-omni-rtx5090.yaml) |
-| [DGX Spark](FastH3-Omni-spark.md) | 128 GB unified | FlashInfer BF16 | Resident in unified memory | NVFP4 8L | [spark YAML](fasth3-omni-spark.yaml) |
-| [RTX PRO 6000 Blackwell](FastH3-Omni-rtx-pro6000.md) | 96 GB | cuDNN BF16 | Resident DiT; text-encoder layer offload | NVFP4 8L | [rtx-pro6000 YAML](fasth3-omni-rtx-pro6000.yaml) |
+| RTX 4090 | 24 GB | Triton BF16 | DiT/text layer offload; stage VAEs when needed | Native, FP16 decode | [rtx4090 YAML](fasth3-omni-rtx4090.yaml) |
+| RTX 5090 | 32 GB | FlashInfer BF16 | DiT/text layer offload | NVFP4 8L | [rtx5090 YAML](fasth3-omni-rtx5090.yaml) |
+| DGX Spark (GB10) | 128 GB unified | FlashInfer BF16 | Resident in unified memory | NVFP4 8L | [spark YAML](fasth3-omni-spark.yaml) |
+| RTX PRO 6000 Blackwell | 96 GB | cuDNN BF16 | Resident DiT; text-encoder layer offload | NVFP4 8L | [rtx-pro6000 YAML](fasth3-omni-rtx-pro6000.yaml) |
 
 Each YAML selects one GPU, eager execution, and tiled VAE decoding.
 Use the 96 GB **Blackwell** model for the RTX PRO 6000 profile.
@@ -144,12 +146,13 @@ Switch the subfolder back to `fast-8L` for the faster decoder.
 - **RTX 4090:** keep both `enable-distributed-layerwise-offload: true` and
   `dlo-no-use-allgather: true`. This profile rotates layer weights through
   GPU buffers and moves the native VAEs onto the GPU when needed.
-- **RTX 5090:** keep layer offload enabled for both `dit` and `text_encoder`.
-  These components use host RAM between GPU computations.
+- **RTX 5090:** keep `diffusion-offload-config` set to `mode: layer` with
+  `components: [dit, text_encoder]`. These components use host RAM between
+  GPU computations.
 - **DGX Spark:** keep the resident profile. CPU and GPU share the same
   memory, so CPU offload does not provide a separate memory pool.
-- **RTX PRO 6000 Blackwell:** keep text-encoder offload enabled; the DiT
-  remains on the GPU.
+- **RTX PRO 6000 Blackwell:** keep `diffusion-offload-config` set to
+  `mode: layer` with `components: [text_encoder]`. The DiT remains on the GPU.
 - **If memory is tight:** close other GPU workloads, use `fast-8L` on
   Blackwell, and start with `832x480`. Keep `vae-use-tiling: true`.
 - **If startup is slow:** allow the initial downloads and FP8 conversion

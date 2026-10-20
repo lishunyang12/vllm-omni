@@ -6,6 +6,10 @@
 generates video and audio from text and reference images or videos.
 It uses eight PDD forwards and logical tile128 VSA with 90% sparsity.
 
+Use this page for the shared eight-GPU deployment. For RTX 4090, RTX 5090,
+DGX Spark, or RTX PRO 6000 Blackwell, follow the
+[single-card guide](<FastH3 RefOmni Single Card.md>).
+
 ## Setup
 
 Follow the [CUDA installation guide](../../docs/getting_started/installation/gpu.md)
@@ -82,22 +86,10 @@ vLLM-Omni integration remains in progress.
 
 ### Single-device configurations
 
-These configurations use the BF16 release above with online FP8 DiT/text
-linears and BF16 VSA. They preserve eight PDD forwards and logical tile128.
-Choose the configuration matching your device:
-
-| Device | Placement | Attention | Decoder | Recipe |
-| --- | --- | --- | --- | --- |
-| RTX 4090 | Layerwise DiT and encoder offload | Triton BF16 | Native (FP16 decode) | [4090](FastH3-Omni-rtx4090.md) |
-| RTX 5090 | Layerwise DiT and encoder offload | FlashInfer BF16 | NVFP4 8L | [5090](FastH3-Omni-rtx5090.md) |
-| DGX Spark | Resident, no pinned CPU staging | FlashInfer BF16 | NVFP4 8L | [Spark](FastH3-Omni-spark.md) |
-| RTX PRO 6000 Blackwell | Resident DiT, text-encoder layer offload | cuDNN BF16 | NVFP4 8L | [PRO 6000](FastH3-Omni-rtx-pro6000.md) |
-
-## Single-card guide
-
-See [FastH3 RefOmni Single Card](<FastH3 RefOmni Single Card.md>) for the
-four-device setup, server commands, video generation, decoder selection,
-and memory settings.
+[FastH3 RefOmni Single Card](<FastH3 RefOmni Single Card.md>) contains the
+RTX 4090, RTX 5090, DGX Spark, and RTX PRO 6000 Blackwell profiles, with
+installation, server commands, generation, and memory settings. These profiles
+use online FP8 DiT/text linears and BF16 attention.
 
 ## Generate
 

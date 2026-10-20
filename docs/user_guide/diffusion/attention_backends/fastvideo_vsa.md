@@ -41,9 +41,10 @@ all selected keys. Pooling, sparse selection and H3 compression remain at
 the checkpoint's logical tile size. It does not require FP4 hardware or a
 Blackwell native attention extension. Empty selected rows produce zeros.
 
-The provider is opt-in on other architectures. The
-[consumer recipes](https://github.com/vllm-project/vllm-omni/blob/main/recipes/FastVideo/FastH3-Omni.md#single-device-configurations)
-separate target-device configuration from actual hardware qualification.
+The provider is opt-in on other architectures. For device-specific
+installation, configuration, and memory settings, see the
+[single-card guide](https://github.com/vllm-project/vllm-omni/blob/main/recipes/FastVideo/FastH3%20RefOmni%20Single%20Card.md)
+for FastH3 Omni.
 
 ## Enable the backend
 
