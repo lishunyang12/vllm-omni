@@ -38,6 +38,15 @@ recipes/
     Covo-Audio-Chat-L40S.md
 ```
 
+## FastH3
+
+The [FastH3 family section](./FastVideo/README.md) separates three releases:
+[FastH3](./FastVideo/FastH3.md) (four-step T2VA adapter),
+[FastH3 V2](./FastVideo/FastH3-V2.md) (eight-step T2VA checkpoint), and
+[FastH3 Omni](./FastVideo/FastH3-Omni.md) (eight-step Ref2VA checkpoint).
+Each page provides its own model, installation, serve command, request,
+and validation status.
+
 ## Available Recipes
 
 | Recipe | Task | Hardware |
@@ -52,6 +61,9 @@ recipes/
 | [`BreezeBlue/Breeze-TTS-2.md`](./BreezeBlue/Breeze-TTS-2.md) | Online + offline TTS (plain / voice design / voice clone / voice direction, streaming PCM) | 1x NVIDIA L20 48GB |
 | [`ByteDance/Lance.md`](./ByteDance/Lance.md) | Unified AR+diffusion: text/img/video gen + understanding (Lance 3B) | 1x B300 / A100 80GB |
 | [`circlestone-labs/Anima.md`](./circlestone-labs/Anima.md) | Native single-file text-to-image serving | 1x AMD MI300X |
+| [`FastVideo/FastH3.md`](./FastVideo/FastH3.md) | FastH3 four-step Preview V1 T2VA adapter | CUDA; dense/VSA provider requirements in recipe, historical B300 measurements |
+| [`FastVideo/FastH3-V2.md`](./FastVideo/FastH3-V2.md) | FastH3 V2 eight-step T2VA checkpoint | CUDA with FastVideo tile64 or FlashInfer on SM120/SM121; full-model qualification pending |
+| [`FastVideo/FastH3-Omni.md`](./FastVideo/FastH3-Omni.md) | FastH3 Omni eight-step Ref2VA checkpoint | SM100/SM103 native tile128; SM120/SM121 FlashInfer; validation scope in recipe |
 | [`fishaudio/Drama-3.md`](./fishaudio/Drama-3.md) | Online serving for TTS | 1x H100 80GB |
 | [`fishaudio/Fish-Speech-S2-Pro.md`](./fishaudio/Fish-Speech-S2-Pro.md) | Online serving for TTS | 1x A800 80GB |
 | [`Helios/Helios.md`](./Helios/Helios.md) | Text-to-video, image-to-video, and video-to-video generation | 1x NVIDIA H20 |

@@ -147,6 +147,57 @@ def test_h3_forward_applies_the_learned_compression_gate(monkeypatch):
     assert not torch.allclose(with_live_gate.float(), without_gate.float())
 
 
+@pytest.mark.parametrize("topk", [1, 64])
+def test_v2_uses_trained_sparsity_instead_of_legacy_fixed_topk(monkeypatch, topk):
+    calls: dict[str, object] = {}
+    _fake_block_sparse_kernel(monkeypatch, calls)
+    metadata = _h3_metadata((5,), (8, 8, 8))
+    metadata.extra.update(vsa_h3_tile_size=64, vsa_h3_sparsity=0.8)
+    query = torch.randn(1, 517, 2, 8, dtype=torch.bfloat16)
+    output = _h3_impl(topk=topk).forward_cuda(query, query, query, metadata)
+    mask = calls["block_map"]
+    assert isinstance(mask, torch.Tensor)
+    assert mask.shape[-1] == 9
+    assert mask[..., :1].all() and mask[..., :1, :].all()
+    assert (mask[..., 1:, 1:].sum(-1) == 2).all()  # ceil(20% of eight video tiles)
+    assert output.shape == query.shape and torch.isfinite(output).all()
+
+
+@pytest.mark.parametrize("failure", ["missing-layout", "unequal-lengths", "kernel"])
+def test_v2_never_replaces_trained_sparse_attention_with_dense(monkeypatch, failure):
+    impl = _h3_impl(fallback_on_error=True)
+    metadata = _h3_metadata((5,), (2, 4, 4))
+    metadata.extra.update(vsa_h3_tile_size=64, vsa_h3_sparsity=0.8)
+    query = torch.randn(1, 37, 2, 8, dtype=torch.bfloat16)
+
+    def unexpected_fallback(*args, **kwargs):
+        pytest.fail("V2 must preserve the trained sparse attention contract")
+
+    monkeypatch.setattr(impl, "_fallback", unexpected_fallback)
+    expected_error: type[Exception]
+    if failure == "missing-layout":
+        metadata.video_layout = None
+        expected_error, match = ValueError, "complete packed"
+    elif failure == "unequal-lengths":
+        metadata.packed_padding = PackedPaddingMetadata(
+            q_length=37,
+            kv_length=36,
+            cu_seqlens_q=torch.tensor([0, 37], dtype=torch.int32),
+            cu_seqlens_k=torch.tensor([0, 36], dtype=torch.int32),
+        )
+        expected_error, match = ValueError, "Q/KV lengths"
+    else:
+
+        def fail(*args, **kwargs):
+            raise RuntimeError("V2 kernel failure")
+
+        monkeypatch.setattr(impl, "_forward_h3", fail)
+        expected_error, match = RuntimeError, "V2 kernel failure"
+
+    with pytest.raises(expected_error, match=match):
+        impl.forward_cuda(query, query, query, metadata)
+
+
 def test_h3_forward_restores_rows_the_packed_padding_excludes(monkeypatch):
     _fake_block_sparse_kernel(monkeypatch, {})
     impl = _h3_impl(topk=64)

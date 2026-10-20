@@ -9,7 +9,9 @@ attention only against the selected top-k blocks.
 | Model / checkpoint | Required adapter | Tasks | Sequence parallelism |
 | --- | --- | --- | --- |
 | `FastVideo/FastWan2.2-TI2V-5B-Diffusers` | None | T2V, I2V through `Wan22Pipeline` | Disabled |
-| `MiniMaxAI/MiniMax-H3` | [FastH3 VSA (recipe)](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-adapter) | T2VA | Disabled or pure Ulysses |
+| `MiniMaxAI/MiniMax-H3` | [FastH3 VSA (recipe)](https://github.com/vllm-project/vllm-omni/blob/main/recipes/FastVideo/FastH3.md#vsa-adapter-variants) | T2VA | Disabled or pure Ulysses |
+| `FastVideo/FastVideo-FastH3-8-Step-V2` | None; full checkpoint with trained tile64 sparsity | T2VA | Disabled or pure Ulysses |
+| `FastVideo/FastVideo-FastH3-Omni-8-Step-V1` | None; full checkpoint with trained tile128 regional sparsity | Ref2VA | Disabled or pure Ulysses |
 | Wan I2V-14B, S2V, VACE | — | Unsupported | — |
 
 ## Installation
@@ -35,13 +37,17 @@ The default precision remains BF16; auto selection never enables Sage itself.
 
 For online serving, select the backend with the existing attention backend
 flag. Use `--fastvideo-vsa-topk` to set the number of key/value blocks retained
-for every query block:
+for every query block on checkpoints with configurable top-k:
 
 ```bash
 vllm serve <model> --omni \
   --diffusion-attention-backend FASTVIDEO_VSA \
   --fastvideo-vsa-topk 64
 ```
+
+FastH3 V2 and Omni pin their sparsity policy in the checkpoint. For those
+releases, omit `--fastvideo-vsa-topk` and follow the
+[FastH3 recipes](https://github.com/vllm-project/vllm-omni/blob/main/recipes/FastVideo/README.md).
 
 <details markdown="1">
 <summary>Alternative configuration formats</summary>
@@ -82,8 +88,12 @@ stages:
 
 ## Choose top-k
 
-H3 uses 64-token video blocks and keeps
-all prefix blocks; see the [FastH3 VSA recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-adapter).
+The four-step FastH3 adapter uses 64-token video blocks and keeps all prefix
+blocks; see the [FastH3 VSA recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/FastVideo/FastH3.md#vsa-adapter-variants).
+V2 also uses 64-token blocks, with top-k derived from 80% sparsity.
+Omni uses logical 128-token blocks, 90% sparsity, and an independent 10%
+budget for each reference-video region. Both full checkpoints reject a fixed
+top-k override.
 
 ### Wan top-k behavior
 
@@ -137,6 +147,8 @@ dtypes, sequence-parallel execution, or kernel failures fall back to
 sequence-parallel context is one of those fallbacks; the H3 route supports pure
 Ulysses and rejects ring or all-gather sequence parallelism at startup.
 H3 accelerator faults propagate instead of attempting dense recovery.
+FastH3 V2 and Omni also propagate layout and kernel errors: these checkpoints
+require their trained sparse policy and do not fall back to dense attention.
 
 On the Wan route, check the startup and first-forward logs:
 
@@ -148,13 +160,14 @@ On the Wan route, check the startup and first-forward logs:
 
 For H3, check `FastH3 adapter active` at startup and
 `FASTVIDEO_VSA H3 routing` during DiT execution, as described in the
-[model recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/MiniMaxAI/MiniMax-H3.md#fasth3-adapter).
+[model recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/FastVideo/FastH3.md#vsa-adapter-variants).
 
 The Wan route requires CUDA tensors in FP16 or BF16, 256-token blocks,
 standard `head_size**-0.5` scaling, equal Q/K/V head counts, no attention mask,
 and no active sequence-parallel context. The MiniMax-H3 route uses 64-token
 `(4, 4, 4)` blocks and supports pure Ulysses. NPU and XPU paths do not execute
-the FastVideo VSA CUDA kernel.
+the FastVideo VSA CUDA kernel. FastH3 Omni uses `(4, 4, 8)` logical blocks
+instead; see its recipe for the separate tile128 provider requirements.
 
 ## Automatic provider selection
 
@@ -162,6 +175,12 @@ MiniMax-H3 defaults to `fastvideo_vsa_provider=auto`: supported BF16 inputs
 use FlashInfer on SM120/SM121 when its kernels are installed, otherwise
 FastVideo. Wan continues to use FastVideo. Existing video API requests do not
 need to change.
+
+FastH3 Omni's logical tile128 path requires `provider=auto` and BF16.
+On SM120/SM121 it splits each already-selected 128-token block into two
+FlashInfer compute blocks. Pooling, top-k and region budgets remain logical
+tile128. Unsupported explicit provider or precision overrides raise an error.
+On SM100/SM103 it uses the native FastVideo tile128 kernel.
 
 For approximate Sage attention on SM120, select the precision explicitly:
 

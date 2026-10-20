@@ -312,6 +312,25 @@ def test_resolve_native_vaes_uses_pinned_revision_and_only_vae_patterns(tmp_path
     assert not (model_root / "conversion.json").exists()
 
 
+def test_public_v2_without_provenance_uses_the_native_vae_compatibility_pin(tmp_path, monkeypatch):
+    """Public V2 revision 3da2ddfe has no provenance.json."""
+    (tmp_path / "fastvideo_inference.json").write_text(json.dumps(_fastvideo_metadata()))
+    calls = {}
+
+    def download(**kwargs):
+        calls.update(kwargs)
+        return "/base/snapshot"
+
+    monkeypatch.setattr(
+        "vllm_omni.diffusion.models.minimax_h3.fasth3_checkpoint.download_weights_from_hf_specific", download
+    )
+    result = FastH3CheckpointSpec.from_metadata(_fastvideo_metadata()).resolve_native_vaes(tmp_path)
+    assert str(result) == "/base/snapshot/FL2VA"
+    assert calls["revision"] == "9bfb6693f2cf6de171db46d1aa586f67d773a1da"
+    assert calls["model_name_or_path"] == FASTH3_BASE_MODEL
+    assert calls["allow_patterns"] == ["FL2VA/video_vae/**", "FL2VA/audio_vae/**"]
+
+
 @pytest.mark.parametrize(
     "base_model",
     [

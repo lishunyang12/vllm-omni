@@ -23,6 +23,9 @@ if TYPE_CHECKING:
 
 FASTH3_V2_MODEL_ID = "FastVideo/FastVideo-FastH3-8-Step-V2"
 FASTH3_V2_BASE_SCHEDULE = DMD2SigmaSchedule.from_positions((0.999, 0.874, 0.749, 0.624, 0.5, 0.375, 0.25, 0.125, 0.0))
+# The public V2 export omits provenance.json. This is the Omni adapter's native
+# VAE compatibility pin, not a claim about the release's training provenance.
+FASTH3_V2_NATIVE_VAE_REVISION = "9bfb6693f2cf6de171db46d1aa586f67d773a1da"
 
 
 @dataclass(frozen=True)
@@ -78,20 +81,25 @@ class FastH3CheckpointSpec:
         """Reuse the frozen base VAEs with Omni's native tiled/parallel runtime.
 
         Only VAE components are fetched; the student and text encoder come
-        directly from the FastVideo release. The release pins the base revision.
+        directly from the FastVideo release. Honor an explicit provenance pin;
+        public V2 exports without that file use the adapter's compatibility pin.
         """
-        provenance = json.loads((model_root / "provenance.json").read_text(encoding="utf-8"))
-        base = provenance.get("base_model", "")
-        prefix = f"hf://{FASTH3_BASE_MODEL}@"
-        if not isinstance(base, str) or not base.startswith(prefix) or not base[len(prefix) :]:
-            raise ValueError(f"{self.name} provenance must pin a MiniMaxAI/MiniMax-H3 base revision")
+        revision = FASTH3_V2_NATIVE_VAE_REVISION
+        provenance_path = model_root / "provenance.json"
+        if provenance_path.exists():
+            provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+            base = provenance.get("base_model", "")
+            prefix = f"hf://{FASTH3_BASE_MODEL}@"
+            if not isinstance(base, str) or not base.startswith(prefix) or not base[len(prefix) :]:
+                raise ValueError(f"{self.name} provenance must pin a MiniMaxAI/MiniMax-H3 base revision")
+            revision = base[len(prefix) :]
         return (
             Path(
                 download_weights_from_hf_specific(
                     model_name_or_path=FASTH3_BASE_MODEL,
                     cache_dir=None,
                     allow_patterns=["FL2VA/video_vae/**", "FL2VA/audio_vae/**"],
-                    revision=base[len(prefix) :],
+                    revision=revision,
                     require_all=True,
                 )
             )

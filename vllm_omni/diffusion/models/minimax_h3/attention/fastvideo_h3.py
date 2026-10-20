@@ -295,9 +295,12 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
         attn_metadata: AttentionMetadata | None = None,
     ) -> torch.Tensor:
         requires_tile128 = attn_metadata is not None and attn_metadata.extra.get("vsa_h3_tile_size", 64) == 128
+        requires_sparse = requires_tile128 or (
+            attn_metadata is not None and attn_metadata.extra.get("vsa_h3_sparsity") is not None
+        )
         if _get_h3_layout(attn_metadata) is None:
-            if requires_tile128:
-                raise ValueError("FastH3 Omni requires complete packed video layout metadata")
+            if requires_sparse:
+                raise ValueError("FastH3 requires complete packed video layout metadata")
             return super().forward_cuda(query, key, value, attn_metadata)
 
         if requires_tile128:
@@ -314,8 +317,8 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
         if attn_metadata is not None and attn_metadata.packed_padding is not None:
             valid_seq_len = attn_metadata.packed_padding.q_length
             if attn_metadata.packed_padding.kv_length != valid_seq_len:
-                if requires_tile128:
-                    raise ValueError("FastH3 Omni packed Q/KV lengths must match")
+                if requires_sparse:
+                    raise ValueError("FastH3 packed Q/KV lengths must match")
                 return self._fallback(
                     original_query, original_key, original_value, attn_metadata, "packed Q/KV lengths must match"
                 )
@@ -336,7 +339,7 @@ class MiniMaxH3VSAImpl(FastVideoVSAImpl):
             # recover the request.
             if isinstance(exc, torch.AcceleratorError):
                 raise
-            if attn_metadata.extra.get("vsa_h3_tile_size", 64) == 128 or not self.fallback_on_error:
+            if requires_sparse or not self.fallback_on_error:
                 raise
             return self._fallback(
                 original_query, original_key, original_value, attn_metadata, f"VSA-H3 kernel failed: {exc}"
