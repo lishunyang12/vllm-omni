@@ -25,7 +25,7 @@ sigma nodes. Do not apply the four-step adapter to either full checkpoint.
 | --- | --- | --- |
 | FastH3 Dense | A dense backend supported by H3 and the installed CUDA platform | Historical B300 measurements; choose a backend for the target GPU |
 | FastH3 VSA / FastH3 V2 | FastVideo tile64 on compatible CUDA GPUs, including SM90 and SM100/SM103; automatic FlashInfer BF16 selection on SM120/SM121 when installed | SM120 kernel regressions; V2 full-model qualification pending |
-| FastH3 Omni | Native FastVideo tile128 on SM100/SM103; logical tile128 executed through FlashInfer block64 on SM120/SM121 | SM120 kernel regressions and historical offline results; current-source full-model qualification pending |
+| FastH3 Omni | Native FastVideo tile128 on SM100/SM103; logical tile128 executed through FlashInfer block64 on SM120/SM121 | SM120 kernel and HTTP generation checks on 8× PRO 5000; cross-provider quality equivalence unverified |
 
 The model names, sampling contracts, and HTTP requests are independent of the
 chosen provider. Install a compatible kernel and size the parallel deployment
