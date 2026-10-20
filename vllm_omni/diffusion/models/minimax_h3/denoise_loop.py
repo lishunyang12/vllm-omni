@@ -411,6 +411,8 @@ def minimax_h3_denoise_loop(
                 video_target_timesteps=video_target_timesteps,
                 audio_target_timesteps=audio_target_timesteps,
             )
+            if getattr(getattr(model, "arch", None), "pdd_steps", None) is not None:
+                fk["pdd_step"] = step
             with torch.inference_mode():
                 v_video, v_audio = model(**fk)
             mv_video_t = v_video.float()[update]

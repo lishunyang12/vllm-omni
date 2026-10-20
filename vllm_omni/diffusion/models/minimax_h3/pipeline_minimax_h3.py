@@ -124,7 +124,7 @@ from .denoise_loop import (
 )
 from .encoder import MiniMaxH3Qwen3VLEncoder
 from .fasth3 import FastH3WeightFusion, resolve_fasth3_fusion
-from .fasth3_checkpoint import FastH3CheckpointSpec
+from .fasth3_checkpoint import FastH3CheckpointSpec, FastH3OmniCheckpointSpec
 from .latent_mask import (
     MiniMaxH3LatentEdit,
     minimax_h3_audio_edit_masks,
@@ -250,7 +250,10 @@ def _resolve_minimax_h3_model_root(
             return path.parent
         return path
     if is_minimax_h3_modular(model, revision):
-        allow_patterns = ["modular_model_index.json", "fastvideo_inference.json", "provenance.json", "transformer/**"]
+        from vllm_omni.model_executor.models.minimax_h3.checkpoint import minimax_h3_transformer_subfolder
+
+        component = minimax_h3_transformer_subfolder(model=model, revision=revision)
+        allow_patterns = ["modular_model_index.json", "fastvideo_inference.json", "provenance.json", f"{component}/**"]
         if load_text_encoder:
             allow_patterns += ["text_encoder/**", "tokenizer/**", "processor/**"]
     elif load_text_encoder:
@@ -923,8 +926,6 @@ class MiniMaxH3Pipeline(
             getattr(od_config, "task_type", None),
             str(od_config.model),
         )
-        if modular and str(od_config.task_type or "auto").lower() == "auto":
-            self.partition = "fl2va"
         self._turbo_lora_specs: dict[int, TurboSpec] = {}
         self._native_lora_adapter_ids: set[int] = set()
         self._lora_sigma_schedules: dict[int, DMD2SigmaSchedule] = {}
@@ -939,9 +940,16 @@ class MiniMaxH3Pipeline(
             self._fasth3_checkpoint = FastH3CheckpointSpec.from_metadata(
                 json.loads((model_root / "fastvideo_inference.json").read_text(encoding="utf-8"))
             )
+            if str(od_config.task_type or "auto").lower() == "auto":
+                self.partition = self._fasth3_checkpoint.partition
             self._fasth3_checkpoint.check_serving_contract(partition=self.partition, od_config=od_config)
             release = self._fasth3_checkpoint.release_metadata()
-            vae_model_path = self._fasth3_checkpoint.resolve_native_vaes(model_root)
+            if isinstance(self._fasth3_checkpoint, FastH3OmniCheckpointSpec):
+                vae_model_path = self._fasth3_checkpoint.resolve_base_components(
+                    load_text_encoder=self.load_text_encoder
+                )
+            else:
+                vae_model_path = self._fasth3_checkpoint.resolve_native_vaes(model_root)
         else:
             model_path = model_root / ("Ref2VA" if self.partition == "ref2va" else "FL2VA")
             model_index = json.loads((model_path / "model_index.json").read_text(encoding="utf-8"))
@@ -979,10 +987,14 @@ class MiniMaxH3Pipeline(
         if ref2va_model_path is not None:
             self._base_schedule_by_partition["ref2va"] = _read_base_schedule(ref2va_release)
 
+        encoder_model_path = (
+            vae_model_path if isinstance(self._fasth3_checkpoint, FastH3OmniCheckpointSpec) else model_path
+        )
+        transformer_component = self._fasth3_checkpoint.transformer_component if modular else "transformer"
         self.weights_sources = [
             DiffusersPipelineLoader.ComponentSource(
                 model_or_path=str(model_path),
-                subfolder="transformer",
+                subfolder=transformer_component,
                 revision=od_config.revision,
                 prefix="transformer.",
                 fall_back_to_pt=False,
@@ -1011,9 +1023,21 @@ class MiniMaxH3Pipeline(
             diffusers_weights=modular,
         )
         if self._fasth3_checkpoint is not None:
-            self.transformer.enable_vsa_gates(sparsity=self._fasth3_checkpoint.vsa_sparsity)
+            spec = self._fasth3_checkpoint
+            if isinstance(spec, FastH3OmniCheckpointSpec) and self.transformer.arch.pdd_steps != 32:
+                raise ValueError("FastH3 Omni transformer_ref/config.json must declare pdd_steps=32")
+            self.transformer.enable_vsa_gates(
+                sparsity=spec.vsa_sparsity,
+                tile_size=spec.vsa_tile_size,
+                ref_policy=spec.vsa_ref_policy,
+                ref_keep_rate=spec.vsa_ref_keep_rate,
+            )
             logger.info(
-                "FastH3 V2 full checkpoint: 8 transformer forwards, video/audio shifts 10/3, VSA sparsity=0.8 tile=64"
+                "%s: 8 forwards, video/audio shifts %s/3, VSA sparsity=%s tile=%s",
+                spec.name,
+                spec.video_shift,
+                spec.vsa_sparsity,
+                spec.vsa_tile_size,
             )
         if ref2va_model_path is not None:
             self.transformers_ref = MiniMaxH3DiTModel(
@@ -1061,14 +1085,14 @@ class MiniMaxH3Pipeline(
 
         if self.load_text_encoder:
             self.tokenizer = Qwen2TokenizerFast.from_pretrained(
-                str(model_path),
+                str(encoder_model_path),
                 subfolder="tokenizer",
-                local_files_only=os.path.isdir(model_path),
+                local_files_only=os.path.isdir(encoder_model_path),
             )
             self.processor = Qwen3VLProcessor.from_pretrained(
-                str(model_path),
+                str(encoder_model_path),
                 subfolder="processor",
-                local_files_only=os.path.isdir(model_path),
+                local_files_only=os.path.isdir(encoder_model_path),
             )
         else:
             self.tokenizer = None
@@ -1094,7 +1118,7 @@ class MiniMaxH3Pipeline(
             self.text_encoder_tp_size = text_encoder_tp_size
             self.text_encoder_group = self._build_text_encoder_group(text_encoder_tp_size)
             self.text_encoder = MiniMaxH3Qwen3VLEncoder(
-                os.path.join(model_path, "text_encoder"),
+                os.path.join(encoder_model_path, "text_encoder"),
                 device=self.device,
                 load_model=rank < text_encoder_tp_size,
                 encoder_group=self.text_encoder_group,
@@ -1103,7 +1127,7 @@ class MiniMaxH3Pipeline(
             if rank < text_encoder_tp_size:
                 self.weights_sources.append(
                     DiffusersPipelineLoader.ComponentSource(
-                        model_or_path=str(model_path),
+                        model_or_path=str(encoder_model_path),
                         subfolder="text_encoder",
                         revision=od_config.revision,
                         prefix="text_encoder.",
@@ -2023,6 +2047,13 @@ class MiniMaxH3Pipeline(
                 audio_edit_restore_mask_rows,
             )
 
+        if isinstance(self._fasth3_checkpoint, FastH3OmniCheckpointSpec):
+            from .pdd import pdd_sigmas
+
+            video_sigmas, audio_sigmas = pdd_sigmas(video_shift), pdd_sigmas(audio_shift)
+            # Only target rows are sampled from sigma_0 * N(0, I).
+            initial_video[branch.update_mask] *= video_sigmas[0]
+            initial_audio[branch.audio_update_mask] *= audio_sigmas[0]
         return {
             "branch": branch,
             # The request-mode loop moves these onto the device itself; step mode
@@ -3554,7 +3585,8 @@ class MiniMaxH3Pipeline(
         }
         minimax_h3_publish_denoise_progress(*(progress.pop() if len(progress) == 1 else (None, None, None)))
 
-        if len(batch_states) > 1 and (mixed_transformers or not self._packed_batch_supported(transformers[0])):
+        pdd = isinstance(self._fasth3_checkpoint, FastH3OmniCheckpointSpec)
+        if pdd or (len(batch_states) > 1 and (mixed_transformers or not self._packed_batch_supported(transformers[0]))):
             if mixed_transformers:
                 logger.warning_once(
                     "MiniMax H3 step batch contains requests for different task-specific DiTs; "
@@ -3592,6 +3624,8 @@ class MiniMaxH3Pipeline(
                     video_target_timesteps=video_target_timesteps[index],
                     audio_target_timesteps=audio_target_timesteps[index],
                 )
+                if pdd:
+                    forward_kwargs["pdd_step"] = int(batch_states[index].step_index)
                 request_video, request_audio = transformers[index](**forward_kwargs)
                 video_parts.append(request_video)
                 audio_parts.append(request_audio)

@@ -17,6 +17,8 @@ from vllm_omni.diffusion.attention.backends.abstract import (
 )
 from vllm_omni.diffusion.models.minimax_h3.attention.fastvideo_h3 import (
     MiniMaxH3VSAImpl,
+    _build_h3_region_block_map,
+    _get_h3_multiregion_tile_metadata,
     _get_h3_tile_metadata,
 )
 
@@ -225,3 +227,178 @@ def test_h3_without_layout_delegates_to_shared_backend(monkeypatch):
     assert impl.forward_cuda(query, query, query, metadata) is expected
     assert len(calls) == 1
     assert all(actual is wanted for actual, wanted in zip(calls[0], (impl, query, query, query, metadata)))
+
+
+def test_omni_multiregion_geometry_preserves_interleaved_reference_order():
+    prefix = (5, 512, 3, 7, 128, 9)
+    regions = ((5, (8, 4, 16)), (527, (4, 4, 8)), (664, (4, 4, 24)))
+    partition, sizes, non_pad, untile, dense, spans = _get_h3_multiregion_tile_metadata(
+        prefix, regions, torch.device("cpu")
+    )
+    assert sizes[:dense].tolist() == [5, 3, 7, 9]
+    assert spans == ((4, 8), (8, 9), (9, 12))
+    original = torch.arange(1048)
+    tiled = torch.full((sizes.numel() * 128,), -1)
+    tiled[non_pad] = original[partition]
+    assert torch.equal(tiled[untile], original)
+
+
+def test_omni_selects_a_separate_budget_from_every_reference_region():
+    torch.manual_seed(43)
+    scores = torch.randn(1, 2, 40, 40)
+    spans = ((3, 23), (23, 28), (28, 40))
+    mask = _build_h3_region_block_map(scores, 3, spans, (0.1, 0.1, 0.1))
+    assert mask[..., :3].all()
+    assert mask[..., :3, :].all()
+    for (start, end), expected in zip(spans, (2, 1, 2)):
+        assert (mask[..., 3:, start:end].sum(-1) == expected).all()
+
+
+@pytest.mark.parametrize("provider,precision", [("fastvideo", "bf16"), ("auto", "sage")])
+def test_omni_tile128_rejects_tile64_provider_overrides(provider, precision):
+    impl = _h3_impl(provider=provider, precision=precision)
+    metadata = _h3_metadata((5,), (4, 4, 8))
+    metadata.extra["vsa_h3_tile_size"] = 128
+    query = torch.zeros(1, 133, 2, 8, dtype=torch.bfloat16)
+    with pytest.raises(ValueError, match="provider=auto and precision=bf16"):
+        impl.forward_cuda(query, query, query, metadata)
+
+
+def test_omni_tile128_uses_native_provider_without_opt_in(monkeypatch):
+    calls = {}
+
+    def kernel(q, k, v, indices, counts, sizes, **kwargs):
+        calls["sizes"] = sizes.tolist()
+        calls["mask"] = indices.bool()
+        mask = indices.bool().repeat_interleave(128, -1).repeat_interleave(128, -2)
+        valid = (torch.arange(128)[None] < sizes[:, None]).reshape(1, 1, 1, -1)
+        out = torch.nn.functional.scaled_dot_product_attention(q.float(), k.float(), v.float(), attn_mask=mask & valid)
+        return out.to(q.dtype), None
+
+    native = types.ModuleType("fastvideo_kernel.block_sparse_attn_sm100a")
+    setattr(native, "is_supported", lambda *args: True)
+    setattr(native, "block_sparse_attn_sm100a", kernel)
+    package = types.ModuleType("fastvideo_kernel")
+    setattr(package, "block_sparse_attn_sm100a", native)
+    index_module = types.ModuleType("fastvideo_kernel.triton_kernels.index")
+    setattr(index_module, "map_to_index", lambda mask: (mask, mask.sum(-1)))
+    monkeypatch.setitem(sys.modules, "fastvideo_kernel", package)
+    monkeypatch.setitem(sys.modules, "fastvideo_kernel.triton_kernels", types.ModuleType("triton_kernels"))
+    monkeypatch.setitem(sys.modules, "fastvideo_kernel.triton_kernels.index", index_module)
+    monkeypatch.delenv("FASTVIDEO_VSA_SM100A", raising=False)
+
+    prefix, target = (5, 512, 3), (4, 4, 24)
+    metadata = _h3_metadata(prefix, target)
+    metadata.video_layout = VideoTokenLayout(
+        used_len=904,
+        video_spans=(
+            VideoTokenSpan(start=5, latent_grid=(8, 4, 16), role="reference"),
+            VideoTokenSpan(start=520, latent_grid=target, role="target"),
+        ),
+    )
+    metadata.extra.update(
+        vsa_h3_tile_size=128, vsa_h3_ref_policy="p2_multi_region", vsa_h3_sparsity=0.9, vsa_h3_ref_keep_rate=0.1
+    )
+    torch.manual_seed(43)
+    q = torch.randn(1, 904, 2, 8, dtype=torch.bfloat16)
+    output = _h3_impl().forward_cuda(q, q, q, metadata)
+    assert output.shape == q.shape
+    assert torch.isfinite(output).all()
+    assert calls["sizes"] == [5, 3, 128, 128, 128, 128, 128, 128, 128, 0]
+    mask = calls["mask"]
+    assert not mask[..., -1].any() and not mask[..., -1, :].any()
+    assert (mask[..., 2:9, 2:6].sum(-1) == 1).all()
+    assert (mask[..., 2:9, 6:9].sum(-1) == 1).all()
+
+
+def test_omni_tile128_does_not_fall_back_to_dense_on_kernel_failure(monkeypatch):
+    impl = _h3_impl(fallback_on_error=True)
+    metadata = _h3_metadata((5,), (2, 4, 4))
+    metadata.extra["vsa_h3_tile_size"] = 128
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("native tile128 unavailable")
+
+    monkeypatch.setattr(impl, "_forward_h3", fail)
+    q = torch.randn(1, 37, 2, 8)
+    with pytest.raises(RuntimeError, match="tile128 unavailable"):
+        impl.forward_cuda(q, q, q, metadata)
+
+
+@pytest.mark.parametrize("transport_padding", [False, True])
+def test_omni_sm120_decomposition_preserves_the_original_token_mask(monkeypatch, transport_padding):
+    from vllm_omni.diffusion.attention.ops.block_sparse import _flashinfer_sm120_tile128
+
+    torch.manual_seed(7)
+    sizes = torch.tensor([128, 17, 64, 65, 0], dtype=torch.int32)
+    blocks = sizes.numel()
+    mask128 = torch.rand(2, 2, blocks, blocks) < 0.4
+    mask128[..., 0] = True
+    mask128[..., 0, :] = True
+    mask128[..., -1, :] = False
+    q, k, v = [torch.randn(2, blocks * 128, 2, 8) for _ in range(3)]
+    # A large value on a padded key catches incorrect handling of partial tiles.
+    v[:, 128 + 17 : 256] = 100
+    valid = (torch.arange(128)[None] < sizes[:, None]).flatten()
+    expected_mask = mask128.repeat_interleave(128, -2).repeat_interleave(128, -1)
+    expected_mask &= valid.view(1, 1, 1, -1)
+    expected = torch.nn.functional.scaled_dot_product_attention(
+        *(x.transpose(1, 2) for x in (q, k, v)), attn_mask=expected_mask
+    ).transpose(1, 2)
+    calls = []
+
+    def kernel(q, k, v, indices, capacity, *, block_sizes, q2k_block_nums):
+        calls.append(True)
+        n = block_sizes.numel()
+        mask = torch.zeros(*indices.shape[:3], n, dtype=torch.bool)
+        for b in range(indices.shape[0]):
+            for h in range(indices.shape[1]):
+                for row in range(indices.shape[2]):
+                    selected = indices[b, h, row, : q2k_block_nums[b, h, row]]
+                    assert (selected >= 0).all()
+                    assert (block_sizes[selected] > 0).all()
+                    mask[b, h, row, selected] = True
+        token_mask = mask.repeat_interleave(64, -2).repeat_interleave(64, -1)
+        valid = (torch.arange(64)[None] < block_sizes[:, None]).flatten()
+        token_mask &= valid.view(1, 1, 1, -1)
+        torch.testing.assert_close(token_mask, expected_mask)
+        return torch.nn.functional.scaled_dot_product_attention(
+            *(x.transpose(1, 2) for x in (q, k, v)), attn_mask=token_mask
+        ).transpose(1, 2), None
+
+    module = types.ModuleType("flashinfer.cute_dsl.sparse.bsa_attn_sm120")
+    setattr(module, "bsa_attn_sm120_blk64_fwd", kernel)
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    if transport_padding:
+        q, k, v = [torch.nn.functional.pad(x, (0, 0, 0, 0, 0, 128)) for x in (q, k, v)]
+        mask128 = torch.nn.functional.pad(mask128, (0, 1, 0, 1))
+        sizes = torch.nn.functional.pad(sizes, (0, 1))
+        expected = torch.nn.functional.pad(expected, (0, 0, 0, 0, 0, 128))
+
+    actual = _flashinfer_sm120_tile128(q, k, v, mask128, sizes, blocks)
+    torch.testing.assert_close(actual, expected)
+    assert len(calls) == 1, "all selected KV blocks must share a single attention reduction"
+
+
+@pytest.mark.parametrize("error_type", [RuntimeError, torch.AcceleratorError])
+def test_omni_sm120_flashinfer_error_is_not_swallowed(monkeypatch, error_type):
+    from vllm_omni.diffusion.attention.ops.block_sparse import _flashinfer_sm120_tile128
+
+    def fail(*args, **kwargs):
+        raise error_type("FlashInfer kernel failed")
+
+    module = types.ModuleType("flashinfer.cute_dsl.sparse.bsa_attn_sm120")
+    setattr(module, "bsa_attn_sm120_blk64_fwd", fail)
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    q = torch.zeros(1, 128, 1, 128, dtype=torch.bfloat16)
+    with pytest.raises(error_type, match="FlashInfer kernel failed"):
+        _flashinfer_sm120_tile128(q, q, q, torch.ones(1, 1, 1, 1, dtype=torch.bool), torch.tensor([128]), 1)
+
+
+def test_omni_sm120_missing_flashinfer_has_actionable_error(monkeypatch):
+    from vllm_omni.diffusion.attention.ops.block_sparse import _flashinfer_sm120_tile128
+
+    monkeypatch.setitem(sys.modules, "flashinfer.cute_dsl.sparse.bsa_attn_sm120", None)
+    q = torch.zeros(1, 128, 1, 128, dtype=torch.bfloat16)
+    with pytest.raises(RuntimeError, match="FlashInfer with bsa_attn_sm120_blk64_fwd"):
+        _flashinfer_sm120_tile128(q, q, q, torch.ones(1, 1, 1, 1, dtype=torch.bool), torch.tensor([128]), 1)
