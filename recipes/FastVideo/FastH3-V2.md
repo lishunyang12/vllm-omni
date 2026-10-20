@@ -1,35 +1,39 @@
 # FastH3 V2
 
-[FastH3 family](README.md) · [FastH3](FastH3.md) · [FastH3 Omni](FastH3-Omni.md)
+[FastH3 family](README.md) · [FastH3 Omni](FastH3-Omni.md)
 
-[FastH3 8-Step V2](https://huggingface.co/FastVideo/FastVideo-FastH3-8-Step-V2)
-is a full T2VA checkpoint: text to video and audio, with eight transformer
-forwards, tile64 VSA at 80% sparsity, and video/audio flow shifts 10/3.
-It does not use the four-step FastH3 adapter.
+Generate video and audio from a text prompt with
+[FastH3 V2](https://huggingface.co/FastVideo/FastVideo-FastH3-8-Step-V2).
+No reference image is required. This eight-GPU deployment is experimental.
+For reference-image generation, use [FastH3 Omni](FastH3-Omni.md).
 
-## Setup
+## Install
 
-Follow the [CUDA installation guide](../../docs/getting_started/installation/gpu.md),
-install `ffmpeg`, and satisfy the [VSA provider requirements](../../docs/user_guide/diffusion/attention_backends/fastvideo_vsa.md).
-Install `uv pip install -e '.[cudnn-bsa]'` for the profile's cuDNN BF16
-tile64 provider.
-Authenticate with `hf auth login` if the native MiniMax-H3 VAEs require access.
-
-## Serve
-
-From the repository root:
+Follow the [CUDA installation guide](../../docs/getting_started/installation/gpu.md)
+and install `ffmpeg`. From the vLLM-Omni repository root:
 
 ```bash
+uv pip install -e '.[cudnn-bsa]'
+```
+
+If Hugging Face requests access to MiniMax-H3 components, accept the model's
+access terms and run `hf auth login` once.
+
+## Start the server
+
+```bash
+VLLM_WORKER_MULTIPROC_METHOD=spawn VLLM_OMNI_VIDEO_SYNC_TIMEOUT=7200 \
 vllm serve FastVideo/FastVideo-FastH3-8-Step-V2 --omni \
   --config recipes/FastVideo/fasth3-8step-8gpu.yaml
 ```
 
-The [shared eight-GPU configuration](fasth3-8step-8gpu.yaml) sets parallelism,
-eight sampling steps, and guidance 1. The checkpoint selects the T2VA partition,
-schedule, and sparsity; cuDNN selects the kernel for the GPU.
-A local checkpoint directory can replace the model ID.
+The configuration handles eight-GPU placement, eight inference steps, and
+video decoding. Wait for `Application startup complete` before sending a
+request.
 
-## Generate
+## Generate video and audio
+
+In a second terminal:
 
 ```bash
 curl --fail-with-body -sS http://localhost:8000/v1/videos/sync \
@@ -38,20 +42,6 @@ curl --fail-with-body -sS http://localhost:8000/v1/videos/sync \
   -o output.mp4
 ```
 
-No reference media is required. The output includes video and audio. The
-release's nine sigma nodes represent eight transformer forwards; do not
-change the step count, guidance, flow shifts, or ratio-derived top-k.
-
-## Validation scope
-
-V2 loader, sampling, and sparse-kernel regressions are covered; V2 full-model
-serving and performance remain unverified. The shared deployment has been
-exercised with Omni Ref2VA, which is a separate workload.
-
-The command follows the checkpoint's `main` branch. Loader validation used
-revision `3da2ddfe1954d9cda4c05b643dc0f26007a655c5`; add
-`--revision <commit>` to select that version. This revision has no
-`provenance.json`. The adapter uses native tiled/parallel VAEs from MiniMax-H3
-revision `9bfb6693f2cf6de171db46d1aa586f67d773a1da`, honoring an explicit
-provenance pin when supplied. This is a compatibility choice; matching latent
-normalization metadata does not establish VAE weight or output equivalence.
+Open `output.mp4` to play the video with audio. For a smaller output, use
+`size=832x480`. Keep the configuration's sampling defaults; this model is
+trained for eight steps.

@@ -19,8 +19,8 @@ attention settings; do not apply the four-step adapter to either full checkpoint
 
 ## References
 
-- [Omni NVFP4 video decoder](FastH3-Omni.md#optional-nvfp4-video-decoder): decoder selection and validation.
-- [8× RTX PRO 5000 Omni benchmark](FastH3-Omni.md#benchmark-8-nvidia-rtx-pro-5000): measured workload and software versions.
+- [Omni NVFP4 video decoder](FastH3-Omni.md#optional-nvfp4-video-decoder): choose the 8-layer or 36-layer decoder.
+- [8× RTX PRO 5000 Omni benchmark](FastH3-Omni.md#benchmark-8-nvidia-rtx-pro-5000): generation time and memory use.
 - [Native MiniMax H3](../MiniMaxAI/MiniMax-H3.md): base-model inputs and API fields.
 - [VSA backend](../../docs/user_guide/diffusion/attention_backends/fastvideo_vsa.md): provider selection.
 - [ComfyUI integration](../../docs/features/comfyui.md): generic video workflows.

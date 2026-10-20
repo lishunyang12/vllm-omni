@@ -90,23 +90,3 @@ For multiple images, video, or audio references, see the
   to keep the model resident in unified memory and avoid offload transfers.
 - **Memory is tight:** start at 480P, keep the default decoder and tiled
   decoding, and close other GPU workloads.
-
-## Validation
-
-The commands follow each checkpoint's `main` branch. To reproduce a tested
-version, add `--revision <commit>`:
-
-| Checkpoint | Tested revision |
-| --- | --- |
-| BF16 Omni | `88d512c5e7cc38dda499fbb65688ce58611f9c80` |
-| NVFP4 QAD | `0087718b2c8fe4b7e2d0a97463dc38da13f7703f` |
-| Cached official OmniRef-FP8 | `707a8268014bb49db870c0d59d57d6ee0ea3f5e9` |
-
-QAD and the cached FP8 release passed single-SM120 480P and 768P HTTP
-video/audio generation with vLLM 0.32.0 and PyTorch 2.13.0+cu130.
-The current `FastH3-Omni-FP8` repository was inaccessible during validation.
-The named GPU configurations are deployment guides; those four exact devices
-were not tested here. See [Omni validation](FastH3-Omni.md) for BF16 results.
-
-Upstream references: [FastVideo #1980](https://github.com/hao-ai-lab/FastVideo/pull/1980)
-and [FastVideo #1919](https://github.com/hao-ai-lab/FastVideo/pull/1919).
