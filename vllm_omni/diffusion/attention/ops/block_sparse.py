@@ -29,31 +29,22 @@ def _flashinfer_sm120_tile128(
     tile contributes both halves to ONE attention reduction, preserving its
     softmax denominator. Pooling, selection and compression remain tile-128.
     """
-    try:
-        from flashinfer.cute_dsl.sparse.bsa_attn_sm120 import bsa_attn_sm120_blk64_fwd
-    except ImportError as exc:
-        raise RuntimeError(
-            "FastH3 Omni on SM120 requires FlashInfer with bsa_attn_sm120_blk64_fwd; "
-            "install a FlashInfer build that provides this API"
-        ) from exc
+    from .flashinfer_block_sparse import flashinfer_block_sparse_attention
 
     sizes = variable_block_sizes[:logical_blocks].to(torch.int32)
     sizes64 = torch.stack((sizes.clamp(max=64), (sizes - 64).clamp(0, 64)), dim=-1).flatten()
     mask64 = block_map[..., :logical_blocks, :logical_blocks].repeat_interleave(2, -2).repeat_interleave(2, -1)
     # Partial tiles can have an entirely empty second half. Do not route it.
     mask64 &= sizes64.view(1, 1, 1, -1) > 0
-    indices, counts = block_map_to_indices(mask64)
-    num_blocks = logical_blocks * 2
-
     length = logical_blocks * 128
-    out, _ = bsa_attn_sm120_blk64_fwd(
-        query[:, :length].contiguous(),
-        key[:, :length].contiguous(),
-        value[:, :length].contiguous(),
-        indices,
-        num_blocks,
-        block_sizes=sizes64,
-        q2k_block_nums=counts,
+    out = flashinfer_block_sparse_attention(
+        query[:, :length],
+        key[:, :length],
+        value[:, :length],
+        mask64,
+        sizes64,
+        query.shape[-1] ** -0.5,
+        precision="bf16",
     )
     if out.shape[1] != query.shape[1]:
         out = torch.nn.functional.pad(out, (0, 0, 0, 0, 0, query.shape[1] - out.shape[1]))

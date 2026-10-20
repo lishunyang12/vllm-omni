@@ -2,8 +2,7 @@
 
 FastH3 has three distinct releases in vLLM-Omni. Choose the checkpoint and
 recipe for the task you want to run; each release keeps its trained schedule
-and attention policy. These are model-level guides. Hardware determines the
-attention provider and deployment settings; SM120 is one execution platform.
+and attention policy. Hardware determines the attention provider and deployment settings.
 
 | Release | Task | Weights | Transformer forwards | Video/audio shifts | Attention | Recipe |
 | --- | --- | --- | ---: | --- | --- | --- |
@@ -35,18 +34,12 @@ establish full-model quality, throughput, or cross-provider equivalence.
 Omni currently needs one of its Blackwell sparse backends; other platforms
 need an additional compatible tile128 implementation.
 
-## Release and validation status
+## Performance
 
-The V2 recipe targets its public Hugging Face release. The Omni recipe is
-prepared for public release; availability and any access requirements follow
-the model repository. The recipes provide install, serve, request, and output
-inspection commands, with hardware-specific validation limits alongside them.
-
-Historical FastH3 and Omni performance results are scoped to their measured
-revisions. V2's public metadata, loader regression, and attention behavior are
-checked separately; its full-model serving and performance qualification on
-the current PR remain pending. The native H3 50-step T2VA measurements are not
-V2 measurements.
+See the [8× RTX PRO 5000 Omni benchmark](FastH3-Omni.md#benchmark-8-nvidia-rtx-pro-5000)
+for the workload, parallel configuration, measured latency, memory accounting,
+and software-version scope. These Ref2VA measurements do not describe V2 T2VA
+performance.
 
 ## Shared documentation
 

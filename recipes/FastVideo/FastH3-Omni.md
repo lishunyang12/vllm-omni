@@ -8,7 +8,7 @@
 - Task: Ref2VA, reference-conditioned video and audio, eight PDD forwards.
 - Platforms: SM100/SM103 and SM120/SM121 through their respective sparse providers.
 - Mode: existing `/v1/videos` API, BF16 DiT and native VAEs.
-- Status: experimental; full-model validation on the rebased source is pending.
+- Status: experimental. See the benchmark methodology and known limitations below.
 
 ## Hardware and backend selection
 
@@ -16,8 +16,8 @@ Omni keeps the same logical 128-token VSA contract on both backend families:
 
 | GPU family | BF16 execution | Dependency / validation |
 | --- | --- | --- |
-| SM100/SM103 | FastVideo's native tile128 kernel | Requires a build exposing `block_sparse_attn_sm100a` with tile128 support; full-model validation on the current source is pending |
-| SM120/SM121 | FlashInfer block64 with logical tile128 routing | SM120 kernel regressions and historical offline runs; SM121 has not been tested here |
+| SM100/SM103 | FastVideo's native tile128 kernel | Requires `block_sparse_attn_sm100a` with tile128 support |
+| SM120/SM121 | FlashInfer block64 with logical tile128 routing | Requires `bsa_attn_sm120_blk64_fwd`; measurements below use SM120 |
 | Other GPUs | No compatible Omni tile128 provider enabled in this integration | Requires an additional sparse backend implementation |
 
 Use `FASTVIDEO_VSA` with default `provider=auto` and `precision=bf16`.
@@ -28,8 +28,7 @@ describe one tested deployment.
 ## Model access and installation
 
 [FastH3 Omni 8-Step V1](https://huggingface.co/FastVideo/FastVideo-FastH3-Omni-8-Step-V1)
-is a reference-conditioned PDD student. This recipe is prepared for its
-public release. If the checkpoint or its native base components require
+is a reference-conditioned PDD student. If the checkpoint or its native base components require
 access, authenticate with `hf auth login` or set `HF_TOKEN`. Use a model ID
 or local snapshot that your account can access.
 The loader reads `transformer_ref/` directly and fetches the native text encoder,
@@ -37,8 +36,8 @@ tokenizer, processor, and VAEs from the MiniMax-H3 revision pinned in
 `fastvideo_inference.json`. Neither base transformer is downloaded.
 
 Follow the [CUDA source installation guide](../../docs/getting_started/installation/gpu.md)
-for a matching vLLM/vLLM-Omni environment. The current checkout requires
-vLLM 0.32.0; `ffmpeg` and `ffprobe` must be on `PATH`.
+for the repository-supported vLLM/vLLM-Omni environment.
+`ffmpeg` and `ffprobe` must be on `PATH`.
 
 ### SM100/SM103 native tile128
 
@@ -63,19 +62,16 @@ selected keys and one softmax reduction over all selected keys. Pooling,
 top-k selection, reference-region budgets and compression remain tile-128.
 
 Install a FlashInfer build exposing that API; older packages may not
-contain it. The tested upstream FlashInfer revision is
-`f75bed5da7112103b75f82a4d4b5faf4be335154`, with PyTorch `2.13.0+cu130`,
-Triton `3.7.1` and CUTLASS DSL `4.6.2`. Check the provider before loading weights:
+contain it. BF16 kernel regressions pass with FlashInfer `0.7.0.post1`,
+vLLM `0.32.0`, PyTorch `2.13.0+cu130`, Triton `3.7.1`, and CUTLASS DSL
+`4.8.0`. Check the provider before loading weights:
 
 ```bash
 python -c 'from flashinfer.cute_dsl.sparse.bsa_attn_sm120 import bsa_attn_sm120_blk64_fwd'
 ```
 
-The SM120 integration uses this existing BF16 FlashInfer kernel automatically;
-it does not require a custom `fastvideo-kernel[sm120]` build. The former
-experimental `FASTVIDEO_VSA_SM120` and `FASTVIDEO_VSA_SM120_SPLITS` variables
-no longer select a provider. The shared in-repository helpers provide VSA
-layout and pooling. Partial KV blocks retain their valid token counts;
+The SM120/SM121 path uses the shared FlashInfer BF16 backend.
+The H3 adapter retains logical tile128 layout and routing. Partial KV blocks retain their valid token counts;
 empty KV halves are excluded. Transport-only padding is removed before the
 kernel and restored as zero rows afterward. Missing kernels, device faults and
 incompatible hardware raise an error; no dense attention fallback is used.
@@ -104,7 +100,7 @@ vllm serve "${FASTH3_OMNI_MODEL}" --omni \
   --use-hsdp --hsdp-shard-size 8 --hsdp-replicate-size 1 \
   --text-encoder-tp-size 8 \
   --vae-patch-parallel-size 8 --vae-parallel-mode tile --vae-use-tiling \
-  --diffusion-attention-backend FASTVIDEO_VSA
+  --diffusion-attention-config.default.backend FASTVIDEO_VSA
 ```
 
 ## Generate video and audio
@@ -150,60 +146,55 @@ and TP2 with Ulysses2 are supported. Fixed top-k overrides, custom
 timesteps/sigmas, additional LoRA adapters, and partial-schedule latent
 refinement are rejected.
 
-## Validation and performance
+## Benchmark: 8× NVIDIA RTX PRO 5000
 
-CPU regression tests cover head integration, schedules, component resolution,
-and reference-region routing. Synthetic SM120 kernel tests compare outputs and
-softmax normalization against FP32 references, including partial/empty blocks,
-14/56 heads and sequences up to 41,472 tokens (sampled query rows for long
-sequences). CUDA Graph replay with changed queries and masks is also checked.
-The repository's SM120 GPU regression also tests transport padding, empty
-routes, and CUDA Graph replay with changed Q/K/V, masks and valid lengths.
-These kernel tests do not compare against the native SM100/SM103 kernel.
+Hardware: 8× [NVIDIA RTX PRO 5000 72GB Blackwell](https://www.nvidia.com/en-gb/products/workstations/professional-desktop-gpus/rtx-pro-5000/),
+SM120, with Ethernet/RoCE links. The driver reports 73,415 MiB per device.
+This is a single-request latency benchmark with batch size 1 and concurrency 1.
 
-The following full-model measurements were recorded at fork commit
-`f2636995c6690183b18a97d2a917599a2c767c2e`, before rebasing onto upstream
-`18c3bd5d2d4323bc7adca1ac3c465c4a53bbfb6e`. They are historical validation;
-full-model generation and serving must be repeated with the rebased source
-and its matching vLLM version before marking the integration ready.
+| Output resolution | Frames | Video duration at 24 fps | Measured requests | Request latency | Reported allocator peak |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1344×768 | 124 | 5.167 s | 3 | **41.04 s** (median) | **35.15 GiB** |
+| 1344×768 | 345 | 14.375 s | 1 | **95.93 s** | **38.94 GiB** |
 
-The measured SM120 host reported `NVIDIA Graphics Device`, 73,415 MiB per GPU,
-with Ethernet/RoCE links. On four of these GPUs, the pinned checkpoint
-completed 1344x768 Ref2VA generation with 124 and 345 frames, including 32 kHz
-stereo audio. For 124 frames, TP2/Ulysses2 with FlashInfer took a median
-**70.20 s** across three warm requests; HSDP4/Ulysses4 took **76.56 s**.
-Initialization, JIT warmup and activation-capture cases are excluded. A local
-experimental block128 kernel reached **69.98 s** with TP2/Ulysses2, only about
-0.3% faster end to end, so the SM120 integration uses the existing provider.
-These are measurements for one reference image, prompt and seed, not a general
-quality or speed guarantee. TP2/Ulysses2 uses about 64 GiB at 124 frames and
-approaches device capacity at 345 frames; HSDP4/Ulysses4 uses less memory.
+### Configuration and measurement
 
-On eight of the same SM120 GPUs, TP1/Ulysses8 with HSDP8, text encoder TP8 and
-VAE patch parallelism 8 took **41.04 s** for 124 frames (median of three warm
-requests: 41.040, 41.056 and 41.028 s). Reported peak memory was approximately
-35.2 GiB per GPU. A 345-frame request completed in **95.93 s** with approximately
-38.9 GiB reported peak memory per GPU; this longer shape was measured once.
-All five requests passed full audio/video decoding and frame-count checks.
-This is a comparison between four- and eight-GPU deployments,
-not a kernel-only improvement. All runs retain BF16 DiT weights, eight model
-forwards, tile-128 routing and the full native VAE. Different parallel degrees
-can change floating-point rounding, so this is not a bitwise equivalence claim.
+- Model: Omni 8-Step V1, revision `88d512c5e7cc38dda499fbb65688ce58611f9c80`;
+  native components revision `9bfb6693f2cf6de171db46d1aa586f67d773a1da`.
+- Precision and attention: BF16 DiT, native VAEs, eight PDD forwards,
+  logical tile128 VSA with 90% sparsity, FlashInfer block64 execution.
+- Parallelism: TP1, Ulysses8, HSDP8, text encoder TP8, tiled VAE parallelism 8,
+  eager execution, default NCCL collectives.
+- Input: one reference image, a saxophone-performance prompt, seed 43,
+  guidance 1, video/audio shifts 12/3. Output includes 32 kHz stereo audio.
+- Timing: wall time of `Omni.generate` through encoded MP4 bytes. Model
+  initialization, weight downloads, file writes, and media validation are excluded.
+- Sampling: one 124-frame warmup followed by three measured requests
+  (41.0399, 41.0561, 41.0280 s). The 345-frame result is one request on the
+  loaded model; no separate warmup at that shape was recorded.
+- Memory: the framework's reported CUDA allocator high-water mark, converted
+  from MiB to GiB. This is not whole-device NVML usage or a minimum VRAM requirement.
 
-BF16 provider outputs are not bitwise interchangeable: same-seed video SSIM
-between the experimental block128 and FlashInfer paths was 0.740 at 124 frames.
-Both providers also exceeded the original strict per-element FP32 error gate
-on some captured layers. Preserve these limitations when interpreting the
-synthetic regression results. Full output quality still needs validation
-against the upstream SM100/SM103 implementation before production use.
+These are the development-baseline results published in
+[fork PR #63](https://github.com/lishunyang12/vllm-omni/pull/63),
+using vLLM 0.30.0, PyTorch 2.13.0+cu130, FlashInfer revision
+`f75bed5da7112103b75f82a4d4b5faf4be335154`, Triton 3.7.1, and CUTLASS DSL 4.6.2.
+They predate the vLLM 0.32 integration and do not qualify that runtime.
+They contain no external
+AdaLN weight-elision, overlap, RDMA-transport, or quantized-VAE optimization.
 
-Inspect both streams and decode the entire output:
+## Output verification and known limitations
 
 ```bash
-ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate,sample_rate,channels \
+ffprobe -v error -count_frames \
+  -show_entries stream=codec_name,width,height,nb_read_frames,r_frame_rate,sample_rate,channels \
   -of json fasth3_omni.mp4
 ffmpeg -v error -i fasth3_omni.mp4 -f null -
 ```
 
-The SM100/SM103 native tile128 path is a separate provider; this recipe does
-not claim cross-provider numerical equivalence.
+All five recorded outputs passed full audio/video decoding and frame-count
+checks. The three measured 124-frame outputs were byte-identical; the warmup
+had different decoded audio. That difference has not been diagnosed.
+Cross-provider output equivalence and full-model quality against the native
+SM100/SM103 path have not been established. Kernel regressions validate
+sparse routing and attention independently of those model-quality checks.

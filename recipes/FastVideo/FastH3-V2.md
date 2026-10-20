@@ -34,8 +34,8 @@ sparsity**, video/audio shifts **10/3**, and guidance **1**. Only T2VA was
 distilled; FL2VA and Ref2VA requests are not supported by this recipe.
 
 Follow the [CUDA source installation guide](../../docs/getting_started/installation/gpu.md)
-for matching vLLM/vLLM-Omni versions. The current checkout requires
-vLLM 0.32.0. Install `ffmpeg` and `ffprobe` for video output.
+for the repository-supported vLLM/vLLM-Omni environment.
+Install `ffmpeg` and `ffprobe` for video output.
 
 For the FastVideo provider, install the optional kernel dependency:
 
@@ -49,9 +49,8 @@ For SM120/SM121, install a FlashInfer build exposing the BF16 tile64 API:
 python -c 'from flashinfer.cute_dsl.sparse.bsa_attn_sm120 import bsa_attn_sm120_blk64_fwd'
 ```
 
-The kernel regression environment uses FlashInfer revision
-`f75bed5da7112103b75f82a4d4b5faf4be335154`, PyTorch `2.13.0+cu130`,
-Triton `3.7.1`, and CUTLASS DSL `4.6.2`. This is an attention-kernel test
+The kernel regression environment uses FlashInfer `0.7.0.post1`, vLLM `0.32.0`,
+PyTorch `2.13.0+cu130`, Triton `3.7.1`, and CUTLASS DSL `4.8.0`. This is an attention-kernel test
 environment, not a qualified V2 serving environment. See
 [VSA provider selection](../../docs/user_guide/diffusion/attention_backends/fastvideo_vsa.md#automatic-provider-selection)
 for backend requirements.
@@ -87,7 +86,7 @@ vllm serve "${FASTH3_V2_MODEL}" --omni \
   --use-hsdp --hsdp-shard-size 8 --hsdp-replicate-size 1 \
   --text-encoder-tp-size 8 \
   --vae-patch-parallel-size 8 --vae-parallel-mode tile --vae-use-tiling \
-  --diffusion-attention-backend FASTVIDEO_VSA
+  --diffusion-attention-config.default.backend FASTVIDEO_VSA
 ```
 
 `--task-type fl2va` selects the H3 partition that implements T2VA. The request

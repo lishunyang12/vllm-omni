@@ -378,6 +378,7 @@ def test_omni_tile128_does_not_fall_back_to_dense_on_kernel_failure(monkeypatch)
 
 @pytest.mark.parametrize("transport_padding", [False, True])
 def test_omni_sm120_decomposition_preserves_the_original_token_mask(monkeypatch, transport_padding):
+    from vllm_omni.diffusion.attention.ops import flashinfer_block_sparse
     from vllm_omni.diffusion.attention.ops.block_sparse import _flashinfer_sm120_tile128
 
     torch.manual_seed(7)
@@ -387,7 +388,7 @@ def test_omni_sm120_decomposition_preserves_the_original_token_mask(monkeypatch,
     mask128[..., 0] = True
     mask128[..., 0, :] = True
     mask128[..., -1, :] = False
-    q, k, v = [torch.randn(2, blocks * 128, 2, 8) for _ in range(3)]
+    q, k, v = [torch.randn(2, blocks * 128, 2, 128, dtype=torch.bfloat16) for _ in range(3)]
     # A large value on a padded key catches incorrect handling of partial tiles.
     v[:, 128 + 17 : 256] = 100
     valid = (torch.arange(128)[None] < sizes[:, None]).flatten()
@@ -398,8 +399,9 @@ def test_omni_sm120_decomposition_preserves_the_original_token_mask(monkeypatch,
     ).transpose(1, 2)
     calls = []
 
-    def kernel(q, k, v, indices, capacity, *, block_sizes, q2k_block_nums):
+    def kernel(q, k, v, indices, capacity, *, block_sizes, q2k_block_nums, softmax_scale):
         calls.append(True)
+        assert softmax_scale == 128**-0.5
         n = block_sizes.numel()
         mask = torch.zeros(*indices.shape[:3], n, dtype=torch.bool)
         for b in range(indices.shape[0]):
@@ -417,9 +419,7 @@ def test_omni_sm120_decomposition_preserves_the_original_token_mask(monkeypatch,
             *(x.transpose(1, 2) for x in (q, k, v)), attn_mask=token_mask
         ).transpose(1, 2), None
 
-    module = types.ModuleType("flashinfer.cute_dsl.sparse.bsa_attn_sm120")
-    setattr(module, "bsa_attn_sm120_blk64_fwd", kernel)
-    monkeypatch.setitem(sys.modules, module.__name__, module)
+    monkeypatch.setattr(flashinfer_block_sparse, "require_flashinfer_sparse", lambda *args: kernel)
     if transport_padding:
         q, k, v = [torch.nn.functional.pad(x, (0, 0, 0, 0, 0, 128)) for x in (q, k, v)]
         mask128 = torch.nn.functional.pad(mask128, (0, 1, 0, 1))
@@ -433,23 +433,30 @@ def test_omni_sm120_decomposition_preserves_the_original_token_mask(monkeypatch,
 
 @pytest.mark.parametrize("error_type", [RuntimeError, torch.AcceleratorError])
 def test_omni_sm120_flashinfer_error_is_not_swallowed(monkeypatch, error_type):
+    from vllm_omni.diffusion.attention.ops import flashinfer_block_sparse
     from vllm_omni.diffusion.attention.ops.block_sparse import _flashinfer_sm120_tile128
 
     def fail(*args, **kwargs):
         raise error_type("FlashInfer kernel failed")
 
-    module = types.ModuleType("flashinfer.cute_dsl.sparse.bsa_attn_sm120")
-    setattr(module, "bsa_attn_sm120_blk64_fwd", fail)
-    monkeypatch.setitem(sys.modules, module.__name__, module)
+    monkeypatch.setattr(flashinfer_block_sparse, "require_flashinfer_sparse", lambda *args: fail)
     q = torch.zeros(1, 128, 1, 128, dtype=torch.bfloat16)
     with pytest.raises(error_type, match="FlashInfer kernel failed"):
-        _flashinfer_sm120_tile128(q, q, q, torch.ones(1, 1, 1, 1, dtype=torch.bool), torch.tensor([128]), 1)
+        _flashinfer_sm120_tile128(
+            q, q, q, torch.ones(1, 1, 1, 1, dtype=torch.bool), torch.tensor([128], dtype=torch.int32), 1
+        )
 
 
 def test_omni_sm120_missing_flashinfer_has_actionable_error(monkeypatch):
+    from vllm_omni.diffusion.attention.ops import flashinfer_block_sparse
     from vllm_omni.diffusion.attention.ops.block_sparse import _flashinfer_sm120_tile128
 
-    monkeypatch.setitem(sys.modules, "flashinfer.cute_dsl.sparse.bsa_attn_sm120", None)
+    def missing_provider(*args):
+        raise ImportError("FlashInfer bf16 requires a build with bsa_attn_sm120_blk64_fwd")
+
+    monkeypatch.setattr(flashinfer_block_sparse, "require_flashinfer_sparse", missing_provider)
     q = torch.zeros(1, 128, 1, 128, dtype=torch.bfloat16)
-    with pytest.raises(RuntimeError, match="FlashInfer with bsa_attn_sm120_blk64_fwd"):
-        _flashinfer_sm120_tile128(q, q, q, torch.ones(1, 1, 1, 1, dtype=torch.bool), torch.tensor([128]), 1)
+    with pytest.raises(ImportError, match="requires a build with bsa_attn_sm120_blk64_fwd"):
+        _flashinfer_sm120_tile128(
+            q, q, q, torch.ones(1, 1, 1, 1, dtype=torch.bool), torch.tensor([128], dtype=torch.int32), 1
+        )

@@ -62,7 +62,7 @@ vllm serve MiniMaxAI/MiniMax-H3 --omni \
   --lora-path "${FASTH3_LORA}" \
   --num-gpus 8 --tensor-parallel-size 1 --usp 8 --ring 1 \
   --vae-patch-parallel-size 8 --vae-parallel-mode tile --vae-use-tiling \
-  --diffusion-attention-backend "${FASTH3_DENSE_BACKEND}"
+  --diffusion-attention-config.default.backend "${FASTH3_DENSE_BACKEND}"
 ```
 
 T2VA uses H3's FL2VA partition, so `--task-type fl2va` is intentional.
@@ -109,8 +109,8 @@ SM90 and SM100/SM103 use FastVideo's tile64 route, while compatible SM120/SM121
 installations use FlashInfer BF16. The video request API is unchanged:
 
 ```bash
---diffusion-attention-backend FASTVIDEO_VSA \
---fastvideo-vsa-topk 64
+--diffusion-attention-config.default.backend FASTVIDEO_VSA \
+--diffusion-attention-config.default.fastvideo_vsa_topk 64
 ```
 
 See
@@ -133,9 +133,9 @@ served with a dense attention backend.
 
 ## Historical validation
 
-The following measurements were migrated from the native H3 recipe. They
-have not been rerun on the current PR; the original entry did not record a
-source SHA or the B300 memory configuration.
+The following measurements were migrated from the native H3 recipe. The
+original entry did not record a source SHA or the B300 memory configuration;
+these results do not qualify other software or hardware configurations.
 
 Measured on 8x NVIDIA B300 with USP8, VAE patch-parallel 8, `TRTLLM_ATTN`, at
 1344x768, 4.4 s, seed 1101, one warmup excluded and two runs recorded:
