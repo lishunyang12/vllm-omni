@@ -32,7 +32,6 @@ From the repository root:
 
 ```bash
 vllm serve FastVideo/FastVideo-FastH3-Omni-8-Step-V1 --omni \
-  --revision 88d512c5e7cc38dda499fbb65688ce58611f9c80 \
   --config recipes/FastVideo/fasth3-8step-8gpu.yaml
 ```
 
@@ -80,7 +79,7 @@ excluding service startup; this is a smoke check, not a repeated benchmark.
 The `quality-36L` decoder has the decoder-level checks above.
 
 For serialized `FastH3-Omni-FP8` and `FastH3-Omni-NVFP4-QAD` checkpoints,
-use the [single-card quantized configuration](<FastH3 RefOmni Single Card.md#serialized-fp8-and-nvfp4-qad-checkpoints>).
+use the [single-card quantized configuration](<FastH3 RefOmni Single Card.md#2-start-the-server>).
 It loads the exported DiT and NVFP4 text encoder and supports both NVFP4
 video decoders. The eight-GPU measurements here use the BF16 release.
 
@@ -124,6 +123,8 @@ use vLLM 0.30.0, PyTorch 2.13.0+cu130, FlashInfer
 `f75bed5da7112103b75f82a4d4b5faf4be335154`, Triton 3.7.1, and CUTLASS DSL 4.6.2.
 Model revision: `88d512c5e7cc38dda499fbb65688ce58611f9c80`; native components:
 `9bfb6693f2cf6de171db46d1aa586f67d773a1da`. They are not vLLM 0.32 HTTP timings.
+The BF16 HTTP checks above use the same model revision. Commands follow
+`main` by default; add `--revision <commit>` to reproduce that version.
 
 Cross-provider output equivalence remains unverified. The three measured
 124-frame outputs were byte-identical; warmup audio differed, with the cause

@@ -21,7 +21,6 @@ From the repository root:
 
 ```bash
 vllm serve FastVideo/FastVideo-FastH3-8-Step-V2 --omni \
-  --revision 3da2ddfe1954d9cda4c05b643dc0f26007a655c5 \
   --config recipes/FastVideo/fasth3-8step-8gpu.yaml
 ```
 
@@ -49,7 +48,9 @@ V2 loader, sampling, and sparse-kernel regressions are covered; V2 full-model
 serving and performance remain unverified. The shared deployment has been
 exercised with Omni Ref2VA, which is a separate workload.
 
-Public V2 revision `3da2ddfe1954d9cda4c05b643dc0f26007a655c5` has no
+The command follows the checkpoint's `main` branch. Loader validation used
+revision `3da2ddfe1954d9cda4c05b643dc0f26007a655c5`; add
+`--revision <commit>` to select that version. This revision has no
 `provenance.json`. The adapter uses native tiled/parallel VAEs from MiniMax-H3
 revision `9bfb6693f2cf6de171db46d1aa586f67d773a1da`, honoring an explicit
 provenance pin when supplied. This is a compatibility choice; matching latent
