@@ -224,6 +224,12 @@ source_file_dependencies:
     - vllm_omni/diffusion/data.py
     - pyproject.toml
 
+  diffusion_fasth3_quantization:
+    - tests/diffusion/models/minimax_h3/test_fasth3_quantization_cuda.py
+    - vllm_omni/diffusion/models/minimax_h3/
+    - vllm_omni/quantization/
+    - pyproject.toml
+
   custom_pipeline:
     - tests/e2e/features/custom_pipeline/
     - tests/e2e/features/helpers/custom_pipeline.py

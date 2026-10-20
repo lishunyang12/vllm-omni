@@ -79,10 +79,10 @@ The single request took 45.13 seconds including response encoding and
 excluding service startup; this is a smoke check, not a repeated benchmark.
 The `quality-36L` decoder has the decoder-level checks above.
 
-This recipe serves the BF16 Omni checkpoint named above. The separately
-published `FastH3-OmniRef-FP8` and `FastH3-OmniRef-NVFP4-QAD` checkpoints
-also change the serialized DiT, text encoder, and VAE components; their
-vLLM-Omni integration remains in progress.
+For serialized `FastH3-Omni-FP8` and `FastH3-Omni-NVFP4-QAD` checkpoints,
+use the [single-card quantized configuration](<FastH3 RefOmni Single Card.md#serialized-fp8-and-nvfp4-qad-checkpoints>).
+It loads the exported DiT and NVFP4 text encoder and supports both NVFP4
+video decoders. The eight-GPU measurements here use the BF16 release.
 
 ## Generate
 

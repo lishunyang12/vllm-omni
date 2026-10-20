@@ -254,6 +254,8 @@ def _resolve_minimax_h3_model_root(
 
         component = minimax_h3_transformer_subfolder(model=model, revision=revision)
         allow_patterns = ["modular_model_index.json", "fastvideo_inference.json", "provenance.json", f"{component}/**"]
+        if component == "transformer_ref":
+            allow_patterns += ["vae_decoder_nvfp4/**", "vae_decoder_nvfp4_fast/**"]
         if load_text_encoder:
             allow_patterns += ["text_encoder/**", "tokenizer/**", "processor/**"]
     elif load_text_encoder:
@@ -946,7 +948,7 @@ class MiniMaxH3Pipeline(
             release = self._fasth3_checkpoint.release_metadata()
             if isinstance(self._fasth3_checkpoint, FastH3OmniCheckpointSpec):
                 vae_model_path = self._fasth3_checkpoint.resolve_base_components(
-                    load_text_encoder=self.load_text_encoder
+                    load_text_encoder=self.load_text_encoder and not (model_root / "text_encoder/config.json").is_file()
                 )
             else:
                 vae_model_path = self._fasth3_checkpoint.resolve_native_vaes(model_root)
@@ -988,7 +990,10 @@ class MiniMaxH3Pipeline(
             self._base_schedule_by_partition["ref2va"] = _read_base_schedule(ref2va_release)
 
         encoder_model_path = (
-            vae_model_path if isinstance(self._fasth3_checkpoint, FastH3OmniCheckpointSpec) else model_path
+            vae_model_path
+            if isinstance(self._fasth3_checkpoint, FastH3OmniCheckpointSpec)
+            and not (model_path / "text_encoder/config.json").is_file()
+            else model_path
         )
         transformer_component = self._fasth3_checkpoint.transformer_component if modular else "transformer"
         self.weights_sources = [
@@ -1016,6 +1021,34 @@ class MiniMaxH3Pipeline(
             od_config.quantization_config,
             "transformer",
         )
+        from vllm_omni.quantization.fp8_config import SerializedPerChannelFp8Config
+
+        if isinstance(transformer_quant_config, SerializedPerChannelFp8Config):
+            from .checkpoint_quantization import fasth3_fp8_config
+
+            transformer_quant_config = fasth3_fp8_config(model_path / transformer_component)
+        packed_dit = model_path / transformer_component / "nvfp4_weights.safetensors"
+        if packed_dit.is_file():
+            from vllm.distributed import get_tensor_model_parallel_rank
+
+            from .checkpoint_quantization import FastH3NVFP4Config
+            from .vae_nvfp4 import require_nvfp4_linear
+
+            require_nvfp4_linear(self.device)
+            if transformer_quant_config is not None:
+                raise ValueError("FastH3 QAD already contains NVFP4 weights; remove the quantization override")
+            transformer_quant_config = FastH3NVFP4Config.from_dit(packed_dit, rank=get_tensor_model_parallel_rank())
+            self.weights_sources.insert(
+                1,
+                DiffusersPipelineLoader.ComponentSource(
+                    model_or_path=str(model_path),
+                    subfolder=transformer_component,
+                    revision=od_config.revision,
+                    prefix="transformer.",
+                    fall_back_to_pt=False,
+                    allow_patterns_overrides=["nvfp4_weights.safetensors"],
+                ),
+            )
         transformer_cls = type(self)._transformer_cls or MiniMaxH3DiTModel
         self.transformer = transformer_cls(
             od_config,
@@ -1155,7 +1188,12 @@ class MiniMaxH3Pipeline(
                 load_device=component_load_device,
                 decode_only=not self.load_vae_encoder,
                 trust_remote_code=od_config.trust_remote_code,
-                decoder_source=(od_config.additional_config or {}).get("video_vae_decoder"),
+                decoder_source=(od_config.additional_config or {}).get(
+                    "video_vae_decoder",
+                    str(model_path / "vae_decoder_nvfp4/decoder-nvfp4.safetensors")
+                    if (model_path / "vae_decoder_nvfp4/decoder-nvfp4.safetensors").is_file()
+                    else None,
+                ),
             )
             self.audio_vae = MiniMaxH3AudioVAE(
                 os.path.join(vae_model_path, "audio_vae"),
@@ -1257,9 +1295,13 @@ class MiniMaxH3Pipeline(
             # close the adapter against what the DiT actually consumed.
             self._fasth3.validate_fully_applied(transformer_loaded)
         if self._fasth3_checkpoint is not None:
-            required_gates = {
-                f"blocks.{i}.attn.to_gate_compress.weight" for i in range(self.transformer.arch.num_layers)
-            }
+            parameter_names = set(dict(self.transformer.named_parameters()))
+            required_gates = set()
+            for i in range(self.transformer.arch.num_layers):
+                prefix = f"blocks.{i}.attn.to_gate_compress."
+                required_gates.update(
+                    {name for name in parameter_names if name.startswith(prefix)} or {prefix + "weight"}
+                )
             if missing_gates := required_gates - transformer_loaded:
                 raise ValueError(f"FastH3 V2 checkpoint is missing compression gates: {sorted(missing_gates)}")
         return loaded_with_prefix

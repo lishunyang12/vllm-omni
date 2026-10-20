@@ -11,6 +11,7 @@ Choose a release by task, then follow its recipe for installation and serving:
 Omni requires at least one image or video and also accepts audio references.
 The single-card guide covers RTX 4090, RTX 5090, DGX Spark, and RTX PRO 6000
 Blackwell. All releases use the H3 video HTTP API.
+The same guide covers serialized FP8 and NVFP4 QAD Omni checkpoints on Blackwell.
 
 Steps count transformer forwards. Keep each release's trained schedule and
 attention settings; do not apply the four-step adapter to either full checkpoint.

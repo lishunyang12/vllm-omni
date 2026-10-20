@@ -509,7 +509,8 @@ class MiniMaxH3Attention(nn.Module):
             quant_config=self._gate_quant_config,
             prefix=self._gate_prefix,
         )
-        nn.init.zeros_(self.to_gate_compress.weight)
+        if hasattr(self.to_gate_compress, "weight"):
+            nn.init.zeros_(self.to_gate_compress.weight)
 
     def enable_vdn(self, config: VDNConfig) -> None:
         """Attach the learned half of VDN-H3 hybrid attention (see ``vdnh3.py``)."""
@@ -1322,6 +1323,9 @@ class MiniMaxH3DiTModel(nn.Module):
             if diffusers_weights is None
             else diffusers_weights
         )
+        from .checkpoint_quantization import FastH3NVFP4Config
+
+        self._serialized_weight_map = quant_config.weight_map if isinstance(quant_config, FastH3NVFP4Config) else {}
         self._rope_theta = float(config_mapping.get("rope_theta", 10000.0))
         arch = MiniMaxH3DiTArchConfig.from_mapping(config_mapping)
         self.arch = arch
@@ -1470,7 +1474,8 @@ class MiniMaxH3DiTModel(nn.Module):
             block.attn.vsa_ref_policy = ref_policy
             block.attn.vsa_ref_keep_rate = ref_keep_rate
             if sparsity is not None:
-                block.attn.to_gate_compress.weight.missing_param_init = "error"
+                for parameter in block.attn.to_gate_compress.parameters():
+                    parameter.missing_param_init = "error"
         self.vsa_gates_enabled = True
 
     def enable_vdn(self, config: VDNConfig) -> None:
@@ -1584,10 +1589,20 @@ class MiniMaxH3DiTModel(nn.Module):
                 if name in source_names:
                     raise ValueError(f"duplicate Diffusers H3 weight: {name}")
                 source_names.add(name)
+                serialized_target = self._serialized_weight_map.get(name)
+                if serialized_target is not None:
+                    param = params[serialized_target]
+                    param.weight_loader(param, loaded_weight)
+                    loaded.add(serialized_target)
+                    continue
                 module, _, kind = name.rpartition(".")
                 target = _resolve_native_target(module)
-                if target is None or kind not in {"weight", "bias"}:
+                if target is None or kind not in {"weight", "bias", "weight_scale"}:
                     raise ValueError(f"unsupported Diffusers H3 weight: {name}")
+                if kind == "weight_scale":
+                    # FastVideo stores per-channel scales as [N, 1]; vLLM's
+                    # channel-scale parameter and TP loaders consume [N].
+                    loaded_weight = loaded_weight.squeeze(-1)
                 name, layout = f"{target[0]}.{kind}", target[1]
             param = params.get(name)
             if param is None:
@@ -1611,7 +1626,7 @@ class MiniMaxH3DiTModel(nn.Module):
                     head_dim=self.arch.attention_head_dim,
                 )
                 weight_loader(param, loaded_weight)
-            elif name.endswith(".mlp.fc1.weight"):
+            elif name.endswith((".mlp.fc1.weight", ".mlp.fc1.weight_scale")):
                 if loaded_weight.shape[0] % 2:
                     raise ValueError(
                         "MiniMax H3 fc1 checkpoint rows must split evenly into "

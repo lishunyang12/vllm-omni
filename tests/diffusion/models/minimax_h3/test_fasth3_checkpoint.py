@@ -546,6 +546,7 @@ def _load_fixture(
         rope_inv_freq_len=2,
     )
     model._diffusers_weights = diffusers_weights
+    model._serialized_weight_map = {}
     model._rope_theta = 10000.0
     qkv_calls: list[tuple[str | None, torch.Tensor]] = []
     fc1_calls: list[tuple[int, torch.Tensor]] = []
@@ -608,6 +609,36 @@ def test_diffusers_load_weights_uses_shape_aware_qkv_and_mlp_slices():
         rtol=0,
         atol=0,
     )
+
+
+def test_diffusers_fp8_scales_follow_qkv_and_gate_up_weights():
+    model, _, _ = _load_fixture(diffusers_weights=True)
+    qkv = model.blocks[0].attn.qkv_proj
+    fc1 = model.blocks[0].mlp.fc1
+    qkv.weight_scale = nn.Parameter(torch.zeros(12), requires_grad=False)
+    fc1.weight_scale = nn.Parameter(torch.zeros(6), requires_grad=False)
+
+    def load_qkv(param, value, shard):
+        assert value.shape == (4,)
+        offset = {"q": 0, "k": 4, "v": 8}[shard]
+        param.data[offset : offset + 4].copy_(value)
+
+    def load_fc1(param, value, shard):
+        assert value.shape == (3,)
+        param.data[shard * 3 : (shard + 1) * 3].copy_(value)
+
+    qkv.weight_scale.weight_loader = load_qkv
+    fc1.weight_scale.weight_loader = load_fc1
+    scales = torch.arange(1, 13, dtype=torch.float32).reshape(12, 1)
+    model.load_weights(
+        [
+            (f"transformer_blocks.0.attn.to_{part}.weight_scale", value)
+            for part, value in zip(("q", "k", "v"), scales.chunk(3), strict=True)
+        ]
+        + [("transformer_blocks.0.ff.net.0.proj.weight_scale", scales[:6])]
+    )
+    torch.testing.assert_close(qkv.weight_scale, scales.flatten())
+    torch.testing.assert_close(fc1.weight_scale, torch.tensor([4.0, 5.0, 6.0, 1.0, 2.0, 3.0]))
 
 
 def test_native_load_weights_keeps_grouped_qkv_and_gate_first_layouts():

@@ -6,10 +6,12 @@ Run FastH3 reference-conditioned video and audio generation in vLLM-Omni on
 one RTX 4090, RTX 5090, DGX Spark, or RTX PRO 6000 Blackwell. Supply a text
 prompt and a reference image to generate an MP4 with stereo audio.
 
-These recipes use
+The hardware profiles below use
 [FastVideo/FastVideo-FastH3-Omni-8-Step-V1](https://huggingface.co/FastVideo/FastVideo-FastH3-Omni-8-Step-V1)
 with online FP8 quantization of the DiT and text encoder, BF16 attention,
 eight inference steps, and guidance scale 1.
+For prequantized FP8 or NVFP4 QAD weights on Blackwell, use the
+[serialized checkpoint configuration](#serialized-fp8-and-nvfp4-qad-checkpoints).
 
 ## Choose your hardware profile
 
@@ -84,6 +86,38 @@ Keep this terminal running. The server listens on port 8000; use `--port`
 to change it. A local checkpoint directory can replace the model ID.
 Wait for startup to finish before sending a request.
 
+### Serialized FP8 and NVFP4 QAD checkpoints
+
+Both exports use the same eight-step reference API and retain their saved
+quantization scales. Use the shared
+[quantized configuration](fasth3-omni-quantized.yaml) on RTX 5090, DGX Spark,
+or RTX PRO 6000 Blackwell:
+
+| Checkpoint | DiT | Text encoder |
+| --- | --- | --- |
+| [FastH3-Omni-NVFP4-QAD](https://huggingface.co/FastVideo/FastH3-Omni-NVFP4-QAD) | Packed NVFP4 QAD | Packed NVFP4 |
+| [FastH3-Omni-FP8](https://huggingface.co/FastVideo/FastH3-Omni-FP8) | Per-channel FP8, dynamic per-token activations | Packed NVFP4 |
+
+```bash
+CUDA_VISIBLE_DEVICES=0 VLLM_WORKER_MULTIPROC_METHOD=spawn \
+VLLM_OMNI_VIDEO_SYNC_TIMEOUT=7200 \
+vllm serve FastVideo/FastH3-Omni-NVFP4-QAD --omni \
+  --revision 0087718b2c8fe4b7e2d0a97463dc38da13f7703f \
+  --config recipes/FastVideo/fasth3-omni-quantized.yaml
+```
+
+For FP8, replace the model ID with `FastVideo/FastH3-Omni-FP8` and remove
+the QAD-specific `--revision`. An accessible local snapshot also works.
+Do not add `--quantization`: the loader reads the serialized format.
+The NVFP4 text encoder requires Blackwell even with the FP8 DiT; use the
+original hardware profile on RTX 4090.
+
+The shared configuration uses layer offload and the standalone `fast-8L`
+decoder. On DGX Spark, remove `diffusion-offload-config` to keep the model
+resident in unified memory. Decoder selection works as described below.
+Without a decoder override, these exports select their bundled 36-layer
+NVFP4 decoder.
+
 ## Generate video and audio
 
 In a second terminal, save your reference image as `reference.png` and write
@@ -121,7 +155,7 @@ For multiple images, video, or audio references, see the
 The RTX 4090 profile uses the native VAE with FP32 encoding and FP16
 decoding. Keep this decoder on the 4090.
 
-The RTX 5090, DGX Spark, and RTX PRO 6000 Blackwell profiles use the released
+The Blackwell profiles and the serialized-checkpoint configuration use the released
 [NVFP4 VAE decoder](https://huggingface.co/FastVideo/FastH3-NVFP4-VAE-Decoder),
 with `fast-8L` selected by default. For the deeper decoder, set
 `additional-config.video_vae_decoder.subfolder` to `quality-36L` in your

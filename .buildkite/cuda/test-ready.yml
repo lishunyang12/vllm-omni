@@ -44,6 +44,14 @@ steps:
           - timeout 15m pytest -s -v tests/diffusion/attention/ tests/diffusion/utils/test_chunked_transfer.py -m 'core_model and cuda and L4 and cards_1' --run-level "core_model"
         mirror_hardwares: l4_1
 
+      - label: "Diffusion · FastH3 NVFP4 Checkpoint Test"
+        timeout_in_minutes: 15
+        source_file_dependencies: diffusion_fasth3_quantization
+        commands:
+          - pip install 'flashinfer-python>=0.7.0'
+          - pytest -sv tests/diffusion/models/minimax_h3/test_fasth3_quantization_cuda.py -m 'core_model and cuda and B200 and cards_1' --run-level core_model
+        mirror_hardwares: b200_1
+
       - label: "Diffusion · cuDNN Block-Sparse Attention Test"
         timeout_in_minutes: 15
         source_file_dependencies: diffusion_cudnn_bsa
