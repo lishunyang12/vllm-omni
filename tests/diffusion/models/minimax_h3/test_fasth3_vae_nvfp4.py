@@ -3,21 +3,25 @@
 """Released decoder schema, projection packing, and strict loading."""
 
 import json
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 import torch
 from safetensors.torch import save_file
 from torch import nn
 
-from vllm_omni.diffusion.layers.nvfp4_linear import PackedNVFP4Linear
 from vllm_omni.diffusion.models.minimax_h3.vae_nvfp4 import (
     FastH3NVFP4Decoder,
+    PackedNVFP4Linear,
     _QKVProjection,
     _SwiGLU,
     install_nvfp4_video_decoder,
     released_decoder_pixels,
+    require_nvfp4_linear,
 )
+from vllm_omni.platforms import current_omni_platform
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu, pytest.mark.diffusion]
 
@@ -146,7 +150,7 @@ def test_qkv_global_scales_keep_separate_projection_outputs():
         def forward(self, x):
             return torch.full((*x.shape[:-1], 128), self.value, dtype=x.dtype)
 
-    out = _QKVProjection(Constant(1), Constant(2), Constant(3), 64)(torch.zeros(2, 4, 128))
+    out = _QKVProjection(Constant(1), Constant(2), Constant(3), head_dim=64)(torch.zeros(2, 4, 128))
     q, k, v = out.unflatten(-1, (2, 192)).chunk(3, -1)
     assert torch.all(q == 1) and torch.all(k == 2) and torch.all(v == 3)
 
@@ -163,3 +167,24 @@ def test_released_pixels_normalize_in_fp32_before_rounding():
     expected = torch.tensor([[65, 124, 182], [59, 116, 173], [46, 104, 161]], dtype=torch.uint8)
     assert pixels.dtype == torch.float32
     assert torch.equal((pixels * 255).round().to(torch.uint8).view(3, 3), expected)
+
+
+@pytest.fixture
+def clear_nvfp4_cache():
+    require_nvfp4_linear.cache_clear()
+    yield
+    require_nvfp4_linear.cache_clear()
+
+
+@pytest.mark.parametrize("capability,allowed", [((8, 9), False), ((12, 0), True), ((12, 1), True)])
+def test_nvfp4_rejects_ada_and_accepts_spark(monkeypatch, capability, allowed, clear_nvfp4_cache):
+    monkeypatch.setattr(current_omni_platform, "get_device_capability", lambda _: capability)
+    module = ModuleType("flashinfer")
+    setattr(module, "mm_fp4", Mock())
+    setattr(module, "nvfp4_quantize", Mock())
+    monkeypatch.setitem(sys.modules, "flashinfer", module)
+    if allowed:
+        require_nvfp4_linear(torch.device("cuda:0"))
+    else:
+        with pytest.raises(ValueError, match="SM121"):
+            require_nvfp4_linear(torch.device("cuda:0"))

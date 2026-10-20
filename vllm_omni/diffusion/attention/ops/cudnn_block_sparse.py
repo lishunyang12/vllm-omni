@@ -58,7 +58,16 @@ def _cudnn_block_sparse_attn(
 
 
 @_cudnn_block_sparse_attn.register_fake
-def _(query, key, value, indices, counts, sizes, scale, block_size):
+def _(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    indices: torch.Tensor,
+    counts: torch.Tensor,
+    sizes: torch.Tensor | None,
+    scale: float,
+    block_size: int,
+) -> torch.Tensor:
     return torch.empty_like(query, memory_format=torch.contiguous_format)
 
 

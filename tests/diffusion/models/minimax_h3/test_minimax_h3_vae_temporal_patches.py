@@ -275,13 +275,13 @@ def test_streaming_uses_released_pixel_transform():
     from vllm_omni.diffusion.models.minimax_h3.vae_nvfp4 import released_decoder_pixels
 
     class ReplacementDecoder(_DecodeModel):
-        _decode_temporal_streaming: Any = None
+        def _decode_temporal_streaming(self, *args: object) -> torch.Tensor:
+            raise AssertionError("streaming patch was not installed")
 
-        def _adaptive_decode(self, z):
+        def _adaptive_decode(self, z: torch.Tensor) -> torch.Tensor:
             return z
 
     model = ReplacementDecoder()
-    model._decode_temporal_streaming = lambda *args: None
     install_temporal_stream_patches(model, pixel_transform=released_decoder_pixels)
     z = torch.ones(1, 3, 4, 1, 1, dtype=torch.bfloat16)
     result = model._decode_temporal_streaming(z, None, None, 2, 0, torch.bfloat16)

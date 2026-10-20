@@ -9,13 +9,13 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from vllm_omni.diffusion.sched.sigma_schedule import DMD2SigmaSchedule
 from vllm_omni.errors import OmniClientError
 from vllm_omni.model_executor.model_loader.weight_utils import download_weights_from_hf_specific
 
-from .fasth3 import FASTH3_BASE_MODEL, _resolve_dit_attention_backend
+from .fasth3 import FASTH3_BASE_MODEL
 
 if TYPE_CHECKING:
     from vllm_omni.diffusion.data import OmniDiffusionConfig
@@ -68,7 +68,7 @@ class FastH3CheckpointSpec:
                 raise ValueError(f"unsupported FastH3 contract: {key}={metadata.get(key)!r}, expected {expected!r}")
         return cls()
 
-    def release_metadata(self) -> dict[str, Any]:
+    def release_metadata(self) -> dict[str, object]:
         """Express the sampling policy in the existing H3 pipeline schema."""
         return {
             "partition": "fl2va",
@@ -109,19 +109,17 @@ class FastH3CheckpointSpec:
     def check_serving_contract(self, *, partition: str, od_config: OmniDiffusionConfig) -> None:
         if partition != self.partition:
             raise ValueError(f"{self.name} requires --task-type {self.partition}")
-        if getattr(od_config, "lora_path", None):
+        if od_config.lora_path:
             raise ValueError(f"{self.name} is a full checkpoint; additional LoRA adapters are unsupported")
-        if _resolve_dit_attention_backend(od_config) != "FASTVIDEO_VSA":
+        attention, _ = od_config.diffusion_attention_config.resolve_with_source("self")
+        if attention is None or attention.backend.upper() != "FASTVIDEO_VSA":
             raise ValueError(f"{self.name} requires --diffusion-attention-backend FASTVIDEO_VSA")
-        attention_config = getattr(od_config, "diffusion_attention_config", None)
-        per_role = getattr(attention_config, "per_role", None) or {}
-        spec = per_role.get("self") or getattr(attention_config, "default", None)
-        if getattr(spec, "fastvideo_vsa_topk", None) is not None:
+        if attention.fastvideo_vsa_topk is not None:
             raise ValueError(
                 f"{self.name} pins VSA sparsity={self.vsa_sparsity}; remove the fixed fastvideo_vsa_topk override"
             )
-        parallel = getattr(od_config, "parallel_config", None)
-        if any(int(getattr(parallel, key, 1) or 1) != 1 for key in ("ring_degree", "allgather_degree")):
+        parallel = od_config.parallel_config
+        if parallel.ring_degree != 1 or parallel.allgather_degree != 1:
             raise ValueError(f"{self.name} supports local attention or pure Ulysses sequence parallelism")
 
     def check_request(self, sampling: OmniDiffusionSamplingParams, *, step_execution: bool = False) -> None:
@@ -171,11 +169,11 @@ class FastH3OmniCheckpointSpec(FastH3CheckpointSpec):
         from vllm_omni.diffusion.attention.ops.block_sparse import resolve_block_sparse_provider
         from vllm_omni.diffusion.distributed.utils import get_local_device
 
-        config = od_config.diffusion_attention_config
-        attention = config.resolve_with_source("self")[0] if config is not None else None
+        attention, _ = od_config.diffusion_attention_config.resolve_with_source("self")
+        assert attention is not None  # The base contract requires an explicit VSA spec.
         resolve_block_sparse_provider(
-            attention.fastvideo_vsa_provider if attention is not None else "auto",
-            attention.fastvideo_vsa_precision if attention is not None else "bf16",
+            attention.fastvideo_vsa_provider,
+            attention.fastvideo_vsa_precision,
             get_local_device(),
             od_config.dtype,
             128,
@@ -210,9 +208,9 @@ class FastH3OmniCheckpointSpec(FastH3CheckpointSpec):
                 raise ValueError(
                     f"unsupported FastH3 Omni contract: {key}={metadata.get(key)!r}, expected {expected!r}"
                 )
-        return cls(base_revision=fasth3_base_revision(dict(metadata)))
+        return cls(base_revision=fasth3_base_revision(metadata))
 
-    def release_metadata(self) -> dict[str, Any]:
+    def release_metadata(self) -> dict[str, object]:
         # Used for admission/step counts only; the PDD sampler applies its own
         # 0.999-fixed-point shift, rather than DMD2SigmaSchedule.shifted_sigmas.
         return {

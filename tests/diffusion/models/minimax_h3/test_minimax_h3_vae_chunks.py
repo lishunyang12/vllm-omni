@@ -3,7 +3,6 @@
 
 import gc
 import tempfile
-from collections.abc import Callable
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +11,7 @@ import torch.distributed as dist
 
 from vllm_omni.diffusion.models.minimax_h3.chunked_decode import decode_h3_chunks
 from vllm_omni.diffusion.models.minimax_h3.temporal_chunks import decode_temporal_chunks
+from vllm_omni.diffusion.models.minimax_h3.vae import MiniMaxH3VideoVAE
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu, pytest.mark.diffusion]
 
@@ -72,10 +72,9 @@ class _FakeTemporalModel:
         return part
 
 
-class _FakeHost:
-    _pixel_transform: Callable[[torch.Tensor], torch.Tensor] | None = None
-
+class _FakeHost(MiniMaxH3VideoVAE):
     def __init__(self):
+        torch.nn.Module.__init__(self)
         self.model = _FakeTemporalModel()
 
     @staticmethod

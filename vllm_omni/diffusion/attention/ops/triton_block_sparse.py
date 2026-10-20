@@ -14,7 +14,12 @@ from .block_sparse import block_map_to_indices, split_tile128_map, validate_spar
 
 
 @lru_cache(maxsize=32)
-def require_triton_sparse(device: torch.device) -> Callable:
+def require_triton_sparse(
+    device: torch.device,
+) -> Callable[
+    [torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+    tuple[torch.Tensor, torch.Tensor],
+]:
     capability = current_omni_platform.get_device_capability(device.index) if device.type == "cuda" else None
     if capability is None or capability < (8, 0):
         raise ValueError(f"Triton BF16 block-sparse attention requires SM80 or newer; got {capability}")

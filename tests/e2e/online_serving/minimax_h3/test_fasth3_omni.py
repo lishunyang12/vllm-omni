@@ -19,7 +19,7 @@ from tests.helpers.runtime import OnlineOmniClient
 pytestmark = [pytest.mark.advanced_model, pytest.mark.diffusion, *hardware_marks(res={"cuda": ["L4", "RTX5090"]})]
 
 
-def _decode_media(body: bytes, width: int, height: int) -> dict:
+def _decode_media(body: bytes, width: int, height: int) -> dict[str, int | str]:
     video_hash, audio_hash = hashlib.sha256(), hashlib.sha256()
     with av.open(io.BytesIO(body)) as media:
         stream = media.streams.video[0]

@@ -3,6 +3,7 @@
 """MiniMax H3 checkpoint resolution for the AR text-encoder stage."""
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from vllm.transformers_utils.config import get_hf_file_to_dict
@@ -16,7 +17,7 @@ _FASTH3_MODULAR_MODEL_PREFIX = "FastVideo/"
 FASTH3_BASE_MODEL = "MiniMaxAI/MiniMax-H3"
 
 
-def read_fasth3_contract(model: str, revision: str | None = None) -> dict:
+def read_fasth3_contract(model: str, revision: str | None = None) -> dict[str, object]:
     path = Path(model)
     if path.is_dir():
         contract = path / "fastvideo_inference.json"
@@ -26,7 +27,7 @@ def read_fasth3_contract(model: str, revision: str | None = None) -> dict:
     return {}
 
 
-def fasth3_base_revision(contract: dict) -> str:
+def fasth3_base_revision(contract: Mapping[str, object]) -> str:
     source = contract.get("base_model_revision", "")
     prefix = f"hf://{FASTH3_BASE_MODEL}@"
     if not isinstance(source, str) or not source.startswith(prefix) or not source[len(prefix) :]:

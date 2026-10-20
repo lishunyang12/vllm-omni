@@ -7,7 +7,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
 from typing import Any, ClassVar
@@ -327,6 +327,7 @@ class MiniMaxH3VideoVAE(nn.Module, DistributedVaeMixin):
     """Adapter around the checkpoint's native parallel-tiled video VAE."""
 
     decode_dtype: torch.dtype = torch.float16
+    _pixel_transform: Callable[[torch.Tensor], torch.Tensor] | None = None
 
     def __init__(
         self,
@@ -1063,6 +1064,13 @@ class MiniMaxH3VideoVAE(nn.Module, DistributedVaeMixin):
         with self._decode_tiling_context(z):
             decode_h3_chunks(self, z, on_chunk, group=group)
 
+    def _revert_decoded(self, decoded: torch.Tensor) -> torch.Tensor:
+        """Preserve chunk storage that the temporal decoder may still use."""
+        if self._pixel_transform is not None:
+            return self._pixel_transform(decoded)
+        processor = getattr(self.model, "processor", None)
+        return decoded if processor is None else processor.revert_tensor(decoded)
+
     def _revert_decoded_inplace(self, decoded: torch.Tensor) -> torch.Tensor:
         """In-place counterpart of the processor's ``revert_tensor``.
 
@@ -1078,9 +1086,8 @@ class MiniMaxH3VideoVAE(nn.Module, DistributedVaeMixin):
         Falls back to ``processor.revert_tensor`` when the checkpoint's
         denormalization constants are not discoverable.
         """
-        pixel_transform = getattr(self, "_pixel_transform", None)
-        if pixel_transform is not None:
-            return pixel_transform(decoded)
+        if self._pixel_transform is not None:
+            return self._pixel_transform(decoded)
         processor = getattr(self.model, "processor", None)
         transform_rev = getattr(processor, "transform_rev", None)
         mean = getattr(transform_rev, "mean", None)

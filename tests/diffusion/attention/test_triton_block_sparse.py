@@ -11,7 +11,6 @@ import torch
 from vllm_omni.diffusion.attention.ops.block_sparse import resolve_block_sparse_provider
 from vllm_omni.diffusion.attention.ops.triton_block_sparse import require_triton_sparse
 from vllm_omni.diffusion.data import AttentionSpec
-from vllm_omni.diffusion.layers.nvfp4_linear import require_nvfp4_linear
 from vllm_omni.platforms import current_omni_platform
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu, pytest.mark.diffusion]
@@ -19,10 +18,10 @@ pytestmark = [pytest.mark.core_model, pytest.mark.cpu, pytest.mark.diffusion]
 
 @pytest.fixture(autouse=True)
 def clear_capability_cache():
-    for fn in (require_triton_sparse, resolve_block_sparse_provider, require_nvfp4_linear):
+    for fn in (require_triton_sparse, resolve_block_sparse_provider):
         fn.cache_clear()
     yield
-    for fn in (require_triton_sparse, resolve_block_sparse_provider, require_nvfp4_linear):
+    for fn in (require_triton_sparse, resolve_block_sparse_provider):
         fn.cache_clear()
 
 
@@ -62,17 +61,3 @@ def test_triton_config_rejects_sage_and_other_backends():
         AttentionSpec(backend="FASTVIDEO_VSA", fastvideo_vsa_provider="triton", fastvideo_vsa_precision="sage")
     with pytest.raises(ValueError, match="FASTVIDEO_VSA"):
         AttentionSpec(backend="FLASH_ATTN", fastvideo_vsa_provider="triton")
-
-
-@pytest.mark.parametrize("capability,allowed", [((8, 9), False), ((12, 0), True), ((12, 1), True)])
-def test_nvfp4_rejects_ada_and_accepts_spark(monkeypatch, capability, allowed):
-    monkeypatch.setattr(current_omni_platform, "get_device_capability", lambda _: capability)
-    module = ModuleType("flashinfer")
-    setattr(module, "mm_fp4", Mock())
-    setattr(module, "nvfp4_quantize", Mock())
-    monkeypatch.setitem(sys.modules, "flashinfer", module)
-    if allowed:
-        require_nvfp4_linear(torch.device("cuda:0"))
-    else:
-        with pytest.raises(ValueError, match="SM121"):
-            require_nvfp4_linear(torch.device("cuda:0"))
