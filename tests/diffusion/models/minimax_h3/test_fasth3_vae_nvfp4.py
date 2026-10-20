@@ -45,17 +45,17 @@ def _host():
     return vae
 
 
-def _packed(n=128, k=128):
+def _packed(n=128, k=128, value=0):
     return {
-        "packed_weight": torch.zeros(n, k // 2, dtype=torch.uint8),
+        "packed_weight": torch.full((n, k // 2), value, dtype=torch.uint8),
         "weight_inv_scale": torch.zeros(n, k // 16, dtype=torch.uint8),
         "weight_global_sf": torch.tensor(17.0),
-        "bias": torch.zeros(n, dtype=torch.bfloat16),
+        "bias": torch.full((n,), value, dtype=torch.bfloat16),
         "input_amax": torch.tensor(0.0),
     }
 
 
-def _checkpoint(tmp_path, vae, *, metadata_override=None, extra=False):
+def _checkpoint(tmp_path, vae, *, metadata_override=None, extra=None, missing=None):
     state = {}
     for name, value in vae.state_dict().items():
         if name.startswith("encoder.") or ".attn." in name:
@@ -63,21 +63,26 @@ def _checkpoint(tmp_path, vae, *, metadata_override=None, extra=False):
         name = name.replace("decoder.x_embedder.", "decoder.proj_in.")
         state[name] = value.clone()
     prefix = "decoder.transformer_blocks.0"
-    for suffix, n, k in (
-        ("attn.to_q", 128, 128),
-        ("attn.to_k", 128, 128),
-        ("attn.to_v", 128, 128),
-        ("attn.to_out.0", 128, 128),
-        ("ff.net.0.proj", 256, 128),
-        ("ff.net.2", 128, 128),
+    for index, (suffix, n, k) in enumerate(
+        (
+            ("attn.to_q", 128, 128),
+            ("attn.to_k", 128, 128),
+            ("attn.to_v", 128, 128),
+            ("attn.to_out.0", 128, 128),
+            ("ff.net.0.proj", 256, 128),
+            ("ff.net.2", 128, 128),
+        ),
+        start=1,
     ):
-        state.update({f"{prefix}.{suffix}.{key}": value for key, value in _packed(n, k).items()})
+        state.update({f"{prefix}.{suffix}.{key}": value for key, value in _packed(n, k, index).items()})
     metadata = dict(
         block_size=16, act_scale="unit", rotation_group=None, skip_blocks=[], num_linears=6, student_layers=1
     )
     metadata.update(metadata_override or {})
     if extra:
-        state["unknown.weight"] = torch.zeros(1)
+        state[extra] = torch.zeros(1)
+    if missing:
+        del state[f"{prefix}.{missing}"]
     path = tmp_path / "decoder.safetensors"
     save_file(
         state,
@@ -96,6 +101,9 @@ def test_released_decoder_strict_load_preserves_encoder_and_dtypes(tmp_path):
     linears = [module for module in vae.decoder.modules() if isinstance(module, PackedNVFP4Linear)]
     assert len(linears) == 6
     assert all(module.packed_weight.dtype == torch.uint8 and module.bias.dtype == torch.bfloat16 for module in linears)
+    for index, name in enumerate(("attn.to_qkv.q", "attn.to_qkv.k", "attn.to_qkv.v", "attn.to_out", "ff.0", "ff.2"), 1):
+        module = vae.decoder.transformer_blocks[0].get_submodule(name)
+        assert torch.all(module.packed_weight == index) and torch.all(module.bias == index)
     assert vae.decoder.proj_in.weight.dtype == torch.float32
     for key, value in encoder.items():
         torch.testing.assert_close(vae.encoder.state_dict()[key], value, rtol=0, atol=0)
@@ -110,10 +118,23 @@ def test_rejects_incompatible_decoder_contract(tmp_path, metadata):
         install_nvfp4_video_decoder(vae, _checkpoint(tmp_path, vae, metadata_override=metadata))
 
 
-def test_unknown_checkpoint_tensor_is_not_silently_dropped(tmp_path):
+@pytest.mark.parametrize(
+    "extra,error",
+    [
+        ("unknown.weight", RuntimeError),
+        ("decoder.transformer_blocks.0.attn.to_qkv.q.packed_weight", ValueError),
+    ],
+)
+def test_unknown_checkpoint_tensor_is_not_silently_dropped(tmp_path, extra, error):
     vae = _host()
-    with pytest.raises(RuntimeError, match="Unexpected key"):
-        install_nvfp4_video_decoder(vae, _checkpoint(tmp_path, vae, extra=True))
+    with pytest.raises(error, match="Unexpected"):
+        install_nvfp4_video_decoder(vae, _checkpoint(tmp_path, vae, extra=extra))
+
+
+def test_missing_packed_tensor_is_rejected(tmp_path):
+    vae = _host()
+    with pytest.raises(ValueError, match="Missing packed NVFP4 tensor"):
+        install_nvfp4_video_decoder(vae, _checkpoint(tmp_path, vae, missing="attn.to_k.weight_global_sf"))
 
 
 def test_qkv_global_scales_keep_separate_projection_outputs():

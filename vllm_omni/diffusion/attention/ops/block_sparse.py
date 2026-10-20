@@ -60,40 +60,18 @@ def validate_softmax_scale(softmax_scale: float) -> None:
         raise ValueError("softmax_scale must be finite and positive")
 
 
-def _flashinfer_sm120_tile128(
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    block_map: torch.Tensor,
-    variable_block_sizes: torch.Tensor,
-    logical_blocks: int,
-) -> torch.Tensor:
-    """Execute a logical tile-128 mask with SM120's 64-token compute blocks.
+def split_tile128_map(block_map: torch.Tensor, block_sizes: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Represent a logical tile128 mask using 64-token compute blocks.
 
     Both query halves inherit the same selected KV tiles. Each selected KV
     tile contributes both halves to ONE attention reduction, preserving its
     softmax denominator. Pooling, selection and compression remain tile-128.
     """
-    from .flashinfer_block_sparse import flashinfer_block_sparse_attention
-
-    sizes = variable_block_sizes[:logical_blocks].to(torch.int32)
-    sizes64 = torch.stack((sizes.clamp(max=64), (sizes - 64).clamp(0, 64)), dim=-1).flatten()
-    mask64 = block_map[..., :logical_blocks, :logical_blocks].repeat_interleave(2, -2).repeat_interleave(2, -1)
+    sizes64 = torch.stack((block_sizes.clamp(max=64), (block_sizes - 64).clamp(0, 64)), dim=-1).flatten()
+    mask64 = block_map.repeat_interleave(2, -2).repeat_interleave(2, -1)
     # Partial tiles can have an entirely empty second half. Do not route it.
     mask64 &= sizes64.view(1, 1, 1, -1) > 0
-    length = logical_blocks * 128
-    out = flashinfer_block_sparse_attention(
-        query[:, :length],
-        key[:, :length],
-        value[:, :length],
-        mask64,
-        sizes64,
-        query.shape[-1] ** -0.5,
-        precision="bf16",
-    )
-    if out.shape[1] != query.shape[1]:
-        out = torch.nn.functional.pad(out, (0, 0, 0, 0, 0, query.shape[1] - out.shape[1]))
-    return out
+    return mask64, sizes64
 
 
 if not hasattr(torch.ops.vllm_omni, "fastvideo_block_sparse_attn_bshd"):
@@ -343,7 +321,12 @@ def block_sparse_attn_bshd(
     if block_sizes is None or block_sizes.shape != (blocks,):
         raise ValueError("FastVideo requires one size per tile")
     if provider == "flashinfer":
-        return _flashinfer_sm120_tile128(query, key, value, block_map, block_sizes, blocks)
+        from .flashinfer_block_sparse import flashinfer_block_sparse_attention
+
+        mask64, sizes64 = split_tile128_map(block_map, block_sizes.to(torch.int32))
+        return flashinfer_block_sparse_attention(
+            query, key, value, mask64, sizes64, query.shape[-1] ** -0.5, precision=precision
+        )
     # The native SM100 paired-CTA provider requires an even block count.
     # Preserve the Triton provider's existing logical-block slicing contract.
     if blocks % 2:

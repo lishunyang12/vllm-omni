@@ -212,12 +212,14 @@ source_file_dependencies:
 
   diffusion_cudnn_bsa:
     - tests/diffusion/attention/test_cudnn_block_sparse
+    - tests/diffusion/attention/test_block_sparse_providers_cuda.py
     - vllm_omni/diffusion/attention/
     - vllm_omni/diffusion/data.py
     - pyproject.toml
 
   diffusion_triton_bsa:
     - tests/diffusion/attention/test_triton_block_sparse
+    - tests/diffusion/attention/test_block_sparse_providers_cuda.py
     - vllm_omni/diffusion/attention/
     - vllm_omni/diffusion/data.py
     - pyproject.toml

@@ -40,13 +40,9 @@ recipes/
 
 ## FastH3
 
-The [FastH3 family section](./FastVideo/README.md) separates three releases:
-[FastH3](./FastVideo/FastH3.md) (four-step T2VA adapter),
-[FastH3 V2](./FastVideo/FastH3-V2.md) (eight-step T2VA checkpoint), and
-[FastH3 Omni](./FastVideo/FastH3-Omni.md) (eight-step Ref2VA checkpoint).
-For Omni on RTX 4090, RTX 5090, DGX Spark, or RTX PRO 6000 Blackwell,
-use the consolidated
-[FastH3 RefOmni Single Card guide](<./FastVideo/FastH3 RefOmni Single Card.md>).
+Use the [FastH3 family guide](./FastVideo/README.md) to choose a release,
+or go directly to [FastH3 RefOmni Single Card](<./FastVideo/FastH3 RefOmni Single Card.md>)
+for RTX 4090, RTX 5090, DGX Spark, and RTX PRO 6000 Blackwell.
 
 ## Available Recipes
 

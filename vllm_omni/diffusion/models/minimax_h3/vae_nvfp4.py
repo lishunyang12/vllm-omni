@@ -134,36 +134,32 @@ def install_nvfp4_video_decoder(vae: nn.Module, path: Path) -> None:
         decoder = FastH3NVFP4Decoder(vae.decoder, depth)
         tensors = {name: checkpoint.get_tensor(name) for name in checkpoint.keys()}
 
-    def linear(prefix: str) -> PackedNVFP4Linear:
+    def linear(source: str, target: str) -> PackedNVFP4Linear:
         try:
-            return PackedNVFP4Linear(*(tensors[f"{prefix}.{name}"] for name in _LINEAR_TENSORS))
+            packed = [tensors.pop(f"{source}.{name}") for name in _LINEAR_TENSORS]
         except KeyError as exc:
             raise ValueError(f"Missing packed NVFP4 tensor {exc.args[0]}") from exc
+        for name, tensor in zip(_LINEAR_TENSORS, packed):
+            key = f"{target}.{name}"
+            if key in tensors:
+                raise ValueError(f"Unexpected NVFP4 tensor {key}")
+            tensors[key] = tensor
+        return PackedNVFP4Linear(*packed)
 
-    renamed: dict[str, str] = {}
     for i, block in enumerate(decoder.transformer_blocks):
         prefix = f"decoder.transformer_blocks.{i}"
         block.attn.to_qkv = _QKVProjection(
-            *(linear(f"{prefix}.attn.to_{part}") for part in ("q", "k", "v")),
+            *(linear(f"{prefix}.attn.to_{part}", f"{prefix}.attn.to_qkv.{part}") for part in ("q", "k", "v")),
             head_dim=block.attn.dim_head,
         )
-        block.attn.to_out = linear(f"{prefix}.attn.to_out.0")
-        block.ff = nn.Sequential(linear(f"{prefix}.ff.net.0.proj"), _SwiGLU(), linear(f"{prefix}.ff.net.2"))
-        for part in ("q", "k", "v"):
-            renamed[f"{prefix}.attn.to_{part}."] = f"{prefix}.attn.to_qkv.{part}."
-        renamed[f"{prefix}.attn.to_out.0."] = f"{prefix}.attn.to_out."
-        renamed[f"{prefix}.ff.net.0.proj."] = f"{prefix}.ff.0."
-        renamed[f"{prefix}.ff.net.2."] = f"{prefix}.ff.2."
-    mapped = {}
-    for name, tensor in tensors.items():
-        target = name
-        for old, new in renamed.items():
-            if name.startswith(old):
-                target = new + name[len(old) :]
-                break
-        mapped[target] = tensor
+        block.attn.to_out = linear(f"{prefix}.attn.to_out.0", f"{prefix}.attn.to_out")
+        block.ff = nn.Sequential(
+            linear(f"{prefix}.ff.net.0.proj", f"{prefix}.ff.0"),
+            _SwiGLU(),
+            linear(f"{prefix}.ff.net.2", f"{prefix}.ff.2"),
+        )
     # Load only the two components owned by the released checkpoint. Strict
     # loading rejects extra/missing weights and architecture mismatches.
     components = nn.ModuleDict({"decoder": decoder, "post_quant_conv": vae.post_quant_conv})
-    components.load_state_dict(mapped, strict=True)
+    components.load_state_dict(tensors, strict=True)
     vae.decoder = decoder

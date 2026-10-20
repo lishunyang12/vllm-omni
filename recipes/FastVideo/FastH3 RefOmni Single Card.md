@@ -68,20 +68,16 @@ reuse the Hugging Face cache.
 
 ## Start the server
 
-Select the configuration matching your device. Uncomment one of the other
-assignments to replace the default RTX 4090 selection:
+Set `FASTH3_PROFILE` to your device:
 
 ```bash
-FASTH3_CONFIG=recipes/FastVideo/fasth3-omni-rtx4090.yaml
-# FASTH3_CONFIG=recipes/FastVideo/fasth3-omni-rtx5090.yaml
-# FASTH3_CONFIG=recipes/FastVideo/fasth3-omni-spark.yaml
-# FASTH3_CONFIG=recipes/FastVideo/fasth3-omni-rtx-pro6000.yaml
+FASTH3_PROFILE=rtx4090  # rtx4090 | rtx5090 | spark | rtx-pro6000
 
 CUDA_VISIBLE_DEVICES=0 VLLM_WORKER_MULTIPROC_METHOD=spawn \
 VLLM_OMNI_VIDEO_SYNC_TIMEOUT=7200 \
 vllm serve FastVideo/FastVideo-FastH3-Omni-8-Step-V1 --omni \
   --revision 88d512c5e7cc38dda499fbb65688ce58611f9c80 \
-  --config "$FASTH3_CONFIG"
+  --config "recipes/FastVideo/fasth3-omni-${FASTH3_PROFILE}.yaml"
 ```
 
 Keep this terminal running. The server listens on port 8000; use `--port`
@@ -116,7 +112,6 @@ curl --fail-with-body -sS http://localhost:8000/v1/videos/sync \
 Open `output.mp4` in a media player. The response includes video and 32 kHz
 stereo audio. A five-second request maps to 124 frames at 24 fps.
 For 768P, change `size=832x480` to `size=1344x768`.
-The YAML already sets eight inference steps and guidance scale 1.
 
 For multiple images, video, or audio references, see the
 [H3 reference API](../MiniMaxAI/MiniMax-H3.md).
@@ -128,31 +123,15 @@ decoding. Keep this decoder on the 4090.
 
 The RTX 5090, DGX Spark, and RTX PRO 6000 Blackwell profiles use the released
 [NVFP4 VAE decoder](https://huggingface.co/FastVideo/FastH3-NVFP4-VAE-Decoder),
-with `fast-8L` selected by default. To use the deeper `quality-36L` decoder,
-change the existing decoder section in your YAML and restart the server:
-
-```yaml
-additional-config:
-  video_vae_decoder:
-    model: FastVideo/FastH3-NVFP4-VAE-Decoder
-    revision: ddd17469cab7e490b1a04baaf26b247f0f0dcf0e
-    subfolder: quality-36L
-```
-
-Switch the subfolder back to `fast-8L` for the faster decoder.
+with `fast-8L` selected by default. For the deeper decoder, set
+`additional-config.video_vae_decoder.subfolder` to `quality-36L` in your
+YAML and restart the server. Switch it back to `fast-8L` for faster decoding.
 
 ## Memory and startup tips
 
-- **RTX 4090:** keep both `enable-distributed-layerwise-offload: true` and
-  `dlo-no-use-allgather: true`. This profile rotates layer weights through
-  GPU buffers and moves the native VAEs onto the GPU when needed.
-- **RTX 5090:** keep `diffusion-offload-config` set to `mode: layer` with
-  `components: [dit, text_encoder]`. These components use host RAM between
-  GPU computations.
-- **DGX Spark:** keep the resident profile. CPU and GPU share the same
-  memory, so CPU offload does not provide a separate memory pool.
-- **RTX PRO 6000 Blackwell:** keep `diffusion-offload-config` set to
-  `mode: layer` with `components: [text_encoder]`. The DiT remains on the GPU.
+Keep the memory placement in your selected YAML. On DGX Spark, CPU and GPU
+share memory; CPU offload does not provide a separate memory pool.
+
 - **If memory is tight:** close other GPU workloads, use `fast-8L` on
   Blackwell, and start with `832x480`. Keep `vae-use-tiling: true`.
 - **If startup is slow:** allow the initial downloads and FP8 conversion

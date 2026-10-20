@@ -10,7 +10,7 @@ import torch
 
 from vllm_omni.platforms import current_omni_platform
 
-from .block_sparse import block_map_to_indices, validate_sparse_inputs
+from .block_sparse import block_map_to_indices, split_tile128_map, validate_sparse_inputs
 
 
 @lru_cache(maxsize=32)
@@ -48,11 +48,9 @@ def triton_block_sparse_attention(
     indices, counts = block_map_to_indices(block_map)
     validate_sparse_inputs(query, key, value, indices, counts, block_sizes, block_size)
     if block_size == 128:
-        # Both halves share the original tile selection and ONE softmax over
-        # all selected keys. Pooling/top-k/compression stay at logical tile128.
-        block_map = block_map.repeat_interleave(2, -2).repeat_interleave(2, -1)
-        block_sizes = torch.stack((block_sizes.clamp(max=64), (block_sizes - 64).clamp(0, 64)), -1).flatten()
-    block_map = block_map & (block_sizes > 0)[None, None, None, :]
+        block_map, block_sizes = split_tile128_map(block_map, block_sizes)
+    else:
+        block_map = block_map & (block_sizes > 0)[None, None, None, :]
     indices, counts = block_map_to_indices(block_map)
     kernel = require_triton_sparse(query.device)
     output, _ = kernel(

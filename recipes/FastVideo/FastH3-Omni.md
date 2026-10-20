@@ -84,13 +84,6 @@ published `FastH3-OmniRef-FP8` and `FastH3-OmniRef-NVFP4-QAD` checkpoints
 also change the serialized DiT, text encoder, and VAE components; their
 vLLM-Omni integration remains in progress.
 
-### Single-device configurations
-
-[FastH3 RefOmni Single Card](<FastH3 RefOmni Single Card.md>) contains the
-RTX 4090, RTX 5090, DGX Spark, and RTX PRO 6000 Blackwell profiles, with
-installation, server commands, generation, and memory settings. These profiles
-use online FP8 DiT/text linears and BF16 attention.
-
 ## Generate
 
 Put the scene description in `prompt.txt` and the reference image in
