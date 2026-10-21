@@ -144,10 +144,10 @@ def test_omni_base_components_do_not_download_either_base_transformer(monkeypatc
     "device,capability,missing_module,message",
     [
         ("cpu", None, None, "CUDA"),
-        ("cuda:3", (9, 0), None, "SM100/SM103"),
-        ("cuda:3", (10, 1), None, "SM100/SM103"),
+        ("cuda:3", (9, 0), None, "SM100"),
+        ("cuda:3", (10, 1), None, "SM100"),
         ("cuda:3", (10, 0), "fastvideo_kernel", "fastvideo-kernel"),
-        ("cuda:3", (10, 3), "fastvideo_kernel", "fastvideo-kernel"),
+        ("cuda:3", (10, 3), "fastvideo_kernel.block_sparse_attn", "fastvideo-kernel"),
         ("cuda:3", (12, 0), "flashinfer.cute_dsl.sparse", "bsa_attn_sm120_blk64_fwd"),
         ("cuda:3", (12, 1), "flashinfer.cute_dsl.sparse", "bsa_attn_sm120_blk64_fwd"),
     ],

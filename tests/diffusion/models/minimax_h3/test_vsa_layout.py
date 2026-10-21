@@ -294,6 +294,48 @@ def test_omni_multiregion_geometry_preserves_interleaved_reference_order():
     assert torch.equal(tiled[untile], original)
 
 
+@pytest.mark.parametrize("reference_kinds", [("image", "image"), ("audio", "audio"), ("audio",)])
+def test_omni_production_branch_preserves_reference_pooling_boundaries(reference_kinds):
+    from vllm_omni.diffusion.attention.ops.block_sparse import mean_pool_tiles
+    from vllm_omni.diffusion.models.minimax_h3.denoise_loop import MiniMaxH3DenoiseBranch
+    from vllm_omni.diffusion.models.minimax_h3.packed_sequence import minimax_h3_packed_sequence_ref2va_blocks
+
+    packed = minimax_h3_packed_sequence_ref2va_blocks(
+        text_len=5,
+        latent_t=4,
+        latent_h=8,
+        latent_w=16,
+        audio_t=32,
+        ref_blocks=[
+            {"kind": kind, "latent_h": 16, "latent_w": 16} if kind == "image" else {"kind": kind, "ref_audio_t": 32}
+            for kind in reference_kinds
+        ],
+    )
+    branch = MiniMaxH3DenoiseBranch(
+        packed=packed,
+        text_embeddings=torch.zeros(5, 4),
+        token_tags=packed["token_tags"],
+        device=torch.device("cpu"),
+    )
+    prefix = branch.static_kwargs["packed_seq_params"]["vsa_prefix_segments"]
+    layout = branch.static_kwargs["video_token_layout"]
+    regions = tuple((span.start, span.latent_grid) for span in layout.video_spans)
+    partition, sizes, non_pad, untile, dense, _ = _get_h3_multiregion_tile_metadata(
+        prefix, regions, torch.device("cpu")
+    )
+    # Text, each reference and target audio must pool independently, even
+    # when adjacent segments have the same modality and fit in one tile.
+    expected_sizes = [5, *([64] * (len(reference_kinds) + 1)), 128]
+    rows = torch.repeat_interleave(torch.arange(len(expected_sizes), dtype=torch.float32), torch.tensor(expected_sizes))
+    tiled = torch.zeros(sizes.numel() * 128)
+    tiled[non_pad] = rows[partition]
+    pooled = mean_pool_tiles(tiled.view(1, -1, 1, 1), sizes, 128).flatten()
+    assert sizes.tolist() == expected_sizes
+    assert dense == len(expected_sizes) - 1
+    torch.testing.assert_close(pooled, torch.arange(len(expected_sizes), dtype=torch.float32))
+    torch.testing.assert_close(tiled[untile], rows)
+
+
 def test_omni_selects_a_separate_budget_from_every_reference_region():
     torch.manual_seed(43)
     scores = torch.randn(1, 2, 40, 40)

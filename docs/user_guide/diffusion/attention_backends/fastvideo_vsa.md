@@ -189,9 +189,9 @@ use FlashInfer on SM120/SM121 when its kernels are installed, otherwise
 FastVideo. Wan continues to use FastVideo. Existing video API requests do not
 need to change.
 
-FastH3 Omni requires BF16 with logical tile128 routing. On SM8x, automatic
+FastH3 Omni requires BF16 with logical tile128 routing. On SM8x and SM103, automatic
 selection uses the portable Triton provider described above. Otherwise it uses
-native FastVideo tile128 on SM100/SM103 and splits each already-selected block
+native FastVideo tile128 on SM100 and splits each already-selected block
 into two FlashInfer compute blocks on SM120/SM121. Pooling, top-k and region
 budgets remain logical tile128. Explicit provider selection is validated before
 loading the Omni model; an unavailable provider never falls back to dense attention.

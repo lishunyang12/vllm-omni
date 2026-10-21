@@ -25,7 +25,7 @@ def clear_capability_cache():
         fn.cache_clear()
 
 
-@pytest.mark.parametrize("capability", [(8, 0), (8, 9), (9, 0), (12, 0), (12, 1)])
+@pytest.mark.parametrize("capability", [(8, 0), (8, 9), (9, 0), (10, 3), (12, 0), (12, 1)])
 def test_explicit_triton_uses_the_operand_device(monkeypatch, capability):
     cap = Mock(return_value=capability)
     monkeypatch.setattr(current_omni_platform, "get_device_capability", cap)
@@ -38,8 +38,9 @@ def test_explicit_triton_uses_the_operand_device(monkeypatch, capability):
     kernel.assert_not_called()
 
 
-def test_ada_auto_tile128_uses_portable_kernel(monkeypatch):
-    monkeypatch.setattr(current_omni_platform, "get_device_capability", lambda _: (8, 9))
+@pytest.mark.parametrize("capability", [(8, 9), (10, 3)])
+def test_auto_tile128_uses_portable_kernel(monkeypatch, capability):
+    monkeypatch.setattr(current_omni_platform, "get_device_capability", lambda _: capability)
     module = ModuleType("fastvideo_kernel.block_sparse_attn")
     setattr(module, "block_sparse_attn_triton", Mock())
     monkeypatch.setitem(sys.modules, "fastvideo_kernel.block_sparse_attn", module)

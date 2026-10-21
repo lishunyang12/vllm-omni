@@ -119,7 +119,7 @@ if not hasattr(torch.ops.vllm_omni, "fastvideo_block_sparse_attn_bshd"):
                     return out.transpose(1, 2).contiguous()
                 if block_size == 128:
                     raise RuntimeError(
-                        "VSA tile 128 requires FastVideo's sm_100/sm_103 kernel or FlashInfer's SM120 kernel"
+                        "FastVideo tile128 is unavailable; select a supported Triton, cuDNN or FlashInfer provider"
                     )
             except torch.AcceleratorError:
                 # A device fault can poison the context; do not launch another kernel.
@@ -191,7 +191,7 @@ def resolve_block_sparse_provider(
             raise ValueError("tile128 VSA requires CUDA")
         capability = current_omni_platform.get_device_capability(device.index)
         if provider == "auto":
-            if capability is not None and capability[0] == 8:
+            if capability is not None and (capability[0] == 8 or capability == (10, 3)):
                 return resolve_block_sparse_provider("triton", precision, device, dtype, head_size, block_size)
             provider = "flashinfer" if capability in ((12, 0), (12, 1)) else "fastvideo"
         if provider == "flashinfer":
@@ -199,9 +199,9 @@ def resolve_block_sparse_provider(
 
             require_flashinfer_sparse(precision, device)
         elif provider == "fastvideo":
-            if capability not in ((10, 0), (10, 3)):
+            if capability != (10, 0):
                 raise ValueError(
-                    "FastVideo tile128 requires SM100/SM103; select the cuDNN provider on other supported GPUs"
+                    "FastVideo tile128 requires SM100; select the Triton or cuDNN provider on other supported GPUs"
                 )
             try:
                 from fastvideo_kernel import block_sparse_attn_sm100a
@@ -209,8 +209,18 @@ def resolve_block_sparse_provider(
 
                 if not callable(block_sparse_attn_sm100a.block_sparse_attn_sm100a) or not callable(map_to_index):
                     raise ImportError("missing native tile128 entry point")
+                # The Python wrapper can exist without a compatible compiled
+                # kernel. Its predicate reads only metadata; probe once here,
+                # before model loading, using the native BHSD layout.
+                query = torch.empty(1, 1, 2 * block_size, head_size, dtype=dtype, device=device)
+                sizes = torch.empty(2, dtype=torch.int32, device=device)
+                if not block_sparse_attn_sm100a.is_supported(query, sizes):
+                    raise ImportError("installed native kernel does not support tile128 on this device")
             except (ImportError, AttributeError) as exc:
-                raise ImportError("FastVideo tile128 requires fastvideo-kernel with the sm100a sparse API") from exc
+                raise ImportError(
+                    "FastVideo tile128 requires fastvideo-kernel with a compatible sm100a sparse kernel; "
+                    "select Triton or cuDNN if this build does not provide it"
+                ) from exc
         else:
             raise ValueError(f"unsupported tile128 provider: {provider}")
         return provider
