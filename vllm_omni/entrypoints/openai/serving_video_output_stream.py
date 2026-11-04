@@ -856,20 +856,23 @@ class OmniStreamingVideoOutputHandler:
                     raise RuntimeError(str(result.error))
                 videos = self._extract_video_outputs(result)
                 for video in videos:
-                    chunk = encoder.encode(video)
-                    if max_output_bytes is not None and len(chunk or b"") > max_output_bytes:
+                    num_frames = self._num_video_frames(video)
+                    # A decoder may withhold every frame while still completing
+                    # controls. Keep its metadata without feeding an empty video
+                    # to the fork's video-only encoder.
+                    chunk = (encoder.encode(video) or b"") if num_frames else b""
+                    if max_output_bytes is not None and len(chunk) > max_output_bytes:
                         raise ValueError("encoded streaming chunk exceeds streaming_pacing.max_output_bytes")
-                    if chunk:
-                        yield (
-                            chunk,
-                            self._build_chunk_metadata(
-                                request_id=request_id,
-                                kind="media",
-                                byte_length=len(chunk),
-                                num_frames=self._num_video_frames(video),
-                                stream_metadata=self._extract_stream_metadata(result),
-                            ),
-                        )
+                    yield (
+                        chunk,
+                        self._build_chunk_metadata(
+                            request_id=request_id,
+                            kind="media",
+                            byte_length=len(chunk),
+                            num_frames=num_frames,
+                            stream_metadata=self._extract_stream_metadata(result),
+                        ),
+                    )
 
             completed = True
             final_chunk = encoder.close()
@@ -895,7 +898,7 @@ class OmniStreamingVideoOutputHandler:
         request: VideoGenerationRequest,
     ) -> tuple[OmniTextPrompt, OmniDiffusionSamplingParams, VideoParams]:
         """Build text-only diffusion inputs for the streaming endpoint."""
-        prompt: OmniTextPrompt = OmniTextPrompt(prompt=request.prompt)
+        prompt = cast(OmniTextPrompt, {"prompt": request.prompt})
         if request.negative_prompt is not None:
             prompt["negative_prompt"] = request.negative_prompt
 
@@ -1118,6 +1121,11 @@ class OmniStreamingVideoOutputHandler:
             "active_event_ids": stream_metadata.get("active_event_ids", []),
             "completed_event_ids": stream_metadata.get("completed_event_ids", []),
             **{key: stream_metadata[key] for key in ("pacing", "output_chunk_index") if key in stream_metadata},
+            **{
+                key: stream_metadata[key]
+                for key in ("frame_start", "generated_raw_frames", "generated_frames", "withheld_frames")
+                if key in stream_metadata
+            },
             **(
                 {"coalesced_event_ids": stream_metadata["coalesced_event_ids"]}
                 if stream_metadata.get("coalesced_event_ids")

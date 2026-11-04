@@ -506,6 +506,7 @@ class Attention(nn.Module):
             reason = self._cross_backend_limitation(attn_metadata)
             if reason is not None:
                 blocked = self._cross_fallback_blocker(attn_metadata)
+                assert self.sdpa_fallback is not None and self.attn_backend is not None
                 result = self.sdpa_fallback.resolve_execution_path(resolved_context, query, key, value, attn_metadata)
                 return replace(
                     result,
@@ -759,6 +760,7 @@ class Attention(nn.Module):
 
     def _cross_fallback_blocker(self, attn_metadata: AttentionMetadata | None) -> str | None:
         if self.backend_explicit:
+            assert self.attn_backend is not None
             return (
                 f"Explicit backend {self.attn_backend.get_name()} does not support "
                 f"{self._cross_backend_limitation(attn_metadata)}"
@@ -793,6 +795,7 @@ class Attention(nn.Module):
                 blocked = self._cross_fallback_blocker(attn_metadata)
                 if blocked is not None:
                     raise NotImplementedError(blocked)
+                assert self.sdpa_fallback is not None
                 return self.sdpa_fallback.forward(query, key, value, attn_metadata)
         dense_mask = attn_metadata.attn_mask if attn_metadata is not None else None
         # Piecewise backends honor full_attn_spans ahead of attn_mask and never read the

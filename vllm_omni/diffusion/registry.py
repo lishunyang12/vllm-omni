@@ -35,6 +35,8 @@ def resolve_native_single_file(model_class_name: str | None) -> str | None:
 
 _DIFFUSION_MODELS = {
     # arch:(mod_folder, mod_relname, cls_name)
+    "HyNomasPipeline": ("hy_nomas", "pipeline_hy_nomas", "HyNomasPipeline"),
+    "HyNomasModularPipeline": ("hy_nomas", "pipeline_hy_nomas", "HyNomasPipeline"),
     "SeedVR2Pipeline": ("seedvr2", "pipeline_seedvr2", "SeedVR2Pipeline"),
     "QwenImagePipeline": (
         "qwen_image",
@@ -484,7 +486,7 @@ def _prepare_diffusion_quant_config(
         quant_config.maybe_update_config(od_config.model)
     diffusion_packed_modules_mapping = current_omni_platform.get_diffusion_packed_modules_mapping(model_class)
     if diffusion_packed_modules_mapping is not None:
-        model_class.packed_modules_mapping = diffusion_packed_modules_mapping
+        setattr(model_class, "packed_modules_mapping", diffusion_packed_modules_mapping)
     configure_quant_config(quant_config, model_class)
 
 
@@ -508,6 +510,8 @@ def initialize_model(
     Raises:
         ValueError: If the model class is not found in the registry.
     """
+    if od_config.model_class_name is None:
+        raise ValueError("model_class_name must be resolved before initializing a diffusion model.")
     model_class = DiffusionModelRegistry._try_load_model_cls(od_config.model_class_name)
     if model_class is not None:
         _prepare_diffusion_quant_config(od_config, model_class)
@@ -542,6 +546,7 @@ def initialize_model(
             model.vae.use_tiling = od_config.vae_use_tiling
 
         if is_distributed_vae:
+            assert isinstance(model.vae, DistributedVaeMixin)
             model.vae.set_parallel_size(vae_pp_size, mode=vae_mode)
 
         # Apply sequence parallelism if enabled
