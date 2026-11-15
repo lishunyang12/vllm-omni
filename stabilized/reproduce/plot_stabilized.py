@@ -75,6 +75,8 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     for extension in ("png", "svg"):
         fig.savefig(args.output.with_suffix("."+extension), dpi=180, facecolor="white")
+    svg = args.output.with_suffix(".svg")
+    svg.write_text("\n".join(line.rstrip() for line in svg.read_text().splitlines()) + "\n")
     plt.close(fig)
 
 

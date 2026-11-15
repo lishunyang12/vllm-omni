@@ -5,22 +5,22 @@
       "gpu": "Rubin",
       "model": "h3_image",
       "variant": "pr_mxfp8",
-      "round": "initial",
-      "bf16_p50_seconds": 1.8376948629738763,
-      "candidate_p50_seconds": 1.6927489829831757,
-      "latency_change_percent": -7.887374716613172,
-      "speedup_ratio": 1.085627509718103,
+      "round": "confirmation",
+      "bf16_p50_seconds": 1.8367081055184826,
+      "candidate_p50_seconds": 1.6886606584885158,
+      "latency_change_percent": -8.060477687507927,
+      "speedup_ratio": 1.0876715201990204,
       "both_pass_stability_checks": false
     },
     {
       "gpu": "Rubin",
       "model": "h3_image",
       "variant": "pr_fp8_block",
-      "round": "initial",
-      "bf16_p50_seconds": 1.8376948629738763,
-      "candidate_p50_seconds": 1.7196204295323696,
-      "latency_change_percent": -6.425138134762543,
-      "speedup_ratio": 1.0686630790223954,
+      "round": "confirmation",
+      "bf16_p50_seconds": 1.8367081055184826,
+      "candidate_p50_seconds": 1.7204359710158315,
+      "latency_change_percent": -6.330463406422915,
+      "speedup_ratio": 1.0675829478466428,
       "both_pass_stability_checks": false
     },
     {
@@ -79,25 +79,36 @@
       "both_pass_stability_checks": true
     },
     {
+      "gpu": "Rubin",
+      "model": "wan22",
+      "variant": "pr_fp8_block",
+      "round": "initial",
+      "bf16_p50_seconds": 23.891175144497538,
+      "candidate_p50_seconds": 28.30873764201533,
+      "latency_change_percent": 18.490352487057194,
+      "speedup_ratio": 0.8439505656034155,
+      "both_pass_stability_checks": true
+    },
+    {
       "gpu": "GB200",
       "model": "h3_image",
       "variant": "pr_mxfp8",
-      "round": "initial",
-      "bf16_p50_seconds": 4.228114314988488,
-      "candidate_p50_seconds": 3.904673921992071,
-      "latency_change_percent": -7.64975516035209,
-      "speedup_ratio": 1.0828341622010285,
+      "round": "confirmation",
+      "bf16_p50_seconds": 4.184547721524723,
+      "candidate_p50_seconds": 3.874249785527354,
+      "latency_change_percent": -7.415327931409166,
+      "speedup_ratio": 1.080092392895398,
       "both_pass_stability_checks": true
     },
     {
       "gpu": "GB200",
       "model": "h3_image",
       "variant": "pr_fp8_block",
-      "round": "initial",
-      "bf16_p50_seconds": 4.228114314988488,
-      "candidate_p50_seconds": 3.9202097980014514,
-      "latency_change_percent": -7.2823129662206165,
-      "speedup_ratio": 1.0785428670536992,
+      "round": "confirmation",
+      "bf16_p50_seconds": 4.184547721524723,
+      "candidate_p50_seconds": 3.8678550474869553,
+      "latency_change_percent": -7.568145833508966,
+      "speedup_ratio": 1.081878113359892,
       "both_pass_stability_checks": true
     },
     {
@@ -142,6 +153,28 @@
       "candidate_p50_seconds": 29.718342770502204,
       "latency_change_percent": 63.59452630159981,
       "speedup_ratio": 0.6112673954362133,
+      "both_pass_stability_checks": true
+    },
+    {
+      "gpu": "GB200",
+      "model": "wan22",
+      "variant": "pr_mxfp8",
+      "round": "initial",
+      "bf16_p50_seconds": 45.038532373000635,
+      "candidate_p50_seconds": 43.19656743953237,
+      "latency_change_percent": -4.089753454249923,
+      "speedup_ratio": 1.042641465344363,
+      "both_pass_stability_checks": true
+    },
+    {
+      "gpu": "GB200",
+      "model": "wan22",
+      "variant": "pr_fp8_block",
+      "round": "initial",
+      "bf16_p50_seconds": 45.038532373000635,
+      "candidate_p50_seconds": 45.239725062507205,
+      "latency_change_percent": 0.44671235696653877,
+      "speedup_ratio": 0.9955527428774471,
       "both_pass_stability_checks": true
     }
   ]

@@ -1,0 +1,519 @@
+{
+  "source_sha256": {
+    "vllm_omni/quantization/factory.py": "f2b769fcc55cea3be658c4261df941e6ab419cbf3537987a749ca2dc2a52ac35",
+    "vllm_omni/quantization/mxfp8_config.py": "6b0d6f6c2db059d4def0e8a2b98c93e77e21c50248d17c3af6132123d84dd638",
+    "vllm_omni/quantization/mxfp8_cuda.py": "2089780cf61b8dde0001800be186e058c933345719118d70f403e84bdbbd29f6",
+    "vllm_omni/entrypoints/async_omni.py": "f535539fb468e8f276f6de9dd9cd789f543f500fe8e6fef3990a7e514df906be",
+    "vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3_image.py": "3e1a6bb6f77fb0832bef21638d4c5965f2ccc362d6413f69bf253b9bd23ce1ef"
+  },
+  "case": {
+    "prompt": "A red bicycle leaning against a weathered blue wooden door, a wicker basket filled with yellow sunflowers, warm afternoon sunlight, intricate wood grain and brick textures, realistic photography.",
+    "negative_prompt": "",
+    "seed": 42,
+    "height": 4096,
+    "width": 4096,
+    "steps": 6,
+    "guidance_scale": 1.0,
+    "true_cfg_scale": 1.0,
+    "frames": 1,
+    "fps": 24
+  },
+  "variant": {
+    "source": "candidate",
+    "commit": "a6a35c86b13db636a07173755b241544dff4c082",
+    "quantization": "fp8_per_block"
+  },
+  "model": {
+    "model": "MiniMaxAI/MiniMax-H3-Image",
+    "revision": "7b6142f879bf7a973c449e1dea5480289736cdbd",
+    "path": "/work/hf-cache/hub/models--MiniMaxAI--MiniMax-H3-Image/snapshots/7b6142f879bf7a973c449e1dea5480289736cdbd"
+  },
+  "source": "/work/source/candidate/vllm_omni/__init__.py",
+  "quantization_config": {
+    "transformer": {
+      "method": "fp8_per_block"
+    },
+    "text_encoder": null
+  },
+  "parallelism": {
+    "ulysses_degree": 4,
+    "tensor_parallel_size": 1,
+    "text_encoder_tp_size": 4
+  },
+  "trust_remote_code": false,
+  "enforce_eager": true,
+  "torch": "2.16.0.dev20261009+cu134",
+  "cuda": "13.4",
+  "start_unix": 1794718029.037507,
+  "status": "completed",
+  "protocol": {
+    "warmup_requests": 15,
+    "measured_requests": 50,
+    "concurrency": 1,
+    "model_order": [
+      "h3_image"
+    ],
+    "variant_order": [
+      "pr_bf16",
+      "pr_mxfp8",
+      "pr_fp8_block",
+      "base_bf16"
+    ],
+    "measurement": "Wall time around synchronous Omni.generate; initialization, output checking and file writing excluded",
+    "cache_policy": "Same engine for all 25 requests per case; persistent kernel caches retained; no output-result caching enabled",
+    "seed_policy": "Recreate CPU generator with the same manifest seed for every request",
+    "sampling": "All 20 post-warmup requests retained, including outliers; no adaptive stopping",
+    "stability_limits": {
+      "coefficient_of_variation_max": 0.05,
+      "half_median_relative_change_max": 0.05,
+      "p95_over_p50_max": 1.1
+    },
+    "quantiles": "numpy percentile method=linear",
+    "labels": "A completed case is called stable only when all three declared limits pass; otherwise its measured distribution is reported as unstable",
+    "case_timeout_seconds": 2400,
+    "reason": "Confirm H3-Image latency after initial Rubin runs showed early isolated spikes; rerun all modes on both GPU families and retain the original data"
+  },
+  "gpu_names": [
+    "NVIDIA Graphics Device",
+    "NVIDIA Graphics Device",
+    "NVIDIA Graphics Device",
+    "NVIDIA Graphics Device"
+  ],
+  "gpu_capabilities": [
+    [
+      10,
+      7
+    ],
+    [
+      10,
+      7
+    ],
+    [
+      10,
+      7
+    ],
+    [
+      10,
+      7
+    ]
+  ],
+  "requests": [
+    {
+      "phase": "warmup",
+      "index": 0,
+      "seconds": 2.2080060860025696,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 1,
+      "seconds": 1.7026979950023815,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 2,
+      "seconds": 1.7121577510260977,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 3,
+      "seconds": 1.714404447004199,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 4,
+      "seconds": 1.7140754089923576,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 5,
+      "seconds": 1.7042320920154452,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 6,
+      "seconds": 1.7064455460058525,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 7,
+      "seconds": 1.7173171720351093,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 8,
+      "seconds": 1.7207410049741156,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 9,
+      "seconds": 1.747667249001097,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 10,
+      "seconds": 1.7356599140330218,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 11,
+      "seconds": 1.7190348620060831,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 12,
+      "seconds": 1.7376426839618944,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 13,
+      "seconds": 1.7052824440179393,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 14,
+      "seconds": 1.721452286990825,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 15,
+      "seconds": 1.7188914559665136,
+      "frame_count": 1,
+      "pixel_sha256": [
+        "f3286427e648c3955eb1935a00cb5998096aafede023262df9bf526a19a0cb4a"
+      ]
+    },
+    {
+      "phase": "measured",
+      "index": 16,
+      "seconds": 1.7350074040004984,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 17,
+      "seconds": 1.7086543180048466,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 18,
+      "seconds": 1.7065487210056745,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 19,
+      "seconds": 2.47926663904218,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 20,
+      "seconds": 1.7289403160102665,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 21,
+      "seconds": 1.7233722499804571,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 22,
+      "seconds": 1.7081347070052288,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 23,
+      "seconds": 1.7162607780192047,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 24,
+      "seconds": 1.7276373629574664,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 25,
+      "seconds": 1.720541138027329,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 26,
+      "seconds": 1.7149913129978813,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 27,
+      "seconds": 1.7183979990077205,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 28,
+      "seconds": 1.7280924039660022,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 29,
+      "seconds": 1.7199243379873224,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 30,
+      "seconds": 1.720286158961244,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 31,
+      "seconds": 1.7256305430200882,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 32,
+      "seconds": 1.7151864319457673,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 33,
+      "seconds": 1.7201096750213765,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 34,
+      "seconds": 1.721954022999853,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 35,
+      "seconds": 1.7452957599889487,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 36,
+      "seconds": 1.7075429700198583,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 37,
+      "seconds": 1.7293204549932852,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 38,
+      "seconds": 1.7166066800127737,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 39,
+      "seconds": 1.7161283459863625,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 40,
+      "seconds": 1.720330804004334,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 41,
+      "seconds": 1.7364778509945609,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 42,
+      "seconds": 1.712689161999151,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 43,
+      "seconds": 1.7024528300389647,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 44,
+      "seconds": 2.5031735080410726,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 45,
+      "seconds": 1.7201857980107889,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 46,
+      "seconds": 1.7206684519769624,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 47,
+      "seconds": 1.7151616570190527,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 48,
+      "seconds": 1.7157055790303275,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 49,
+      "seconds": 1.7248760650400072,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 50,
+      "seconds": 1.7212667079875246,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 51,
+      "seconds": 1.711247897008434,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 52,
+      "seconds": 2.4513549029943533,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 53,
+      "seconds": 1.7412249650224112,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 54,
+      "seconds": 1.7180042049731128,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 55,
+      "seconds": 1.7248973869718611,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 56,
+      "seconds": 1.711132668016944,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 57,
+      "seconds": 2.4365227119997144,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 58,
+      "seconds": 1.7995880600064993,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 59,
+      "seconds": 1.7100024009705521,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 60,
+      "seconds": 2.381579786015209,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 61,
+      "seconds": 1.714628708024975,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 62,
+      "seconds": 1.7231968569685705,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 63,
+      "seconds": 1.7448492959956639,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 64,
+      "seconds": 1.7217594260000624,
+      "frame_count": 1,
+      "pixel_sha256": [
+        "f3286427e648c3955eb1935a00cb5998096aafede023262df9bf526a19a0cb4a"
+      ]
+    }
+  ],
+  "benchmark_script_sha256": "a1d1006b49666a51701ac93249a8abb62089d2b3eac1fc8d89eb171e18af2713",
+  "initialization_seconds": 278.95583455695305,
+  "summary": {
+    "n": 50,
+    "p50_seconds": 1.7204359710158315,
+    "p95_seconds": 2.444680417046766,
+    "mean_seconds": 1.7951139974407853,
+    "stddev_seconds": 0.22149966434828497,
+    "min_seconds": 1.7024528300389647,
+    "max_seconds": 2.5031735080410726,
+    "coefficient_of_variation": 0.12339030538677057,
+    "half_median_relative_change": 0.0006726506937028473,
+    "p95_over_p50": 1.4209656495401595
+  },
+  "stability_checks": {
+    "coefficient_of_variation": false,
+    "half_median_relative_change": true,
+    "p95_over_p50": false
+  },
+  "stable": false,
+  "first_last_measured_pixels_identical": true
+}
