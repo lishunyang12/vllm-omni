@@ -1,0 +1,130 @@
+[
+  {
+    "model": "h3_image",
+    "variant": "pr_bf16",
+    "start_unix": 1794706986.141581,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 389.48976016044617
+  },
+  {
+    "model": "h3_image",
+    "variant": "pr_mxfp8",
+    "start_unix": 1794707378.6322439,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 353.1853485107422
+  },
+  {
+    "model": "h3_image",
+    "variant": "pr_fp8_block",
+    "start_unix": 1794707734.8187213,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 343.8271942138672
+  },
+  {
+    "model": "h3_image",
+    "variant": "base_bf16",
+    "start_unix": 1794708081.6469302,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 345.52402925491333
+  },
+  {
+    "model": "h3_video",
+    "variant": "pr_bf16",
+    "start_unix": 1794708430.1722765,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 887.88281416893
+  },
+  {
+    "model": "h3_video",
+    "variant": "pr_mxfp8",
+    "start_unix": 1794709321.0561497,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 808.5393047332764
+  },
+  {
+    "model": "h3_video",
+    "variant": "pr_fp8_block",
+    "start_unix": 1794710132.5966396,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 817.2845275402069
+  },
+  {
+    "model": "h3_video",
+    "variant": "base_bf16",
+    "start_unix": 1794710952.8822436,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 884.8425245285034
+  },
+  {
+    "model": "qwen_image",
+    "variant": "pr_bf16",
+    "start_unix": 1794711840.7258098,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 468.4110176563263
+  },
+  {
+    "model": "qwen_image",
+    "variant": "pr_mxfp8",
+    "start_unix": 1794712312.1379972,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 688.0268442630768
+  },
+  {
+    "model": "qwen_image",
+    "variant": "pr_fp8_block",
+    "start_unix": 1794713003.1661103,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 618.5132627487183
+  },
+  {
+    "model": "qwen_image",
+    "variant": "base_bf16",
+    "start_unix": 1794713624.680405,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 473.2097463607788
+  },
+  {
+    "model": "wan22",
+    "variant": "pr_bf16",
+    "start_unix": 1794714100.891246,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 639.6509618759155
+  },
+  {
+    "model": "wan22",
+    "variant": "pr_mxfp8",
+    "start_unix": 1794714743.5432236,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 755.5149779319763
+  },
+  {
+    "model": "wan22",
+    "variant": "pr_fp8_block",
+    "start_unix": 1794715502.059316,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 749.7393181324005
+  },
+  {
+    "model": "wan22",
+    "variant": "base_bf16",
+    "start_unix": 1794716254.7998219,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 640.2929220199585
+  }
+]

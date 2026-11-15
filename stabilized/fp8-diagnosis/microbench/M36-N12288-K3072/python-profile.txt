@@ -1,0 +1,43 @@
+         65001 function calls (64401 primitive calls) in 0.032 seconds
+
+   Ordered by: internal time
+   List reduced from 135 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+      200    0.002    0.000    0.033    0.000 /usr/local/lib/python3.12/dist-packages/vllm/model_executor/kernels/linear/mxfp8/flashinfer.py:164(apply_weights)
+      400    0.001    0.000    0.004    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/dense_mxfp8_gemm_warp_splitk.py:325(validate_inputs)
+      200    0.001    0.000    0.003    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/quantization/kernels/mxfp8_quantize.py:1310(mxfp8_quantize_cute_dsl)
+      200    0.001    0.000    0.005    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/autotuner/autotuner.py:2156(search_cache)
+      600    0.001    0.000    0.001    0.000 {built-in method torch.empty}
+      200    0.001    0.000    0.020    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/gemm_base.py:7751(mm_mxfp8)
+      200    0.001    0.000    0.001    0.000 {built-in method __new__ of type object at 0xa39208}
+     1800    0.001    0.000    0.003    0.000 {built-in method builtins.any}
+      200    0.001    0.000    0.003    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/gemm_base.py:7349(forward)
+     1600    0.001    0.000    0.001    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/autotuner/autotuner.py:3503(<genexpr>)
+      200    0.001    0.000    0.001    0.000 <string>:2(wrapper)
+      200    0.001    0.000    0.008    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/gemm_base.py:7549(_cute_dsl_mxfp8_runners_sm107)
+      600    0.001    0.000    0.001    0.000 {method 'view' of 'torch._C.TensorBase' objects}
+      200    0.001    0.000    0.025    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/utils.py:1604(wrapper)
+      200    0.001    0.000    0.001    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/utils.py:1315(bind)
+      600    0.001    0.000    0.002    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/autotuner/autotuner.py:4204(_get_cache_key)
+      200    0.001    0.000    0.001    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/gemm_base.py:6570(_check_mm_mxfp8_problem_size)
+      200    0.001    0.000    0.004    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/quantization/fp8_quantization.py:276(mxfp8_quantize)
+      200    0.001    0.000    0.008    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/autotuner/autotuner.py:2591(choose_one)
+      600    0.001    0.000    0.001    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/autotuner/autotuner.py:4153(_find_nearest_profile)
+3600/3000    0.000    0.000    0.001    0.000 {built-in method builtins.hash}
+     5400    0.000    0.000    0.000    0.000 {built-in method builtins.isinstance}
+      200    0.000    0.000    0.000    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/autotuner/autotuner.py:1389(file_key)
+     2400    0.000    0.000    0.000    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/dense_mxfp8_gemm_warp_splitk.py:344(<genexpr>)
+      400    0.000    0.000    0.026    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/api_logging.py:2343(_auto_dump_wrapper)
+      600    0.000    0.000    0.000    0.000 <string>:2(__init__)
+     2400    0.000    0.000    0.001    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/dense_mxfp8_gemm_warp_splitk.py:340(<genexpr>)
+      200    0.000    0.000    0.002    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/gemm_base.py:7316(_cute_dsl_gemm_mxfp8_sm107_runner)
+     1400    0.000    0.000    0.000    0.000 {method 'size' of 'torch._C.TensorBase' objects}
+      200    0.000    0.000    0.005    0.000 /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/utils/mxfp8_utils.py:230(_mxfp8_e4m3_quantize_impl)
+      800    0.000    0.000    0.000    0.000 <frozen importlib.util>:71(find_spec)
+      200    0.000    0.000    0.000    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:228(require_cute_dsl_arch)
+     1200    0.000    0.000    0.000    0.000 <frozen importlib._bootstrap>:645(parent)
+      600    0.000    0.000    0.000    0.000 /usr/local/lib/python3.12/dist-packages/flashinfer/autotuner/autotuner.py:889(__hash__)
+      400    0.000    0.000    0.001    0.000 <frozen os>:680(__getitem__)
+
+

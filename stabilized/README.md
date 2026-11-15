@@ -25,6 +25,10 @@ Both systems use the same vLLM, PyTorch, Triton, FlashInfer, Diffusers and Trans
 
 **30/32 primary cases pass all declared stability checks.** Rubin H3-Image PR BF16 and blockwise FP8 still fail at least one check in the longer confirmation; their raw samples and flags are retained. The confirmation is not selected by favorable performance.
 
+## Rubin FP8 slowdown recheck
+
+[Raw traces, fresh full-request replication and reproducible analysis](fp8-diagnosis/README.md) confirm the Qwen/Wan slowdown. FP8 GEMMs are faster, but dynamic quantization, unfused bias and host dispatch offset the savings. Qwen has substantial per-call host overhead; Wan adds about 322 ms of separate bias work in the two-step diagnostic trace. These are operator diagnostics, not replacement benchmark timings or a measured fix. The original n=20 scores above remain unchanged; Wan is correctly labeled single-GPU.
+
 ## Latency relative to PR BF16
 
 Negative values mean lower P50 latency. Each comparison uses the same system and model. Passing the variability checks does not establish significance for small differences.

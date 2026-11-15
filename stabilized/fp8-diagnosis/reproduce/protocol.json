@@ -1,0 +1,26 @@
+{
+  "warmup_requests": 5,
+  "measured_requests": 3,
+  "concurrency": 1,
+  "model_order": [
+    "qwen_image",
+    "wan22"
+  ],
+  "variant_order": [
+    "pr_bf16",
+    "pr_mxfp8",
+    "pr_fp8_block"
+  ],
+  "measurement": "Wall time around synchronous Omni.generate; initialization, output checking and file writing excluded",
+  "cache_policy": "Persistent caches from initial same-node benchmark retained",
+  "seed_policy": "Recreate CPU generator with the same manifest seed for every request",
+  "sampling": "Diagnostic: 5 warmups, 3 full-step requests, 2 short warmups and one 2-step profiled request; not a replacement stabilized benchmark",
+  "stability_limits": {
+    "coefficient_of_variation_max": 0.05,
+    "half_median_relative_change_max": 0.05,
+    "p95_over_p50_max": 1.1
+  },
+  "quantiles": "numpy percentile method=linear",
+  "labels": "A completed case is called stable only when all three declared limits pass; otherwise its measured distribution is reported as unstable",
+  "case_timeout_seconds": 2400
+}

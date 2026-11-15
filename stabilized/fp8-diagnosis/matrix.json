@@ -1,0 +1,104 @@
+{
+  "container": "docker.io/vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb",
+  "variants": {
+    "base_bf16": {
+      "source": "base",
+      "commit": "eb2077899989a07d0e7acb9cda3217734fdc8909",
+      "quantization": null
+    },
+    "pr_bf16": {
+      "source": "candidate",
+      "commit": "a6a35c86b13db636a07173755b241544dff4c082",
+      "quantization": null
+    },
+    "pr_mxfp8": {
+      "source": "candidate",
+      "commit": "a6a35c86b13db636a07173755b241544dff4c082",
+      "quantization": "mxfp8"
+    },
+    "pr_fp8_block": {
+      "source": "candidate",
+      "commit": "a6a35c86b13db636a07173755b241544dff4c082",
+      "quantization": "fp8_per_block"
+    }
+  },
+  "cases": {
+    "h3_image": {
+      "prompt": "A red bicycle leaning against a weathered blue wooden door, a wicker basket filled with yellow sunflowers, warm afternoon sunlight, intricate wood grain and brick textures, realistic photography.",
+      "negative_prompt": "",
+      "seed": 42,
+      "height": 4096,
+      "width": 4096,
+      "steps": 6,
+      "guidance_scale": 1.0,
+      "true_cfg_scale": 1.0,
+      "frames": 1,
+      "fps": 24
+    },
+    "h3_video": {
+      "prompt": "A red fox walks slowly through a sunlit meadow of tall grass and white wildflowers. A gentle breeze moves the grass and the fox's fur. The camera tracks smoothly alongside the fox, realistic cinematic detail, natural lighting.",
+      "negative_prompt": "",
+      "seed": 42,
+      "height": 768,
+      "width": 1344,
+      "steps": 50,
+      "guidance_scale": 1.0,
+      "true_cfg_scale": 1.0,
+      "frames": 124,
+      "fps": 24,
+      "extra_args": {
+        "task": "t2va",
+        "aspect_ratio": "16:9",
+        "flow_shift": 12.0,
+        "audio_flow_shift": 3.0,
+        "preencode_mp4": false
+      }
+    },
+    "qwen_image": {
+      "prompt": "A small red panda wearing a blue scarf in a snowy forest, soft morning light, detailed fur, snowflakes on pine branches, realistic wildlife photography.",
+      "negative_prompt": "",
+      "seed": 142,
+      "height": 1024,
+      "width": 1024,
+      "steps": 50,
+      "guidance_scale": 1.0,
+      "true_cfg_scale": 4.0,
+      "frames": 1,
+      "fps": 24
+    },
+    "wan22": {
+      "prompt": "A red fox walks slowly through a sunlit meadow of tall grass and white wildflowers. A gentle breeze moves the grass and the fox's fur. The camera tracks smoothly alongside the fox, realistic cinematic detail, natural lighting.",
+      "negative_prompt": "",
+      "seed": 42,
+      "height": 704,
+      "width": 1280,
+      "steps": 50,
+      "guidance_scale": 5.0,
+      "true_cfg_scale": 1.0,
+      "frames": 121,
+      "fps": 24
+    }
+  },
+  "models": {
+    "h3_image": {
+      "model": "MiniMaxAI/MiniMax-H3-Image",
+      "revision": "7b6142f879bf7a973c449e1dea5480289736cdbd"
+    },
+    "h3_encoder": {
+      "model": "MiniMaxAI/MiniMax-H3",
+      "revision": "0919fb684102ef115126612f3fbb84d1027e7317"
+    },
+    "qwen_image": {
+      "model": "Qwen/Qwen-Image",
+      "revision": "75e0b4be04f60ec59a75f475837eced720f823b6"
+    },
+    "wan22": {
+      "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+      "revision": "b8fff7315c768468a5333511427288870b2e9635"
+    },
+    "h3_video": {
+      "model": "MiniMaxAI/MiniMax-H3",
+      "revision": "0919fb684102ef115126612f3fbb84d1027e7317"
+    }
+  }
+}

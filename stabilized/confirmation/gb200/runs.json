@@ -1,0 +1,34 @@
+[
+  {
+    "model": "h3_image",
+    "variant": "pr_bf16",
+    "start_unix": 1794720516.3010187,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 344.79971718788147
+  },
+  {
+    "model": "h3_image",
+    "variant": "pr_mxfp8",
+    "start_unix": 1794720864.101363,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 340.7154805660248
+  },
+  {
+    "model": "h3_image",
+    "variant": "pr_fp8_block",
+    "start_unix": 1794721207.817563,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 326.3473901748657
+  },
+  {
+    "model": "h3_image",
+    "variant": "base_bf16",
+    "start_unix": 1794721537.1658883,
+    "returncode": 0,
+    "status": "completed",
+    "wall_seconds": 339.2633898258209
+  }
+]

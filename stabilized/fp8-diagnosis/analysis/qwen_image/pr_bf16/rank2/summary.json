@@ -1,0 +1,154 @@
+{
+  "analysis_version": 3,
+  "trace_sha256": "a4d209c2f271ec1d9ce4220a7f2b8a8ce6db6aee40e50cec4c5b0c9e424a7974",
+  "trace_bytes": 6262918,
+  "pipeline_wall_ms": 555.411919,
+  "gpu_kernel_count": 17601,
+  "gpu_kernel_sum_ms": 151.8195680000001,
+  "gpu_kernel_union_within_pipeline_ms": 134.947375,
+  "noncommunication_kernel_union_within_pipeline_ms": 109.7582001953125,
+  "cpu_operator_count": 122121,
+  "cpu_operator_union_within_pipeline_ms": 406.3701982421875,
+  "cuda_api_count": 51061,
+  "cuda_api_inclusive_sum_ms": 108.53976700000608,
+  "separate_2d_bias_add_calls": 0,
+  "separate_2d_bias_add_gpu_ms": 0.0,
+  "matched_dit_scope": "all quantized-scope DiT linears",
+  "matched_dit_linear_calls": 1920,
+  "matched_dit_gpu_kernel_count": 2040,
+  "matched_dit_gemm_gpu_ms": 33.87515700000002,
+  "kernel_name_categories_ms": {
+    "communication": 25.18917699999999,
+    "other": 68.41019999999996,
+    "attention": 9.981247000000002,
+    "gemm_or_matmul": 48.238944000000004
+  },
+  "top_kernels": [
+    {
+      "name": "ncclDevKernel_SendRecv(ncclDevKernelArgsStorage<4096ul>)",
+      "category": "communication",
+      "count": 960,
+      "gpu_us": 21727.70299999999
+    },
+    {
+      "name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 4, 64, 64>(at::native::(anonymous namespace)::OpaqueType<2u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 64, 64>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+      "category": "other",
+      "count": 1184,
+      "gpu_us": 13027.971999999983
+    },
+    {
+      "name": "cudnn_generated_fort_native_sdpa_sm107_flash_fprop_f16_knob_1_128x128x128_4x1x1_cga1x1x1_kernel0_0",
+      "category": "attention",
+      "count": 240,
+      "gpu_us": 8292.691
+    },
+    {
+      "name": "nvjet_sm107_tst_256x256_64x4_2x1_Breuse_v_bz_bias_TNN",
+      "category": "gemm_or_matmul",
+      "count": 240,
+      "gpu_us": 7688.311000000002
+    },
+    {
+      "name": "nvjet_sm107_tst_160x128_64x12_2x2_2cta_h_bz_bias_TNN",
+      "category": "gemm_or_matmul",
+      "count": 240,
+      "gpu_us": 7683.000000000007
+    },
+    {
+      "name": "nvjet_sm107_tst_448x128_64x7_1x2_2cta_v_bz_bias_TNN",
+      "category": "gemm_or_matmul",
+      "count": 240,
+      "gpu_us": 6752.304000000006
+    },
+    {
+      "name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1})",
+      "category": "other",
+      "count": 1304,
+      "gpu_us": 6535.667000000002
+    },
+    {
+      "name": "void cudnn::engines_precompiled::nchwToNhwcKernel<__nv_bfloat16, __nv_bfloat16, float, false, true, (cudnnKernelDataType_t)0>(cudnn::engines_precompiled::nchw2nhwc_params_t<float>, __nv_bfloat16 const*, __nv_bfloat16*)",
+      "category": "other",
+      "count": 64,
+      "gpu_us": 6382.154
+    },
+    {
+      "name": "void at::native::elementwise_kernel<128, 4, at::native::(anonymous namespace)::maybe_strided_chunk_copy(at::TensorIteratorBase&)::{lambda(int)#1}>(int, at::native::(anonymous namespace)::maybe_strided_chunk_copy(at::TensorIteratorBase&)::{lambda(int)#1})",
+      "category": "other",
+      "count": 1680,
+      "gpu_us": 5823.108999999999
+    },
+    {
+      "name": "nvjet_sm107_tst_128x8_64x16_4x1_v_bz_bias_TNT",
+      "category": "gemm_or_matmul",
+      "count": 480,
+      "gpu_us": 5224.074999999997
+    },
+    {
+      "name": "_adaln_scale_shift_layernorm_kernel",
+      "category": "other",
+      "count": 960,
+      "gpu_us": 3324.7239999999974
+    },
+    {
+      "name": "ncclDevKernel_AllGatherV_RING(ncclDevKernelArgsStorage<4096ul>)",
+      "category": "communication",
+      "count": 240,
+      "gpu_us": 3153.216
+    },
+    {
+      "name": "rotary_kernel",
+      "category": "other",
+      "count": 960,
+      "gpu_us": 3083.0900000000197
+    },
+    {
+      "name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 128, 1>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+      "category": "other",
+      "count": 720,
+      "gpu_us": 3012.7900000000004
+    },
+    {
+      "name": "cutlass3x_sm100_tensorop_s256x256x16implicit_gemm_fprop_bf16_bf16_f32_void_bf16_f32_256x256x64_dyn_cga_ndhwc_ndhwc_ndhwc_align8_2sm_relu_valpha_stream_k",
+      "category": "gemm_or_matmul",
+      "count": 22,
+      "gpu_us": 2898.7400000000002
+    },
+    {
+      "name": "nvjet_sm107_tst_128x128_64x12_2x1_2cta_v_bz_bias_TNT",
+      "category": "gemm_or_matmul",
+      "count": 240,
+      "gpu_us": 2807.795999999998
+    },
+    {
+      "name": "kernel_cutlass_kernel_torch_vendorquackrmsnormRMSNorm_object_at__tensorptrbf16gmemalign16o128i64div1281_tensorptrbf16_gmem_align16_o_812801_None_None_tensorptrbf16gmemalign16o128i64div128_0",
+      "category": "other",
+      "count": 960,
+      "gpu_us": 2579.283999999995
+    },
+    {
+      "name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::converting_copy_kernel_cuda<float, c10::BFloat16>(at::TensorIteratorBase&)::{lambda(float)#1}>(at::TensorIteratorBase&, at::native::converting_copy_kernel_cuda<float, c10::BFloat16>(at::TensorIteratorBase&)::{lambda(float)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::converting_copy_kernel_cuda<float, c10::BFloat16>(at::TensorIteratorBase&)::{lambda(float)#1}>(at::TensorIteratorBase&, at::native::converting_copy_kernel_cuda<float, c10::BFloat16>(at::TensorIteratorBase&)::{lambda(float)#1} const&)::{lambda(int)#1})",
+      "category": "other",
+      "count": 960,
+      "gpu_us": 2539.7939999999885
+    },
+    {
+      "name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&)::{lambda(int)#1})",
+      "category": "other",
+      "count": 139,
+      "gpu_us": 2292.75
+    },
+    {
+      "name": "_cat_pad_rows_kernel",
+      "category": "other",
+      "count": 6,
+      "gpu_us": 2247.12
+    }
+  ],
+  "notes": [
+    "Two-step diagnostic request after warmup; not a replacement end-to-end latency benchmark.",
+    "Kernel duration sums may overlap across streams and must not be added to CPU times.",
+    "Name-based categories are descriptive; direct kernel/operator associations use External id.",
+    "NCCL duration includes peer waiting and does not alone identify a network bottleneck."
+  ]
+}

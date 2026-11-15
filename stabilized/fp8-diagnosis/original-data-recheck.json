@@ -1,0 +1,170 @@
+[
+  {
+    "model": "qwen_image",
+    "variant": "pr_bf16",
+    "n": 20,
+    "p50": 7.568890059978003,
+    "min": 7.507212220982183,
+    "max": 7.763110353029333,
+    "cv_percent": 0.9146331303835951,
+    "autotune_or_compile_lines_after_warmup": 0,
+    "denoising_progress_rates": [
+      [
+        "6.67",
+        "it/s"
+      ],
+      [
+        "6.64",
+        "it/s"
+      ],
+      [
+        "6.75",
+        "it/s"
+      ],
+      [
+        "6.68",
+        "it/s"
+      ]
+    ]
+  },
+  {
+    "model": "qwen_image",
+    "variant": "pr_mxfp8",
+    "n": 20,
+    "p50": 14.432818100001896,
+    "min": 14.24906829802785,
+    "max": 16.20588427700568,
+    "cv_percent": 3.1479397091059704,
+    "autotune_or_compile_lines_after_warmup": 0,
+    "denoising_progress_rates": [
+      [
+        "3.52",
+        "it/s"
+      ],
+      [
+        "3.51",
+        "it/s"
+      ],
+      [
+        "3.51",
+        "it/s"
+      ],
+      [
+        "3.48",
+        "it/s"
+      ]
+    ]
+  },
+  {
+    "model": "qwen_image",
+    "variant": "pr_fp8_block",
+    "n": 20,
+    "p50": 13.465089305012953,
+    "min": 13.329174359038007,
+    "max": 13.820271690026857,
+    "cv_percent": 0.7989327704936158,
+    "autotune_or_compile_lines_after_warmup": 0,
+    "denoising_progress_rates": [
+      [
+        "3.44",
+        "it/s"
+      ],
+      [
+        "3.64",
+        "it/s"
+      ],
+      [
+        "3.70",
+        "it/s"
+      ],
+      [
+        "3.68",
+        "it/s"
+      ]
+    ]
+  },
+  {
+    "model": "wan22",
+    "variant": "pr_bf16",
+    "n": 20,
+    "p50": 23.891175144497538,
+    "min": 23.861032645974774,
+    "max": 23.93688039801782,
+    "cv_percent": 0.07056554524970385,
+    "autotune_or_compile_lines_after_warmup": 0,
+    "denoising_progress_rates": [
+      [
+        "2.33",
+        "it/s"
+      ],
+      [
+        "2.33",
+        "it/s"
+      ],
+      [
+        "2.33",
+        "it/s"
+      ],
+      [
+        "2.34",
+        "it/s"
+      ]
+    ]
+  },
+  {
+    "model": "wan22",
+    "variant": "pr_mxfp8",
+    "n": 20,
+    "p50": 26.8754634935176,
+    "min": 26.859820929006673,
+    "max": 26.910467130015604,
+    "cv_percent": 0.043104056714836,
+    "autotune_or_compile_lines_after_warmup": 0,
+    "denoising_progress_rates": [
+      [
+        "2.05",
+        "it/s"
+      ],
+      [
+        "2.05",
+        "it/s"
+      ],
+      [
+        "2.05",
+        "it/s"
+      ],
+      [
+        "2.05",
+        "it/s"
+      ]
+    ]
+  },
+  {
+    "model": "wan22",
+    "variant": "pr_fp8_block",
+    "n": 20,
+    "p50": 28.30873764201533,
+    "min": 28.290155543014407,
+    "max": 28.379542289010715,
+    "cv_percent": 0.06115980313837398,
+    "autotune_or_compile_lines_after_warmup": 0,
+    "denoising_progress_rates": [
+      [
+        "1.94",
+        "it/s"
+      ],
+      [
+        "1.93",
+        "it/s"
+      ],
+      [
+        "1.94",
+        "it/s"
+      ],
+      [
+        "1.93",
+        "it/s"
+      ]
+    ]
+  }
+]

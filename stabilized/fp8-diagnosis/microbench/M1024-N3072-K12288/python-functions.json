@@ -1,0 +1,1154 @@
+[
+  {
+    "file": "flashinfer.py",
+    "line": 164,
+    "function": "apply_weights",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.001553235,
+    "cumulative_seconds": 0.027135809
+  },
+  {
+    "file": "mxfp8_quantize.py",
+    "line": 1310,
+    "function": "mxfp8_quantize_cute_dsl",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.0011672330000000002,
+    "cumulative_seconds": 0.002873426
+  },
+  {
+    "file": "autotuner.py",
+    "line": 2156,
+    "function": "search_cache",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.0009755530000000001,
+    "cumulative_seconds": 0.004003044
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<built-in method torch.empty>",
+    "calls": 600,
+    "primitive_calls": 600,
+    "self_seconds": 0.0009554530000000001,
+    "cumulative_seconds": 0.0009554530000000001
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 7751,
+    "function": "mm_mxfp8",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.0009418810000000001,
+    "cumulative_seconds": 0.015220359000000001
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<built-in method __new__ of type object at 0xa39208>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.0008690890000000001,
+    "cumulative_seconds": 0.0008690890000000001
+  },
+  {
+    "file": "<string>",
+    "line": 2,
+    "function": "wrapper",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.00072278,
+    "cumulative_seconds": 0.00072278
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 7349,
+    "function": "forward",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.0006569410000000001,
+    "cumulative_seconds": 0.002024845
+  },
+  {
+    "file": "dense_mxfp8_gemm_warp_splitk.py",
+    "line": 325,
+    "function": "validate_inputs",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000638998,
+    "cumulative_seconds": 0.001684766
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'view' of 'torch._C.TensorBase' objects>",
+    "calls": 600,
+    "primitive_calls": 600,
+    "self_seconds": 0.000558381,
+    "cumulative_seconds": 0.000558381
+  },
+  {
+    "file": "utils.py",
+    "line": 1604,
+    "function": "wrapper",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000538876,
+    "cumulative_seconds": 0.019454641
+  },
+  {
+    "file": "<frozen abc>",
+    "line": 105,
+    "function": "__new__",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000531778,
+    "cumulative_seconds": 0.0016324920000000001
+  },
+  {
+    "file": "utils.py",
+    "line": 1315,
+    "function": "bind",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.0005205510000000001,
+    "cumulative_seconds": 0.0006299330000000001
+  },
+  {
+    "file": "autotuner.py",
+    "line": 3503,
+    "function": "<genexpr>",
+    "calls": 1600,
+    "primitive_calls": 1600,
+    "self_seconds": 0.0005197940000000001,
+    "cumulative_seconds": 0.000860878
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 7549,
+    "function": "_cute_dsl_mxfp8_runners_sm107",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.0005069730000000001,
+    "cumulative_seconds": 0.004951877
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 6570,
+    "function": "_check_mm_mxfp8_problem_size",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000487706,
+    "cumulative_seconds": 0.000777766
+  },
+  {
+    "file": "autotuner.py",
+    "line": 2591,
+    "function": "choose_one",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000473659,
+    "cumulative_seconds": 0.00614149
+  },
+  {
+    "file": "fp8_quantization.py",
+    "line": 276,
+    "function": "mxfp8_quantize",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000469727,
+    "cumulative_seconds": 0.003920204
+  },
+  {
+    "file": "autotuner.py",
+    "line": 1389,
+    "function": "file_key",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.00042534900000000005,
+    "cumulative_seconds": 0.00044565
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<built-in method builtins.isinstance>",
+    "calls": 4400,
+    "primitive_calls": 4400,
+    "self_seconds": 0.00036813000000000004,
+    "cumulative_seconds": 0.00036813000000000004
+  },
+  {
+    "file": "api_logging.py",
+    "line": 2343,
+    "function": "_auto_dump_wrapper",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 0.000368,
+    "cumulative_seconds": 0.020262507000000003
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<built-in method builtins.any>",
+    "calls": 600,
+    "primitive_calls": 600,
+    "self_seconds": 0.00035849300000000004,
+    "cumulative_seconds": 0.0010203290000000002
+  },
+  {
+    "file": "autotuner.py",
+    "line": 4204,
+    "function": "_get_cache_key",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 0.00034906600000000004,
+    "cumulative_seconds": 0.001651364
+  },
+  {
+    "file": "autotuner.py",
+    "line": 4153,
+    "function": "_find_nearest_profile",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 0.00034306900000000005,
+    "cumulative_seconds": 0.0006694120000000001
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<built-in method builtins.hash>",
+    "calls": 2400,
+    "primitive_calls": 2000,
+    "self_seconds": 0.000333891,
+    "cumulative_seconds": 0.000568038
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 7316,
+    "function": "_cute_dsl_gemm_mxfp8_sm107_runner",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000296185,
+    "cumulative_seconds": 0.002561485
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'size' of 'torch._C.TensorBase' objects>",
+    "calls": 1400,
+    "primitive_calls": 1400,
+    "self_seconds": 0.00028231400000000003,
+    "cumulative_seconds": 0.00028231400000000003
+  },
+  {
+    "file": "mxfp8_utils.py",
+    "line": 230,
+    "function": "_mxfp8_e4m3_quantize_impl",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000272645,
+    "cumulative_seconds": 0.004891493
+  },
+  {
+    "file": "<frozen importlib._bootstrap>",
+    "line": 645,
+    "function": "parent",
+    "calls": 1200,
+    "primitive_calls": 1200,
+    "self_seconds": 0.000260639,
+    "cumulative_seconds": 0.00042928100000000005
+  },
+  {
+    "file": "dense_mxfp8_gemm_warp_splitk.py",
+    "line": 340,
+    "function": "<genexpr>",
+    "calls": 1200,
+    "primitive_calls": 1200,
+    "self_seconds": 0.000255581,
+    "cumulative_seconds": 0.000342386
+  },
+  {
+    "file": "availability.py",
+    "line": 228,
+    "function": "require_cute_dsl_arch",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.00025551400000000003,
+    "cumulative_seconds": 0.000346433
+  },
+  {
+    "file": "<string>",
+    "line": 2,
+    "function": "__init__",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 0.000252569,
+    "cumulative_seconds": 0.000252569
+  },
+  {
+    "file": "<frozen importlib.util>",
+    "line": 71,
+    "function": "find_spec",
+    "calls": 800,
+    "primitive_calls": 800,
+    "self_seconds": 0.000251857,
+    "cumulative_seconds": 0.000419693
+  },
+  {
+    "file": "<frozen os>",
+    "line": 680,
+    "function": "__getitem__",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 0.00024009600000000003,
+    "cumulative_seconds": 0.00045667900000000004
+  },
+  {
+    "file": "utils.py",
+    "line": 1515,
+    "function": "_is_problem_size_supported",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.00023387100000000002,
+    "cumulative_seconds": 0.0019314170000000002
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<built-in method _abc._abc_init>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000231625,
+    "cumulative_seconds": 0.000231625
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<built-in method builtins.hasattr>",
+    "calls": 1800,
+    "primitive_calls": 1800,
+    "self_seconds": 0.000230733,
+    "cumulative_seconds": 0.000251833
+  },
+  {
+    "file": "dense_mxfp8_gemm_warp_splitk.py",
+    "line": 344,
+    "function": "<genexpr>",
+    "calls": 1200,
+    "primitive_calls": 1200,
+    "self_seconds": 0.00022219700000000001,
+    "cumulative_seconds": 0.00022219700000000001
+  },
+  {
+    "file": "<frozen importlib._bootstrap>",
+    "line": 1390,
+    "function": "_handle_fromlist",
+    "calls": 600,
+    "primitive_calls": 600,
+    "self_seconds": 0.000217134,
+    "cumulative_seconds": 0.00037885800000000004
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 7334,
+    "function": "CuteDSLMxfp8Sm107GemmRunner",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000212085,
+    "cumulative_seconds": 0.00032827
+  },
+  {
+    "file": "autotuner.py",
+    "line": 3501,
+    "function": "_get_input_sizes",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000211854,
+    "cumulative_seconds": 0.001072732
+  },
+  {
+    "file": "microbench.py",
+    "line": 54,
+    "function": "<lambda>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.00021168600000000002,
+    "cumulative_seconds": 0.027347495000000003
+  },
+  {
+    "file": "utils.py",
+    "line": 1583,
+    "function": "_get_capability",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.00020187200000000002,
+    "cumulative_seconds": 0.000241942
+  },
+  {
+    "file": "tvm_ffi_provider.py",
+    "line": 1072,
+    "function": "__call__",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 0.000199495,
+    "cumulative_seconds": 0.001535387
+  },
+  {
+    "file": "autotuner.py",
+    "line": 889,
+    "function": "__hash__",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 0.00018798100000000002,
+    "cumulative_seconds": 0.000268486
+  },
+  {
+    "file": "<frozen _collections_abc>",
+    "line": 804,
+    "function": "get",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 0.00018636500000000002,
+    "cumulative_seconds": 0.0006430440000000001
+  },
+  {
+    "file": "autotuner.py",
+    "line": 859,
+    "function": "__call__",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.00018396500000000002,
+    "cumulative_seconds": 0.0022088100000000003
+  },
+  {
+    "file": "autotuner.py",
+    "line": 2081,
+    "function": "_effective_skip_ops",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.00017692100000000002,
+    "cumulative_seconds": 0.00024682100000000004
+  },
+  {
+    "file": "flashinfer.py",
+    "line": 1112,
+    "function": "_mm_mxfp8",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000175815,
+    "cumulative_seconds": 0.01974039
+  },
+  {
+    "file": "availability.py",
+    "line": 48,
+    "function": "is_cute_dsl_available",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 0.000171404,
+    "cumulative_seconds": 0.0005910970000000001
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'rpartition' of 'str' objects>",
+    "calls": 1200,
+    "primitive_calls": 1200,
+    "self_seconds": 0.00016864200000000002,
+    "cumulative_seconds": 0.00016864200000000002
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'startswith' of 'str' objects>",
+    "calls": 800,
+    "primitive_calls": 800,
+    "self_seconds": 0.000167836,
+    "cumulative_seconds": 0.000167836
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 9828,
+    "function": "_mxfp8_swizzled_scale_len",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 0.000162866,
+    "cumulative_seconds": 0.00025379
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'get' of 'dict' objects>",
+    "calls": 1000,
+    "primitive_calls": 1000,
+    "self_seconds": 0.000149803,
+    "cumulative_seconds": 0.000149803
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<built-in method builtins.__build_class__>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000145804,
+    "cumulative_seconds": 0.0021065660000000003
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 7296,
+    "function": "_use_sm107_mxfp8_cute_dsl",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000138791,
+    "cumulative_seconds": 0.00017594800000000002
+  },
+  {
+    "file": "<frozen os>",
+    "line": 762,
+    "function": "encode",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 0.000130653,
+    "cumulative_seconds": 0.000216583
+  },
+  {
+    "file": "autotuner.py",
+    "line": 2059,
+    "function": "_winner_cache_identity",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 0.000127234,
+    "cumulative_seconds": 0.000214644
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 7447,
+    "function": "supports_inputs",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000124634,
+    "cumulative_seconds": 0.0018094
+  },
+  {
+    "file": "torch_utils.py",
+    "line": 1076,
+    "function": "wrapper",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000123986,
+    "cumulative_seconds": 0.01992766
+  },
+  {
+    "file": "gemm_mm_fp4_cute_dsl.py",
+    "line": 44,
+    "function": "_compile_block_scaled_gemm",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.00012307,
+    "cumulative_seconds": 0.00036618100000000004
+  },
+  {
+    "file": "typing.py",
+    "line": 392,
+    "function": "inner",
+    "calls": 600,
+    "primitive_calls": 600,
+    "self_seconds": 0.00011618500000000001,
+    "cumulative_seconds": 0.00011618500000000001
+  },
+  {
+    "file": "utils.py",
+    "line": 1478,
+    "function": "is_backend_supported",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.00011541200000000001,
+    "cumulative_seconds": 0.00018580700000000002
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'data_ptr' of 'torch._C.TensorBase' objects>",
+    "calls": 600,
+    "primitive_calls": 600,
+    "self_seconds": 0.00011344500000000001,
+    "cumulative_seconds": 0.00011344500000000001
+  },
+  {
+    "file": "template.py",
+    "line": 63,
+    "function": "_is_trace_dump_enabled",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 0.00011090000000000001,
+    "cumulative_seconds": 0.0007539440000000001
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 6746,
+    "function": "_cute_dsl_gemm_mxfp8_requirement",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.00011059100000000001,
+    "cumulative_seconds": 0.000878126
+  },
+  {
+    "file": "autotuner.py",
+    "line": 1911,
+    "function": "_get_override_stack",
+    "calls": 600,
+    "primitive_calls": 600,
+    "self_seconds": 0.000107298,
+    "cumulative_seconds": 0.000163968
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 7912,
+    "function": "<lambda>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 0.000106062,
+    "cumulative_seconds": 0.0052338870000000004
+  },
+  {
+    "file": "__init__.py",
+    "line": 583,
+    "function": "is_compiling",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 0.00010299400000000001,
+    "cumulative_seconds": 0.000130987
+  },
+  {
+    "file": "mxfp8_utils.py",
+    "line": 263,
+    "function": "mxfp8_e4m3_quantize",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 9.7348e-05,
+    "cumulative_seconds": 0.0050565440000000005
+  },
+  {
+    "file": "dense_mxfp8_gemm_warp_splitk.py",
+    "line": 342,
+    "function": "<genexpr>",
+    "calls": 800,
+    "primitive_calls": 800,
+    "self_seconds": 9.725300000000001e-05,
+    "cumulative_seconds": 9.725300000000001e-05
+  },
+  {
+    "file": "utils.py",
+    "line": 257,
+    "function": "_get_cache_buf",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 9.415500000000001e-05,
+    "cumulative_seconds": 0.00020251200000000002
+  },
+  {
+    "file": "utils.py",
+    "line": 63,
+    "function": "torch_to_cutlass_dtype",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 9.3881e-05,
+    "cumulative_seconds": 9.3881e-05
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 9824,
+    "function": "_pad_up",
+    "calls": 800,
+    "primitive_calls": 800,
+    "self_seconds": 9.092400000000001e-05,
+    "cumulative_seconds": 9.092400000000001e-05
+  },
+  {
+    "file": "utils.py",
+    "line": 1533,
+    "function": "has_backend_choices",
+    "calls": 800,
+    "primitive_calls": 800,
+    "self_seconds": 9.011800000000001e-05,
+    "cumulative_seconds": 9.011800000000001e-05
+  },
+  {
+    "file": "__init__.py",
+    "line": 1355,
+    "function": "current_device",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 8.2358e-05,
+    "cumulative_seconds": 0.000243111
+  },
+  {
+    "file": "<string>",
+    "line": 2,
+    "function": "__hash__",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 7.9317e-05,
+    "cumulative_seconds": 0.000158605
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 6951,
+    "function": "_check_cute_dsl_availability",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 7.9114e-05,
+    "cumulative_seconds": 0.000342592
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 6926,
+    "function": "_check_cute_dsl_arch",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 7.851e-05,
+    "cumulative_seconds": 0.000424943
+  },
+  {
+    "file": "autotuner.py",
+    "line": 4221,
+    "function": "_profiling_policy",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 7.5438e-05,
+    "cumulative_seconds": 0.00014948400000000002
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'items' of 'dict' objects>",
+    "calls": 600,
+    "primitive_calls": 600,
+    "self_seconds": 7.0324e-05,
+    "cumulative_seconds": 7.0324e-05
+  },
+  {
+    "file": "module.py",
+    "line": 1963,
+    "function": "__getattr__",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 6.962900000000001e-05,
+    "cumulative_seconds": 6.962900000000001e-05
+  },
+  {
+    "file": "autotuner.py",
+    "line": 1918,
+    "function": "_effective_measure_policy",
+    "calls": 600,
+    "primitive_calls": 600,
+    "self_seconds": 6.2669e-05,
+    "cumulative_seconds": 6.2669e-05
+  },
+  {
+    "file": "autotuner.py",
+    "line": 2030,
+    "function": "_winner_cache",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 6.0742e-05,
+    "cumulative_seconds": 0.000176271
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'encode' of 'str' objects>",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 5.9296e-05,
+    "cumulative_seconds": 5.9296e-05
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 7335,
+    "function": "get_cache_key_extras",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 5.547e-05,
+    "cumulative_seconds": 5.547e-05
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 7020,
+    "function": "get_cache_key_extras",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 5.5032000000000004e-05,
+    "cumulative_seconds": 5.5032000000000004e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'contiguous' of 'torch._C.TensorBase' objects>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 5.2254000000000005e-05,
+    "cumulative_seconds": 5.2254000000000005e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'append' of 'list' objects>",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 5.1977e-05,
+    "cumulative_seconds": 5.1977e-05
+  },
+  {
+    "file": "inspect.py",
+    "line": 3058,
+    "function": "parameters",
+    "calls": 800,
+    "primitive_calls": 800,
+    "self_seconds": 5.0984000000000005e-05,
+    "cumulative_seconds": 5.0984000000000005e-05
+  },
+  {
+    "file": "autotuner.py",
+    "line": 2087,
+    "function": "_override_tuning_buckets",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 5.0141e-05,
+    "cumulative_seconds": 0.00010889800000000001
+  },
+  {
+    "file": "autotuner.py",
+    "line": 576,
+    "function": "l2_cache_policy",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 4.8846000000000006e-05,
+    "cumulative_seconds": 7.4046e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method '__exit__' of '_thread.RLock' objects>",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 4.8525e-05,
+    "cumulative_seconds": 4.8525e-05
+  },
+  {
+    "file": "gemm_mm_fp4_cute_dsl.py",
+    "line": 256,
+    "function": "_prepare_alpha_for_launch",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 4.7912000000000005e-05,
+    "cumulative_seconds": 8.032e-05
+  },
+  {
+    "file": "autotuner.py",
+    "line": 2000,
+    "function": "_active_managed_store",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 4.7005e-05,
+    "cumulative_seconds": 4.7005e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<built-in method torch._C._cuda_getDevice>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 4.5528e-05,
+    "cumulative_seconds": 4.5528e-05
+  },
+  {
+    "file": "__init__.py",
+    "line": 588,
+    "function": "_lazy_init",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 4.5205000000000005e-05,
+    "cumulative_seconds": 0.00011522500000000001
+  },
+  {
+    "file": "autotuner.py",
+    "line": 1970,
+    "function": "_tactic_still_valid",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 4.4641e-05,
+    "cumulative_seconds": 8.1153e-05
+  },
+  {
+    "file": "autotuner.py",
+    "line": 2095,
+    "function": "_override_round_up",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 4.38e-05,
+    "cumulative_seconds": 9.738300000000001e-05
+  },
+  {
+    "file": "__init__.py",
+    "line": 527,
+    "function": "is_initialized",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 4.3075000000000003e-05,
+    "cumulative_seconds": 7.002000000000001e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<built-in method builtins.min>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 4.2562000000000003e-05,
+    "cumulative_seconds": 4.2562000000000003e-05
+  },
+  {
+    "file": "autotuner.py",
+    "line": 2074,
+    "function": "_get_skip_ops_stack",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 4.2409e-05,
+    "cumulative_seconds": 6.99e-05
+  },
+  {
+    "file": "autotuner.py",
+    "line": 2103,
+    "function": "_override_cuda_graph_profile_replays",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 4.2384e-05,
+    "cumulative_seconds": 9.401200000000001e-05
+  },
+  {
+    "file": "quant_activation.py",
+    "line": 72,
+    "function": "as_quantized_activation",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 4.0399000000000004e-05,
+    "cumulative_seconds": 6.6606e-05
+  },
+  {
+    "file": "__init__.py",
+    "line": 302,
+    "function": "__getattr__",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 3.7455e-05,
+    "cumulative_seconds": 3.7455e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'is_contiguous' of 'torch._C.TensorBase' objects>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 3.7157000000000004e-05,
+    "cumulative_seconds": 3.7157000000000004e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<built-in method builtins.getattr>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 3.6512000000000005e-05,
+    "cumulative_seconds": 3.6512000000000005e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'element_size' of 'torch._C.TensorBase' objects>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 3.6413000000000005e-05,
+    "cumulative_seconds": 3.6413000000000005e-05
+  },
+  {
+    "file": "gemm_base.py",
+    "line": 13043,
+    "function": "_validate_mxfp8_output_dtype",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 3.6270000000000003e-05,
+    "cumulative_seconds": 3.6270000000000003e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'dim' of 'torch._C.TensorBase' objects>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 3.4879e-05,
+    "cumulative_seconds": 3.4879e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<built-in method builtins.len>",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 3.4240000000000004e-05,
+    "cumulative_seconds": 3.4240000000000004e-05
+  },
+  {
+    "file": "jit_executor.py",
+    "line": 439,
+    "function": "has_pointer_address_arg_specs",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 3.4194000000000005e-05,
+    "cumulative_seconds": 3.4194000000000005e-05
+  },
+  {
+    "file": "mxfp8_quantize.py",
+    "line": 106,
+    "function": "_use_sm107_tile128x4",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 3.1061e-05,
+    "cumulative_seconds": 3.1061e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'extend' of 'list' objects>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 2.9603e-05,
+    "cumulative_seconds": 2.9603e-05
+  },
+  {
+    "file": "utils.py",
+    "line": 1255,
+    "function": "is_cc_supported",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 2.928e-05,
+    "cumulative_seconds": 2.928e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'pop' of 'dict' objects>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 2.8189e-05,
+    "cumulative_seconds": 2.8189e-05
+  },
+  {
+    "file": "_jit_internal.py",
+    "line": 104,
+    "function": "is_scripting",
+    "calls": 400,
+    "primitive_calls": 400,
+    "self_seconds": 2.7993e-05,
+    "cumulative_seconds": 2.7993e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<built-in method torch._C._cuda_isInBadFork>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 2.6945e-05,
+    "cumulative_seconds": 2.6945e-05
+  },
+  {
+    "file": "autotuner.py",
+    "line": 2020,
+    "function": "_isolate_legacy_configs",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 2.5940000000000002e-05,
+    "cumulative_seconds": 2.5940000000000002e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'values' of 'dict' objects>",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 2.5575e-05,
+    "cumulative_seconds": 2.5575e-05
+  },
+  {
+    "file": "dense_mxfp8_gemm_warp_splitk.py",
+    "line": 286,
+    "function": "_k_supported",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 2.5439e-05,
+    "cumulative_seconds": 2.5439e-05
+  },
+  {
+    "file": "autotuner.py",
+    "line": 566,
+    "function": "uses_cold_chain",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 2.5200000000000003e-05,
+    "cumulative_seconds": 2.5200000000000003e-05
+  },
+  {
+    "file": "autotuner.py",
+    "line": 2111,
+    "function": "get",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 2.4413e-05,
+    "cumulative_seconds": 2.4413e-05
+  },
+  {
+    "file": "mxfp8_quantize.py",
+    "line": 125,
+    "function": "_use_sm107_small_blocks",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 2.2412e-05,
+    "cumulative_seconds": 2.2412e-05
+  },
+  {
+    "file": "autotuner.py",
+    "line": 4244,
+    "function": "_default_profiling_policy",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 2.1283000000000003e-05,
+    "cumulative_seconds": 2.1283000000000003e-05
+  },
+  {
+    "file": "autotuner.py",
+    "line": 1370,
+    "function": "key_fields",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 2.0301e-05,
+    "cumulative_seconds": 2.0301e-05
+  },
+  {
+    "file": "~",
+    "line": 0,
+    "function": "<method 'disable' of '_lsprof.Profiler' objects>",
+    "calls": 1,
+    "primitive_calls": 1,
+    "self_seconds": 1.9426e-05,
+    "cumulative_seconds": 1.9426e-05
+  },
+  {
+    "file": "flashinfer.py",
+    "line": 148,
+    "function": "input_quant_key",
+    "calls": 200,
+    "primitive_calls": 200,
+    "self_seconds": 1.7473e-05,
+    "cumulative_seconds": 1.7473e-05
+  }
+]

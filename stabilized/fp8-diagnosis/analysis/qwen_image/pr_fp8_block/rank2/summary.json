@@ -1,0 +1,155 @@
+{
+  "analysis_version": 3,
+  "trace_sha256": "6e6e6cea6725bd045e2086b97f93650db43a6a887c6908b4b2b48a7e9a9f7e48",
+  "trace_bytes": 9717027,
+  "pipeline_wall_ms": 960.265321,
+  "gpu_kernel_count": 27081,
+  "gpu_kernel_sum_ms": 189.89728400000155,
+  "gpu_kernel_union_within_pipeline_ms": 172.8995302734375,
+  "noncommunication_kernel_union_within_pipeline_ms": 135.2412646484375,
+  "cpu_operator_count": 192680,
+  "cpu_operator_union_within_pipeline_ms": 723.7514931640625,
+  "cuda_api_count": 57222,
+  "cuda_api_inclusive_sum_ms": 156.58453500000266,
+  "separate_2d_bias_add_calls": 1920,
+  "separate_2d_bias_add_gpu_ms": 17.927660000000017,
+  "matched_dit_scope": "all quantized-scope DiT linears",
+  "matched_dit_linear_calls": 1920,
+  "matched_dit_gpu_kernel_count": 1920,
+  "matched_dit_gemm_gpu_ms": 23.855794000000024,
+  "kernel_name_categories_ms": {
+    "communication": 37.658254999999954,
+    "other": 89.738912,
+    "attention": 10.184029000000004,
+    "quantization": 13.618818999999952,
+    "gemm_or_matmul": 38.697269000000006
+  },
+  "top_kernels": [
+    {
+      "name": "ncclDevKernel_SendRecv(ncclDevKernelArgsStorage<4096ul>)",
+      "category": "communication",
+      "count": 960,
+      "gpu_us": 31805.997999999956
+    },
+    {
+      "name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&)::{lambda(int)#1})",
+      "category": "other",
+      "count": 2059,
+      "gpu_us": 20237.530000000042
+    },
+    {
+      "name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 4, 64, 64>(at::native::(anonymous namespace)::OpaqueType<2u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 64, 64>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+      "category": "other",
+      "count": 1184,
+      "gpu_us": 13114.302999999982
+    },
+    {
+      "name": "cudnn_generated_fort_native_sdpa_sm107_flash_fprop_f16_knob_1_128x128x128_4x1x1_cga1x1x1_kernel0_0",
+      "category": "attention",
+      "count": 240,
+      "gpu_us": 8462.162000000004
+    },
+    {
+      "name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1})",
+      "category": "other",
+      "count": 1304,
+      "gpu_us": 6673.666999999984
+    },
+    {
+      "name": "void cudnn::engines_precompiled::nchwToNhwcKernel<__nv_bfloat16, __nv_bfloat16, float, false, true, (cudnnKernelDataType_t)0>(cudnn::engines_precompiled::nchw2nhwc_params_t<float>, __nv_bfloat16 const*, __nv_bfloat16*)",
+      "category": "other",
+      "count": 64,
+      "gpu_us": 6424.777
+    },
+    {
+      "name": "triton_per_fused__to_copy_abs_ceil_div_exp2_log2_max_view_0",
+      "category": "quantization",
+      "count": 1920,
+      "gpu_us": 6198.397999999974
+    },
+    {
+      "name": "ncclDevKernel_AllGatherV_RING(ncclDevKernelArgsStorage<4096ul>)",
+      "category": "communication",
+      "count": 240,
+      "gpu_us": 5675.294999999997
+    },
+    {
+      "name": "void at::native::elementwise_kernel<128, 4, at::native::(anonymous namespace)::maybe_strided_chunk_copy(at::TensorIteratorBase&)::{lambda(int)#1}>(int, at::native::(anonymous namespace)::maybe_strided_chunk_copy(at::TensorIteratorBase&)::{lambda(int)#1})",
+      "category": "other",
+      "count": 1680,
+      "gpu_us": 5666.602000000006
+    },
+    {
+      "name": "nvjet_sm107_tst_128x8_64x16_4x1_v_bz_bias_TNT",
+      "category": "gemm_or_matmul",
+      "count": 480,
+      "gpu_us": 5260.128999999993
+    },
+    {
+      "name": "void deep_gemm::sm100_fp8_fp4_gemm_1d1d_impl<(cute::UMMA::Major)0, (cute::UMMA::Major)0, 128u, 128u, 128u, 0u, 12288u, 3072u, 128u, 256u, 128u, 1u, 128u, 128u, 128u, 5u, 2u, 128u, 128u, 2u, false, 212u, false, true, (deep_gemm::GemmType)0, false, cutlass::float_e4m3_t, cutlass::float_e4m3_t, cutlass::bfloat16_t, deep_gemm::epilogue::operators::Identity>(int*, unsigned int, unsigned int, unsigned int, deep_gemm::epilogue::operators::Identity, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+      "category": "gemm_or_matmul",
+      "count": 240,
+      "gpu_us": 4780.8
+    },
+    {
+      "name": "void deep_gemm::sm100_fp8_fp4_gemm_1d1d_impl<(cute::UMMA::Major)0, (cute::UMMA::Major)0, 128u, 128u, 128u, 0u, 3072u, 12288u, 128u, 128u, 128u, 1u, 128u, 128u, 128u, 7u, 2u, 128u, 128u, 2u, false, 212u, false, true, (deep_gemm::GemmType)0, false, cutlass::float_e4m3_t, cutlass::float_e4m3_t, cutlass::bfloat16_t, deep_gemm::epilogue::operators::Identity>(int*, unsigned int, unsigned int, unsigned int, deep_gemm::epilogue::operators::Identity, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+      "category": "gemm_or_matmul",
+      "count": 240,
+      "gpu_us": 4761.597
+    },
+    {
+      "name": "void deep_gemm::sm100_fp8_fp4_gemm_1d1d_impl<(cute::UMMA::Major)0, (cute::UMMA::Major)0, 128u, 128u, 128u, 0u, 9216u, 3072u, 128u, 192u, 128u, 1u, 128u, 128u, 128u, 6u, 2u, 128u, 128u, 2u, false, 212u, false, true, (deep_gemm::GemmType)0, false, cutlass::float_e4m3_t, cutlass::float_e4m3_t, cutlass::bfloat16_t, deep_gemm::epilogue::operators::Identity>(int*, unsigned int, unsigned int, unsigned int, deep_gemm::epilogue::operators::Identity, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+      "category": "gemm_or_matmul",
+      "count": 240,
+      "gpu_us": 4008.7520000000045
+    },
+    {
+      "name": "triton_poi_fused__to_copy_ceil_clone_exp2_log2_squeeze_transpose_1",
+      "category": "quantization",
+      "count": 1920,
+      "gpu_us": 3944.563999999993
+    },
+    {
+      "name": "void deep_gemm::pack_fp32_into_ue8m0<1u, 512u, 128u, 16u, true, false>(float*, unsigned int*, unsigned int*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",
+      "category": "quantization",
+      "count": 1440,
+      "gpu_us": 3475.8569999999845
+    },
+    {
+      "name": "_adaln_scale_shift_layernorm_kernel",
+      "category": "other",
+      "count": 960,
+      "gpu_us": 3362.196000000001
+    },
+    {
+      "name": "void deep_gemm::sm100_fp8_fp4_gemm_1d1d_impl<(cute::UMMA::Major)0, (cute::UMMA::Major)0, 128u, 128u, 128u, 0u, 3072u, 12288u, 16u, 128u, 128u, 1u, 128u, 128u, 128u, 12u, 2u, 128u, 128u, 2u, true, 212u, true, true, (deep_gemm::GemmType)0, false, cutlass::float_e4m3_t, cutlass::float_e4m3_t, cutlass::bfloat16_t, deep_gemm::epilogue::operators::Identity>(int*, unsigned int, unsigned int, unsigned int, deep_gemm::epilogue::operators::Identity, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+      "category": "gemm_or_matmul",
+      "count": 240,
+      "gpu_us": 3173.1710000000026
+    },
+    {
+      "name": "rotary_kernel",
+      "category": "other",
+      "count": 960,
+      "gpu_us": 3109.81500000001
+    },
+    {
+      "name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 128, 1>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+      "category": "other",
+      "count": 720,
+      "gpu_us": 3012.0530000000012
+    },
+    {
+      "name": "cutlass3x_sm100_tensorop_s256x256x16implicit_gemm_fprop_bf16_bf16_f32_void_bf16_f32_256x256x64_dyn_cga_ndhwc_ndhwc_ndhwc_align8_2sm_relu_valpha_stream_k",
+      "category": "gemm_or_matmul",
+      "count": 22,
+      "gpu_us": 2941.4269999999997
+    }
+  ],
+  "notes": [
+    "Two-step diagnostic request after warmup; not a replacement end-to-end latency benchmark.",
+    "Kernel duration sums may overlap across streams and must not be added to CPU times.",
+    "Name-based categories are descriptive; direct kernel/operator associations use External id.",
+    "NCCL duration includes peer waiting and does not alone identify a network bottleneck."
+  ]
+}

@@ -1,0 +1,74 @@
+[
+  {
+    "model": "qwen_image",
+    "variant": "pr_bf16",
+    "ranks": 4,
+    "linear_calls_per_rank": 1920,
+    "gemm_scope": "all quantized-scope DiT linears",
+    "gemm_gpu_ms": 35.37240375,
+    "quantization_and_scale_gpu_ms": 0,
+    "separate_bias_gpu_ms": 0.0,
+    "separate_bias_calls_per_rank": 0,
+    "cpu_operator_union_ms": 407.46137060546874
+  },
+  {
+    "model": "qwen_image",
+    "variant": "pr_mxfp8",
+    "ranks": 4,
+    "linear_calls_per_rank": 1920,
+    "gemm_scope": "all quantized-scope DiT linears",
+    "gemm_gpu_ms": 21.412060749999995,
+    "quantization_and_scale_gpu_ms": 5.2803589999999865,
+    "separate_bias_gpu_ms": 17.94228050000001,
+    "separate_bias_calls_per_rank": 1920,
+    "cpu_operator_union_ms": 425.74539111328124
+  },
+  {
+    "model": "qwen_image",
+    "variant": "pr_fp8_block",
+    "ranks": 4,
+    "linear_calls_per_rank": 1920,
+    "gemm_scope": "all quantized-scope DiT linears",
+    "gemm_gpu_ms": 24.615061500000024,
+    "quantization_and_scale_gpu_ms": 14.36614724999993,
+    "separate_bias_gpu_ms": 18.029766250000016,
+    "separate_bias_calls_per_rank": 1920,
+    "cpu_operator_union_ms": 722.8918564453124
+  },
+  {
+    "model": "wan22",
+    "variant": "pr_bf16",
+    "ranks": 1,
+    "linear_calls_per_rank": 720,
+    "gemm_scope": "large image branch M=27280 only; excludes text KV and conditioning",
+    "gemm_gpu_ms": 284.77327700000006,
+    "quantization_and_scale_gpu_ms": 0,
+    "separate_bias_gpu_ms": 0.0,
+    "separate_bias_calls_per_rank": 0,
+    "cpu_operator_union_ms": 1820.1344526367188
+  },
+  {
+    "model": "wan22",
+    "variant": "pr_mxfp8",
+    "ranks": 1,
+    "linear_calls_per_rank": 720,
+    "gemm_scope": "large image branch M=27280 only; excludes text KV and conditioning",
+    "gemm_gpu_ms": 106.03805400000002,
+    "quantization_and_scale_gpu_ms": 32.09937399999999,
+    "separate_bias_gpu_ms": 321.964026,
+    "separate_bias_calls_per_rank": 960,
+    "cpu_operator_union_ms": 1763.218822265625
+  },
+  {
+    "model": "wan22",
+    "variant": "pr_fp8_block",
+    "ranks": 1,
+    "linear_calls_per_rank": 720,
+    "gemm_scope": "large image branch M=27280 only; excludes text KV and conditioning",
+    "gemm_gpu_ms": 138.251292,
+    "quantization_and_scale_gpu_ms": 58.72365799999993,
+    "separate_bias_gpu_ms": 321.7194420000001,
+    "separate_bias_calls_per_rank": 960,
+    "cpu_operator_union_ms": 1988.1864765625
+  }
+]

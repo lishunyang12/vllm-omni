@@ -1,0 +1,94 @@
+{
+  "status": "passed",
+  "configurations": 6,
+  "measured_requests": 18,
+  "full_warmups": 30,
+  "worker_traces": 15,
+  "runtime_versions_match_original": true,
+  "all_first_last_pixels_match_original": true,
+  "records": [
+    {
+      "model": "qwen_image",
+      "variant": "pr_bf16",
+      "observed_gpus": 4,
+      "measured_requests": 3,
+      "warmup_requests": 5,
+      "p50_seconds": 7.518632457009517,
+      "p95_seconds": 7.546214955038158,
+      "original_n20_p50_seconds": 7.568890059978003,
+      "original_n20_p95_seconds": 7.705286853085272,
+      "matches_original_pixels": true,
+      "metadata_sha256": "1e81d5095b5428e08b26fe689f0eac33212fa2d99cf02e75b3576957b41f982b"
+    },
+    {
+      "model": "qwen_image",
+      "variant": "pr_mxfp8",
+      "observed_gpus": 4,
+      "measured_requests": 3,
+      "warmup_requests": 5,
+      "p50_seconds": 14.20189935300732,
+      "p95_seconds": 14.251498082076433,
+      "original_n20_p50_seconds": 14.432818100001896,
+      "original_n20_p95_seconds": 15.40424619790283,
+      "matches_original_pixels": true,
+      "metadata_sha256": "47cd7568f988c3b01caf993c0ff7e7c63a3e127e244dbaaa534708b38dcda82b"
+    },
+    {
+      "model": "qwen_image",
+      "variant": "pr_fp8_block",
+      "observed_gpus": 4,
+      "measured_requests": 3,
+      "warmup_requests": 5,
+      "p50_seconds": 13.505072686006315,
+      "p95_seconds": 13.571139103919268,
+      "original_n20_p50_seconds": 13.465089305012953,
+      "original_n20_p95_seconds": 13.65022149051074,
+      "matches_original_pixels": true,
+      "metadata_sha256": "c6dea2179023ff5b0204ba2ec2415ba4fdba4c39fc90f6d9fade9376a61688c4"
+    },
+    {
+      "model": "wan22",
+      "variant": "pr_bf16",
+      "observed_gpus": 1,
+      "measured_requests": 3,
+      "warmup_requests": 5,
+      "p50_seconds": 23.861143760033883,
+      "p95_seconds": 23.86828929744079,
+      "original_n20_p50_seconds": 23.891175144497538,
+      "original_n20_p95_seconds": 23.90596227750357,
+      "matches_original_pixels": true,
+      "metadata_sha256": "2580b641e8c84f1ed16b4f52647cfbcb903a16b779ad6f27cba326254b41d624"
+    },
+    {
+      "model": "wan22",
+      "variant": "pr_mxfp8",
+      "observed_gpus": 1,
+      "measured_requests": 3,
+      "warmup_requests": 5,
+      "p50_seconds": 26.873307581001427,
+      "p95_seconds": 26.886708832974545,
+      "original_n20_p50_seconds": 26.8754634935176,
+      "original_n20_p95_seconds": 26.90292236864916,
+      "matches_original_pixels": true,
+      "metadata_sha256": "a157b9790da335e97d2615780aa028c291cd58f53ed4aab4699669d88b4e198f"
+    },
+    {
+      "model": "wan22",
+      "variant": "pr_fp8_block",
+      "observed_gpus": 1,
+      "measured_requests": 3,
+      "warmup_requests": 5,
+      "p50_seconds": 28.306438430037815,
+      "p95_seconds": 28.312739966268417,
+      "original_n20_p50_seconds": 28.30873764201533,
+      "original_n20_p95_seconds": 28.320711611470323,
+      "matches_original_pixels": true,
+      "metadata_sha256": "39325d9420f9ad5b11dbb505ac16430b5b99d59b32077a7257282a3dcec7b806"
+    }
+  ],
+  "notes": [
+    "Wan used one GPU, despite requested four-GPU kwargs in the original scripts.",
+    "profile.files is empty due to an executed filename-glob bug; actual traces are enumerated and SHA-256 checked here.",
+    "Three-request diagnostic replication is not a replacement for the original 20-request benchmark."
+  ]
+}
