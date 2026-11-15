@@ -1,0 +1,19 @@
+{
+  "model": "h3_image",
+  "reference": "pr_bf16",
+  "candidate": "pr_fp8_block",
+  "frame_count": 1,
+  "ssim": 0.4747917536342741,
+  "psnr_db": 14.319552750505578,
+  "lpips": 0.423636257648468,
+  "exact_pixels": false,
+  "frames": [
+    {
+      "frame": 0,
+      "ssim": 0.4747917536342741,
+      "psnr_db": 14.319552750505578,
+      "lpips": 0.423636257648468,
+      "exact_pixels": false
+    }
+  ]
+}

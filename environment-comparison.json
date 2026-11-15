@@ -1,0 +1,69 @@
+{
+  "torch": {
+    "original": "2.16.0.dev20261009+cu134",
+    "continuation": "2.16.0.dev20261009+cu134",
+    "same": true
+  },
+  "vllm": {
+    "original": "0.33.0rc1.dev992+g1648fefab.d20261107.cu134",
+    "continuation": "0.33.0rc1.dev992+g1648fefab.d20261107.cu134",
+    "same": true,
+    "verification": "Original runtime constraints versus importlib.metadata in the restored container"
+  },
+  "triton": {
+    "original": "3.8.0+git3f6e4113",
+    "continuation": "3.8.0+git3f6e4113",
+    "same": true,
+    "verification": "Original runtime constraints versus importlib.metadata in the restored container"
+  },
+  "flashinfer-python": {
+    "original": "0.7.3",
+    "continuation": "0.7.3",
+    "same": true
+  },
+  "flashinfer-cubin": {
+    "original": "0.7.3",
+    "continuation": "0.7.3",
+    "same": true
+  },
+  "diffusers": {
+    "original": "0.40.0",
+    "continuation": "0.40.0",
+    "same": true
+  },
+  "transformers": {
+    "original": "5.19.0",
+    "continuation": "5.19.0",
+    "same": true
+  },
+  "numpy": {
+    "original": "2.2.6",
+    "continuation": "2.2.6",
+    "same": true
+  },
+  "pillow": {
+    "original": "13.0.0",
+    "continuation": "13.0.0",
+    "same": true
+  },
+  "av": {
+    "original": "19.0.2",
+    "continuation": "19.0.2",
+    "same": true
+  },
+  "lpips": {
+    "original": "0.1.4",
+    "continuation": "0.1.4",
+    "same": true
+  },
+  "scikit-image": {
+    "original": "0.25.2",
+    "continuation": "0.25.2",
+    "same": true
+  },
+  "huggingface-hub": {
+    "original": "1.33.0",
+    "continuation": "1.33.0",
+    "same": true
+  }
+}

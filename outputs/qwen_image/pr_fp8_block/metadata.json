@@ -1,0 +1,55 @@
+{
+  "source_sha256": {
+    "vllm_omni/quantization/factory.py": "f2b769fcc55cea3be658c4261df941e6ab419cbf3537987a749ca2dc2a52ac35",
+    "vllm_omni/quantization/mxfp8_config.py": "6b0d6f6c2db059d4def0e8a2b98c93e77e21c50248d17c3af6132123d84dd638",
+    "vllm_omni/quantization/mxfp8_cuda.py": "2089780cf61b8dde0001800be186e058c933345719118d70f403e84bdbbd29f6",
+    "vllm_omni/entrypoints/async_omni.py": "f535539fb468e8f276f6de9dd9cd789f543f500fe8e6fef3990a7e514df906be",
+    "vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3_image.py": "3e1a6bb6f77fb0832bef21638d4c5965f2ccc362d6413f69bf253b9bd23ce1ef"
+  },
+  "case": {
+    "prompt": "A small red panda wearing a blue scarf in a snowy forest, soft morning light, detailed fur, snowflakes on pine branches, realistic wildlife photography.",
+    "negative_prompt": "",
+    "seed": 142,
+    "height": 1024,
+    "width": 1024,
+    "steps": 50,
+    "guidance_scale": 1.0,
+    "true_cfg_scale": 4.0,
+    "frames": 1,
+    "fps": 24
+  },
+  "variant": {
+    "source": "candidate",
+    "commit": "a6a35c86b13db636a07173755b241544dff4c082",
+    "quantization": "fp8_per_block"
+  },
+  "model": {
+    "model": "Qwen/Qwen-Image",
+    "revision": "75e0b4be04f60ec59a75f475837eced720f823b6",
+    "path": "/work/hf-cache/hub/models--Qwen--Qwen-Image/snapshots/75e0b4be04f60ec59a75f475837eced720f823b6"
+  },
+  "source": "/work/source/candidate/vllm_omni/__init__.py",
+  "quantization_config": {
+    "transformer": {
+      "method": "fp8_per_block"
+    },
+    "text_encoder": null
+  },
+  "parallelism": {
+    "ulysses_degree": 4,
+    "tensor_parallel_size": 1,
+    "text_encoder_tp_size": 1
+  },
+  "trust_remote_code": false,
+  "enforce_eager": true,
+  "torch": "2.16.0.dev20261009+cu134",
+  "cuda": "13.4",
+  "start_unix": 1794701428.1614666,
+  "status": "completed",
+  "initialization_seconds": 269.779039037996,
+  "generation_seconds": 21.304538305965252,
+  "frame_count": 1,
+  "pixel_sha256": [
+    "23752af0ba3a493cf3d558249771ec1252c0dcb42fc269c05f84fdbbb7d5bc8f"
+  ]
+}

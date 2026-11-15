@@ -1,0 +1,131 @@
+{
+  "definitions": {
+    "ssim": "Native RGB; gaussian sigma=1.5; population covariance; data_range=255; mean over frames",
+    "psnr_db": "10 log10(255^2 / pooled RGB pixel MSE); inf means identical",
+    "lpips": "AlexNet LPIPS v0.1; native resolution; RGB [-1,1]; mean over frames",
+    "pixels": "Lossless PNG exports before video encoding; no resizing or frame truncation"
+  },
+  "results": [
+    {
+      "model": "h3_image",
+      "reference": "base_bf16",
+      "candidate": "pr_bf16",
+      "frame_count": 1,
+      "ssim": 1.0,
+      "psnr_db": "inf",
+      "lpips": 0.0,
+      "exact_pixels": true
+    },
+    {
+      "model": "h3_image",
+      "reference": "pr_bf16",
+      "candidate": "pr_mxfp8",
+      "frame_count": 1,
+      "ssim": 0.5736132662146345,
+      "psnr_db": 15.436761524553809,
+      "lpips": 0.3329043984413147,
+      "exact_pixels": false
+    },
+    {
+      "model": "h3_image",
+      "reference": "pr_bf16",
+      "candidate": "pr_fp8_block",
+      "frame_count": 1,
+      "ssim": 0.4747917536342741,
+      "psnr_db": 14.319552750505578,
+      "lpips": 0.423636257648468,
+      "exact_pixels": false
+    },
+    {
+      "model": "h3_video",
+      "reference": "base_bf16",
+      "candidate": "pr_bf16",
+      "frame_count": 124,
+      "ssim": 1.0,
+      "psnr_db": "inf",
+      "lpips": 0.0,
+      "exact_pixels": true
+    },
+    {
+      "model": "h3_video",
+      "reference": "pr_bf16",
+      "candidate": "pr_mxfp8",
+      "frame_count": 124,
+      "ssim": 0.5780432513793803,
+      "psnr_db": 19.200007276980287,
+      "lpips": 0.33901340562489723,
+      "exact_pixels": false
+    },
+    {
+      "model": "h3_video",
+      "reference": "pr_bf16",
+      "candidate": "pr_fp8_block",
+      "frame_count": 124,
+      "ssim": 0.46656469050985555,
+      "psnr_db": 17.526055776107768,
+      "lpips": 0.4288032703822659,
+      "exact_pixels": false
+    },
+    {
+      "model": "qwen_image",
+      "reference": "base_bf16",
+      "candidate": "pr_bf16",
+      "frame_count": 1,
+      "ssim": 1.0,
+      "psnr_db": "inf",
+      "lpips": 0.0,
+      "exact_pixels": true
+    },
+    {
+      "model": "qwen_image",
+      "reference": "pr_bf16",
+      "candidate": "pr_mxfp8",
+      "frame_count": 1,
+      "ssim": 0.9669122884028901,
+      "psnr_db": 29.92767553621386,
+      "lpips": 0.041271090507507324,
+      "exact_pixels": false
+    },
+    {
+      "model": "qwen_image",
+      "reference": "pr_bf16",
+      "candidate": "pr_fp8_block",
+      "frame_count": 1,
+      "ssim": 0.9246923961981585,
+      "psnr_db": 21.84330048888375,
+      "lpips": 0.10308144986629486,
+      "exact_pixels": false
+    },
+    {
+      "model": "wan22",
+      "reference": "base_bf16",
+      "candidate": "pr_bf16",
+      "frame_count": 121,
+      "ssim": 1.0,
+      "psnr_db": "inf",
+      "lpips": 0.0,
+      "exact_pixels": true
+    },
+    {
+      "model": "wan22",
+      "reference": "pr_bf16",
+      "candidate": "pr_mxfp8",
+      "frame_count": 121,
+      "ssim": 0.8685913807727936,
+      "psnr_db": 24.57277253193954,
+      "lpips": 0.09700120148087336,
+      "exact_pixels": false
+    },
+    {
+      "model": "wan22",
+      "reference": "pr_bf16",
+      "candidate": "pr_fp8_block",
+      "frame_count": 121,
+      "ssim": 0.5694383708979263,
+      "psnr_db": 16.842119505339493,
+      "lpips": 0.32086274101714457,
+      "exact_pixels": false
+    }
+  ],
+  "unavailable": []
+}

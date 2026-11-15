@@ -1,0 +1,19 @@
+{
+  "model": "qwen_image",
+  "reference": "pr_bf16",
+  "candidate": "pr_fp8_block",
+  "frame_count": 1,
+  "ssim": 0.9246923961981585,
+  "psnr_db": 21.84330048888375,
+  "lpips": 0.10308144986629486,
+  "exact_pixels": false,
+  "frames": [
+    {
+      "frame": 0,
+      "ssim": 0.9246923961981585,
+      "psnr_db": 21.84330048888375,
+      "lpips": 0.10308144986629486,
+      "exact_pixels": false
+    }
+  ]
+}

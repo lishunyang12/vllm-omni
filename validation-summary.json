@@ -1,0 +1,123 @@
+{
+  "runtime_commit": "a6a35c86b13db636a07173755b241544dff4c082",
+  "tests": {
+    "mxfp8_and_online_factory": {
+      "summary": "57 passed, 3 skipped, 9643 warnings in 23.81s",
+      "log_sha256": "8706bb820f50500eec5827f1350c25f5d379b794a8437add5bf50070e262c799"
+    },
+    "async_omni_checkpoint": {
+      "summary": "4 passed, 17 warnings in 1.38s",
+      "log_sha256": "a085bc92cd5bb62e949169a61ac26993a6fa54b9e26b4cb9a211207bf2abd1d0"
+    },
+    "fp8_block_runtime": {
+      "summary": "11 passed, 17 warnings in 29.95s",
+      "log_sha256": "f0e5f8d89557570baef703810d32890e1f1e06376cbbf0902cfdba31c47d1051",
+      "exit_code": 0,
+      "kernels": [
+        "CutlassFp8BlockScaledMMKernel",
+        "DeepGemmFp8BlockScaledMMKernel"
+      ]
+    }
+  },
+  "metric_calibration_passed": true,
+  "paired_video_export_calibration_passed": true,
+  "generation_cases": [
+    {
+      "model": "h3_image",
+      "variant": "base_bf16",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "h3_image",
+      "variant": "pr_bf16",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "h3_image",
+      "variant": "pr_mxfp8",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "h3_image",
+      "variant": "pr_fp8_block",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "h3_video",
+      "variant": "base_bf16",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "h3_video",
+      "variant": "pr_bf16",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "h3_video",
+      "variant": "pr_mxfp8",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "h3_video",
+      "variant": "pr_fp8_block",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "qwen_image",
+      "variant": "base_bf16",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "qwen_image",
+      "variant": "pr_bf16",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "qwen_image",
+      "variant": "pr_mxfp8",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "qwen_image",
+      "variant": "pr_fp8_block",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "wan22",
+      "variant": "base_bf16",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "wan22",
+      "variant": "pr_bf16",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "wan22",
+      "variant": "pr_mxfp8",
+      "status": "completed",
+      "returncode": 0
+    },
+    {
+      "model": "wan22",
+      "variant": "pr_fp8_block",
+      "status": "completed",
+      "returncode": 0
+    }
+  ],
+  "recorded_unsuccessful_attempts_retained_locally": 8
+}
