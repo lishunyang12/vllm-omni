@@ -1,0 +1,8 @@
+Excerpt from h3_video-pr_mxfp8.log; only the cache directory is redacted.
+Original full-log SHA-256: c61e635a439cf5ee93d5552c01369141db50f069b47ea48c6db9f82f6bc27dcb
+Autotuning is active inside the first request. This does not isolate its overhead.
+
+2026-11-15 00:45:46,413 - INFO - autotuner.py:1121 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+2026-11-15 00:50:57,098 - INFO - autotuner.py:1146 - flashinfer.jit: [Autotuner]: Autotuning process ends
+2026-11-15 00:50:57,207 - INFO - autotuner.py:4506 - flashinfer.jit: [Autotuner]: Saved 99 configs to <autotune-cache>/rank0.json (99 new, 0 from previous config)
+Processed prompts: 100%|██████████| 1/1 [05:10<00:00, 310.96s/it]

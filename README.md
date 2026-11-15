@@ -33,6 +33,37 @@ SSIM uses Gaussian weighting (sigma 1.5) and population covariance. PSNR uses po
 
 One prompt and seed per model. These scores measure output differences; they do not establish a broad quality-equivalence threshold. Viewing MP4s contain video only; H3 audio is not evaluated. First-request timings in metadata include compilation/autotuning and are not steady-state performance measurements or an SGLang comparison.
 
+<!-- latency-start -->
+## First-request latency (seconds; n=1)
+
+One first request per case on four Rubin SM107 GPUs, using the same settings and outputs as the quality matrix above. Seconds of wall time around the synchronous `Omni.generate()` call, after `Omni` initialization. Initialization/model loading is recorded separately; subsequent PNG saving, MP4 encoding and quality scoring are excluded.
+
+| Model | Base BF16 (s) | PR BF16 (s) | PR MXFP8 (s) | PR blockwise FP8 (s) |
+|---|---:|---:|---:|---:|
+| MiniMax-H3-Image | 4.090 | 3.709 | 23.816 | 19.175 |
+| MiniMax-H3 video | 37.652 | 33.871 | 310.963 | 72.277 |
+| Qwen-Image | 8.281 | 8.377 | 51.091 | 21.305 |
+| Wan2.2-TI2V-5B | 26.677 | 25.497 | 65.252 | 34.626 |
+
+No explicit warmup request; one sample per case. Each case starts a fresh process, but persistent caches were not reset. These measurements can include first-use compilation/autotuning and have uncontrolled cache state. They are not warmed P50/P95 values, controlled cold-cache benchmarks, or an SGLang comparison. The H3 video request uses the full t2va pipeline; only video was saved and quality-scored.
+
+The H3 MXFP8 log shows FlashInfer autotuning during this request and saving 99 new configurations per rank. This confirms autotuning activity; the run does not isolate how much of the elapsed time it consumed.
+
+[Raw per-case timings and metadata hashes](latency.csv) · [Timing definitions](latency.json) · [Autotuning log excerpt](latency-log-excerpt.txt).
+
+<details>
+<summary>Separate initialization times</summary>
+
+| Model | Base BF16 (s) | PR BF16 (s) | PR MXFP8 (s) | PR blockwise FP8 (s) |
+|---|---:|---:|---:|---:|
+| MiniMax-H3-Image | 344.224 | 292.205 | 557.885 | 324.507 |
+| MiniMax-H3 video | 322.280 | 323.307 | 323.029 | 300.855 |
+| Qwen-Image | 262.736 | 262.298 | 403.672 | 269.779 |
+| Wan2.2-TI2V-5B | 34.741 | 34.645 | 163.022 | 40.068 |
+
+</details>
+<!-- latency-end -->
+
 ## h3_image
 
 A red bicycle leaning against a weathered blue wooden door, a wicker basket filled with yellow sunflowers, warm afternoon sunlight, intricate wood grain and brick textures, realistic photography.

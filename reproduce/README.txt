@@ -77,3 +77,20 @@ Optional export integrity check in the prepared container:
   python3 /validation/verify_artifacts.py /work
 
 This verifies every PNG pixel hash, score aggregation and complete MP4 decoding.
+
+Extract the recorded first-request latencies after generation (no GPU needed):
+
+  python3 /validation/summarize_latency.py /work
+
+This writes latency.csv and latency.json and prints a table. It also works on
+the downloaded evidence branch with:
+
+  python3 reproduce/summarize_latency.py .
+
+The timer surrounds the first synchronous Omni.generate call after engine
+initialization. Engine initialization is reported separately. Subsequent PNG
+saving, MP4 encoding and metric scoring are excluded. There is one sample per
+case and no explicit warmup request. Cases use fresh processes but persistent
+caches are not reset, so these are neither warmed P50 nor controlled cold-cache
+measurements. H3 video timing covers its full t2va request, although only video
+was saved and quality-scored.
