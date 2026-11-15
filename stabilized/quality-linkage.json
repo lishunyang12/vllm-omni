@@ -1,0 +1,115 @@
+{
+  "method": "Exact SHA-256 of native RGB pixel arrays, first measured warmed request versus original Rubin quality-run output",
+  "results": [
+    {
+      "round": "initial",
+      "model": "h3_image",
+      "variant": "pr_bf16",
+      "frames": 1,
+      "matches_original_quality_pixels": true,
+      "first_last_measured_pixels_identical": true,
+      "warm_metadata": "initial/rubin/results/h3_image/pr_bf16/metadata.json",
+      "original_quality_metadata": "../outputs/h3_image/pr_bf16/metadata.json"
+    },
+    {
+      "round": "initial",
+      "model": "h3_image",
+      "variant": "pr_mxfp8",
+      "frames": 1,
+      "matches_original_quality_pixels": true,
+      "first_last_measured_pixels_identical": true,
+      "warm_metadata": "initial/rubin/results/h3_image/pr_mxfp8/metadata.json",
+      "original_quality_metadata": "../outputs/h3_image/pr_mxfp8/metadata.json"
+    },
+    {
+      "round": "initial",
+      "model": "h3_image",
+      "variant": "pr_fp8_block",
+      "frames": 1,
+      "matches_original_quality_pixels": true,
+      "first_last_measured_pixels_identical": true,
+      "warm_metadata": "initial/rubin/results/h3_image/pr_fp8_block/metadata.json",
+      "original_quality_metadata": "../outputs/h3_image/pr_fp8_block/metadata.json"
+    },
+    {
+      "round": "initial",
+      "model": "h3_image",
+      "variant": "base_bf16",
+      "frames": 1,
+      "matches_original_quality_pixels": true,
+      "first_last_measured_pixels_identical": true,
+      "warm_metadata": "initial/rubin/results/h3_image/base_bf16/metadata.json",
+      "original_quality_metadata": "../outputs/h3_image/base_bf16/metadata.json"
+    },
+    {
+      "round": "initial",
+      "model": "h3_video",
+      "variant": "pr_bf16",
+      "frames": 124,
+      "matches_original_quality_pixels": true,
+      "first_last_measured_pixels_identical": true,
+      "warm_metadata": "initial/rubin/results/h3_video/pr_bf16/metadata.json",
+      "original_quality_metadata": "../outputs/h3_video/pr_bf16/metadata.json"
+    },
+    {
+      "round": "initial",
+      "model": "h3_video",
+      "variant": "pr_mxfp8",
+      "frames": 124,
+      "matches_original_quality_pixels": true,
+      "first_last_measured_pixels_identical": true,
+      "warm_metadata": "initial/rubin/results/h3_video/pr_mxfp8/metadata.json",
+      "original_quality_metadata": "../outputs/h3_video/pr_mxfp8/metadata.json"
+    },
+    {
+      "round": "initial",
+      "model": "h3_video",
+      "variant": "pr_fp8_block",
+      "frames": 124,
+      "matches_original_quality_pixels": true,
+      "first_last_measured_pixels_identical": true,
+      "warm_metadata": "initial/rubin/results/h3_video/pr_fp8_block/metadata.json",
+      "original_quality_metadata": "../outputs/h3_video/pr_fp8_block/metadata.json"
+    },
+    {
+      "round": "initial",
+      "model": "h3_video",
+      "variant": "base_bf16",
+      "frames": 124,
+      "matches_original_quality_pixels": true,
+      "first_last_measured_pixels_identical": true,
+      "warm_metadata": "initial/rubin/results/h3_video/base_bf16/metadata.json",
+      "original_quality_metadata": "../outputs/h3_video/base_bf16/metadata.json"
+    },
+    {
+      "round": "initial",
+      "model": "qwen_image",
+      "variant": "pr_bf16",
+      "frames": 1,
+      "matches_original_quality_pixels": true,
+      "first_last_measured_pixels_identical": true,
+      "warm_metadata": "initial/rubin/results/qwen_image/pr_bf16/metadata.json",
+      "original_quality_metadata": "../outputs/qwen_image/pr_bf16/metadata.json"
+    },
+    {
+      "round": "initial",
+      "model": "qwen_image",
+      "variant": "pr_mxfp8",
+      "frames": 1,
+      "matches_original_quality_pixels": true,
+      "first_last_measured_pixels_identical": true,
+      "warm_metadata": "initial/rubin/results/qwen_image/pr_mxfp8/metadata.json",
+      "original_quality_metadata": "../outputs/qwen_image/pr_mxfp8/metadata.json"
+    },
+    {
+      "round": "initial",
+      "model": "qwen_image",
+      "variant": "pr_fp8_block",
+      "frames": 1,
+      "matches_original_quality_pixels": true,
+      "first_last_measured_pixels_identical": true,
+      "warm_metadata": "initial/rubin/results/qwen_image/pr_fp8_block/metadata.json",
+      "original_quality_metadata": "../outputs/qwen_image/pr_fp8_block/metadata.json"
+    }
+  ]
+}

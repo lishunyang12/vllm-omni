@@ -21,9 +21,14 @@ for model in protocol['model_order']:
     for variant in protocol['variant_order']:
         case = root / 'results' / model / variant
         meta = case / 'metadata.json'
-        if meta.exists() and json.loads(meta.read_text()).get('status') == 'completed':
-            print('SKIP_COMPLETED',model,variant,flush=True)
-            continue
+        if meta.exists():
+            previous=json.loads(meta.read_text())
+            if previous.get('status') == 'completed':
+                if (previous.get('protocol') != protocol or previous.get('case') != spec['cases'][model]
+                        or previous.get('variant') != spec['variants'][variant]):
+                    raise ValueError(f'Completed case differs from the requested protocol/config: {meta}; use a new work directory')
+                print('SKIP_COMPLETED',model,variant,flush=True)
+                continue
         if case.exists():
             old = root / 'failed-attempts' / model
             old.mkdir(parents=True,exist_ok=True)
