@@ -60,9 +60,11 @@ def main():
         ax.set_xlabel("Seconds per request — lower is faster", fontsize=10)
         ax.xaxis.grid(True, color="#E2E8F0", linewidth=.7)
         ax.set_axisbelow(True)
-    fig.suptitle("Warmed generation latency · four GPUs per system", x=.035,
+    fig.suptitle("Warmed generation latency", x=.035,
                  ha="left", y=.99, fontsize=20, fontweight="bold")
     fig.text(.035, .945, "Bars: P50   |   Whiskers: observed P5–P95 range, not a confidence interval",
+             fontsize=11, color="#475569")
+    fig.text(.035, .915, "Actual GPU counts: H3-Image / H3 video / Qwen-Image — 4 GPUs; Wan2.2 — 1 GPU per system",
              fontsize=11, color="#475569")
     image_counts = ", ".join(f"{gpu} n={lookup.get((gpu, 'h3_image', 'pr_bf16'), {}).get('n', 'pending')}"
                              for gpu in ("Rubin", "GB200"))
@@ -71,7 +73,7 @@ def main():
              "† Fails a declared stability check. All timings retained. BF16 activations; DiT quantization only.\n"
              "Offline Omni.generate wall time; excludes initialization and file writing. Quality differences are reported separately.",
              fontsize=10, color="#475569", linespacing=1.5)
-    fig.subplots_adjust(left=.17, right=.975, top=.88, bottom=.16, hspace=.45, wspace=.55)
+    fig.subplots_adjust(left=.17, right=.975, top=.855, bottom=.16, hspace=.45, wspace=.55)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     for extension in ("png", "svg"):
         fig.savefig(args.output.with_suffix("."+extension), dpi=180, facecolor="white")

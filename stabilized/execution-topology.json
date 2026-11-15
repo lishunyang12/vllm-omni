@@ -1,0 +1,1663 @@
+{
+  "status": "verified_with_topology_correction",
+  "method": "Inspect 5-second nvidia-smi telemetry between initialization completion +5s and process end -2s; count GPUs with median resident memory >1GiB and nonzero observed utilization. Corroborated by model-level worker traces (Qwen ranks0-3; Wan rank0 only).",
+  "finding": "Wan2.2 default deployment fixes stage devices to GPU0; requested num_gpus=4/parallel_config SP4 did not establish a four-GPU Wan run. Report existing Wan measurements as single-GPU; all other models used four GPUs.",
+  "results": [
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "h3_image",
+      "variant": "pr_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 11,
+          "median_memory_mib": 88488.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 11,
+          "median_memory_mib": 88486.0,
+          "max_utilization_percent": 98.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 11,
+          "median_memory_mib": 88486.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 11,
+          "median_memory_mib": 88486.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "h3_image",
+      "variant": "pr_mxfp8",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 10,
+          "median_memory_mib": 57898.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 10,
+          "median_memory_mib": 57842.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 10,
+          "median_memory_mib": 57882.0,
+          "max_utilization_percent": 97.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 10,
+          "median_memory_mib": 57254.0,
+          "max_utilization_percent": 97.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "h3_image",
+      "variant": "pr_fp8_block",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 9,
+          "median_memory_mib": 56514.0,
+          "max_utilization_percent": 97.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 9,
+          "median_memory_mib": 56514.0,
+          "max_utilization_percent": 98.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 9,
+          "median_memory_mib": 56514.0,
+          "max_utilization_percent": 98.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 9,
+          "median_memory_mib": 56584.0,
+          "max_utilization_percent": 98.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "h3_image",
+      "variant": "base_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 10,
+          "median_memory_mib": 88488.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 10,
+          "median_memory_mib": 88486.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 10,
+          "median_memory_mib": 88486.0,
+          "max_utilization_percent": 98.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 10,
+          "median_memory_mib": 88486.0,
+          "max_utilization_percent": 97.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "h3_video",
+      "variant": "pr_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 113,
+          "median_memory_mib": 97702.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 113,
+          "median_memory_mib": 97580.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 113,
+          "median_memory_mib": 97580.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 113,
+          "median_memory_mib": 97580.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "h3_video",
+      "variant": "pr_mxfp8",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 98,
+          "median_memory_mib": 67120.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 98,
+          "median_memory_mib": 66962.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 98,
+          "median_memory_mib": 66962.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 98,
+          "median_memory_mib": 66962.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "h3_video",
+      "variant": "pr_fp8_block",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 99,
+          "median_memory_mib": 66544.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 99,
+          "median_memory_mib": 66560.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 99,
+          "median_memory_mib": 66560.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 99,
+          "median_memory_mib": 66210.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "h3_video",
+      "variant": "base_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 113,
+          "median_memory_mib": 97702.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 113,
+          "median_memory_mib": 97580.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 113,
+          "median_memory_mib": 97580.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 113,
+          "median_memory_mib": 97580.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "qwen_image",
+      "variant": "pr_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 38,
+          "median_memory_mib": 66350.0,
+          "max_utilization_percent": 99.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 38,
+          "median_memory_mib": 66350.0,
+          "max_utilization_percent": 99.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 38,
+          "median_memory_mib": 66350.0,
+          "max_utilization_percent": 77.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 38,
+          "median_memory_mib": 66350.0,
+          "max_utilization_percent": 64.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "qwen_image",
+      "variant": "pr_mxfp8",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 80,
+          "median_memory_mib": 53896.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 80,
+          "median_memory_mib": 53852.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 80,
+          "median_memory_mib": 53850.0,
+          "max_utilization_percent": 63.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 80,
+          "median_memory_mib": 53850.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "qwen_image",
+      "variant": "pr_fp8_block",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 68,
+          "median_memory_mib": 53388.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 68,
+          "median_memory_mib": 53388.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 68,
+          "median_memory_mib": 53388.0,
+          "max_utilization_percent": 87.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 68,
+          "median_memory_mib": 53388.0,
+          "max_utilization_percent": 91.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "qwen_image",
+      "variant": "base_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 38,
+          "median_memory_mib": 66350.0,
+          "max_utilization_percent": 99.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 38,
+          "median_memory_mib": 66350.0,
+          "max_utilization_percent": 99.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 38,
+          "median_memory_mib": 66350.0,
+          "max_utilization_percent": 68.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 38,
+          "median_memory_mib": 66350.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "wan22",
+      "variant": "pr_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0
+      ],
+      "observed_gpu_count": 1,
+      "matches_requested_gpu_count": false,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 120,
+          "median_memory_mib": 40596.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 120,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 120,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 120,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "wan22",
+      "variant": "pr_mxfp8",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0
+      ],
+      "observed_gpu_count": 1,
+      "matches_requested_gpu_count": false,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 138,
+          "median_memory_mib": 36122.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 138,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 138,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 138,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "wan22",
+      "variant": "pr_fp8_block",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0
+      ],
+      "observed_gpu_count": 1,
+      "matches_requested_gpu_count": false,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 142,
+          "median_memory_mib": 36234.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 142,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 142,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 142,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "initial",
+      "model": "wan22",
+      "variant": "base_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0
+      ],
+      "observed_gpu_count": 1,
+      "matches_requested_gpu_count": false,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 119,
+          "median_memory_mib": 40598.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 119,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 119,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 119,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "h3_image",
+      "variant": "pr_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 23,
+          "median_memory_mib": 88392.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 23,
+          "median_memory_mib": 88390.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 23,
+          "median_memory_mib": 88390.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 23,
+          "median_memory_mib": 88390.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "h3_image",
+      "variant": "pr_mxfp8",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 25,
+          "median_memory_mib": 56772.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 25,
+          "median_memory_mib": 56688.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 25,
+          "median_memory_mib": 56712.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 25,
+          "median_memory_mib": 56756.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "h3_image",
+      "variant": "pr_fp8_block",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 25,
+          "median_memory_mib": 56322.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 25,
+          "median_memory_mib": 56468.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 25,
+          "median_memory_mib": 56456.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 25,
+          "median_memory_mib": 56644.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "h3_image",
+      "variant": "base_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 23,
+          "median_memory_mib": 88392.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 23,
+          "median_memory_mib": 88390.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 23,
+          "median_memory_mib": 88390.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 23,
+          "median_memory_mib": 88390.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "h3_video",
+      "variant": "pr_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 217,
+          "median_memory_mib": 93236.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 217,
+          "median_memory_mib": 93110.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 217,
+          "median_memory_mib": 93110.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 217,
+          "median_memory_mib": 93110.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "h3_video",
+      "variant": "pr_mxfp8",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 230,
+          "median_memory_mib": 62278.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 230,
+          "median_memory_mib": 62470.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 230,
+          "median_memory_mib": 62276.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 230,
+          "median_memory_mib": 62470.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "h3_video",
+      "variant": "pr_fp8_block",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 194,
+          "median_memory_mib": 62274.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 194,
+          "median_memory_mib": 62522.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 194,
+          "median_memory_mib": 62274.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 194,
+          "median_memory_mib": 62274.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "h3_video",
+      "variant": "base_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 217,
+          "median_memory_mib": 93236.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 217,
+          "median_memory_mib": 93110.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 217,
+          "median_memory_mib": 93110.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 217,
+          "median_memory_mib": 93110.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "qwen_image",
+      "variant": "pr_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 92,
+          "median_memory_mib": 65656.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 92,
+          "median_memory_mib": 65656.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 92,
+          "median_memory_mib": 65656.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 92,
+          "median_memory_mib": 65656.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "qwen_image",
+      "variant": "pr_mxfp8",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 144,
+          "median_memory_mib": 53750.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 143,
+          "median_memory_mib": 53750.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 143,
+          "median_memory_mib": 53750.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 143,
+          "median_memory_mib": 53750.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "qwen_image",
+      "variant": "pr_fp8_block",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 152,
+          "median_memory_mib": 53302.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 152,
+          "median_memory_mib": 53302.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 152,
+          "median_memory_mib": 53302.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 152,
+          "median_memory_mib": 53302.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "qwen_image",
+      "variant": "base_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 90,
+          "median_memory_mib": 65656.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 90,
+          "median_memory_mib": 65656.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 90,
+          "median_memory_mib": 65656.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 90,
+          "median_memory_mib": 65656.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "wan22",
+      "variant": "pr_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0
+      ],
+      "observed_gpu_count": 1,
+      "matches_requested_gpu_count": false,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 226,
+          "median_memory_mib": 40774.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 226,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 226,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 226,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "wan22",
+      "variant": "pr_mxfp8",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0
+      ],
+      "observed_gpu_count": 1,
+      "matches_requested_gpu_count": false,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 224,
+          "median_memory_mib": 36248.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 224,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 224,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 224,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "wan22",
+      "variant": "pr_fp8_block",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0
+      ],
+      "observed_gpu_count": 1,
+      "matches_requested_gpu_count": false,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 227,
+          "median_memory_mib": 36290.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 227,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 227,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 227,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "initial",
+      "model": "wan22",
+      "variant": "base_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0
+      ],
+      "observed_gpu_count": 1,
+      "matches_requested_gpu_count": false,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 223,
+          "median_memory_mib": 40774.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 223,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 223,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 223,
+          "median_memory_mib": 3.0,
+          "max_utilization_percent": 0.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "confirmation",
+      "model": "h3_image",
+      "variant": "pr_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 25,
+          "median_memory_mib": 88488.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 25,
+          "median_memory_mib": 88486.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 25,
+          "median_memory_mib": 88486.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 25,
+          "median_memory_mib": 88486.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "confirmation",
+      "model": "h3_image",
+      "variant": "pr_mxfp8",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 24,
+          "median_memory_mib": 57786.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 24,
+          "median_memory_mib": 57890.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 24,
+          "median_memory_mib": 57820.0,
+          "max_utilization_percent": 97.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 24,
+          "median_memory_mib": 57892.0,
+          "max_utilization_percent": 97.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "confirmation",
+      "model": "h3_image",
+      "variant": "pr_fp8_block",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 24,
+          "median_memory_mib": 56514.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 24,
+          "median_memory_mib": 56876.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 24,
+          "median_memory_mib": 56730.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 24,
+          "median_memory_mib": 56730.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "Rubin",
+      "round": "confirmation",
+      "model": "h3_image",
+      "variant": "base_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 24,
+          "median_memory_mib": 88488.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 24,
+          "median_memory_mib": 88486.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 24,
+          "median_memory_mib": 88486.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 24,
+          "median_memory_mib": 88486.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "confirmation",
+      "model": "h3_image",
+      "variant": "pr_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 56,
+          "median_memory_mib": 88392.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 56,
+          "median_memory_mib": 88390.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 56,
+          "median_memory_mib": 88390.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 56,
+          "median_memory_mib": 88390.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "confirmation",
+      "model": "h3_image",
+      "variant": "pr_mxfp8",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 54,
+          "median_memory_mib": 57160.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 54,
+          "median_memory_mib": 57160.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 54,
+          "median_memory_mib": 57782.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 54,
+          "median_memory_mib": 57724.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "confirmation",
+      "model": "h3_image",
+      "variant": "pr_fp8_block",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 51,
+          "median_memory_mib": 56860.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 51,
+          "median_memory_mib": 56338.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 51,
+          "median_memory_mib": 56714.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 51,
+          "median_memory_mib": 56714.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    },
+    {
+      "gpu_family": "GB200",
+      "round": "confirmation",
+      "model": "h3_image",
+      "variant": "base_bf16",
+      "requested_num_gpus": 4,
+      "requested_ulysses_degree": 4,
+      "observed_active_gpu_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "observed_gpu_count": 4,
+      "matches_requested_gpu_count": true,
+      "telemetry": [
+        {
+          "gpu": 0,
+          "telemetry_samples": 55,
+          "median_memory_mib": 88392.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 1,
+          "telemetry_samples": 55,
+          "median_memory_mib": 88390.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 2,
+          "telemetry_samples": 55,
+          "median_memory_mib": 88390.0,
+          "max_utilization_percent": 100.0
+        },
+        {
+          "gpu": 3,
+          "telemetry_samples": 55,
+          "median_memory_mib": 88390.0,
+          "max_utilization_percent": 100.0
+        }
+      ]
+    }
+  ]
+}

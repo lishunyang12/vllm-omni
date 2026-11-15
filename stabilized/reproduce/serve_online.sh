@@ -6,9 +6,12 @@ model_key=${2:?Choose h3_image, h3_video, qwen_image or wan22}
 precision=${3:-mxfp8}
 port=${4:-8000}
 case "$precision" in bf16|mxfp8|fp8_per_block) ;; *) echo "Unsupported precision: $precision" >&2; exit 2;; esac
+gpu_count=4
+sp_degree=4
 case "$model_key" in
  h3_image|h3_video) encoder_tp=4 ;;
- qwen_image|wan22) encoder_tp=1 ;;
+ qwen_image) encoder_tp=1 ;;
+ wan22) encoder_tp=1; gpu_count=1; sp_degree=1 ;;
  *) echo "Unsupported model: $model_key" >&2; exit 2 ;;
 esac
 export PYTHONPATH="$work/source/candidate${PYTHONPATH:+:$PYTHONPATH}"
@@ -30,7 +33,7 @@ PYMODEL
 )
 args=(serve "$model_path" --omni --served-model-name "$model_key"
       --host 0.0.0.0 --port "$port" --dtype bfloat16 --enforce-eager
-      --num-gpus 4 --tensor-parallel-size 1 --ulysses-degree 4 --ring-degree 1
+      --num-gpus "$gpu_count" --tensor-parallel-size 1 --ulysses-degree "$sp_degree" --ring-degree 1
       --text-encoder-tp-size "$encoder_tp")
 if [[ "$precision" != bf16 ]]; then
  args+=(--diffusion-quantization-config "{\"transformer\":{\"method\":\"$precision\"},\"text_encoder\":null}")

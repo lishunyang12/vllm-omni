@@ -1,5 +1,5 @@
 {
-  "status": "passed",
+  "status": "integrity_checks_passed_with_topology_correction",
   "runs": [
     {
       "gpu": "Rubin",
@@ -52,5 +52,8 @@
     "numpy": "2.2.6",
     "pillow": "13.0.0",
     "huggingface-hub": "1.33.0"
-  }
+  },
+  "execution_topology_audit": "execution-topology.json",
+  "requested_gpu_count_mismatches": 8,
+  "topology_correction": "Wan2.2 ran on GPU0 only, despite four-GPU requested kwargs. These eight original Wan cases must be reported as single-GPU. Other models used four GPUs."
 }

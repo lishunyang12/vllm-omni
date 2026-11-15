@@ -1,7 +1,7 @@
 Repeated latency benchmark for PR #10390
 ========================================
 
-Use four compatible NVIDIA GPUs (SM100, SM103 or SM107), the pinned container
+Expose four compatible NVIDIA GPUs (SM100, SM103 or SM107), the pinned container
 below and approximately 600 GB of writable storage. This benchmark runs the
 same model revisions, prompts, seeds, dimensions and steps as the quality
 matrix. Each GPU family needs its own work directory and result bundle.
@@ -28,6 +28,11 @@ A fresh process loads each model/precision case. Base BF16 and PR BF16 controls
 are included alongside PR MXFP8 and existing fp8_per_block. Parallelism remains
 DiT TP1/Ulysses4, H3 encoder TP4 and other encoders TP1, eager execution.
 All GPU families use the same model and variant order in protocol.json.
+
+GPU-count correction: the original kwargs request four GPUs for every case,
+but Wan2.2 default deployment fixes devices to GPU0. Its measured runs used
+one GPU; H3 and Qwen used four. Original scripts/metadata retain requested
+kwargs for provenance. See execution-topology.json for all observed counts.
 
 A case passes the predeclared stability check only if all of these hold:
   - sample standard deviation / mean <= 5%

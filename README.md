@@ -1,6 +1,6 @@
 # PR #10390: generated output comparisons
 
-Actual outputs from four NVIDIA Rubin SM107 GPUs, November 14–15, 2026. Implementation: https://github.com/vllm-project/vllm-omni/pull/10390.
+Actual outputs from NVIDIA Rubin SM107 (four GPUs for H3/Qwen; single-GPU Wan), November 14–15, 2026. Implementation: https://github.com/vllm-project/vllm-omni/pull/10390.
 
 Baseline `eb2077899989a07d0e7acb9cda3217734fdc8909`; tested runtime `a6a35c86b13db636a07173755b241544dff4c082`. PR head `3a3bfe15822848ada4891f505bd5f408cf162195` adds only blockwise FP8 documentation.
 
@@ -12,7 +12,7 @@ For the complete playable gallery, [download this branch as a ZIP](https://githu
 
 [Artifact verification](artifact-verification.json) checks all native pixel hashes, metric aggregation and every decoded frame in each MP4.
 
-All modes use four GPUs, DiT TP1/Ulysses4, BF16 activations, eager execution; H3 text encoder TP4, other text encoders TP1. Only the diffusion transformer is quantized. Model revisions, prompts, seeds and all sampling settings are in [matrix.json](matrix.json).
+**GPU-count correction:** H3 and Qwen use four GPUs with DiT TP1/Ulysses4. Wan2.2 follows its default deployment on GPU0 (TP1/Ulysses1), despite four-GPU kwargs recorded in the original metadata. BF16 activations and eager execution are unchanged; H3 text encoder TP4, other encoders TP1. See the [execution-topology audit](stabilized/execution-topology.json). Only the diffusion transformer is quantized. Model revisions, prompts, seeds and all sampling settings are in [matrix.json](matrix.json).
 
 SSIM uses Gaussian weighting (sigma 1.5) and population covariance. PSNR uses pooled RGB MSE. LPIPS uses AlexNet v0.1 with RGB in [-1,1]. Scores use native lossless PNG pixels; SSIM and LPIPS are averaged over every video frame. No resizing, frame truncation, or encoded MP4 input is used for scoring.
 
@@ -38,7 +38,7 @@ One prompt and seed per model. These scores measure output differences; they do 
 
 ## First-request latency (seconds; n=1)
 
-One first request per case on four Rubin SM107 GPUs, using the same settings and outputs as the quality matrix above. Seconds of wall time around the synchronous `Omni.generate()` call, after `Omni` initialization. Initialization/model loading is recorded separately; subsequent PNG saving, MP4 encoding and quality scoring are excluded.
+One first request per case on Rubin SM107 (four GPUs for H3/Qwen; single-GPU Wan), using the same settings and outputs as the quality matrix above. Seconds of wall time around the synchronous `Omni.generate()` call, after `Omni` initialization. Initialization/model loading is recorded separately; subsequent PNG saving, MP4 encoding and quality scoring are excluded.
 
 | Model | Base BF16 (s) | PR BF16 (s) | PR MXFP8 (s) | PR blockwise FP8 (s) |
 |---|---:|---:|---:|---:|

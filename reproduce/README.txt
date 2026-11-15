@@ -28,7 +28,9 @@ The default matrix contains H3-Image (4096x4096, 6 steps), Qwen-Image
 (1024x1024, 50 steps), Wan2.2-TI2V-5B (1280x704, 121 frames, 50 steps),
 and MiniMax-H3 FL2VA text-to-video/audio (1344x768, 124 frames, 50 steps).
 Each uses the fixed prompt, seed and sampling parameters recorded in matrix.json.
-All modes use eager execution, four GPUs, DiT TP1/Ulysses4; H3 encoder TP4,
+All modes use eager execution. H3/Qwen use four GPUs and DiT TP1/Ulysses4;
+Wan follows its default single-GPU deployment despite four-GPU requested
+kwargs in the original script. See stabilized/execution-topology.json. H3 encoder TP4,
 other encoders TP1. Quantization is applied only to the diffusion transformer.
 H3 video enables trust_remote_code for its native VAE implementation at the
 pinned checkpoint revision and uses its native 17n+5 frame grid (124 frames).

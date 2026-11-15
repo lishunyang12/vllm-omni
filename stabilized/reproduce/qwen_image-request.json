@@ -1,0 +1,13 @@
+{
+  "model": "qwen_image",
+  "prompt": "A small red panda wearing a blue scarf in a snowy forest, soft morning light, detailed fur, snowflakes on pine branches, realistic wildlife photography.",
+  "negative_prompt": "",
+  "n": 1,
+  "size": "1024x1024",
+  "num_inference_steps": 50,
+  "guidance_scale": 1.0,
+  "true_cfg_scale": 4.0,
+  "seed": 142,
+  "generator_device": "cpu",
+  "response_format": "b64_json"
+}

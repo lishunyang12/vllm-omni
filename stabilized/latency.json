@@ -21,6 +21,8 @@
       "source_commit": "eb2077899989a07d0e7acb9cda3217734fdc8909",
       "metadata_sha256": "865bc003663342d5d2374cf93b164a0f8f6343b2896e00cdeb87e6f769bbf838",
       "round": "confirmation",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "confirmation/rubin/results/h3_image/base_bf16/metadata.json"
     },
     {
@@ -43,6 +45,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "39f61f8a8d0b9bb57fc9ae4789b0e480d28a91dc31496b7166beb45f41fe721b",
       "round": "confirmation",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "confirmation/rubin/results/h3_image/pr_bf16/metadata.json"
     },
     {
@@ -65,6 +69,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "0a26724410d7fd467bbed5e94177bd731312a708542d0ef8b5aa259f7cfcd709",
       "round": "confirmation",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "confirmation/rubin/results/h3_image/pr_mxfp8/metadata.json"
     },
     {
@@ -87,6 +93,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "79ae0f266de6274293ea04111effb3e117e57410212014701a0b25b739b3270d",
       "round": "confirmation",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "confirmation/rubin/results/h3_image/pr_fp8_block/metadata.json"
     },
     {
@@ -109,6 +117,8 @@
       "source_commit": "eb2077899989a07d0e7acb9cda3217734fdc8909",
       "metadata_sha256": "159555ecc661660ea4096666bd64883290a78552ed3c627f69c54cfd5494c932",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/rubin/results/h3_video/base_bf16/metadata.json"
     },
     {
@@ -131,6 +141,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "5b62098f3b8f085afea2709133f6ed13f79437ed2d7599eb05b7bda562422b2f",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/rubin/results/h3_video/pr_bf16/metadata.json"
     },
     {
@@ -153,6 +165,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "8e2d88f20438dfee33b5dbc86d0a68b8be441fb13e09eb0c7698e04c3a0c7f5e",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/rubin/results/h3_video/pr_mxfp8/metadata.json"
     },
     {
@@ -175,6 +189,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "00aaf387034020e95b91852c087285c71b53e5298043a8aad5b84b4f01fb2c2c",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/rubin/results/h3_video/pr_fp8_block/metadata.json"
     },
     {
@@ -197,6 +213,8 @@
       "source_commit": "eb2077899989a07d0e7acb9cda3217734fdc8909",
       "metadata_sha256": "9a68ae522f7e30014c20d36d0532ff8c8ac28ca1239074bbaecdeb3072b53154",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/rubin/results/qwen_image/base_bf16/metadata.json"
     },
     {
@@ -219,6 +237,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "f8afc613094a0ffed3a8501f5782a54e52b4db8df0f6554349136aab59444359",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/rubin/results/qwen_image/pr_bf16/metadata.json"
     },
     {
@@ -241,6 +261,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "2a9700e761640c2618c9dc45c58134cb966568149c0ecdde993dab23f8e8ff46",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/rubin/results/qwen_image/pr_mxfp8/metadata.json"
     },
     {
@@ -263,6 +285,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "8f016b3873f844da61ad922d7045767d06c6e1c1d00ae3084eb56409cddbd72b",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/rubin/results/qwen_image/pr_fp8_block/metadata.json"
     },
     {
@@ -285,6 +309,8 @@
       "source_commit": "eb2077899989a07d0e7acb9cda3217734fdc8909",
       "metadata_sha256": "995b5bdd4bcf9550a5b7a80e8f9d0e57b8645df4d8355582a8a2c4d3f1782ffa",
       "round": "initial",
+      "observed_gpu_count": 1,
+      "effective_ulysses_degree": 1,
       "metadata_path": "initial/rubin/results/wan22/base_bf16/metadata.json"
     },
     {
@@ -307,6 +333,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "ffe2f253b0541753cab829b627166903996d55a3e0d5ae262d0156fe55fec796",
       "round": "initial",
+      "observed_gpu_count": 1,
+      "effective_ulysses_degree": 1,
       "metadata_path": "initial/rubin/results/wan22/pr_bf16/metadata.json"
     },
     {
@@ -329,6 +357,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "c45fb5c799ef7c5b145a319da30b2869dd8d6a0328cf4fc087c4ced1eb24e226",
       "round": "initial",
+      "observed_gpu_count": 1,
+      "effective_ulysses_degree": 1,
       "metadata_path": "initial/rubin/results/wan22/pr_mxfp8/metadata.json"
     },
     {
@@ -351,6 +381,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "3d817865570d5a3553ea34b178543f396e5effb3ec1d0ea49dc7a3decd8edbb7",
       "round": "initial",
+      "observed_gpu_count": 1,
+      "effective_ulysses_degree": 1,
       "metadata_path": "initial/rubin/results/wan22/pr_fp8_block/metadata.json"
     },
     {
@@ -373,6 +405,8 @@
       "source_commit": "eb2077899989a07d0e7acb9cda3217734fdc8909",
       "metadata_sha256": "149ad7f4ecc02d5a23de422d70751299b405c4159753dddbbe0e4eedbc17f143",
       "round": "confirmation",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "confirmation/gb200/results/h3_image/base_bf16/metadata.json"
     },
     {
@@ -395,6 +429,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "1903d46589b5fcf686bcb3a7a4b31752c2b8eee306ece75df1eb56801381b0f1",
       "round": "confirmation",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "confirmation/gb200/results/h3_image/pr_bf16/metadata.json"
     },
     {
@@ -417,6 +453,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "a5f8751feda3b172ecff0a843e49405a3d2fdb690c207a9e47d8e3a80ad4f3ae",
       "round": "confirmation",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "confirmation/gb200/results/h3_image/pr_mxfp8/metadata.json"
     },
     {
@@ -439,6 +477,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "bcf94a89369b1c19f10e504cfc74c03dad93b6597161cb903a2bacc6e5f7aed6",
       "round": "confirmation",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "confirmation/gb200/results/h3_image/pr_fp8_block/metadata.json"
     },
     {
@@ -461,6 +501,8 @@
       "source_commit": "eb2077899989a07d0e7acb9cda3217734fdc8909",
       "metadata_sha256": "a60ce18477b9b32513462ce9ebb6a257b73d4061e642b2472fadb87d5cd749bc",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/gb200/results/h3_video/base_bf16/metadata.json"
     },
     {
@@ -483,6 +525,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "2a7f9e58f8bf92e9b4b92d0d6f8e790cf584e3d357a3bd5f06aae0c03582027f",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/gb200/results/h3_video/pr_bf16/metadata.json"
     },
     {
@@ -505,6 +549,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "761f6f4bbebe98dcd1b17b5a570b249b142586ca2dc4e07c346990bb322f106b",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/gb200/results/h3_video/pr_mxfp8/metadata.json"
     },
     {
@@ -527,6 +573,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "1ffd53096caf7bec8fcb51a0443ff7e5d7b242446d67fbae8d19eb181de5ad97",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/gb200/results/h3_video/pr_fp8_block/metadata.json"
     },
     {
@@ -549,6 +597,8 @@
       "source_commit": "eb2077899989a07d0e7acb9cda3217734fdc8909",
       "metadata_sha256": "b3e4672501b71848f93de8c094adce9e96e8c79c04eff1a7e6b2777482498434",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/gb200/results/qwen_image/base_bf16/metadata.json"
     },
     {
@@ -571,6 +621,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "15f3444e1efae5377fa45ba4ee931ca552b6e0a02ec86967418a424aae63808b",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/gb200/results/qwen_image/pr_bf16/metadata.json"
     },
     {
@@ -593,6 +645,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "2d9d323801f99f16a354757e7f6f4b32a98f23c3e7856a42f151b13702014ac1",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/gb200/results/qwen_image/pr_mxfp8/metadata.json"
     },
     {
@@ -615,6 +669,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "c1f9040b43ce52f10997f2ecbc809a18fe451df7264fe4d95db9ef00e46dcd72",
       "round": "initial",
+      "observed_gpu_count": 4,
+      "effective_ulysses_degree": 4,
       "metadata_path": "initial/gb200/results/qwen_image/pr_fp8_block/metadata.json"
     },
     {
@@ -637,6 +693,8 @@
       "source_commit": "eb2077899989a07d0e7acb9cda3217734fdc8909",
       "metadata_sha256": "b7aa4f9680f9547386cad9f5aff738aa5be1782a43a545af0ea1017c4d23fd47",
       "round": "initial",
+      "observed_gpu_count": 1,
+      "effective_ulysses_degree": 1,
       "metadata_path": "initial/gb200/results/wan22/base_bf16/metadata.json"
     },
     {
@@ -659,6 +717,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "4130f6b71a691bf66b0da9391f57224e459b17d6e4ef3ec9cebcf04d1139cc36",
       "round": "initial",
+      "observed_gpu_count": 1,
+      "effective_ulysses_degree": 1,
       "metadata_path": "initial/gb200/results/wan22/pr_bf16/metadata.json"
     },
     {
@@ -681,6 +741,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "e341c480714a0a2dd61a66b1747818099d7790fdc2f20d2c3eefd22d35e0b4f2",
       "round": "initial",
+      "observed_gpu_count": 1,
+      "effective_ulysses_degree": 1,
       "metadata_path": "initial/gb200/results/wan22/pr_mxfp8/metadata.json"
     },
     {
@@ -703,6 +765,8 @@
       "source_commit": "a6a35c86b13db636a07173755b241544dff4c082",
       "metadata_sha256": "6df32ac01f8a3a2b48dbb42332353a490685dd05d3825de9b5a9ca9283c0a3f0",
       "round": "initial",
+      "observed_gpu_count": 1,
+      "effective_ulysses_degree": 1,
       "metadata_path": "initial/gb200/results/wan22/pr_fp8_block/metadata.json"
     }
   ]

@@ -1,0 +1,13 @@
+{
+  "model": "h3_image",
+  "prompt": "A red bicycle leaning against a weathered blue wooden door, a wicker basket filled with yellow sunflowers, warm afternoon sunlight, intricate wood grain and brick textures, realistic photography.",
+  "negative_prompt": "",
+  "n": 1,
+  "size": "4096x4096",
+  "num_inference_steps": 6,
+  "guidance_scale": 1.0,
+  "true_cfg_scale": 1.0,
+  "seed": 42,
+  "generator_device": "cpu",
+  "response_format": "b64_json"
+}
