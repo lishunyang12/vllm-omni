@@ -12,9 +12,9 @@
     "base_bf16"
   ],
   "measurement": "Wall time around synchronous Omni.generate; initialization, output checking and file writing excluded",
-  "cache_policy": "Same engine for all 25 requests per case; persistent kernel caches retained; no output-result caching enabled",
+  "cache_policy": "Same engine for all 65 requests per case; persistent kernel caches retained; no output-result caching enabled",
   "seed_policy": "Recreate CPU generator with the same manifest seed for every request",
-  "sampling": "All 20 post-warmup requests retained, including outliers; no adaptive stopping",
+  "sampling": "All 50 post-warmup requests retained, including outliers; no adaptive stopping",
   "stability_limits": {
     "coefficient_of_variation_max": 0.05,
     "half_median_relative_change_max": 0.05,

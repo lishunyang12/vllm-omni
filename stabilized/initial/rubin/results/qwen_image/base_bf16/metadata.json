@@ -1,0 +1,275 @@
+{
+  "source_sha256": {
+    "vllm_omni/quantization/factory.py": "515265ad611babe871fb4dd9afe6052e8a9db4a4c47fdde397781fc26ac72d22",
+    "vllm_omni/quantization/mxfp8_config.py": "84f908f893545442668a128b59132e4521179014011167fff541f4781cf4de75",
+    "vllm_omni/entrypoints/async_omni.py": "e9ca3a78564b52c9f2e62b8934fa162172638a4171ff6a8bc05ba9b9a74536f5",
+    "vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3_image.py": "fdd29465fa9c283ddf9682ed84d3f77372d12be4eb56b330c04a0cdaa2641eea"
+  },
+  "case": {
+    "prompt": "A small red panda wearing a blue scarf in a snowy forest, soft morning light, detailed fur, snowflakes on pine branches, realistic wildlife photography.",
+    "negative_prompt": "",
+    "seed": 142,
+    "height": 1024,
+    "width": 1024,
+    "steps": 50,
+    "guidance_scale": 1.0,
+    "true_cfg_scale": 4.0,
+    "frames": 1,
+    "fps": 24
+  },
+  "variant": {
+    "source": "base",
+    "commit": "eb2077899989a07d0e7acb9cda3217734fdc8909",
+    "quantization": null
+  },
+  "model": {
+    "model": "Qwen/Qwen-Image",
+    "revision": "75e0b4be04f60ec59a75f475837eced720f823b6",
+    "path": "/work/hf-cache/hub/models--Qwen--Qwen-Image/snapshots/75e0b4be04f60ec59a75f475837eced720f823b6"
+  },
+  "source": "/work/source/base/vllm_omni/__init__.py",
+  "quantization_config": null,
+  "parallelism": {
+    "ulysses_degree": 4,
+    "tensor_parallel_size": 1,
+    "text_encoder_tp_size": 1
+  },
+  "trust_remote_code": false,
+  "enforce_eager": true,
+  "torch": "2.16.0.dev20261009+cu134",
+  "cuda": "13.4",
+  "start_unix": 1794713634.973859,
+  "status": "completed",
+  "protocol": {
+    "warmup_requests": 5,
+    "measured_requests": 20,
+    "concurrency": 1,
+    "model_order": [
+      "h3_image",
+      "h3_video",
+      "qwen_image",
+      "wan22"
+    ],
+    "variant_order": [
+      "pr_bf16",
+      "pr_mxfp8",
+      "pr_fp8_block",
+      "base_bf16"
+    ],
+    "measurement": "Wall time around synchronous Omni.generate; initialization, output checking and file writing excluded",
+    "cache_policy": "Same engine for all 25 requests per case; persistent kernel caches retained; no output-result caching enabled",
+    "seed_policy": "Recreate CPU generator with the same manifest seed for every request",
+    "sampling": "All 20 post-warmup requests retained, including outliers; no adaptive stopping",
+    "stability_limits": {
+      "coefficient_of_variation_max": 0.05,
+      "half_median_relative_change_max": 0.05,
+      "p95_over_p50_max": 1.1
+    },
+    "quantiles": "numpy percentile method=linear",
+    "labels": "A completed case is called stable only when all three declared limits pass; otherwise its measured distribution is reported as unstable",
+    "case_timeout_seconds": 2400
+  },
+  "gpu_names": [
+    "NVIDIA Graphics Device",
+    "NVIDIA Graphics Device",
+    "NVIDIA Graphics Device",
+    "NVIDIA Graphics Device"
+  ],
+  "gpu_capabilities": [
+    [
+      10,
+      7
+    ],
+    [
+      10,
+      7
+    ],
+    [
+      10,
+      7
+    ],
+    [
+      10,
+      7
+    ]
+  ],
+  "requests": [
+    {
+      "phase": "warmup",
+      "index": 0,
+      "seconds": 8.30812086199876,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 1,
+      "seconds": 7.640461360977497,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 2,
+      "seconds": 7.671534498047549,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 3,
+      "seconds": 7.55798159504775,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 4,
+      "seconds": 8.939195911982097,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 5,
+      "seconds": 7.523281498986762,
+      "frame_count": 1,
+      "pixel_sha256": [
+        "a3a8f3cac23adf3cebb3a403bca928cefacb493c904f2a9b9a6d6cef5c72da7b"
+      ]
+    },
+    {
+      "phase": "measured",
+      "index": 6,
+      "seconds": 7.587139870040119,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 7,
+      "seconds": 7.600800101994537,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 8,
+      "seconds": 7.602450447971933,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 9,
+      "seconds": 7.59323542000493,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 10,
+      "seconds": 7.60884482099209,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 11,
+      "seconds": 7.806154060992412,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 12,
+      "seconds": 7.6485678009921685,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 13,
+      "seconds": 7.609796407050453,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 14,
+      "seconds": 7.716217796958517,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 15,
+      "seconds": 7.5912852580077015,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 16,
+      "seconds": 7.5706156810047105,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 17,
+      "seconds": 7.559474941983353,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 18,
+      "seconds": 7.595455797971226,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 19,
+      "seconds": 7.572842979046982,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 20,
+      "seconds": 7.60088658798486,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 21,
+      "seconds": 7.592508473957423,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 22,
+      "seconds": 7.5898556360043585,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 23,
+      "seconds": 7.755983055976685,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 24,
+      "seconds": 7.599962931009941,
+      "frame_count": 1,
+      "pixel_sha256": [
+        "a3a8f3cac23adf3cebb3a403bca928cefacb493c904f2a9b9a6d6cef5c72da7b"
+      ]
+    }
+  ],
+  "benchmark_script_sha256": "a1d1006b49666a51701ac93249a8abb62089d2b3eac1fc8d89eb171e18af2713",
+  "initialization_seconds": 262.8076607459807,
+  "summary": {
+    "n": 20,
+    "p50_seconds": 7.5977093644905835,
+    "p95_seconds": 7.758491606227471,
+    "mean_seconds": 7.616267978446558,
+    "stddev_seconds": 0.0677378962920857,
+    "min_seconds": 7.523281498986762,
+    "max_seconds": 7.806154060992412,
+    "coefficient_of_variation": 0.00889384360999096,
+    "half_median_relative_change": 0.0018079681258314569,
+    "p95_over_p50": 1.0211619363183773
+  },
+  "stability_checks": {
+    "coefficient_of_variation": true,
+    "half_median_relative_change": true,
+    "p95_over_p50": true
+  },
+  "stable": true,
+  "first_last_measured_pixels_identical": true
+}

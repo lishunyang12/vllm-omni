@@ -110,6 +110,36 @@
       "first_last_measured_pixels_identical": true,
       "warm_metadata": "initial/rubin/results/qwen_image/pr_fp8_block/metadata.json",
       "original_quality_metadata": "../outputs/qwen_image/pr_fp8_block/metadata.json"
+    },
+    {
+      "round": "initial",
+      "model": "qwen_image",
+      "variant": "base_bf16",
+      "frames": 1,
+      "matches_original_quality_pixels": true,
+      "first_last_measured_pixels_identical": true,
+      "warm_metadata": "initial/rubin/results/qwen_image/base_bf16/metadata.json",
+      "original_quality_metadata": "../outputs/qwen_image/base_bf16/metadata.json"
+    },
+    {
+      "round": "initial",
+      "model": "wan22",
+      "variant": "pr_bf16",
+      "frames": 121,
+      "matches_original_quality_pixels": true,
+      "first_last_measured_pixels_identical": true,
+      "warm_metadata": "initial/rubin/results/wan22/pr_bf16/metadata.json",
+      "original_quality_metadata": "../outputs/wan22/pr_bf16/metadata.json"
+    },
+    {
+      "round": "initial",
+      "model": "wan22",
+      "variant": "pr_mxfp8",
+      "frames": 121,
+      "matches_original_quality_pixels": true,
+      "first_last_measured_pixels_identical": true,
+      "warm_metadata": "initial/rubin/results/wan22/pr_mxfp8/metadata.json",
+      "original_quality_metadata": "../outputs/wan22/pr_mxfp8/metadata.json"
     }
   ]
 }

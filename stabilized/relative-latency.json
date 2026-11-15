@@ -1,0 +1,148 @@
+{
+  "baseline": "PR BF16 on the same GPU and model; negative latency change means faster",
+  "results": [
+    {
+      "gpu": "Rubin",
+      "model": "h3_image",
+      "variant": "pr_mxfp8",
+      "round": "initial",
+      "bf16_p50_seconds": 1.8376948629738763,
+      "candidate_p50_seconds": 1.6927489829831757,
+      "latency_change_percent": -7.887374716613172,
+      "speedup_ratio": 1.085627509718103,
+      "both_pass_stability_checks": false
+    },
+    {
+      "gpu": "Rubin",
+      "model": "h3_image",
+      "variant": "pr_fp8_block",
+      "round": "initial",
+      "bf16_p50_seconds": 1.8376948629738763,
+      "candidate_p50_seconds": 1.7196204295323696,
+      "latency_change_percent": -6.425138134762543,
+      "speedup_ratio": 1.0686630790223954,
+      "both_pass_stability_checks": false
+    },
+    {
+      "gpu": "Rubin",
+      "model": "h3_video",
+      "variant": "pr_mxfp8",
+      "round": "initial",
+      "bf16_p50_seconds": 22.278583549981704,
+      "candidate_p50_seconds": 18.770771688519744,
+      "latency_change_percent": -15.745219410346401,
+      "speedup_ratio": 1.1868762733717202,
+      "both_pass_stability_checks": true
+    },
+    {
+      "gpu": "Rubin",
+      "model": "h3_video",
+      "variant": "pr_fp8_block",
+      "round": "initial",
+      "bf16_p50_seconds": 22.278583549981704,
+      "candidate_p50_seconds": 19.486223768501077,
+      "latency_change_percent": -12.533829968211418,
+      "speedup_ratio": 1.1432991745683634,
+      "both_pass_stability_checks": true
+    },
+    {
+      "gpu": "Rubin",
+      "model": "qwen_image",
+      "variant": "pr_mxfp8",
+      "round": "initial",
+      "bf16_p50_seconds": 7.568890059978003,
+      "candidate_p50_seconds": 14.432818100001896,
+      "latency_change_percent": 90.68605813576636,
+      "speedup_ratio": 0.5244221888985775,
+      "both_pass_stability_checks": true
+    },
+    {
+      "gpu": "Rubin",
+      "model": "qwen_image",
+      "variant": "pr_fp8_block",
+      "round": "initial",
+      "bf16_p50_seconds": 7.568890059978003,
+      "candidate_p50_seconds": 13.465089305012953,
+      "latency_change_percent": 77.90044773159363,
+      "speedup_ratio": 0.562112132235184,
+      "both_pass_stability_checks": true
+    },
+    {
+      "gpu": "Rubin",
+      "model": "wan22",
+      "variant": "pr_mxfp8",
+      "round": "initial",
+      "bf16_p50_seconds": 23.891175144497538,
+      "candidate_p50_seconds": 26.8754634935176,
+      "latency_change_percent": 12.49117438121241,
+      "speedup_ratio": 0.888958627644138,
+      "both_pass_stability_checks": true
+    },
+    {
+      "gpu": "GB200",
+      "model": "h3_image",
+      "variant": "pr_mxfp8",
+      "round": "initial",
+      "bf16_p50_seconds": 4.228114314988488,
+      "candidate_p50_seconds": 3.904673921992071,
+      "latency_change_percent": -7.64975516035209,
+      "speedup_ratio": 1.0828341622010285,
+      "both_pass_stability_checks": true
+    },
+    {
+      "gpu": "GB200",
+      "model": "h3_image",
+      "variant": "pr_fp8_block",
+      "round": "initial",
+      "bf16_p50_seconds": 4.228114314988488,
+      "candidate_p50_seconds": 3.9202097980014514,
+      "latency_change_percent": -7.2823129662206165,
+      "speedup_ratio": 1.0785428670536992,
+      "both_pass_stability_checks": true
+    },
+    {
+      "gpu": "GB200",
+      "model": "h3_video",
+      "variant": "pr_mxfp8",
+      "round": "initial",
+      "bf16_p50_seconds": 42.98957581698778,
+      "candidate_p50_seconds": 37.6747332639934,
+      "latency_change_percent": -12.363096057566036,
+      "speedup_ratio": 1.1410718031034845,
+      "both_pass_stability_checks": true
+    },
+    {
+      "gpu": "GB200",
+      "model": "h3_video",
+      "variant": "pr_fp8_block",
+      "round": "initial",
+      "bf16_p50_seconds": 42.98957581698778,
+      "candidate_p50_seconds": 38.013698962982744,
+      "latency_change_percent": -11.574612587916643,
+      "speedup_ratio": 1.1308969395177901,
+      "both_pass_stability_checks": true
+    },
+    {
+      "gpu": "GB200",
+      "model": "qwen_image",
+      "variant": "pr_mxfp8",
+      "round": "initial",
+      "bf16_p50_seconds": 18.1658539820055,
+      "candidate_p50_seconds": 26.600737706001382,
+      "latency_change_percent": 46.43262976984841,
+      "speedup_ratio": 0.6829079021333724,
+      "both_pass_stability_checks": true
+    },
+    {
+      "gpu": "GB200",
+      "model": "qwen_image",
+      "variant": "pr_fp8_block",
+      "round": "initial",
+      "bf16_p50_seconds": 18.1658539820055,
+      "candidate_p50_seconds": 29.718342770502204,
+      "latency_change_percent": 63.59452630159981,
+      "speedup_ratio": 0.6112673954362133,
+      "both_pass_stability_checks": true
+    }
+  ]
+}

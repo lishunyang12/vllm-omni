@@ -68,3 +68,21 @@ Then run prepare_latency.sh with a NEW work directory, or with empty stabilized
 results while retaining the original result bundle separately. Use this protocol
 on both GPU families and retain all four modes, including the base BF16 control.
 The initial 5-warmup/20-sample data remains part of the report.
+
+Provenance note: the executed confirmation protocol's two descriptive strings
+(cache_policy and sampling) inherited the initial 25/20 counts. Its numeric
+fields were 15 warmups and 50 measurements; the runner uses those numeric
+fields. Raw executed protocols and request records are preserved unchanged.
+The reproduction copy corrects only those descriptions. benchmark_case.py is
+byte-identical to the executed script. The published orchestration adds a
+resume guard that rejects completed results from a different protocol.
+
+Optional figure rendering from the published evidence directory:
+
+  python3 -m pip install matplotlib==3.10.8
+  python3 plot_stabilized.py --report /path/to/evidence/stabilized \
+    --output /path/to/latency
+
+This writes PNG and SVG. Bars are P50, whiskers are the observed P5-P95 range,
+not confidence intervals. Plot generation reads raw samples and checks its
+percentiles against latency.json; it does not require GPUs or model weights.
