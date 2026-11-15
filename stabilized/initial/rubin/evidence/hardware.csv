@@ -1,0 +1,5 @@
+index, name, compute_cap, memory.total [MiB], driver_version
+0, NVIDIA Graphics Device, 10.7, 286524 MiB, 620.70.06
+1, NVIDIA Graphics Device, 10.7, 286524 MiB, 620.70.06
+2, NVIDIA Graphics Device, 10.7, 286524 MiB, 620.70.06
+3, NVIDIA Graphics Device, 10.7, 286524 MiB, 620.70.06

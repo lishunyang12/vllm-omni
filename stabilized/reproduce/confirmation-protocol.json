@@ -1,0 +1,27 @@
+{
+  "warmup_requests": 15,
+  "measured_requests": 50,
+  "concurrency": 1,
+  "model_order": [
+    "h3_image"
+  ],
+  "variant_order": [
+    "pr_bf16",
+    "pr_mxfp8",
+    "pr_fp8_block",
+    "base_bf16"
+  ],
+  "measurement": "Wall time around synchronous Omni.generate; initialization, output checking and file writing excluded",
+  "cache_policy": "Same engine for all 25 requests per case; persistent kernel caches retained; no output-result caching enabled",
+  "seed_policy": "Recreate CPU generator with the same manifest seed for every request",
+  "sampling": "All 20 post-warmup requests retained, including outliers; no adaptive stopping",
+  "stability_limits": {
+    "coefficient_of_variation_max": 0.05,
+    "half_median_relative_change_max": 0.05,
+    "p95_over_p50_max": 1.1
+  },
+  "quantiles": "numpy percentile method=linear",
+  "labels": "A completed case is called stable only when all three declared limits pass; otherwise its measured distribution is reported as unstable",
+  "case_timeout_seconds": 2400,
+  "reason": "Confirm H3-Image latency after initial Rubin runs showed early isolated spikes; rerun all modes on both GPU families and retain the original data"
+}

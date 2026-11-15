@@ -1,0 +1,11 @@
+{
+  "vllm": "0.33.0rc1.dev992+g1648fefab.d20261107.cu134",
+  "torch": "2.16.0.dev20261009+cu134",
+  "triton": "3.8.0+git3f6e4113",
+  "flashinfer-python": "0.7.3",
+  "diffusers": "0.40.0",
+  "transformers": "5.19.0",
+  "numpy": "2.2.6",
+  "pillow": "13.0.0",
+  "huggingface-hub": "1.33.0"
+}

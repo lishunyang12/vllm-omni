@@ -59,3 +59,12 @@ Reruns skip completed cases and retain failed attempts in failed-attempts/.
 
 Do not compare these latencies to another engine unless that engine has been
 measured with the same workload, output boundary and warmup policy.
+
+H3-Image confirmation protocol (15 warmups, 50 measured requests):
+
+  cp confirmation-protocol.json protocol.json
+
+Then run prepare_latency.sh with a NEW work directory, or with empty stabilized
+results while retaining the original result bundle separately. Use this protocol
+on both GPU families and retain all four modes, including the base BF16 control.
+The initial 5-warmup/20-sample data remains part of the report.

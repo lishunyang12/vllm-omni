@@ -1,0 +1,5 @@
+index, name, compute_cap, memory.total [MiB], driver_version
+0, NVIDIA GB200, 10.0, 189471 MiB, 595.84.01
+1, NVIDIA GB200, 10.0, 189471 MiB, 595.84.01
+2, NVIDIA GB200, 10.0, 189471 MiB, 595.84.01
+3, NVIDIA GB200, 10.0, 189471 MiB, 595.84.01

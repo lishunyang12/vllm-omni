@@ -1,0 +1,275 @@
+{
+  "source_sha256": {
+    "vllm_omni/quantization/factory.py": "515265ad611babe871fb4dd9afe6052e8a9db4a4c47fdde397781fc26ac72d22",
+    "vllm_omni/quantization/mxfp8_config.py": "84f908f893545442668a128b59132e4521179014011167fff541f4781cf4de75",
+    "vllm_omni/entrypoints/async_omni.py": "e9ca3a78564b52c9f2e62b8934fa162172638a4171ff6a8bc05ba9b9a74536f5",
+    "vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3_image.py": "fdd29465fa9c283ddf9682ed84d3f77372d12be4eb56b330c04a0cdaa2641eea"
+  },
+  "case": {
+    "prompt": "A red bicycle leaning against a weathered blue wooden door, a wicker basket filled with yellow sunflowers, warm afternoon sunlight, intricate wood grain and brick textures, realistic photography.",
+    "negative_prompt": "",
+    "seed": 42,
+    "height": 4096,
+    "width": 4096,
+    "steps": 6,
+    "guidance_scale": 1.0,
+    "true_cfg_scale": 1.0,
+    "frames": 1,
+    "fps": 24
+  },
+  "variant": {
+    "source": "base",
+    "commit": "eb2077899989a07d0e7acb9cda3217734fdc8909",
+    "quantization": null
+  },
+  "model": {
+    "model": "MiniMaxAI/MiniMax-H3-Image",
+    "revision": "7b6142f879bf7a973c449e1dea5480289736cdbd",
+    "path": "/work/hf-cache/hub/models--MiniMaxAI--MiniMax-H3-Image/snapshots/7b6142f879bf7a973c449e1dea5480289736cdbd"
+  },
+  "source": "/work/source/base/vllm_omni/__init__.py",
+  "quantization_config": null,
+  "parallelism": {
+    "ulysses_degree": 4,
+    "tensor_parallel_size": 1,
+    "text_encoder_tp_size": 4
+  },
+  "trust_remote_code": false,
+  "enforce_eager": true,
+  "torch": "2.16.0.dev20261009+cu134",
+  "cuda": "13.4",
+  "start_unix": 1794707912.749018,
+  "status": "completed",
+  "protocol": {
+    "warmup_requests": 5,
+    "measured_requests": 20,
+    "concurrency": 1,
+    "model_order": [
+      "h3_image",
+      "h3_video",
+      "qwen_image",
+      "wan22"
+    ],
+    "variant_order": [
+      "pr_bf16",
+      "pr_mxfp8",
+      "pr_fp8_block",
+      "base_bf16"
+    ],
+    "measurement": "Wall time around synchronous Omni.generate; initialization, output checking and file writing excluded",
+    "cache_policy": "Same engine for all 25 requests per case; persistent kernel caches retained; no output-result caching enabled",
+    "seed_policy": "Recreate CPU generator with the same manifest seed for every request",
+    "sampling": "All 20 post-warmup requests retained, including outliers; no adaptive stopping",
+    "stability_limits": {
+      "coefficient_of_variation_max": 0.05,
+      "half_median_relative_change_max": 0.05,
+      "p95_over_p50_max": 1.1
+    },
+    "quantiles": "numpy percentile method=linear",
+    "labels": "A completed case is called stable only when all three declared limits pass; otherwise its measured distribution is reported as unstable",
+    "case_timeout_seconds": 2400
+  },
+  "gpu_names": [
+    "NVIDIA GB200",
+    "NVIDIA GB200",
+    "NVIDIA GB200",
+    "NVIDIA GB200"
+  ],
+  "gpu_capabilities": [
+    [
+      10,
+      0
+    ],
+    [
+      10,
+      0
+    ],
+    [
+      10,
+      0
+    ],
+    [
+      10,
+      0
+    ]
+  ],
+  "requests": [
+    {
+      "phase": "warmup",
+      "index": 0,
+      "seconds": 5.266067212971393,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 1,
+      "seconds": 4.152258888992947,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 2,
+      "seconds": 4.148609406023752,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 3,
+      "seconds": 4.3540865770191886,
+      "frame_count": 1
+    },
+    {
+      "phase": "warmup",
+      "index": 4,
+      "seconds": 4.176992847002111,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 5,
+      "seconds": 4.249155675002839,
+      "frame_count": 1,
+      "pixel_sha256": [
+        "f61a0d7cfd3e25cc4ab9e34f30e55d967141cce96b73e9630f2dde5ef6373952"
+      ]
+    },
+    {
+      "phase": "measured",
+      "index": 6,
+      "seconds": 4.154824634024408,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 7,
+      "seconds": 4.155665848986246,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 8,
+      "seconds": 4.147318788978737,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 9,
+      "seconds": 4.1718039870029315,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 10,
+      "seconds": 4.239905908994842,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 11,
+      "seconds": 4.1705800740164705,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 12,
+      "seconds": 4.145798710000236,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 13,
+      "seconds": 4.1862368659931235,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 14,
+      "seconds": 4.117407415993512,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 15,
+      "seconds": 4.182042644009925,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 16,
+      "seconds": 4.193850854993798,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 17,
+      "seconds": 4.326547401025891,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 18,
+      "seconds": 4.165096712007653,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 19,
+      "seconds": 4.192482203012332,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 20,
+      "seconds": 4.232405831047799,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 21,
+      "seconds": 4.183367106015794,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 22,
+      "seconds": 4.162295799003914,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 23,
+      "seconds": 4.174428266996983,
+      "frame_count": 1
+    },
+    {
+      "phase": "measured",
+      "index": 24,
+      "seconds": 4.2643349369755015,
+      "frame_count": 1,
+      "pixel_sha256": [
+        "f61a0d7cfd3e25cc4ab9e34f30e55d967141cce96b73e9630f2dde5ef6373952"
+      ]
+    }
+  ],
+  "benchmark_script_sha256": "a1d1006b49666a51701ac93249a8abb62089d2b3eac1fc8d89eb171e18af2713",
+  "initialization_seconds": 42.21298051998019,
+  "summary": {
+    "n": 20,
+    "p50_seconds": 4.178235455503454,
+    "p95_seconds": 4.267445560178021,
+    "mean_seconds": 4.190777483204147,
+    "stddev_seconds": 0.04914488122670938,
+    "min_seconds": 4.117407415993512,
+    "max_seconds": 4.326547401025891,
+    "coefficient_of_variation": 0.011726912589292295,
+    "half_median_relative_change": 0.005957473089807747,
+    "p95_over_p50": 1.0213511434730327
+  },
+  "stability_checks": {
+    "coefficient_of_variation": true,
+    "half_median_relative_change": true,
+    "p95_over_p50": true
+  },
+  "stable": true,
+  "first_last_measured_pixels_identical": true
+}

@@ -34,6 +34,8 @@ SSIM uses Gaussian weighting (sigma 1.5) and population covariance. PSNR uses po
 One prompt and seed per model. These scores measure output differences; they do not establish a broad quality-equivalence threshold. Viewing MP4s contain video only; H3 audio is not evaluated. First-request timings in metadata include compilation/autotuning and are not steady-state performance measurements or an SGLang comparison.
 
 <!-- latency-start -->
+**Warmed repeated-request latency:** [Rubin / GB200 comparison, raw samples and reproduction scripts](stabilized/README.md).
+
 ## First-request latency (seconds; n=1)
 
 One first request per case on four Rubin SM107 GPUs, using the same settings and outputs as the quality matrix above. Seconds of wall time around the synchronous `Omni.generate()` call, after `Omni` initialization. Initialization/model loading is recorded separately; subsequent PNG saving, MP4 encoding and quality scoring are excluded.
