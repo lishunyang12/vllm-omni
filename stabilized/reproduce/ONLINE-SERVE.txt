@@ -1,0 +1,62 @@
+Online serving with load-time FP8 quantization
+=============================================
+
+Run from the extracted reproduction bundle directory. Use a fresh serving-data
+folder; the bootstrap installs the exact tested source/runtime dependencies and
+downloads only the selected model at the immutable revision in matrix.json.
+The pinned base image does not by itself contain the tested Omni source.
+
+  mkdir -p /path/to/serving-data
+  docker run --rm --gpus '"device=0,1,2,3"' --ipc=host \
+    -p 127.0.0.1:8000:8000 \
+    -v "$PWD:/validation:ro" \
+    -v /path/to/serving-data:/work \
+    --entrypoint bash \
+    vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb \
+    /validation/prepare_online.sh /work qwen_image mxfp8 8000
+
+Arguments after /work:
+  model key: h3_image | h3_video | qwen_image | wan22
+  precision: bf16 | mxfp8 | fp8_per_block
+  port: 8000 by default
+
+For blockwise FP8 replace mxfp8 with fp8_per_block. For the BF16 control use
+bf16; its launch command omits the quantization option entirely. Run one server
+at a time on the same four GPUs. Warm the endpoint before measuring latency.
+
+If the container and pinned model metadata are already prepared:
+
+  bash serve_online.sh /work qwen_image mxfp8 8000
+  # Stop that process before starting another mode on the same GPUs.
+  bash serve_online.sh /work qwen_image fp8_per_block 8000
+  bash serve_online.sh /work qwen_image bf16 8000
+
+The underlying quantization argument is:
+
+  --diffusion-quantization-config \
+    '{"transformer":{"method":"mxfp8"},"text_encoder":null}'
+
+or:
+
+  --diffusion-quantization-config \
+    '{"transformer":{"method":"fp8_per_block"},"text_encoder":null}'
+
+These are BF16 checkpoint inputs quantized during loading. Activations are
+quantized dynamically for the quantized linear operations. Only the diffusion
+transformer is selected; the text encoder and VAE are not selected for FP8.
+Existing model-specific exclusions remain in effect. This is not a serialized
+FP8 checkpoint or an FP8 attention setting.
+
+Settings match the offline latency matrix: DiT TP1, Ulysses4, eager execution,
+H3 text encoder TP4 and other text encoders TP1. Wan uses flow_shift=5.0.
+H3 video uses the complete FL2VA snapshot and its pinned encoder dependency.
+
+Source: a6a35c86b13db636a07173755b241544dff4c082 (tested implementation).
+PR #10390 merged as b576ed001032a78d565960d4b99740251a9daa8b.
+CUDA MXFP8 here requires SM100, SM103 or SM107; latency measurements cover
+SM100 (GB200) and SM107 (Rubin), not every supported architecture.
+
+Validation: shell syntax and all precision-mode arguments were checked with
+the real Omni CLI parser in the pinned container. This wrapper has not yet
+been used for a fresh HTTP latency/quality benchmark. The published latency
+table measures offline synchronous Omni.generate, not HTTP client latency.

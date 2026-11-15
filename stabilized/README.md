@@ -19,7 +19,7 @@ The H3-Image confirmation uses 15 warmups and 50 measurements for all four modes
 
 † This run fails at least one declared stability check: sample CV ≤5%, first-half/second-half median change ≤5%, and P95/P50 ≤1.10. Passing is an operational check for this sample, not a confidence bound or a quality guarantee. These are offline API timings for one fixed prompt/seed per model; H3 video includes its full t2va request. They do not establish an SGLang comparison. See the [existing FP8 quality differences](../README.md).
 
-[Primary comparison CSV](latency.csv) · [JSON](latency.json) · [Relative changes](relative-latency.json) · [Reproduce](reproduce/README.txt) · [Download scripts](reproduce.zip)
+[Primary comparison CSV](latency.csv) · [JSON](latency.json) · [Relative changes](relative-latency.json) · [Reproduce](reproduce/README.txt) · [Online serve script](reproduce/ONLINE-SERVE.txt) · [Download scripts](reproduce.zip)
 
 Both systems use the same vLLM, PyTorch, Triton, FlashInfer, Diffusers and Transformers versions. Host drivers differ: Rubin 620.70.06, GB200 595.84.01; exact hardware and software records are included per run.
 

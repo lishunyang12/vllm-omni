@@ -86,3 +86,8 @@ Optional figure rendering from the published evidence directory:
 This writes PNG and SVG. Bars are P50, whiskers are the observed P5-P95 range,
 not confidence intervals. Plot generation reads raw samples and checks its
 percentiles against latency.json; it does not require GPUs or model weights.
+
+Online HTTP serving:
+  See ONLINE-SERVE.txt for the pinned Docker command and serve_online.sh.
+  Online quantization means load-time weight quantization; these serving
+  scripts do not change the offline timing definition of the published table.
