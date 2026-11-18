@@ -1,0 +1,263 @@
+[
+  {
+    "name": "case-00",
+    "tokens": 257,
+    "mask": "disjoint",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-01",
+    "tokens": 513,
+    "mask": "disjoint",
+    "threshold": "diag",
+    "bitwise_equal": false,
+    "max_abs": 0.001953125,
+    "rmse": 0.00017482978000771254
+  },
+  {
+    "name": "case-02",
+    "tokens": 8192,
+    "mask": "none",
+    "threshold": "diag",
+    "bitwise_equal": false,
+    "max_abs": 0.02392578125,
+    "rmse": 0.0008405806729570031
+  },
+  {
+    "name": "case-03",
+    "tokens": 8192,
+    "mask": "disjoint",
+    "threshold": "diag",
+    "bitwise_equal": false,
+    "max_abs": 0.023193359375,
+    "rmse": 0.0008312248974107206
+  },
+  {
+    "name": "case-04",
+    "tokens": 8192,
+    "mask": "all",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-05",
+    "tokens": 8193,
+    "mask": "none",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-06",
+    "tokens": 8193,
+    "mask": "disjoint",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-07",
+    "tokens": 8193,
+    "mask": "all",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-08",
+    "tokens": 8256,
+    "mask": "none",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-09",
+    "tokens": 8256,
+    "mask": "disjoint",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-10",
+    "tokens": 8256,
+    "mask": "all",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-11",
+    "tokens": 8193,
+    "mask": "none",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-12",
+    "tokens": 8193,
+    "mask": "disjoint",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-13",
+    "tokens": 8193,
+    "mask": "none",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-14",
+    "tokens": 8193,
+    "mask": "disjoint",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-15",
+    "tokens": 16385,
+    "mask": "none",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-16",
+    "tokens": 16385,
+    "mask": "disjoint",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-17",
+    "tokens": 32769,
+    "mask": "none",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-18",
+    "tokens": 32769,
+    "mask": "disjoint",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "case-19",
+    "tokens": 513,
+    "mask": "disjoint",
+    "threshold": "exact",
+    "bitwise_equal": false,
+    "max_abs": 0.001953125,
+    "rmse": 0.00017482978000771254
+  },
+  {
+    "name": "case-20",
+    "tokens": 8193,
+    "mask": "none",
+    "threshold": "exact",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "graph-diag-zero",
+    "tokens": 513,
+    "mask": "zero",
+    "threshold": "diag",
+    "bitwise_equal": false,
+    "max_abs": 0.001953125,
+    "rmse": 0.00022873991110827774
+  },
+  {
+    "name": "graph-diag-all",
+    "tokens": 513,
+    "mask": "all",
+    "threshold": "diag",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "graph-diag-disjoint",
+    "tokens": 513,
+    "mask": "disjoint",
+    "threshold": "diag",
+    "bitwise_equal": false,
+    "max_abs": 0.001953125,
+    "rmse": 0.0001691988145466894
+  },
+  {
+    "name": "graph-diag-zero_again",
+    "tokens": 513,
+    "mask": "zero_again",
+    "threshold": "diag",
+    "bitwise_equal": false,
+    "max_abs": 0.001953125,
+    "rmse": 0.0002272585843456909
+  },
+  {
+    "name": "graph-exact-zero",
+    "tokens": 513,
+    "mask": "zero",
+    "threshold": "exact",
+    "bitwise_equal": false,
+    "max_abs": 0.001953125,
+    "rmse": 0.0002258454478578642
+  },
+  {
+    "name": "graph-exact-all",
+    "tokens": 513,
+    "mask": "all",
+    "threshold": "exact",
+    "bitwise_equal": true,
+    "max_abs": 0.0,
+    "rmse": 0.0
+  },
+  {
+    "name": "graph-exact-disjoint",
+    "tokens": 513,
+    "mask": "disjoint",
+    "threshold": "exact",
+    "bitwise_equal": false,
+    "max_abs": 0.001953125,
+    "rmse": 0.0001670767815085128
+  },
+  {
+    "name": "graph-exact-zero_again",
+    "tokens": 513,
+    "mask": "zero_again",
+    "threshold": "exact",
+    "bitwise_equal": false,
+    "max_abs": 0.001953125,
+    "rmse": 0.00022440696193370968
+  }
+]

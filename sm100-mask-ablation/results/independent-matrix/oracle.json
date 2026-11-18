@@ -1,0 +1,72 @@
+[
+  {
+    "name": "case-00",
+    "variant": "extension",
+    "oracle_pass": true,
+    "max_abs": 0.0020005106925964355,
+    "rmse": 0.00021919880236964673
+  },
+  {
+    "name": "case-00",
+    "variant": "alpha-only",
+    "oracle_pass": true,
+    "max_abs": 0.0020005106925964355,
+    "rmse": 0.00021919880236964673
+  },
+  {
+    "name": "case-01",
+    "variant": "extension",
+    "oracle_pass": true,
+    "max_abs": 0.0010574162006378174,
+    "rmse": 0.00015393760986626148
+  },
+  {
+    "name": "case-01",
+    "variant": "alpha-only",
+    "oracle_pass": true,
+    "max_abs": 0.0011371970176696777,
+    "rmse": 0.00019633678311947733
+  },
+  {
+    "name": "case-02",
+    "variant": "extension",
+    "oracle_pass": true,
+    "max_abs": 0.000263310968875885,
+    "rmse": 3.185011519235559e-05
+  },
+  {
+    "name": "case-02",
+    "variant": "alpha-only",
+    "oracle_pass": false,
+    "max_abs": 0.02389252930879593,
+    "rmse": 0.0008406529668718576
+  },
+  {
+    "name": "case-03",
+    "variant": "extension",
+    "oracle_pass": true,
+    "max_abs": 0.0002476498484611511,
+    "rmse": 3.2640313293086365e-05
+  },
+  {
+    "name": "case-03",
+    "variant": "alpha-only",
+    "oracle_pass": false,
+    "max_abs": 0.023186638951301575,
+    "rmse": 0.0008313239668495953
+  },
+  {
+    "name": "case-05",
+    "variant": "extension",
+    "oracle_pass": true,
+    "max_abs": 0.0002757161855697632,
+    "rmse": 6.414809467969462e-05
+  },
+  {
+    "name": "case-05",
+    "variant": "alpha-only",
+    "oracle_pass": true,
+    "max_abs": 0.0002757161855697632,
+    "rmse": 6.414809467969462e-05
+  }
+]

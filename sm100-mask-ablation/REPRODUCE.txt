@@ -1,3 +1,59 @@
+CORRECTION: the earlier #594 attention-kernel attribution was confounded
+2026-11-18, controlled pooling follow-up
+
+The previous warning is superseded by controlled evidence. We retract the
+claim that the old 8193-token comparison established an attention regression
+in #594. Native and pointer-reference preprocessing both reduced BF16 values
+without explicit promotion. Installed Triton TTIR contains bf16 tt.reduce /
+arith.addf; 4- and 8-warp reduction trees produce different pooled KC/VC values.
+The independently autotuned pointer oracle shared this upstream issue.
+Different pooled inputs alter thresholds and discrete exact/approx routing.
+CuTe cache aliasing has NOT been established as the cause.
+
+Controls and results:
+* Forced old pooling configs: four token sizes, 4/8 warps x stages1..4. At8193,
+  KC differed from Float64-then-BF16 reference in10535/10541 elements (4/8warps).
+  Mismatches include complete blocks, not only a partial final tile.
+* Freeze exactly the same native KC/VC/threshold tensors: #593 and #594 produce
+  identical output SHA256 5b21c4ec0967384ec591f7209dd634959ee57ec5dd55205624032d4d9085db56
+  on the original8193-token counterexample. No attention source change.
+* Minimal repair: explicitly promote inputs of all four native/pointer pooling
+  sums to FP32. Outputs remain BF16; API, autotune configs and attention math
+  remain unchanged.
+* 32 forced native config cases after repair: zero KC/VC-sum mismatches against
+  Float64-then-BF16 reference. All configs agree for each tested input.
+* New pooling pytest:12passed, every production config forced twice, full/tail,
+  multiple batches/heads, immutable inputs and pointer padding sentinels.
+* #593+same repair vs #594+same repair:29 independent-process cases, all input,
+  prepared KC/VC/threshold and output hashes equal, including8 graph updates.
+* Full attention validation:73/73passed, including existing oracle tolerances,
+  tails, masks, long shapes and CUDA-graph input/mask mutation checks.
+
+These are bounded numerical/correctness tests, not an end-to-end video quality
+claim. No SSIM/PSNR/LPIPS or video generation was done in this follow-up.
+Earlier benchmark/ablation tables are retained as HISTORICAL/CONFOUNDED:
+prepared tensor identity was not controlled. Revalidate any performance or
+candidate rejection claim with the common repair and matched launch configs.
+Fresh full-forward and separate-process attention measurements are recorded
+separately as they finish. #594 remains draft pending valid performance review.
+Hardware:SM100 engineering GPU, cluster B100 label, NVIDIA Graphics Device,
+CC10.0,148SMs,183359MiB. This is not a production B200 validation.
+
+Evidence:results/preprocess-sweep/report.json,
+results/preprocess-fp32-sweep/report.json,results/frozen-prepared/*/report.json,
+results/fp32-matrix/comparison.json,results/fp32-validation/pooling.log and
+full.json/full.log. Source repair:reproduce/patches/pool-fp32.patch.
+Raw tensor and compiled binary archives remain private.
+
+Current minimal repair: apply reproduce/patches/pool-fp32-with-tests.patch to
+NVlabs/Sana sol-engine cf67a3acad7511acb85053e56a05e5dd24c82ba0.
+PYTHONPATH=techniques/sparse_backends python -m pytest -q techniques/sparse_backends/tests/test_preprocess_precision.py
+Validation environment is pinned in manifest and raw reports. Full validation
+compares#59363b4e65 and#594150114b with the same pool-fp32.patch applied to both.
+See reproduce/validate_fp32_all.sh and run_fp32_matrix.sh.
+
+Historical reproduction notes below; old results are confounded.
+
 CURRENT CORRECTNESS BLOCKER: read CORRECTNESS_BLOCKER.txt first.
 The historical timing scripts do not establish acceptance. For any new run,
 set CUTE_DSL_DISABLE_FILE_CACHING=1 and verify each source in a fresh process.

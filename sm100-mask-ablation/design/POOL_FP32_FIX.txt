@@ -1,0 +1,41 @@
+Shared pooling FP32 accumulation repair
+======================================
+Detached worktree: design-agent/pool-fp32, base150114b6f0079bcd479c6c87bd0b15174581d984.
+No attention kernel, public interface, BF16 output dtype or autotune config changes.
+No commit/push or GPU execution by the design agent.
+
+Artifacts:
+  pool-fp32.patch: only the four explicit FP32 reduction-input casts.
+  pool-fp32-tests.patch: the new config-enumeration precision test alone.
+  pool-fp32-with-tests.patch: both, applicable to the pinned base source.
+
+Problem: shared native and pointer pooling passed BF16 directly to tl.sum.
+The pinned runtime TTIR confirms BF16 combine operands/result. Different
+autotuned warp counts therefore selected different BF16 reduction trees and
+different summaries, even when Q/K/V and attention code were otherwise fixed.
+The repair casts inputs to FP32 before sum and retains BF16 final storage.
+
+Test: techniques/sparse_backends/tests/test_preprocess_precision.py.
+12 pytest cases cover native/pointer x six shape/data cases: T63,64,65,129,257,
+8193, batch2/head3 coverage, full and partial blocks. The test reads actual
+production autotune configs and calls each wrapped JIT function directly with
+that config, forcing all 8 native or 4 pointer configs; each repeats twice.
+Each KC/VC is compared exactly to independently padded Float64 pooling then
+BF16 rounding. Config/repeat outputs additionally compare raw uint8 bytes.
+Finite outputs, immutable K/V and untouched pointer-padding sentinels are checked.
+The small dyadic fixtures have exactly representable FP32 partial sums; the
+8193 BF16 normal case reproduces seed71 including the original preceding Q draw.
+This is a finite fixture gate, not a claim that FP32 always equals Float64 for
+every possible BF16 input or arbitrary cancellation pattern.
+
+Run in the parent's existing allocation/fixed image:
+  python -m pytest techniques/sparse_backends/tests/test_preprocess_precision.py -q
+
+CPU-only validation: py_compile, isolated Ruff E/W/F/I/N/UP and git apply --check
+passed. GPU test execution belongs to the parent and is not claimed here.
+
+process_benchmark.py now requires both sources to carry the common FP32 repair,
+checks equal pooling source SHA, and retains native prepare output references.
+KC/VC/threshold hashes are computed outside timed intervals and must match
+across sources and all timing boundaries. Native preprocessing remains timed.
+CPU fake-worker tests cover that prepared-hash rejection and child cleanup.

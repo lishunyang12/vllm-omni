@@ -1,0 +1,110 @@
+Independent-process paired attention benchmark
+=============================================
+Implementation: process_benchmark.py (single file, controller + worker modes).
+Status: CPU validation only. No candidate is approved by this script's delivery,
+and no GPU benchmark was executed by the design agent.
+
+Example inside an existing allocation and the fixed CUDA environment:
+  python process_benchmark.py \
+    --baseline /work/source/extension-fp32 \
+    --candidate /work/source/APPROVED_CANDIDATE_WITH_COMMON_FP32_POOL_FIX \
+    --input /work/private/frozen-input.pt \
+    --report /work/results/process-attention-layer0.json
+
+Defaults: first 28 heads, eager + graph, 5 warmup rounds and 16 measured
+rounds per mode, 1800-second timeout per command. --python selects the worker
+Python executable; default is the controller's current executable. The script
+never allocates GPUs, runs srun, or changes CUDA_VISIBLE_DEVICES. The caller
+must supply and own the existing Slurm allocation and clock/telemetry controls.
+
+Isolation and scheduling
+  Three resident Python workers handle baseline, candidate, and Dense.
+  A SOL worker imports its selected source once as the original sol_attn name;
+  Dense imports Torch only and forces SDPBackend.CUDNN_ATTENTION on every call.
+  No module aliases or cross-source JIT state are shared between workers.
+  CUTE_DSL_DISABLE_FILE_CACHING=1 is set before worker startup. A unique empty
+  PYTHONPYCACHEPREFIX plus PYTHONDONTWRITEBYTECODE prevents stale Python bytecode
+  from being read from checkouts or written to them.
+  All three inherit the caller's CUDA_VISIBLE_DEVICES value byte-for-byte.
+  The controller checks that their selected device index and GPU UUID agree.
+  Only the controller sends GPU commands, one request/response at a time.
+  Every worker synchronizes its CUDA work before responding. Other workers
+  remain blocked on stdin, so forward calls cannot overlap between workers.
+
+Protocol and measurement
+  Worker stdout is exclusively newline-delimited JSON with monotonic request
+  IDs; a separate duplicated descriptor carries protocol responses. Normal
+  Python/native library/compiler stdout is redirected to each stderr log.
+  Commands: init, prepare(mode), run(measured), check, shutdown.
+  Initialization includes one untimed validation forward per worker.
+  Each mode has 5 warmup rounds and 16 measured rounds. Orders rotate among
+  baseline/candidate/dense and reverse on odd rounds, matching the previous
+  paired protocol. Every measured sample reports CUDA-event milliseconds,
+  Unix wall-start time (seconds and nanoseconds), monotonic start, wall elapsed,
+  round, variant, position, and full order. Hashes and source checks are outside
+  the timed interval. CUDA synchronization precedes and follows each sample.
+  Graph setup additionally performs 5 uncaptured eager warmup calls on its
+  capture stream, one capture, and one validation replay before the 5 rotated
+  graph warmup rounds. These setup calls are explicitly reported and excluded
+  from the 16 timed rounds. Graph/output/stream references remain resident.
+
+Correctness and provenance
+  Both SOL workers must contain the common explicit-FP32 pooling repair in
+  native KC/VC and pointer K/V reduction functions. A CPU AST guard rejects
+  missing casts/dtype before importing CUDA libraries, and the controller
+  requires identical native/pointer preprocessing source digests across the
+  two workers. There is deliberately no switch to silently bypass this gate.
+  Each worker loads the original private ablation payload with weights_only,
+  verifies its full tensor digests, selects the first 28 heads, and separately
+  hashes the actual device Q/K/V/mask. Options and protection are retained for
+  SOL; Dense evaluates full attention with the same scale, noncausal/dropout0.
+  Before and after every timed mode, each worker checks input immutability,
+  output finiteness, output hash/shape/dtype, source manifest, and loaded module
+  origins. Baseline/candidate output byte hashes must agree initially and at
+  both boundaries of every mode. Each worker's before/after output must remain
+  stable; SOL output must also remain equal to its initial validated output.
+  Dense's hash is recorded separately and is never required to equal SOL.
+  A minimal native prepare wrapper retains the actual returned KC/VC/threshold
+  references consumed by attention, without copying, hashing or synchronizing.
+  Each snapshot outside timing hashes those buffers and records shape, dtype,
+  finiteness and current autotune best_config metadata. Prepared values must
+  match across both SOL workers and all before/after/mode boundaries. During
+  graph capture the retained buffers belong to that captured execution and
+  each replay updates those same addresses. Preprocessing remains inside both
+  eager and graph timings; this is not a frozen-preparation kernel-only test.
+  The wrapper retains the previous prepared tuple until the next prepare call
+  returns, so it can keep one extra tuple live during eager preprocessing.
+  It adds only Python reference assignment/counter work to timed eager calls;
+  no device-to-host transfer, digest, or explicit synchronization is added there.
+  The report includes every source-package file SHA (excluding Python cache
+  artifacts), a canonical whole-manifest SHA, actual loaded module paths,
+  script SHA, Torch/CUDA/cuDNN/Python/build configuration, GPU identity and
+  capability, CPU affinity, selected runtime/Slurm environment and options.
+  This benchmark verifies equivalence to its supplied baseline, not an
+  independent mathematical oracle. Candidate oracle/quality gates must pass
+  separately before timing results are accepted for an optimization decision.
+
+Failure behavior
+  New reports/log directories cannot overwrite an existing run. Progress is
+  saved atomically after metadata, checks, and every sample. Valid/complete stay
+  false until all modes pass and workers exit cleanly. A mismatch, protocol
+  error, exception, timeout, SIGINT or handled SIGTERM aborts the run. The parent
+  kills every worker process group (including compiler children), then waits
+  every child and closes pipes/logs. Partial data stays marked invalid.
+  Three CUDA contexts and their allocations remain resident during measurement;
+  results describe this serialized attention harness, not a full model forward.
+
+CPU checks performed
+  py_compile and --help passed without importing Torch/CUDA.
+  Ruff 0.9.4, isolated E/W/F/I/N/UP rules, Python3.10 target, line length120:
+  all checks passed (pool-fp32-ruff.log for the prepared-hash revision). Ruff was installed offline
+  under /tmp from an available wheel; the runtime source was not modified.
+  check_process_benchmark_cpu.py uses fake CPU workers with the real controller
+  and protocol implementation. It passed full 5-warmup/16-round/eager+graph
+  orchestration, native-stdout redirection, controlled worker error, timeout,
+  and rejection of mismatched prepared hashes despite matching output hashes.
+  All three child processes were confirmed exited/reaped in every case.
+  The static pooling guard also accepts the explicit casts and rejects a
+  missing cast using CPU-only synthetic source fixtures.
+  The check imports no Torch and executes no GPU work. Results are in
+  process_benchmark_cpu_check.log. Actual CUDA capture/timing awaits root testing.

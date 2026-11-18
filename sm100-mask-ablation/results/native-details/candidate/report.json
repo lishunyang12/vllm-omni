@@ -1,0 +1,42 @@
+{
+  "tokens": 8193,
+  "source": "/work/source/candidate/techniques/sparse_backends/sol_attn/interface.py",
+  "input_sha256": [
+    "0539b52f683d55e0cad641257aa7e95262e9cb56baba3b1ebff439a9d832c814",
+    "8a9525076cb9757c54914d382736e83406e0ec6d0ac15fb2e72bc4ce3df3eb67",
+    "d896683afc2ec805da997f116f701122ba846bb8f4a9ff7609d06042fbfb8c31"
+  ],
+  "output_sha256": "5b21c4ec0967384ec591f7209dd634959ee57ec5dd55205624032d4d9085db56",
+  "lse_sha256": "0421873eafac72e4e400b31738dec1e7093f8a73867bff9a74f2a93d237ff1ff",
+  "prepared": [
+    {
+      "shape": [
+        1,
+        129,
+        1,
+        128
+      ],
+      "dtype": "torch.bfloat16",
+      "sha256": "0856753d834ed73c9dcb231d918f4f06d3377038d69182ed42ba63ca8cf0d54d"
+    },
+    {
+      "shape": [
+        1,
+        129,
+        1,
+        128
+      ],
+      "dtype": "torch.bfloat16",
+      "sha256": "e5a08ca342c889b7c7470cf56dd49231f1c77312566cd7b38761482c5cd63013"
+    },
+    {
+      "shape": [
+        1,
+        129,
+        1
+      ],
+      "dtype": "torch.float32",
+      "sha256": "24a339679b2b4772cf3df34cbd8ee8cfb54efb38eeb1003b394176f9d8ee3414"
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+--- a/techniques/sparse_backends/sol_attn/sm100/mainloop.py
++++ b/techniques/sparse_backends/sol_attn/sm100/mainloop.py
+@@ -328,6 +328,7 @@
+     ]
+     pair_score_mbar_ptr: cute.struct.MemRange[cutlass.Int64, 2]
+     pair_o_mbar_ptr: cute.struct.MemRange[cutlass.Int64, 2]
++    route_pv_mbar_ptr: cute.struct.MemRange[cutlass.Int64, 2]
+     final_stats: cute.struct.Align[
+         cute.struct.MemRange[Float32, M * 2], 128
+     ]
+@@ -527,6 +528,15 @@
+         barrier_storage=storage.pair_o_mbar_ptr.data_ptr(),
+     )
+ 
++    # Diagnostic-only completion domain, separate from the original final-O
++    # token. Each executed approximate route PV emits exactly one generation.
++    route_pv_pipe = fa_pipeline.PipelineUmmaAsync.create(
++        num_stages=1,
++        producer_group=one_thread,
++        consumer_group=pack_owner_threads,
++        barrier_storage=storage.route_pv_mbar_ptr.data_ptr(),
++    )
++
+     mQ_cur = mQ_mkl[None, None, head_idx, batch_idx]
+     mPackK_cur = mPackK_nkl[None, None, head_idx, batch_idx]
+     mPackV_cur = mPackV_nkl[None, None, head_idx, batch_idx]
+@@ -665,6 +675,12 @@
+     pair_o_consumer = fa_pipeline.make_pipeline_state(
+         pipeline.PipelineUserType.Consumer, 1
+     )
++    route_pv_producer = fa_pipeline.make_pipeline_state(
++        pipeline.PipelineUserType.Producer, 1
++    )
++    route_pv_consumer = fa_pipeline.make_pipeline_state(
++        pipeline.PipelineUserType.Consumer, 1
++    )
+     route_start_base = Int32(0)
+     q_len = token_count - q_block_idx * Int32(M)
+     if q_len > Int32(M):
+@@ -703,6 +719,10 @@
+ 
+     if warp_idx == Int32(0):
+         q_pipe.consumer_wait(q_consumer)
++        # Acquire the initially empty slot once. Every emitted route PV
++        # reacquires its next generation at the drain below, before any
++        # following route QK or exact QK can be issued by this warp.
++        route_pv_pipe.producer_acquire(route_pv_producer)
+ 
+     # The outer loop owns one logical G256 exact-index lifetime.  The inner
+     # loop consumes each physical score/PV half immediately; it appends only
+@@ -1151,6 +1171,11 @@
+                         tCrVC[None, None, None, pack_v_consumer.index],
+                         zero_init=mma_o_initialized == Int32(0),
+                     )
++                    route_pv_pipe.producer_commit(route_pv_producer)
++                    route_pv_producer.advance()
++                    # Retain the original final-route-only completion token
++                    # and its consumer unchanged. The new token above has
++                    # independent storage and independent persistent phases.
+                     # Half 0 is followed by half-1 route QK.  The terminal
+                     # route half is followed by exact QK0 whenever the fused
+                     # G256 index stream is nonempty.  Those score completions
+@@ -1164,7 +1189,19 @@
+                     mma_o_initialized = Int32(1)
+                 pack_v_pipe.consumer_release(pack_v_consumer)
+                 pack_v_consumer.advance()
++                if route_has_approx:
++                    # Wait for all 128 owners to acknowledge PV completion.
++                    # This acquire also reserves the slot for the next route
++                    # PV, even across skipped halves or logical groups.
++                    route_pv_pipe.producer_acquire(route_pv_producer)
+             if is_owner:
++                route_has_approx_owner = (
++                    Int32(route_packet[4]) < valid_route_count
++                )
++                if route_has_approx_owner:
++                    route_pv_pipe.consumer_wait(route_pv_consumer)
++                    route_pv_pipe.consumer_release(route_pv_consumer)
++                    route_pv_consumer.advance()
+                 cumulative_exact_count = Int32(route_packet[6])
+                 if (
+                     is_final_route_tile

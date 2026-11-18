@@ -1,28 +1,46 @@
-CORRECTNESS BLOCKER — do not use the timing tables as a promotion recommendation
-2026-11-18, fresh-process follow-up after the initial timing experiments
+CORRECTION: the earlier #594 attention-kernel attribution was confounded
+2026-11-18, controlled pooling follow-up
 
-#594 (150114b6) FAILS the independent hybrid oracle on:
-BF16 [1,8193,1,128], CUDA generator seed71, tau1, diag, exact_block_mask=None.
-Each source is imported as the sole sol_attn package in a fresh process with
-CUTE_DSL_DISABLE_FILE_CACHING=1. Inputs have identical hashes; four calls per
-variant are stable and immutable. #593 (63b4e65) passes the same oracle.
+The previous warning is superseded by controlled evidence. We retract the
+claim that the old 8193-token comparison established an attention regression
+in #594. Native and pointer-reference preprocessing both reduced BF16 values
+without explicit promotion. Installed Triton TTIR contains bf16 tt.reduce /
+arith.addf; 4- and 8-warp reduction trees produce different pooled KC/VC values.
+The independently autotuned pointer oracle shared this upstream issue.
+Different pooled inputs alter thresholds and discrete exact/approx routing.
+CuTe cache aliasing has NOT been established as the cause.
 
-#594: max_abs_to_oracle 0.03185121715; RMSE 0.00056553917; tolerance gate fails.
-#593: max_abs_to_oracle 0.00025267899; RMSE 0.00003024325; tolerance gate passes.
-The oracle gate is the existing atol=0.02, rtol=0.02; it was not relaxed.
-The vector-store experiment matches #593 bytes on this case, so earlier byte
-failures against #594 do not establish that #594 was the correct reference.
-The scalar shared-P experiment differs from #593 but passes the tolerance oracle;
-its earlier 73-pass run is an observation, not a sufficient acceptance gate.
+Controls and results:
+* Forced old pooling configs: four token sizes, 4/8 warps x stages1..4. At8193,
+  KC differed from Float64-then-BF16 reference in10535/10541 elements (4/8warps).
+  Mismatches include complete blocks, not only a partial final tile.
+* Freeze exactly the same native KC/VC/threshold tensors: #593 and #594 produce
+  identical output SHA256 5b21c4ec0967384ec591f7209dd634959ee57ec5dd55205624032d4d9085db56
+  on the original8193-token counterexample. No attention source change.
+* Minimal repair: explicitly promote inputs of all four native/pointer pooling
+  sums to FP32. Outputs remain BF16; API, autotune configs and attention math
+  remain unchanged.
+* 32 forced native config cases after repair: zero KC/VC-sum mismatches against
+  Float64-then-BF16 reference. All configs agree for each tested input.
+* New pooling pytest:12passed, every production config forced twice, full/tail,
+  multiple batches/heads, immutable inputs and pointer padding sentinels.
+* #593+same repair vs #594+same repair:29 independent-process cases, all input,
+  prepared KC/VC/threshold and output hashes equal, including8 graph updates.
+* Full attention validation:73/73passed, including existing oracle tolerances,
+  tails, masks, long shapes and CUDA-graph input/mask mutation checks.
 
-The same-process baseline output also changes between cache-enabled and cache-
-disabled diagnostics. Exact cause (cache/context vs kernel implementation) is
-under investigation. Prior timings and byte checks remain archived as historical
-observations, but must not be treated as validated optimization evidence until
-kernel identity and independent correctness are re-established.
+These are bounded numerical/correctness tests, not an end-to-end video quality
+claim. No SSIM/PSNR/LPIPS or video generation was done in this follow-up.
+Earlier benchmark/ablation tables are retained as HISTORICAL/CONFOUNDED:
+prepared tensor identity was not controlled. Revalidate any performance or
+candidate rejection claim with the common repair and matched launch configs.
+Fresh full-forward and separate-process attention measurements are recorded
+separately as they finish. #594 remains draft pending valid performance review.
+Hardware:SM100 engineering GPU, cluster B100 label, NVIDIA Graphics Device,
+CC10.0,148SMs,183359MiB. This is not a production B200 validation.
 
-No new experimental production code has been pushed. Existing #594 remains draft.
-See results/independent-process/comparison.json and per-variant report.json;
-results/no-cache-diagnostic/8193-none.json; reproduce/independent_process_probe.py,
-compare_independent.py, run_independent_process.sh and run_extension_probe.sh.
+Evidence:results/preprocess-sweep/report.json,
+results/preprocess-fp32-sweep/report.json,results/frozen-prepared/*/report.json,
+results/fp32-matrix/comparison.json,results/fp32-validation/pooling.log and
+full.json/full.log. Source repair:reproduce/patches/pool-fp32.patch.
 Raw tensor and compiled binary archives remain private.

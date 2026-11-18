@@ -1,0 +1,37 @@
+diff --git a/techniques/sparse_backends/sol_attn/preprocess.py b/techniques/sparse_backends/sol_attn/preprocess.py
+index 55627be..98205af 100644
+--- a/techniques/sparse_backends/sol_attn/preprocess.py
++++ b/techniques/sparse_backends/sol_attn/preprocess.py
+@@ -42,7 +42,7 @@ def _reduce_kc_kernel(
+     values = k_desc.load(
+         [batch, block * BLOCK, head, d_tile * TILE_D]
+     ).reshape([BLOCK, TILE_D])
+-    summary = tl.sum(values, axis=0) / block_len
++    summary = tl.sum(values.to(tl.float32), axis=0) / block_len
+     offsets = d_tile * TILE_D + tl.arange(0, TILE_D)
+     tl.store(
+         kc + ((batch * N + block) * H + head) * D + offsets,
+@@ -79,7 +79,7 @@ def _reduce_vc_kernel(
+     values = v_desc.load(
+         [batch, block * BLOCK, head, d_tile * TILE_D]
+     ).reshape([BLOCK, TILE_D])
+-    summary = tl.sum(values, axis=0)
++    summary = tl.sum(values.to(tl.float32), axis=0)
+     offsets = d_tile * TILE_D + tl.arange(0, TILE_D)
+     tl.store(
+         vc + ((batch * N + block) * H + head) * D + offsets,
+diff --git a/techniques/sparse_backends/sol_attn/triton_ref/preprocess.py b/techniques/sparse_backends/sol_attn/triton_ref/preprocess.py
+index e13d65a..9900d7b 100644
+--- a/techniques/sparse_backends/sol_attn/triton_ref/preprocess.py
++++ b/techniques/sparse_backends/sol_attn/triton_ref/preprocess.py
+@@ -49,8 +49,8 @@ def _reduce_kv_kernel(
+     summary_offsets = (
+         ((batch * NPAD + block) * H + head) * D + dims
+     )
+-    tl.store(kc + summary_offsets, tl.sum(k_values, axis=0) / block_len)
+-    tl.store(vc + summary_offsets, tl.sum(v_values, axis=0))
++    tl.store(kc + summary_offsets, tl.sum(k_values.to(tl.float32), axis=0) / block_len)
++    tl.store(vc + summary_offsets, tl.sum(v_values.to(tl.float32), axis=0))
+ 
+ 
+ @triton.jit
