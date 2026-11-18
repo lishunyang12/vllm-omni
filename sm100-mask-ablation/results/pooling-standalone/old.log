@@ -1,0 +1,1078 @@
+FFFFFFFFFFFF                                                             [100%]
+=================================== FAILURES ===================================
+_ test_every_pooling_configuration_matches_float64_reference[shape0-dyadic-native] _
+
+backend = 'native', shape = (1, 63, 1, 128), kind = 'dyadic'
+record_property = <function record_property.<locals>.append_property at 0x7eb069b5d120>
+
+    @pytest.mark.parametrize("backend", ["native", "pointer"])
+    @pytest.mark.parametrize(
+        "shape,kind",
+        [
+            ((1, 63, 1, 128), "dyadic"),
+            ((1, 64, 2, 128), "dyadic"),
+            ((2, 65, 3, 128), "dyadic"),
+            ((2, 129, 2, 128), "dyadic"),
+            ((2, 257, 3, 128), "dyadic"),
+            ((1, 8193, 1, 128), "normal"),
+        ],
+    )
+    @torch.inference_mode()
+    def test_every_pooling_configuration_matches_float64_reference(backend, shape, kind, record_property):
+        if backend == "native" and torch.cuda.get_device_capability()[0] < 9:
+            pytest.skip("Native descriptor pooling requires TMA")
+        batch, tokens, heads, dim = shape
+        blocks = (tokens + 63) // 64
+        generator = torch.Generator(device="cuda").manual_seed(71)
+        if kind == "normal":
+            # Include the same unused Q draw as the captured 8193 regression case.
+            torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator)
+            k, v = [torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator) for _ in range(2)]
+        else:
+            # BF16 dyadic data with cancellation: FP32 can represent every partial
+            # sum exactly, whereas BF16 intermediate sums lose low-order bits.
+            k, v = [
+                (torch.randint(-1024, 1025, shape, device="cuda", generator=generator).float() / 256).to(torch.bfloat16)
+                for _ in range(2)
+            ]
+        originals = (k.clone(), v.clone())
+        expected = _reference(k, v)
+        if backend == "native":
+            from triton.tools.tensor_descriptor import TensorDescriptor
+    
+            module = importlib.import_module("sol_attn.preprocess")
+            configs = _configuration_list(module._reduce_kc_kernel)
+            assert configs == _configuration_list(module._reduce_vc_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2, 3, 4)
+            }
+            descriptors = [TensorDescriptor.from_tensor(value, [1, 64, 1, dim]) for value in (k, v)]
+        else:
+            module = importlib.import_module("sol_attn.triton_ref.preprocess")
+            configs = _configuration_list(module._reduce_kv_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2)
+            }
+        record_property("forced_configs", str(configs))
+        first = None
+        for warps, stages, kwargs in configs:
+            launch = dict(kwargs, num_warps=warps, num_stages=stages)
+            previous = None
+            for repeat in range(2):
+                if backend == "native":
+                    kc, vc = [torch.empty_like(value) for value in expected]
+                    for kernel, descriptor, output in zip(
+                        (module._reduce_kc_kernel, module._reduce_vc_kernel), descriptors, (kc, vc)
+                    ):
+                        kernel.fn[(1, blocks, batch * heads)](
+                            descriptor, output, tokens, heads, blocks, dim, 64, dim, **launch
+                        )
+                else:
+                    padded_blocks = ((blocks + 63) // 64) * 64
+                    kc, vc = [
+                        torch.full((batch, padded_blocks, heads, dim), 123.0, device="cuda", dtype=torch.bfloat16)
+                        for _ in range(2)
+                    ]
+                    module._reduce_kv_kernel.fn[(blocks, batch * heads)](
+                        k, v, kc, vc, tokens, tokens, padded_blocks, heads, dim, 64, **launch
+                    )
+                    for value in (kc, vc):
+                        assert torch.all(value[:, blocks:] == 123.0), "Pooling overwrote padded blocks"
+                    kc, vc = kc[:, :blocks].contiguous(), vc[:, :blocks].contiguous()
+                torch.cuda.synchronize()
+                actual = (kc, vc)
+                label = f"{backend} {shape} {kind} warps={warps} stages={stages} repeat={repeat}"
+                for name, result, reference in zip(("KC", "VC"), actual, expected):
+                    assert torch.isfinite(result).all(), (label, name)
+>                   torch.testing.assert_close(result, reference, rtol=0, atol=0, msg=f"{label} {name} vs float64")
+E                   AssertionError: native (1, 63, 1, 128) dyadic warps=4 stages=1 repeat=0 KC vs float64
+
+test_preprocess_precision.py:111: AssertionError
+_ test_every_pooling_configuration_matches_float64_reference[shape0-dyadic-pointer] _
+
+backend = 'pointer', shape = (1, 63, 1, 128), kind = 'dyadic'
+record_property = <function record_property.<locals>.append_property at 0x7eae4bb78fe0>
+
+    @pytest.mark.parametrize("backend", ["native", "pointer"])
+    @pytest.mark.parametrize(
+        "shape,kind",
+        [
+            ((1, 63, 1, 128), "dyadic"),
+            ((1, 64, 2, 128), "dyadic"),
+            ((2, 65, 3, 128), "dyadic"),
+            ((2, 129, 2, 128), "dyadic"),
+            ((2, 257, 3, 128), "dyadic"),
+            ((1, 8193, 1, 128), "normal"),
+        ],
+    )
+    @torch.inference_mode()
+    def test_every_pooling_configuration_matches_float64_reference(backend, shape, kind, record_property):
+        if backend == "native" and torch.cuda.get_device_capability()[0] < 9:
+            pytest.skip("Native descriptor pooling requires TMA")
+        batch, tokens, heads, dim = shape
+        blocks = (tokens + 63) // 64
+        generator = torch.Generator(device="cuda").manual_seed(71)
+        if kind == "normal":
+            # Include the same unused Q draw as the captured 8193 regression case.
+            torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator)
+            k, v = [torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator) for _ in range(2)]
+        else:
+            # BF16 dyadic data with cancellation: FP32 can represent every partial
+            # sum exactly, whereas BF16 intermediate sums lose low-order bits.
+            k, v = [
+                (torch.randint(-1024, 1025, shape, device="cuda", generator=generator).float() / 256).to(torch.bfloat16)
+                for _ in range(2)
+            ]
+        originals = (k.clone(), v.clone())
+        expected = _reference(k, v)
+        if backend == "native":
+            from triton.tools.tensor_descriptor import TensorDescriptor
+    
+            module = importlib.import_module("sol_attn.preprocess")
+            configs = _configuration_list(module._reduce_kc_kernel)
+            assert configs == _configuration_list(module._reduce_vc_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2, 3, 4)
+            }
+            descriptors = [TensorDescriptor.from_tensor(value, [1, 64, 1, dim]) for value in (k, v)]
+        else:
+            module = importlib.import_module("sol_attn.triton_ref.preprocess")
+            configs = _configuration_list(module._reduce_kv_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2)
+            }
+        record_property("forced_configs", str(configs))
+        first = None
+        for warps, stages, kwargs in configs:
+            launch = dict(kwargs, num_warps=warps, num_stages=stages)
+            previous = None
+            for repeat in range(2):
+                if backend == "native":
+                    kc, vc = [torch.empty_like(value) for value in expected]
+                    for kernel, descriptor, output in zip(
+                        (module._reduce_kc_kernel, module._reduce_vc_kernel), descriptors, (kc, vc)
+                    ):
+                        kernel.fn[(1, blocks, batch * heads)](
+                            descriptor, output, tokens, heads, blocks, dim, 64, dim, **launch
+                        )
+                else:
+                    padded_blocks = ((blocks + 63) // 64) * 64
+                    kc, vc = [
+                        torch.full((batch, padded_blocks, heads, dim), 123.0, device="cuda", dtype=torch.bfloat16)
+                        for _ in range(2)
+                    ]
+                    module._reduce_kv_kernel.fn[(blocks, batch * heads)](
+                        k, v, kc, vc, tokens, tokens, padded_blocks, heads, dim, 64, **launch
+                    )
+                    for value in (kc, vc):
+                        assert torch.all(value[:, blocks:] == 123.0), "Pooling overwrote padded blocks"
+                    kc, vc = kc[:, :blocks].contiguous(), vc[:, :blocks].contiguous()
+                torch.cuda.synchronize()
+                actual = (kc, vc)
+                label = f"{backend} {shape} {kind} warps={warps} stages={stages} repeat={repeat}"
+                for name, result, reference in zip(("KC", "VC"), actual, expected):
+                    assert torch.isfinite(result).all(), (label, name)
+>                   torch.testing.assert_close(result, reference, rtol=0, atol=0, msg=f"{label} {name} vs float64")
+E                   AssertionError: pointer (1, 63, 1, 128) dyadic warps=4 stages=1 repeat=0 KC vs float64
+
+test_preprocess_precision.py:111: AssertionError
+_ test_every_pooling_configuration_matches_float64_reference[shape1-dyadic-native] _
+
+backend = 'native', shape = (1, 64, 2, 128), kind = 'dyadic'
+record_property = <function record_property.<locals>.append_property at 0x7eae4bb791c0>
+
+    @pytest.mark.parametrize("backend", ["native", "pointer"])
+    @pytest.mark.parametrize(
+        "shape,kind",
+        [
+            ((1, 63, 1, 128), "dyadic"),
+            ((1, 64, 2, 128), "dyadic"),
+            ((2, 65, 3, 128), "dyadic"),
+            ((2, 129, 2, 128), "dyadic"),
+            ((2, 257, 3, 128), "dyadic"),
+            ((1, 8193, 1, 128), "normal"),
+        ],
+    )
+    @torch.inference_mode()
+    def test_every_pooling_configuration_matches_float64_reference(backend, shape, kind, record_property):
+        if backend == "native" and torch.cuda.get_device_capability()[0] < 9:
+            pytest.skip("Native descriptor pooling requires TMA")
+        batch, tokens, heads, dim = shape
+        blocks = (tokens + 63) // 64
+        generator = torch.Generator(device="cuda").manual_seed(71)
+        if kind == "normal":
+            # Include the same unused Q draw as the captured 8193 regression case.
+            torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator)
+            k, v = [torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator) for _ in range(2)]
+        else:
+            # BF16 dyadic data with cancellation: FP32 can represent every partial
+            # sum exactly, whereas BF16 intermediate sums lose low-order bits.
+            k, v = [
+                (torch.randint(-1024, 1025, shape, device="cuda", generator=generator).float() / 256).to(torch.bfloat16)
+                for _ in range(2)
+            ]
+        originals = (k.clone(), v.clone())
+        expected = _reference(k, v)
+        if backend == "native":
+            from triton.tools.tensor_descriptor import TensorDescriptor
+    
+            module = importlib.import_module("sol_attn.preprocess")
+            configs = _configuration_list(module._reduce_kc_kernel)
+            assert configs == _configuration_list(module._reduce_vc_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2, 3, 4)
+            }
+            descriptors = [TensorDescriptor.from_tensor(value, [1, 64, 1, dim]) for value in (k, v)]
+        else:
+            module = importlib.import_module("sol_attn.triton_ref.preprocess")
+            configs = _configuration_list(module._reduce_kv_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2)
+            }
+        record_property("forced_configs", str(configs))
+        first = None
+        for warps, stages, kwargs in configs:
+            launch = dict(kwargs, num_warps=warps, num_stages=stages)
+            previous = None
+            for repeat in range(2):
+                if backend == "native":
+                    kc, vc = [torch.empty_like(value) for value in expected]
+                    for kernel, descriptor, output in zip(
+                        (module._reduce_kc_kernel, module._reduce_vc_kernel), descriptors, (kc, vc)
+                    ):
+                        kernel.fn[(1, blocks, batch * heads)](
+                            descriptor, output, tokens, heads, blocks, dim, 64, dim, **launch
+                        )
+                else:
+                    padded_blocks = ((blocks + 63) // 64) * 64
+                    kc, vc = [
+                        torch.full((batch, padded_blocks, heads, dim), 123.0, device="cuda", dtype=torch.bfloat16)
+                        for _ in range(2)
+                    ]
+                    module._reduce_kv_kernel.fn[(blocks, batch * heads)](
+                        k, v, kc, vc, tokens, tokens, padded_blocks, heads, dim, 64, **launch
+                    )
+                    for value in (kc, vc):
+                        assert torch.all(value[:, blocks:] == 123.0), "Pooling overwrote padded blocks"
+                    kc, vc = kc[:, :blocks].contiguous(), vc[:, :blocks].contiguous()
+                torch.cuda.synchronize()
+                actual = (kc, vc)
+                label = f"{backend} {shape} {kind} warps={warps} stages={stages} repeat={repeat}"
+                for name, result, reference in zip(("KC", "VC"), actual, expected):
+                    assert torch.isfinite(result).all(), (label, name)
+>                   torch.testing.assert_close(result, reference, rtol=0, atol=0, msg=f"{label} {name} vs float64")
+E                   AssertionError: native (1, 64, 2, 128) dyadic warps=4 stages=1 repeat=0 KC vs float64
+
+test_preprocess_precision.py:111: AssertionError
+_ test_every_pooling_configuration_matches_float64_reference[shape1-dyadic-pointer] _
+
+backend = 'pointer', shape = (1, 64, 2, 128), kind = 'dyadic'
+record_property = <function record_property.<locals>.append_property at 0x7eb069bfe5c0>
+
+    @pytest.mark.parametrize("backend", ["native", "pointer"])
+    @pytest.mark.parametrize(
+        "shape,kind",
+        [
+            ((1, 63, 1, 128), "dyadic"),
+            ((1, 64, 2, 128), "dyadic"),
+            ((2, 65, 3, 128), "dyadic"),
+            ((2, 129, 2, 128), "dyadic"),
+            ((2, 257, 3, 128), "dyadic"),
+            ((1, 8193, 1, 128), "normal"),
+        ],
+    )
+    @torch.inference_mode()
+    def test_every_pooling_configuration_matches_float64_reference(backend, shape, kind, record_property):
+        if backend == "native" and torch.cuda.get_device_capability()[0] < 9:
+            pytest.skip("Native descriptor pooling requires TMA")
+        batch, tokens, heads, dim = shape
+        blocks = (tokens + 63) // 64
+        generator = torch.Generator(device="cuda").manual_seed(71)
+        if kind == "normal":
+            # Include the same unused Q draw as the captured 8193 regression case.
+            torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator)
+            k, v = [torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator) for _ in range(2)]
+        else:
+            # BF16 dyadic data with cancellation: FP32 can represent every partial
+            # sum exactly, whereas BF16 intermediate sums lose low-order bits.
+            k, v = [
+                (torch.randint(-1024, 1025, shape, device="cuda", generator=generator).float() / 256).to(torch.bfloat16)
+                for _ in range(2)
+            ]
+        originals = (k.clone(), v.clone())
+        expected = _reference(k, v)
+        if backend == "native":
+            from triton.tools.tensor_descriptor import TensorDescriptor
+    
+            module = importlib.import_module("sol_attn.preprocess")
+            configs = _configuration_list(module._reduce_kc_kernel)
+            assert configs == _configuration_list(module._reduce_vc_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2, 3, 4)
+            }
+            descriptors = [TensorDescriptor.from_tensor(value, [1, 64, 1, dim]) for value in (k, v)]
+        else:
+            module = importlib.import_module("sol_attn.triton_ref.preprocess")
+            configs = _configuration_list(module._reduce_kv_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2)
+            }
+        record_property("forced_configs", str(configs))
+        first = None
+        for warps, stages, kwargs in configs:
+            launch = dict(kwargs, num_warps=warps, num_stages=stages)
+            previous = None
+            for repeat in range(2):
+                if backend == "native":
+                    kc, vc = [torch.empty_like(value) for value in expected]
+                    for kernel, descriptor, output in zip(
+                        (module._reduce_kc_kernel, module._reduce_vc_kernel), descriptors, (kc, vc)
+                    ):
+                        kernel.fn[(1, blocks, batch * heads)](
+                            descriptor, output, tokens, heads, blocks, dim, 64, dim, **launch
+                        )
+                else:
+                    padded_blocks = ((blocks + 63) // 64) * 64
+                    kc, vc = [
+                        torch.full((batch, padded_blocks, heads, dim), 123.0, device="cuda", dtype=torch.bfloat16)
+                        for _ in range(2)
+                    ]
+                    module._reduce_kv_kernel.fn[(blocks, batch * heads)](
+                        k, v, kc, vc, tokens, tokens, padded_blocks, heads, dim, 64, **launch
+                    )
+                    for value in (kc, vc):
+                        assert torch.all(value[:, blocks:] == 123.0), "Pooling overwrote padded blocks"
+                    kc, vc = kc[:, :blocks].contiguous(), vc[:, :blocks].contiguous()
+                torch.cuda.synchronize()
+                actual = (kc, vc)
+                label = f"{backend} {shape} {kind} warps={warps} stages={stages} repeat={repeat}"
+                for name, result, reference in zip(("KC", "VC"), actual, expected):
+                    assert torch.isfinite(result).all(), (label, name)
+>                   torch.testing.assert_close(result, reference, rtol=0, atol=0, msg=f"{label} {name} vs float64")
+E                   AssertionError: pointer (1, 64, 2, 128) dyadic warps=4 stages=1 repeat=0 KC vs float64
+
+test_preprocess_precision.py:111: AssertionError
+_ test_every_pooling_configuration_matches_float64_reference[shape2-dyadic-native] _
+
+backend = 'native', shape = (2, 65, 3, 128), kind = 'dyadic'
+record_property = <function record_property.<locals>.append_property at 0x7eae4bbafa60>
+
+    @pytest.mark.parametrize("backend", ["native", "pointer"])
+    @pytest.mark.parametrize(
+        "shape,kind",
+        [
+            ((1, 63, 1, 128), "dyadic"),
+            ((1, 64, 2, 128), "dyadic"),
+            ((2, 65, 3, 128), "dyadic"),
+            ((2, 129, 2, 128), "dyadic"),
+            ((2, 257, 3, 128), "dyadic"),
+            ((1, 8193, 1, 128), "normal"),
+        ],
+    )
+    @torch.inference_mode()
+    def test_every_pooling_configuration_matches_float64_reference(backend, shape, kind, record_property):
+        if backend == "native" and torch.cuda.get_device_capability()[0] < 9:
+            pytest.skip("Native descriptor pooling requires TMA")
+        batch, tokens, heads, dim = shape
+        blocks = (tokens + 63) // 64
+        generator = torch.Generator(device="cuda").manual_seed(71)
+        if kind == "normal":
+            # Include the same unused Q draw as the captured 8193 regression case.
+            torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator)
+            k, v = [torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator) for _ in range(2)]
+        else:
+            # BF16 dyadic data with cancellation: FP32 can represent every partial
+            # sum exactly, whereas BF16 intermediate sums lose low-order bits.
+            k, v = [
+                (torch.randint(-1024, 1025, shape, device="cuda", generator=generator).float() / 256).to(torch.bfloat16)
+                for _ in range(2)
+            ]
+        originals = (k.clone(), v.clone())
+        expected = _reference(k, v)
+        if backend == "native":
+            from triton.tools.tensor_descriptor import TensorDescriptor
+    
+            module = importlib.import_module("sol_attn.preprocess")
+            configs = _configuration_list(module._reduce_kc_kernel)
+            assert configs == _configuration_list(module._reduce_vc_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2, 3, 4)
+            }
+            descriptors = [TensorDescriptor.from_tensor(value, [1, 64, 1, dim]) for value in (k, v)]
+        else:
+            module = importlib.import_module("sol_attn.triton_ref.preprocess")
+            configs = _configuration_list(module._reduce_kv_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2)
+            }
+        record_property("forced_configs", str(configs))
+        first = None
+        for warps, stages, kwargs in configs:
+            launch = dict(kwargs, num_warps=warps, num_stages=stages)
+            previous = None
+            for repeat in range(2):
+                if backend == "native":
+                    kc, vc = [torch.empty_like(value) for value in expected]
+                    for kernel, descriptor, output in zip(
+                        (module._reduce_kc_kernel, module._reduce_vc_kernel), descriptors, (kc, vc)
+                    ):
+                        kernel.fn[(1, blocks, batch * heads)](
+                            descriptor, output, tokens, heads, blocks, dim, 64, dim, **launch
+                        )
+                else:
+                    padded_blocks = ((blocks + 63) // 64) * 64
+                    kc, vc = [
+                        torch.full((batch, padded_blocks, heads, dim), 123.0, device="cuda", dtype=torch.bfloat16)
+                        for _ in range(2)
+                    ]
+                    module._reduce_kv_kernel.fn[(blocks, batch * heads)](
+                        k, v, kc, vc, tokens, tokens, padded_blocks, heads, dim, 64, **launch
+                    )
+                    for value in (kc, vc):
+                        assert torch.all(value[:, blocks:] == 123.0), "Pooling overwrote padded blocks"
+                    kc, vc = kc[:, :blocks].contiguous(), vc[:, :blocks].contiguous()
+                torch.cuda.synchronize()
+                actual = (kc, vc)
+                label = f"{backend} {shape} {kind} warps={warps} stages={stages} repeat={repeat}"
+                for name, result, reference in zip(("KC", "VC"), actual, expected):
+                    assert torch.isfinite(result).all(), (label, name)
+>                   torch.testing.assert_close(result, reference, rtol=0, atol=0, msg=f"{label} {name} vs float64")
+E                   AssertionError: native (2, 65, 3, 128) dyadic warps=4 stages=1 repeat=0 KC vs float64
+
+test_preprocess_precision.py:111: AssertionError
+_ test_every_pooling_configuration_matches_float64_reference[shape2-dyadic-pointer] _
+
+backend = 'pointer', shape = (2, 65, 3, 128), kind = 'dyadic'
+record_property = <function record_property.<locals>.append_property at 0x7eae4bbaf880>
+
+    @pytest.mark.parametrize("backend", ["native", "pointer"])
+    @pytest.mark.parametrize(
+        "shape,kind",
+        [
+            ((1, 63, 1, 128), "dyadic"),
+            ((1, 64, 2, 128), "dyadic"),
+            ((2, 65, 3, 128), "dyadic"),
+            ((2, 129, 2, 128), "dyadic"),
+            ((2, 257, 3, 128), "dyadic"),
+            ((1, 8193, 1, 128), "normal"),
+        ],
+    )
+    @torch.inference_mode()
+    def test_every_pooling_configuration_matches_float64_reference(backend, shape, kind, record_property):
+        if backend == "native" and torch.cuda.get_device_capability()[0] < 9:
+            pytest.skip("Native descriptor pooling requires TMA")
+        batch, tokens, heads, dim = shape
+        blocks = (tokens + 63) // 64
+        generator = torch.Generator(device="cuda").manual_seed(71)
+        if kind == "normal":
+            # Include the same unused Q draw as the captured 8193 regression case.
+            torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator)
+            k, v = [torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator) for _ in range(2)]
+        else:
+            # BF16 dyadic data with cancellation: FP32 can represent every partial
+            # sum exactly, whereas BF16 intermediate sums lose low-order bits.
+            k, v = [
+                (torch.randint(-1024, 1025, shape, device="cuda", generator=generator).float() / 256).to(torch.bfloat16)
+                for _ in range(2)
+            ]
+        originals = (k.clone(), v.clone())
+        expected = _reference(k, v)
+        if backend == "native":
+            from triton.tools.tensor_descriptor import TensorDescriptor
+    
+            module = importlib.import_module("sol_attn.preprocess")
+            configs = _configuration_list(module._reduce_kc_kernel)
+            assert configs == _configuration_list(module._reduce_vc_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2, 3, 4)
+            }
+            descriptors = [TensorDescriptor.from_tensor(value, [1, 64, 1, dim]) for value in (k, v)]
+        else:
+            module = importlib.import_module("sol_attn.triton_ref.preprocess")
+            configs = _configuration_list(module._reduce_kv_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2)
+            }
+        record_property("forced_configs", str(configs))
+        first = None
+        for warps, stages, kwargs in configs:
+            launch = dict(kwargs, num_warps=warps, num_stages=stages)
+            previous = None
+            for repeat in range(2):
+                if backend == "native":
+                    kc, vc = [torch.empty_like(value) for value in expected]
+                    for kernel, descriptor, output in zip(
+                        (module._reduce_kc_kernel, module._reduce_vc_kernel), descriptors, (kc, vc)
+                    ):
+                        kernel.fn[(1, blocks, batch * heads)](
+                            descriptor, output, tokens, heads, blocks, dim, 64, dim, **launch
+                        )
+                else:
+                    padded_blocks = ((blocks + 63) // 64) * 64
+                    kc, vc = [
+                        torch.full((batch, padded_blocks, heads, dim), 123.0, device="cuda", dtype=torch.bfloat16)
+                        for _ in range(2)
+                    ]
+                    module._reduce_kv_kernel.fn[(blocks, batch * heads)](
+                        k, v, kc, vc, tokens, tokens, padded_blocks, heads, dim, 64, **launch
+                    )
+                    for value in (kc, vc):
+                        assert torch.all(value[:, blocks:] == 123.0), "Pooling overwrote padded blocks"
+                    kc, vc = kc[:, :blocks].contiguous(), vc[:, :blocks].contiguous()
+                torch.cuda.synchronize()
+                actual = (kc, vc)
+                label = f"{backend} {shape} {kind} warps={warps} stages={stages} repeat={repeat}"
+                for name, result, reference in zip(("KC", "VC"), actual, expected):
+                    assert torch.isfinite(result).all(), (label, name)
+>                   torch.testing.assert_close(result, reference, rtol=0, atol=0, msg=f"{label} {name} vs float64")
+E                   AssertionError: pointer (2, 65, 3, 128) dyadic warps=4 stages=1 repeat=0 KC vs float64
+
+test_preprocess_precision.py:111: AssertionError
+_ test_every_pooling_configuration_matches_float64_reference[shape3-dyadic-native] _
+
+backend = 'native', shape = (2, 129, 2, 128), kind = 'dyadic'
+record_property = <function record_property.<locals>.append_property at 0x7eae4bbae5c0>
+
+    @pytest.mark.parametrize("backend", ["native", "pointer"])
+    @pytest.mark.parametrize(
+        "shape,kind",
+        [
+            ((1, 63, 1, 128), "dyadic"),
+            ((1, 64, 2, 128), "dyadic"),
+            ((2, 65, 3, 128), "dyadic"),
+            ((2, 129, 2, 128), "dyadic"),
+            ((2, 257, 3, 128), "dyadic"),
+            ((1, 8193, 1, 128), "normal"),
+        ],
+    )
+    @torch.inference_mode()
+    def test_every_pooling_configuration_matches_float64_reference(backend, shape, kind, record_property):
+        if backend == "native" and torch.cuda.get_device_capability()[0] < 9:
+            pytest.skip("Native descriptor pooling requires TMA")
+        batch, tokens, heads, dim = shape
+        blocks = (tokens + 63) // 64
+        generator = torch.Generator(device="cuda").manual_seed(71)
+        if kind == "normal":
+            # Include the same unused Q draw as the captured 8193 regression case.
+            torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator)
+            k, v = [torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator) for _ in range(2)]
+        else:
+            # BF16 dyadic data with cancellation: FP32 can represent every partial
+            # sum exactly, whereas BF16 intermediate sums lose low-order bits.
+            k, v = [
+                (torch.randint(-1024, 1025, shape, device="cuda", generator=generator).float() / 256).to(torch.bfloat16)
+                for _ in range(2)
+            ]
+        originals = (k.clone(), v.clone())
+        expected = _reference(k, v)
+        if backend == "native":
+            from triton.tools.tensor_descriptor import TensorDescriptor
+    
+            module = importlib.import_module("sol_attn.preprocess")
+            configs = _configuration_list(module._reduce_kc_kernel)
+            assert configs == _configuration_list(module._reduce_vc_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2, 3, 4)
+            }
+            descriptors = [TensorDescriptor.from_tensor(value, [1, 64, 1, dim]) for value in (k, v)]
+        else:
+            module = importlib.import_module("sol_attn.triton_ref.preprocess")
+            configs = _configuration_list(module._reduce_kv_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2)
+            }
+        record_property("forced_configs", str(configs))
+        first = None
+        for warps, stages, kwargs in configs:
+            launch = dict(kwargs, num_warps=warps, num_stages=stages)
+            previous = None
+            for repeat in range(2):
+                if backend == "native":
+                    kc, vc = [torch.empty_like(value) for value in expected]
+                    for kernel, descriptor, output in zip(
+                        (module._reduce_kc_kernel, module._reduce_vc_kernel), descriptors, (kc, vc)
+                    ):
+                        kernel.fn[(1, blocks, batch * heads)](
+                            descriptor, output, tokens, heads, blocks, dim, 64, dim, **launch
+                        )
+                else:
+                    padded_blocks = ((blocks + 63) // 64) * 64
+                    kc, vc = [
+                        torch.full((batch, padded_blocks, heads, dim), 123.0, device="cuda", dtype=torch.bfloat16)
+                        for _ in range(2)
+                    ]
+                    module._reduce_kv_kernel.fn[(blocks, batch * heads)](
+                        k, v, kc, vc, tokens, tokens, padded_blocks, heads, dim, 64, **launch
+                    )
+                    for value in (kc, vc):
+                        assert torch.all(value[:, blocks:] == 123.0), "Pooling overwrote padded blocks"
+                    kc, vc = kc[:, :blocks].contiguous(), vc[:, :blocks].contiguous()
+                torch.cuda.synchronize()
+                actual = (kc, vc)
+                label = f"{backend} {shape} {kind} warps={warps} stages={stages} repeat={repeat}"
+                for name, result, reference in zip(("KC", "VC"), actual, expected):
+                    assert torch.isfinite(result).all(), (label, name)
+>                   torch.testing.assert_close(result, reference, rtol=0, atol=0, msg=f"{label} {name} vs float64")
+E                   AssertionError: native (2, 129, 2, 128) dyadic warps=4 stages=1 repeat=0 KC vs float64
+
+test_preprocess_precision.py:111: AssertionError
+_ test_every_pooling_configuration_matches_float64_reference[shape3-dyadic-pointer] _
+
+backend = 'pointer', shape = (2, 129, 2, 128), kind = 'dyadic'
+record_property = <function record_property.<locals>.append_property at 0x7eae4bbac180>
+
+    @pytest.mark.parametrize("backend", ["native", "pointer"])
+    @pytest.mark.parametrize(
+        "shape,kind",
+        [
+            ((1, 63, 1, 128), "dyadic"),
+            ((1, 64, 2, 128), "dyadic"),
+            ((2, 65, 3, 128), "dyadic"),
+            ((2, 129, 2, 128), "dyadic"),
+            ((2, 257, 3, 128), "dyadic"),
+            ((1, 8193, 1, 128), "normal"),
+        ],
+    )
+    @torch.inference_mode()
+    def test_every_pooling_configuration_matches_float64_reference(backend, shape, kind, record_property):
+        if backend == "native" and torch.cuda.get_device_capability()[0] < 9:
+            pytest.skip("Native descriptor pooling requires TMA")
+        batch, tokens, heads, dim = shape
+        blocks = (tokens + 63) // 64
+        generator = torch.Generator(device="cuda").manual_seed(71)
+        if kind == "normal":
+            # Include the same unused Q draw as the captured 8193 regression case.
+            torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator)
+            k, v = [torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator) for _ in range(2)]
+        else:
+            # BF16 dyadic data with cancellation: FP32 can represent every partial
+            # sum exactly, whereas BF16 intermediate sums lose low-order bits.
+            k, v = [
+                (torch.randint(-1024, 1025, shape, device="cuda", generator=generator).float() / 256).to(torch.bfloat16)
+                for _ in range(2)
+            ]
+        originals = (k.clone(), v.clone())
+        expected = _reference(k, v)
+        if backend == "native":
+            from triton.tools.tensor_descriptor import TensorDescriptor
+    
+            module = importlib.import_module("sol_attn.preprocess")
+            configs = _configuration_list(module._reduce_kc_kernel)
+            assert configs == _configuration_list(module._reduce_vc_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2, 3, 4)
+            }
+            descriptors = [TensorDescriptor.from_tensor(value, [1, 64, 1, dim]) for value in (k, v)]
+        else:
+            module = importlib.import_module("sol_attn.triton_ref.preprocess")
+            configs = _configuration_list(module._reduce_kv_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2)
+            }
+        record_property("forced_configs", str(configs))
+        first = None
+        for warps, stages, kwargs in configs:
+            launch = dict(kwargs, num_warps=warps, num_stages=stages)
+            previous = None
+            for repeat in range(2):
+                if backend == "native":
+                    kc, vc = [torch.empty_like(value) for value in expected]
+                    for kernel, descriptor, output in zip(
+                        (module._reduce_kc_kernel, module._reduce_vc_kernel), descriptors, (kc, vc)
+                    ):
+                        kernel.fn[(1, blocks, batch * heads)](
+                            descriptor, output, tokens, heads, blocks, dim, 64, dim, **launch
+                        )
+                else:
+                    padded_blocks = ((blocks + 63) // 64) * 64
+                    kc, vc = [
+                        torch.full((batch, padded_blocks, heads, dim), 123.0, device="cuda", dtype=torch.bfloat16)
+                        for _ in range(2)
+                    ]
+                    module._reduce_kv_kernel.fn[(blocks, batch * heads)](
+                        k, v, kc, vc, tokens, tokens, padded_blocks, heads, dim, 64, **launch
+                    )
+                    for value in (kc, vc):
+                        assert torch.all(value[:, blocks:] == 123.0), "Pooling overwrote padded blocks"
+                    kc, vc = kc[:, :blocks].contiguous(), vc[:, :blocks].contiguous()
+                torch.cuda.synchronize()
+                actual = (kc, vc)
+                label = f"{backend} {shape} {kind} warps={warps} stages={stages} repeat={repeat}"
+                for name, result, reference in zip(("KC", "VC"), actual, expected):
+                    assert torch.isfinite(result).all(), (label, name)
+>                   torch.testing.assert_close(result, reference, rtol=0, atol=0, msg=f"{label} {name} vs float64")
+E                   AssertionError: pointer (2, 129, 2, 128) dyadic warps=4 stages=1 repeat=0 KC vs float64
+
+test_preprocess_precision.py:111: AssertionError
+_ test_every_pooling_configuration_matches_float64_reference[shape4-dyadic-native] _
+
+backend = 'native', shape = (2, 257, 3, 128), kind = 'dyadic'
+record_property = <function record_property.<locals>.append_property at 0x7eae48ef5580>
+
+    @pytest.mark.parametrize("backend", ["native", "pointer"])
+    @pytest.mark.parametrize(
+        "shape,kind",
+        [
+            ((1, 63, 1, 128), "dyadic"),
+            ((1, 64, 2, 128), "dyadic"),
+            ((2, 65, 3, 128), "dyadic"),
+            ((2, 129, 2, 128), "dyadic"),
+            ((2, 257, 3, 128), "dyadic"),
+            ((1, 8193, 1, 128), "normal"),
+        ],
+    )
+    @torch.inference_mode()
+    def test_every_pooling_configuration_matches_float64_reference(backend, shape, kind, record_property):
+        if backend == "native" and torch.cuda.get_device_capability()[0] < 9:
+            pytest.skip("Native descriptor pooling requires TMA")
+        batch, tokens, heads, dim = shape
+        blocks = (tokens + 63) // 64
+        generator = torch.Generator(device="cuda").manual_seed(71)
+        if kind == "normal":
+            # Include the same unused Q draw as the captured 8193 regression case.
+            torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator)
+            k, v = [torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator) for _ in range(2)]
+        else:
+            # BF16 dyadic data with cancellation: FP32 can represent every partial
+            # sum exactly, whereas BF16 intermediate sums lose low-order bits.
+            k, v = [
+                (torch.randint(-1024, 1025, shape, device="cuda", generator=generator).float() / 256).to(torch.bfloat16)
+                for _ in range(2)
+            ]
+        originals = (k.clone(), v.clone())
+        expected = _reference(k, v)
+        if backend == "native":
+            from triton.tools.tensor_descriptor import TensorDescriptor
+    
+            module = importlib.import_module("sol_attn.preprocess")
+            configs = _configuration_list(module._reduce_kc_kernel)
+            assert configs == _configuration_list(module._reduce_vc_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2, 3, 4)
+            }
+            descriptors = [TensorDescriptor.from_tensor(value, [1, 64, 1, dim]) for value in (k, v)]
+        else:
+            module = importlib.import_module("sol_attn.triton_ref.preprocess")
+            configs = _configuration_list(module._reduce_kv_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2)
+            }
+        record_property("forced_configs", str(configs))
+        first = None
+        for warps, stages, kwargs in configs:
+            launch = dict(kwargs, num_warps=warps, num_stages=stages)
+            previous = None
+            for repeat in range(2):
+                if backend == "native":
+                    kc, vc = [torch.empty_like(value) for value in expected]
+                    for kernel, descriptor, output in zip(
+                        (module._reduce_kc_kernel, module._reduce_vc_kernel), descriptors, (kc, vc)
+                    ):
+                        kernel.fn[(1, blocks, batch * heads)](
+                            descriptor, output, tokens, heads, blocks, dim, 64, dim, **launch
+                        )
+                else:
+                    padded_blocks = ((blocks + 63) // 64) * 64
+                    kc, vc = [
+                        torch.full((batch, padded_blocks, heads, dim), 123.0, device="cuda", dtype=torch.bfloat16)
+                        for _ in range(2)
+                    ]
+                    module._reduce_kv_kernel.fn[(blocks, batch * heads)](
+                        k, v, kc, vc, tokens, tokens, padded_blocks, heads, dim, 64, **launch
+                    )
+                    for value in (kc, vc):
+                        assert torch.all(value[:, blocks:] == 123.0), "Pooling overwrote padded blocks"
+                    kc, vc = kc[:, :blocks].contiguous(), vc[:, :blocks].contiguous()
+                torch.cuda.synchronize()
+                actual = (kc, vc)
+                label = f"{backend} {shape} {kind} warps={warps} stages={stages} repeat={repeat}"
+                for name, result, reference in zip(("KC", "VC"), actual, expected):
+                    assert torch.isfinite(result).all(), (label, name)
+>                   torch.testing.assert_close(result, reference, rtol=0, atol=0, msg=f"{label} {name} vs float64")
+E                   AssertionError: native (2, 257, 3, 128) dyadic warps=4 stages=1 repeat=0 KC vs float64
+
+test_preprocess_precision.py:111: AssertionError
+_ test_every_pooling_configuration_matches_float64_reference[shape4-dyadic-pointer] _
+
+backend = 'pointer', shape = (2, 257, 3, 128), kind = 'dyadic'
+record_property = <function record_property.<locals>.append_property at 0x7eae48ef6ca0>
+
+    @pytest.mark.parametrize("backend", ["native", "pointer"])
+    @pytest.mark.parametrize(
+        "shape,kind",
+        [
+            ((1, 63, 1, 128), "dyadic"),
+            ((1, 64, 2, 128), "dyadic"),
+            ((2, 65, 3, 128), "dyadic"),
+            ((2, 129, 2, 128), "dyadic"),
+            ((2, 257, 3, 128), "dyadic"),
+            ((1, 8193, 1, 128), "normal"),
+        ],
+    )
+    @torch.inference_mode()
+    def test_every_pooling_configuration_matches_float64_reference(backend, shape, kind, record_property):
+        if backend == "native" and torch.cuda.get_device_capability()[0] < 9:
+            pytest.skip("Native descriptor pooling requires TMA")
+        batch, tokens, heads, dim = shape
+        blocks = (tokens + 63) // 64
+        generator = torch.Generator(device="cuda").manual_seed(71)
+        if kind == "normal":
+            # Include the same unused Q draw as the captured 8193 regression case.
+            torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator)
+            k, v = [torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator) for _ in range(2)]
+        else:
+            # BF16 dyadic data with cancellation: FP32 can represent every partial
+            # sum exactly, whereas BF16 intermediate sums lose low-order bits.
+            k, v = [
+                (torch.randint(-1024, 1025, shape, device="cuda", generator=generator).float() / 256).to(torch.bfloat16)
+                for _ in range(2)
+            ]
+        originals = (k.clone(), v.clone())
+        expected = _reference(k, v)
+        if backend == "native":
+            from triton.tools.tensor_descriptor import TensorDescriptor
+    
+            module = importlib.import_module("sol_attn.preprocess")
+            configs = _configuration_list(module._reduce_kc_kernel)
+            assert configs == _configuration_list(module._reduce_vc_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2, 3, 4)
+            }
+            descriptors = [TensorDescriptor.from_tensor(value, [1, 64, 1, dim]) for value in (k, v)]
+        else:
+            module = importlib.import_module("sol_attn.triton_ref.preprocess")
+            configs = _configuration_list(module._reduce_kv_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2)
+            }
+        record_property("forced_configs", str(configs))
+        first = None
+        for warps, stages, kwargs in configs:
+            launch = dict(kwargs, num_warps=warps, num_stages=stages)
+            previous = None
+            for repeat in range(2):
+                if backend == "native":
+                    kc, vc = [torch.empty_like(value) for value in expected]
+                    for kernel, descriptor, output in zip(
+                        (module._reduce_kc_kernel, module._reduce_vc_kernel), descriptors, (kc, vc)
+                    ):
+                        kernel.fn[(1, blocks, batch * heads)](
+                            descriptor, output, tokens, heads, blocks, dim, 64, dim, **launch
+                        )
+                else:
+                    padded_blocks = ((blocks + 63) // 64) * 64
+                    kc, vc = [
+                        torch.full((batch, padded_blocks, heads, dim), 123.0, device="cuda", dtype=torch.bfloat16)
+                        for _ in range(2)
+                    ]
+                    module._reduce_kv_kernel.fn[(blocks, batch * heads)](
+                        k, v, kc, vc, tokens, tokens, padded_blocks, heads, dim, 64, **launch
+                    )
+                    for value in (kc, vc):
+                        assert torch.all(value[:, blocks:] == 123.0), "Pooling overwrote padded blocks"
+                    kc, vc = kc[:, :blocks].contiguous(), vc[:, :blocks].contiguous()
+                torch.cuda.synchronize()
+                actual = (kc, vc)
+                label = f"{backend} {shape} {kind} warps={warps} stages={stages} repeat={repeat}"
+                for name, result, reference in zip(("KC", "VC"), actual, expected):
+                    assert torch.isfinite(result).all(), (label, name)
+>                   torch.testing.assert_close(result, reference, rtol=0, atol=0, msg=f"{label} {name} vs float64")
+E                   AssertionError: pointer (2, 257, 3, 128) dyadic warps=4 stages=1 repeat=0 KC vs float64
+
+test_preprocess_precision.py:111: AssertionError
+_ test_every_pooling_configuration_matches_float64_reference[shape5-normal-native] _
+
+backend = 'native', shape = (1, 8193, 1, 128), kind = 'normal'
+record_property = <function record_property.<locals>.append_property at 0x7eae48ef65c0>
+
+    @pytest.mark.parametrize("backend", ["native", "pointer"])
+    @pytest.mark.parametrize(
+        "shape,kind",
+        [
+            ((1, 63, 1, 128), "dyadic"),
+            ((1, 64, 2, 128), "dyadic"),
+            ((2, 65, 3, 128), "dyadic"),
+            ((2, 129, 2, 128), "dyadic"),
+            ((2, 257, 3, 128), "dyadic"),
+            ((1, 8193, 1, 128), "normal"),
+        ],
+    )
+    @torch.inference_mode()
+    def test_every_pooling_configuration_matches_float64_reference(backend, shape, kind, record_property):
+        if backend == "native" and torch.cuda.get_device_capability()[0] < 9:
+            pytest.skip("Native descriptor pooling requires TMA")
+        batch, tokens, heads, dim = shape
+        blocks = (tokens + 63) // 64
+        generator = torch.Generator(device="cuda").manual_seed(71)
+        if kind == "normal":
+            # Include the same unused Q draw as the captured 8193 regression case.
+            torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator)
+            k, v = [torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator) for _ in range(2)]
+        else:
+            # BF16 dyadic data with cancellation: FP32 can represent every partial
+            # sum exactly, whereas BF16 intermediate sums lose low-order bits.
+            k, v = [
+                (torch.randint(-1024, 1025, shape, device="cuda", generator=generator).float() / 256).to(torch.bfloat16)
+                for _ in range(2)
+            ]
+        originals = (k.clone(), v.clone())
+        expected = _reference(k, v)
+        if backend == "native":
+            from triton.tools.tensor_descriptor import TensorDescriptor
+    
+            module = importlib.import_module("sol_attn.preprocess")
+            configs = _configuration_list(module._reduce_kc_kernel)
+            assert configs == _configuration_list(module._reduce_vc_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2, 3, 4)
+            }
+            descriptors = [TensorDescriptor.from_tensor(value, [1, 64, 1, dim]) for value in (k, v)]
+        else:
+            module = importlib.import_module("sol_attn.triton_ref.preprocess")
+            configs = _configuration_list(module._reduce_kv_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2)
+            }
+        record_property("forced_configs", str(configs))
+        first = None
+        for warps, stages, kwargs in configs:
+            launch = dict(kwargs, num_warps=warps, num_stages=stages)
+            previous = None
+            for repeat in range(2):
+                if backend == "native":
+                    kc, vc = [torch.empty_like(value) for value in expected]
+                    for kernel, descriptor, output in zip(
+                        (module._reduce_kc_kernel, module._reduce_vc_kernel), descriptors, (kc, vc)
+                    ):
+                        kernel.fn[(1, blocks, batch * heads)](
+                            descriptor, output, tokens, heads, blocks, dim, 64, dim, **launch
+                        )
+                else:
+                    padded_blocks = ((blocks + 63) // 64) * 64
+                    kc, vc = [
+                        torch.full((batch, padded_blocks, heads, dim), 123.0, device="cuda", dtype=torch.bfloat16)
+                        for _ in range(2)
+                    ]
+                    module._reduce_kv_kernel.fn[(blocks, batch * heads)](
+                        k, v, kc, vc, tokens, tokens, padded_blocks, heads, dim, 64, **launch
+                    )
+                    for value in (kc, vc):
+                        assert torch.all(value[:, blocks:] == 123.0), "Pooling overwrote padded blocks"
+                    kc, vc = kc[:, :blocks].contiguous(), vc[:, :blocks].contiguous()
+                torch.cuda.synchronize()
+                actual = (kc, vc)
+                label = f"{backend} {shape} {kind} warps={warps} stages={stages} repeat={repeat}"
+                for name, result, reference in zip(("KC", "VC"), actual, expected):
+                    assert torch.isfinite(result).all(), (label, name)
+>                   torch.testing.assert_close(result, reference, rtol=0, atol=0, msg=f"{label} {name} vs float64")
+E                   AssertionError: native (1, 8193, 1, 128) normal warps=4 stages=1 repeat=0 KC vs float64
+
+test_preprocess_precision.py:111: AssertionError
+_ test_every_pooling_configuration_matches_float64_reference[shape5-normal-pointer] _
+
+backend = 'pointer', shape = (1, 8193, 1, 128), kind = 'normal'
+record_property = <function record_property.<locals>.append_property at 0x7eae48ef6660>
+
+    @pytest.mark.parametrize("backend", ["native", "pointer"])
+    @pytest.mark.parametrize(
+        "shape,kind",
+        [
+            ((1, 63, 1, 128), "dyadic"),
+            ((1, 64, 2, 128), "dyadic"),
+            ((2, 65, 3, 128), "dyadic"),
+            ((2, 129, 2, 128), "dyadic"),
+            ((2, 257, 3, 128), "dyadic"),
+            ((1, 8193, 1, 128), "normal"),
+        ],
+    )
+    @torch.inference_mode()
+    def test_every_pooling_configuration_matches_float64_reference(backend, shape, kind, record_property):
+        if backend == "native" and torch.cuda.get_device_capability()[0] < 9:
+            pytest.skip("Native descriptor pooling requires TMA")
+        batch, tokens, heads, dim = shape
+        blocks = (tokens + 63) // 64
+        generator = torch.Generator(device="cuda").manual_seed(71)
+        if kind == "normal":
+            # Include the same unused Q draw as the captured 8193 regression case.
+            torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator)
+            k, v = [torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator) for _ in range(2)]
+        else:
+            # BF16 dyadic data with cancellation: FP32 can represent every partial
+            # sum exactly, whereas BF16 intermediate sums lose low-order bits.
+            k, v = [
+                (torch.randint(-1024, 1025, shape, device="cuda", generator=generator).float() / 256).to(torch.bfloat16)
+                for _ in range(2)
+            ]
+        originals = (k.clone(), v.clone())
+        expected = _reference(k, v)
+        if backend == "native":
+            from triton.tools.tensor_descriptor import TensorDescriptor
+    
+            module = importlib.import_module("sol_attn.preprocess")
+            configs = _configuration_list(module._reduce_kc_kernel)
+            assert configs == _configuration_list(module._reduce_vc_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2, 3, 4)
+            }
+            descriptors = [TensorDescriptor.from_tensor(value, [1, 64, 1, dim]) for value in (k, v)]
+        else:
+            module = importlib.import_module("sol_attn.triton_ref.preprocess")
+            configs = _configuration_list(module._reduce_kv_kernel)
+            assert {(warps, stages) for warps, stages, _ in configs} == {
+                (warps, stages) for warps in (4, 8) for stages in (1, 2)
+            }
+        record_property("forced_configs", str(configs))
+        first = None
+        for warps, stages, kwargs in configs:
+            launch = dict(kwargs, num_warps=warps, num_stages=stages)
+            previous = None
+            for repeat in range(2):
+                if backend == "native":
+                    kc, vc = [torch.empty_like(value) for value in expected]
+                    for kernel, descriptor, output in zip(
+                        (module._reduce_kc_kernel, module._reduce_vc_kernel), descriptors, (kc, vc)
+                    ):
+                        kernel.fn[(1, blocks, batch * heads)](
+                            descriptor, output, tokens, heads, blocks, dim, 64, dim, **launch
+                        )
+                else:
+                    padded_blocks = ((blocks + 63) // 64) * 64
+                    kc, vc = [
+                        torch.full((batch, padded_blocks, heads, dim), 123.0, device="cuda", dtype=torch.bfloat16)
+                        for _ in range(2)
+                    ]
+                    module._reduce_kv_kernel.fn[(blocks, batch * heads)](
+                        k, v, kc, vc, tokens, tokens, padded_blocks, heads, dim, 64, **launch
+                    )
+                    for value in (kc, vc):
+                        assert torch.all(value[:, blocks:] == 123.0), "Pooling overwrote padded blocks"
+                    kc, vc = kc[:, :blocks].contiguous(), vc[:, :blocks].contiguous()
+                torch.cuda.synchronize()
+                actual = (kc, vc)
+                label = f"{backend} {shape} {kind} warps={warps} stages={stages} repeat={repeat}"
+                for name, result, reference in zip(("KC", "VC"), actual, expected):
+                    assert torch.isfinite(result).all(), (label, name)
+>                   torch.testing.assert_close(result, reference, rtol=0, atol=0, msg=f"{label} {name} vs float64")
+E                   AssertionError: pointer (1, 8193, 1, 128) normal warps=4 stages=1 repeat=0 KC vs float64
+
+test_preprocess_precision.py:111: AssertionError
+=============================== warnings summary ===============================
+test_preprocess_precision.py: 12 warnings
+  test_preprocess_precision.py:32: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    @pytest.mark.parametrize("backend", ["native", "pointer"])
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test_preprocess_precision.py::test_every_pooling_configuration_matches_float64_reference[shape0-dyadic-native]
+FAILED test_preprocess_precision.py::test_every_pooling_configuration_matches_float64_reference[shape0-dyadic-pointer]
+FAILED test_preprocess_precision.py::test_every_pooling_configuration_matches_float64_reference[shape1-dyadic-native]
+FAILED test_preprocess_precision.py::test_every_pooling_configuration_matches_float64_reference[shape1-dyadic-pointer]
+FAILED test_preprocess_precision.py::test_every_pooling_configuration_matches_float64_reference[shape2-dyadic-native]
+FAILED test_preprocess_precision.py::test_every_pooling_configuration_matches_float64_reference[shape2-dyadic-pointer]
+FAILED test_preprocess_precision.py::test_every_pooling_configuration_matches_float64_reference[shape3-dyadic-native]
+FAILED test_preprocess_precision.py::test_every_pooling_configuration_matches_float64_reference[shape3-dyadic-pointer]
+FAILED test_preprocess_precision.py::test_every_pooling_configuration_matches_float64_reference[shape4-dyadic-native]
+FAILED test_preprocess_precision.py::test_every_pooling_configuration_matches_float64_reference[shape4-dyadic-pointer]
+FAILED test_preprocess_precision.py::test_every_pooling_configuration_matches_float64_reference[shape5-normal-native]
+FAILED test_preprocess_precision.py::test_every_pooling_configuration_matches_float64_reference[shape5-normal-pointer]
+12 failed, 12 warnings in 7.49s

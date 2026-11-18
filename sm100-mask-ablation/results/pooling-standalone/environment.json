@@ -1,0 +1,1 @@
+{"torch": "2.16.0.dev20261009+cu134", "cuda": "13.4", "triton": "3.8.0", "pytest": "9.2.0", "gpu": "NVIDIA Graphics Device", "capability": [10, 0], "CUDA_VISIBLE_DEVICES": "1,2"}

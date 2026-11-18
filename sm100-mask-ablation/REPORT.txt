@@ -23,7 +23,24 @@ metrics and no sampler advancement/VAE decode are included.
 Raw results:results/ref2va-native-fp32-450/{summary,rank-0,rank-1,protocol}.json;
 telemetry:environment/fp32-450-control; joined audit:corrected-fp32-summary.json.
 Sources and script hashes are in manifest and protocol. Independent-process
-attention timing and one new contiguous-load candidate are being checked.
+attention timing is now complete: same native prepared tensors and output bytes,
+separate original-name SOL worker processes, common FP32 pooling and4/1launch,
+5warmup+16measured rounds per mode,750MHz. CUDA graph P50 milliseconds:
+Layer0:Dense134.463890,original200.048706,optimized182.190125 (8.9271%reduction).
+Layer25:Dense135.042656,original175.634636,optimized161.124207 (8.2617%reduction).
+All eager and graph cases pass input/prepared/output hash gates. Source and
+script hashes, every sample and actual pooling launch config are recorded in
+results/process-fp32-750. See corrected-fp32-summary.json for telemetry coverage.
+
+Standalone reproduction completed:all12old-source tests fail numerical checks,
+all12fixed-source tests pass,zero errors/skips. Actual public source download and
+whole-archive expected-only diff were verified by the executed wrapper.
+
+New untimed route diagnostic at step10: layer0 exact block fraction rises
+28.0888%->44.5585%with protection;layer25,23.6449%->37.7178%. No protected
+pairs are missing. Trace instrumentation matches uninstrumented output bytes
+and actual prepared KC/VC/threshold hashes. Protection is never removed in
+accepted performance results. One contiguous-load candidate is still under test.
 
 CORRECTION: the earlier #594 attention-kernel attribution was confounded
 2026-11-18, controlled pooling follow-up

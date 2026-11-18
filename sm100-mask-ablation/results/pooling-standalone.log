@@ -1,0 +1,22 @@
+{
+  "report": "/work/results/pooling-standalone/report.json",
+  "valid": true,
+  "tests": {
+    "old": {
+      "classification": "expected_numeric_failure",
+      "returncode": 1,
+      "tests": 12,
+      "failures": 12,
+      "errors": 0,
+      "skipped": 0
+    },
+    "fixed": {
+      "classification": "expected_pass",
+      "returncode": 0,
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  }
+}

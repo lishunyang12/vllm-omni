@@ -3,8 +3,8 @@ Use the pinned CUDA environment, then run:
   bash reproduce/reproduce_pool_fp32.sh --workdir /tmp/empty-pool-check
 This downloads SHA-pinned public sources, verifies the exact fix-only diff, and
 requires old numerical-test failure plus all12fixed tests passing. See
-reproduce/REPRODUCE_POOL_FP32.txt. Source downloads have been checked locally;
-the full wrapper is pending GPU execution. Core12tests already passed on GPU.
+reproduce/REPRODUCE_POOL_FP32.txt. The wrapper has run successfully on GPU:12old numerical failures,12fixed passes,
+zero runtime errors or skips. See results/pooling-standalone/report.json.
 
 CORRECTION: the earlier #594 attention-kernel attribution was confounded
 2026-11-18, controlled pooling follow-up
