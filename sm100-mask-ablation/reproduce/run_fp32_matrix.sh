@@ -7,3 +7,4 @@ for variant in extension-fp32 candidate-fp32; do
   mkdir -p "$output"
   PYTHONPYCACHEPREFIX="$output/pycache" timeout -k 10 600 python3 /work/scripts/independent_matrix.py --output "$output" > "$output/run.log" 2>&1
 done
+python3 /work/scripts/compare_fp32_matrix.py /work/results/fp32-matrix

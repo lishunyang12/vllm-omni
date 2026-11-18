@@ -1,202 +1,82 @@
-CURRENT VERIFIED FP32-POOLING PERFORMANCE (2026-11-18)
-=====================================================
-H3 Ref2VA first conditional single DiT forward, 50 layers forced SOL,2GPUs,
-TP1/Ulysses2,BF16 eager,cache_backend=none,450MHz. Both SOL sources use the
-same explicit FP32 pooling fix, BF16 outputs and forced4warps/1stage.3warmup
-rounds +9rotating/reversed measured rounds; max-rank synchronized wall median.
+H3 Ref2VA: controlled SM100 SOL attention follow-up, 2026-11-18
 
-Dense cuDNN:21.865173s (CV0.3939%).
-Original SOL#593+shared fix:25.241327s (CV0.5362%).
-Optimized SOL#594+shared fix:24.011257s (CV0.4993%).
-SOL latency reduction4.8732%; median paired speedup1.05119x (range1.03983–1.06015x).
-Optimized SOL remains9.8151% slower than Dense. All samples, including outliers,
-are retained. Current PR594 head e3f60d5 matches all55 GPU-tested runtime hashes.
+Result: the existing kernel improvement survives matched-pooling validation.
+The next contiguous-load candidate is correct on the tested cases but offers
+no speedup, so it was not adopted. Both GPU allocations are released; clocks
+were restored before release.
 
-Both ranks' first/last original/candidate outputs match raw bytes; outputs finite
-and inputs unchanged. All54 rank/sample windows have telemetry coverage: every
-overlapping poll450MHz,zero observed power-cap or thermal flags. power.draw=N/A.
-Sampling does not prove absence of sub-poll events; this is a controlled low-clock
-diagnostic point, not a production-throughput claim. Hardware remains SM100
-engineering (cluster B100 label), not production B200. No decoded-video quality
-metrics and no sampler advancement/VAE decode are included.
+Full single forward (seconds, max-rank wall P50)
+  Dense cuDNN 21.865173 | original SOL 25.241327 | optimized SOL 24.011257
+  SOL latency reduction 4.8732%; optimized remains 9.8151% slower than Dense.
+  Dense/original/optimized CV: 0.3939% / 0.5362% / 0.4993%.
+  Median paired SOL speedup 1.05119x; range 1.03983-1.06015x; no samples removed.
 
-Raw results:results/ref2va-native-fp32-450/{summary,rank-0,rank-1,protocol}.json;
-telemetry:environment/fp32-450-control; joined audit:corrected-fp32-summary.json.
-Sources and script hashes are in manifest and protocol. Independent-process
-attention timing is now complete: same native prepared tensors and output bytes,
-separate original-name SOL worker processes, common FP32 pooling and4/1launch,
-5warmup+16measured rounds per mode,750MHz. CUDA graph P50 milliseconds:
-Layer0:Dense134.463890,original200.048706,optimized182.190125 (8.9271%reduction).
-Layer25:Dense135.042656,original175.634636,optimized161.124207 (8.2617%reduction).
-All eager and graph cases pass input/prepared/output hash gates. Source and
-script hashes, every sample and actual pooling launch config are recorded in
-results/process-fp32-750. See corrected-fp32-summary.json for telemetry coverage.
+Protocol: two SM100 engineering GPUs, TP1/Ulysses2, H3 Ref2VA first conditional
+DiT forward, 50 attention layers, BF16 eager, cache off, 450 MHz. Three warmup
+plus nine rotating/reversed measured rounds. Both SOL sides use explicit FP32
+pooling accumulation, BF16 output and forced 4-warps/1-stage. First/last SOL
+outputs match raw bytes on both ranks, inputs unchanged, outputs finite.
+All 54 rank/sample windows have telemetry coverage; overlapping polls are
+450 MHz with no observed power-cap/thermal flags. power.draw is unavailable.
+This controlled low-clock point is not a production throughput estimate.
 
-Standalone reproduction completed:all12old-source tests fail numerical checks,
-all12fixed-source tests pass,zero errors/skips. Actual public source download and
-whole-archive expected-only diff were verified by the executed wrapper.
+Independent-process attention (CUDA graph P50, milliseconds)
+  layer    Dense        original SOL    optimized SOL    reduction
+    0      134.463890   200.048706      182.190125        8.9271%
+   25      135.042656   175.634636      161.124207        8.2617%
 
-New untimed route diagnostic at step10: layer0 exact block fraction rises
-28.0888%->44.5585%with protection;layer25,23.6449%->37.7178%. No protected
-pairs are missing. Trace instrumentation matches uninstrumented output bytes
-and actual prepared KC/VC/threshold hashes. Protection is never removed in
-accepted performance results. One contiguous-load candidate is still under test.
+Same Dense-trajectory SP2 inputs at denoising step 10, BF16 [1,82747,28,128],
+tau=1, original text/audio protection. Separate resident original-name package
+processes, serialized requests, matched pooling configuration, preprocessing
+included, 750 MHz, five warmup and 16 measured alternating/reversed rounds.
+Actual inputs, prepared KC/VC/threshold and output hashes match. Graph CVs
+are below 0.23%; eager has the same direction. Overlapping telemetry polls
+report 750 MHz with no power/thermal flags; short-call coverage is partial
+(7-11 of 16 windows per graph cell). Raw samples and coverage are retained.
 
-CORRECTION: the earlier #594 attention-kernel attribution was confounded
-2026-11-18, controlled pooling follow-up
+Next kernel-design candidate: protected-q-contiguous-fp32
+  layer    corrected #594 baseline    candidate    change (graph P50)
+    0      182.289391 ms             182.962753   0.3694% slower
+   25      161.159554 ms             161.207359   0.0297% slower (noise-sized)
+  Eager changes: 0.4504% / 0.0812% slower. No positive result, not adopted.
+  Full 73 checks + 29 independent cases pass with unchanged gates, including
+  mask/input graph mutations and no-recompile assertions. Real-input hashes
+  match before/after each mode. No full-model timing for this candidate.
 
-The previous warning is superseded by controlled evidence. We retract the
-claim that the old 8193-token comparison established an attention regression
-in #594. Native and pointer-reference preprocessing both reduced BF16 values
-without explicit promotion. Installed Triton TTIR contains bf16 tt.reduce /
-arith.addf; 4- and 8-warp reduction trees produce different pooled KC/VC values.
-The independently autotuned pointer oracle shared this upstream issue.
-Different pooled inputs alter thresholds and discrete exact/approx routing.
-CuTe cache aliasing has NOT been established as the cause.
+The candidate combines protected-Q route bypass with contiguous K/V TMA copies
+on complete protected pairs. Eligible source-level copy issues fall from 8 to
+2, retaining the original fallback and identical byte volume. Fresh compiler
+inspection reports REG168, STACK0, LOCAL0 and static SHARED1024 for both sides;
+constant bytes rise 2040->2424. Static PTX branch sites rise 359->378, TMA sites
+14->18 because both paths remain. Static sites are NOT dynamic execution counts.
+No spill, achieved-occupancy or unique runtime-bottleneck claim is made. The
+extra path/control work may offset a producer saving already hidden by compute;
+this remains a hypothesis requiring runtime counters.
 
-Controls and results:
-* Forced old pooling configs: four token sizes, 4/8 warps x stages1..4. At8193,
-  KC differed from Float64-then-BF16 reference in10535/10541 elements (4/8warps).
-  Mismatches include complete blocks, not only a partial final tile.
-* Freeze exactly the same native KC/VC/threshold tensors: #593 and #594 produce
-  identical output SHA256 5b21c4ec0967384ec591f7209dd634959ee57ec5dd55205624032d4d9085db56
-  on the original8193-token counterexample. No attention source change.
-* Minimal repair: explicitly promote inputs of all four native/pointer pooling
-  sums to FP32. Outputs remain BF16; API, autotune configs and attention math
-  remain unchanged.
-* 32 forced native config cases after repair: zero KC/VC-sum mismatches against
-  Float64-then-BF16 reference. All configs agree for each tested input.
-* New pooling pytest:12passed, every production config forced twice, full/tail,
-  multiple batches/heads, immutable inputs and pointer padding sentinels.
-* #593+same repair vs #594+same repair:29 independent-process cases, all input,
-  prepared KC/VC/threshold and output hashes equal, including8 graph updates.
-* Full attention validation:73/73passed, including existing oracle tolerances,
-  tails, masks, long shapes and CUDA-graph input/mask mutation checks.
+Root cause and correction
+Native and pointer-reference pooling reduced BF16 without explicit promotion.
+Changing autotune reduction trees changed KC/VC, thresholds and routing; the
+pointer oracle shared this upstream issue. The earlier #594 attention-regression
+attribution is retracted. Freezing identical prepared tensors makes #593/#594
+match on the original counterexample. Explicit FP32 accumulation fixes the
+observed config variance while retaining BF16 outputs and all launch choices.
+The standalone public-source reproduction observes 12 numerical failures before
+and 12 passes after the fix, no errors/skips. The native 32-config sweep matches
+Float64-to-BF16 exactly on all tested cases. Repaired #593/#594 pass 73 attention
+checks and 29 independent-process cases. See CORRECTNESS_BLOCKER.txt for detail.
 
-These are bounded numerical/correctness tests, not an end-to-end video quality
-claim. No SSIM/PSNR/LPIPS or video generation was done in this follow-up.
-Earlier benchmark/ablation tables are retained as HISTORICAL/CONFOUNDED:
-prepared tensor identity was not controlled. Revalidate any performance or
-candidate rejection claim with the common repair and matched launch configs.
-Fresh full-forward and separate-process attention measurements are recorded
-separately as they finish. #594 remains draft pending valid performance review.
-Hardware:SM100 engineering GPU, cluster B100 label, NVIDIA Graphics Device,
-CC10.0,148SMs,183359MiB. This is not a production B200 validation.
+Controlled untimed routing at step 10:
+  layer 0 exact block fraction: 28.0888% without protection -> 44.5585% protected.
+  layer25: 23.6449% -> 37.7178%. No protected pairs are missing. Instrumented
+  and uninstrumented outputs and actual prepared hashes match. Unprotected
+  controls are diagnostic only; every accepted timing retains H3 protection.
 
-Evidence:results/preprocess-sweep/report.json,
-results/preprocess-fp32-sweep/report.json,results/frozen-prepared/*/report.json,
-results/fp32-matrix/comparison.json,results/fp32-validation/pooling.log and
-full.json/full.log. Source repair:reproduce/patches/pool-fp32.patch.
-Raw tensor and compiled binary archives remain private.
-
-
-HISTORICAL OBSERVATIONS BELOW — NOT ACCEPTED PERFORMANCE EVIDENCE
-
-H3 Ref2VA: SM100 protected-route ablation and kernel-design follow-up
-======================================================================
-2026-11-18. See manifest.json, raw logs/JSON, ablation.csv and REPRODUCE.txt.
-
-Hardware and protocol
----------------------
-2 x SM100 engineering GPUs, cluster label B100, driver NVIDIA Graphics Device;
-CC 10.0, 148 SMs, 183359 MiB each. Not a production B200 validation.
-Fixed image and source/model revisions are recorded in manifest.json.
-Frozen attention: BF16 [1,82747,28,128], tau=1, diag; 5 warmups + 16 paired
-rotating/reversed rounds in both eager and CUDA graph, 750 MHz.
-New inputs come from a single Dense SP2 trajectory at steps 0,10,25, layers0,25.
-Dense is torch SDPA forced to CUDNN_ATTENTION. No SOL default backend fallback.
-All repeated calls use unchanged input hashes. Exact byte checks compare
-equivalent mask/API variants, not Dense vs approximate SOL.
-
-Graph median milliseconds, same newly captured SP2 inputs
---------------------------------------------------------
-step layer Dense upstream(no protection) #593(None) #593(zero) #593(protected) #593(static protection) #594(protected)
-   0     0 134.524 131.608 131.646 132.462 200.138 197.785 182.367
-   0    25 135.046 117.869 117.850 118.632 177.287 175.223 162.594
-  10     0 134.526 131.562 131.505 132.428 200.067 197.841 182.304
-  10    25 134.990 114.888 114.831 115.661 175.936 173.790 161.238
-  25     0 134.472 129.626 129.640 130.489 198.337 196.026 180.251
-  25    25 135.021 113.058 113.062 113.837 174.404 172.545 160.137
-
-Interpretation: no-mask upstream and extended API agree byte-for-byte with
-negligible latency change. Reading a zero mask costs roughly 0.7%. Encoding
-exactly the real protected ranges as constants saves only about 1.1-1.2% versus
-dynamic protected-mask evaluation. The main protection-associated cost is the
-additional exact-path work and its execution overhead, not Boolean mask reads.
-The real protected mask has 129/1293 blocks: [0,115), [697,711). Its union of
-protected Q rows and KV columns forces at least 18.958% of block pairs exact.
-None/zero masks are diagnostic controls that REMOVE H3 text/audio protection;
-their faster timings are not valid quality-preserving integration results.
-Later steps show the same direction; this is not just a first-step artifact.
-Untimed route instrumentation is byte-identical to the original kernel on all
-six captures. Actual exact-block fractions rise from 23.15-28.10% without
-protection to 37.42-44.58% with protection (56.06-61.64% more selected exact
-blocks). Protected pairs missing: zero. Extra paired-peer padding is only
-0.448-0.553% of selected blocks. See route-summary.json and raw route reports.
-All covered later-750 polls stayed at 750 MHz, no observed power/thermal flags.
-Polling is partial for sub-second kernels; see later-summary.json coverage.
-
-Full single-forward validation at denoising step 10
--------------------------------------------------
-2 GPUs, TP1/Ulysses2, 50 SOL layers forced for diagnostic comparison, BF16 eager,
-cache_backend=none, no CPU offload, 450 MHz. 3 warmups + 9 paired rounds;
-latency is max wall time across ranks. No VAE or client/end-to-end timing.
-Dense: P50=21.741223 s, CV=0.0623%
-#593: P50=25.008123 s, CV=0.1258%
-#594: P50=23.827988 s, CV=0.1552%
-#594 lowers SOL latency by 4.719%, but is 9.598% slower than Dense.
-Both ranks: first/last #593/#594 outputs byte-identical and finite, input hashes
-unchanged; Dense trajectory output matches the independently captured Dense
-result. All 18 rank/sample windows per variant have clock polls at 450 MHz,
-with no observed power-cap or thermal flags. Original clock settings restored.
-No new image/video quality or SSIM/PSNR/LPIPS result is claimed in this run.
-
-Kernel-design candidates
-------------------------
-ALL CANDIDATES BLOCKED pending independent oracle and compilation-context audit.
-See CORRECTNESS_BLOCKER.txt; historical statuses below are not acceptance.
-
-Experimental acceptance gates
-=============================
-The following names refer to isolated patches on #594 (150114b6), not code
-proposed for merging. A timing table does not imply that a patch was accepted.
-protected-q: 12 stress and real-input byte checks, but independent T513/diag
-  diagnostic FAILS byte equality (max_abs 0.001953125); not eligible.
-p-store-x16: 12 stress and real-input byte checks; full validation not run.
-protected-q-contiguous: FAILS full suite at T513/diag; do not use performance.
-smem-p-serial: 12+73 correctness checks pass, real-input bytes pass; 27-28% slower
-  than #594 on tested layers. Uses scalar SMEM stores as a layout gate. Rejected
-  for performance; this alone does not rule out all shared-P designs.
-smem-p-overlap: 12 stress pass; full suite FAILS T8193/none after 48 passed cases.
-  This input is still within one G256 group. Not performance eligible.
-smem-p-overlap-publish-first: FAILS independent T8193/none byte checks
-  (max_abs 0.0317840576171875), not performance eligible.
-smem-p-vector: serial schedule with proved vector stores; 12 stress pass, full
-  validation pending.
-C and original overlap each pass isolated repro cases that failed in the full
-  sequence; that does not invalidate the full-suite failure. Cause unresolved.
-No production code changed and no experimental kernel was pushed to #594.
-
-Protected-Q route-skip and wider TMEM stores initially measured only about
-0.1-0.4% on two real inputs, with incomplete full correctness gates; these
-preliminary timing observations are not a promotion recommendation.
-SMEM-P scalar serial is 27-28% slower on two real inputs despite passing
-12 stress + 73 full checks and real-input eager/graph byte checks. Scalar
-stores were a layout gate. This rejects that implementation, not the entire
-shared-memory design space. Other experiments must meet correctness and
-real-input performance gates before any production PR change.
-
-Provenance and limits
----------------------
-upstream=cf67a3a; #593=63b4e65; #594=150114b6 (implementation fe6be477).
-Old corrected/design-first/design-d captures were SP1 sliced to 28 heads;
-new later-750 captures are true SP2. Do not mix their input identities.
-An initial launch accidentally overrode scheduler visibility, was stopped
-and discarded; none of its timings appear in this report or comparison CSV.
-All code experiments are isolated patches. Failed branches remain diagnostic
-artifacts; no experimental kernel was pushed to the production PR.
-Private QKV/output tensor archives are retained locally and not published.
-The public sequence harness regenerates captures with pinned input hashes.
-Paper context: https://arxiv.org/html/2607.24027v1#S6 explicitly lists incomplete
-B200 utilization as a limitation. Its task/sparsity/warmup settings differ from
-our forced-all-layer Ref2VA diagnostic; neither result invalidates the other.
+PRs: NVlabs/Sana#595, commit0f0d973 (focused pooling fix, base sol-engine).
+     NVlabs/Sana#594, heade3f60d5 (validated perf + shared fix, draft dependencies).
+     vllm-project/vllm-omni#10513 receives corrected latency/evidence comments.
+Image/source/model pins, raw samples, source manifests, environment and scripts
+are included. All55 runtime files match #594's tested source. Hardware is
+cluster-labelled B100, NVIDIA Graphics Device, CC10.0,148SMs,183359MiB;
+NOT production B200/GB200. No fresh SM90/SM103/SM120 run of this fixed head.
+No sampler advancement, VAE decode, generated-video SSIM/PSNR/LPIPS claim.
+Older timing/ablation tables are historical and uncontrolled for pooling.

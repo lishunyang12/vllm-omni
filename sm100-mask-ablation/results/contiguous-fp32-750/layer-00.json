@@ -1,0 +1,3286 @@
+{
+  "complete": true,
+  "valid": true,
+  "protocol": "one source per resident process; serialized JSON RPC",
+  "script_sha256": "d1403787352112ed73312197912d37949aa88a6fa6c78d8964a57b9b0532b083",
+  "parent_environment": {
+    "CUDA_VISIBLE_DEVICES": "1,2",
+    "NVIDIA_VISIBLE_DEVICES": "1,2",
+    "CUDA_DEVICE_ORDER": null,
+    "CUDA_MODULE_LOADING": null,
+    "CUDA_CACHE_DISABLE": null,
+    "CUTE_DSL_DISABLE_FILE_CACHING": "1",
+    "CUTE_DSL_ARCH": null,
+    "CUTE_DSL_KEEP_PTX": null,
+    "CUTE_DSL_KEEP_CUBIN": null,
+    "TRITON_CACHE_DIR": "/work/triton-cache",
+    "TRITON_ALWAYS_COMPILE": null,
+    "SLURM_JOB_ID": "3279279",
+    "SLURM_STEP_ID": "6",
+    "SLURM_PROCID": "0",
+    "SLURM_LOCALID": "0",
+    "SLURM_JOB_GPUS": null,
+    "SLURM_STEP_GPUS": "1,2",
+    "SLURM_CPUS_PER_TASK": "8",
+    "PYTHONHASHSEED": null,
+    "PYTHONDONTWRITEBYTECODE": null,
+    "PYTHONPYCACHEPREFIX": null
+  },
+  "input": "/work/results/ref2va-native-sequence-450/qkv-step-10-layer-00-rank-0.pt",
+  "warmup_rounds_per_mode": 5,
+  "measured_rounds_per_mode": 16,
+  "graph_setup_eager_warmup": 5,
+  "heads": 28,
+  "timeout_s_per_command": 1800,
+  "workers": {
+    "baseline": {
+      "variant": "baseline",
+      "runtime": {
+        "pid": 42982,
+        "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+        "executable": "/usr/bin/python3",
+        "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+        "environment": {
+          "CUDA_VISIBLE_DEVICES": "1,2",
+          "NVIDIA_VISIBLE_DEVICES": "1,2",
+          "CUDA_DEVICE_ORDER": null,
+          "CUDA_MODULE_LOADING": null,
+          "CUDA_CACHE_DISABLE": null,
+          "CUTE_DSL_DISABLE_FILE_CACHING": "1",
+          "CUTE_DSL_ARCH": null,
+          "CUTE_DSL_KEEP_PTX": null,
+          "CUTE_DSL_KEEP_CUBIN": null,
+          "TRITON_CACHE_DIR": "/work/triton-cache",
+          "TRITON_ALWAYS_COMPILE": null,
+          "SLURM_JOB_ID": "3279279",
+          "SLURM_STEP_ID": "6",
+          "SLURM_PROCID": "0",
+          "SLURM_LOCALID": "0",
+          "SLURM_JOB_GPUS": null,
+          "SLURM_STEP_GPUS": "1,2",
+          "SLURM_CPUS_PER_TASK": "8",
+          "PYTHONHASHSEED": null,
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "PYTHONPYCACHEPREFIX": "/tmp/sol-process-bench-pycache-8kso7nky/baseline"
+        },
+        "cpu_affinity": [
+          4,
+          5,
+          6,
+          7,
+          20,
+          21,
+          22,
+          23
+        ],
+        "torch": "2.16.0.dev20261009+cu134",
+        "torch_git": "146a5a2f73e2980170c08e5bb6d0c7ffb703f7de",
+        "cuda": "13.4",
+        "cudnn": 92600,
+        "gpu": "NVIDIA Graphics Device",
+        "gpu_uuid": "[GPU_UUID]",
+        "capability": [
+          10,
+          0
+        ],
+        "device_index_within_inherited_visibility": 0,
+        "total_memory": 191495471104,
+        "sm_count": 148,
+        "torch_config": "PyTorch built with:\n  - GCC 13.3\n  - C++ Version: 202002\n  - Intel(R) oneAPI Math Kernel Library Version 2024.2-Product Build 20240605 for Intel(R) 64 architecture applications\n  - Intel(R) MKL-DNN v3.13.3 (Git Hash b38f97eb6f2173513112f15a0481750b8a66e901)\n  - OpenMP 201511 (a.k.a. OpenMP 4.5)\n  - LAPACK is enabled (usually provided by MKL)\n  - NNPACK is enabled\n  - CPU capability usage: AVX512\n  - CUDA Runtime 13.4\n  - NVCC architecture flags: -gencode;arch=compute_75,code=sm_75;-gencode;arch=compute_80,code=sm_80;-gencode;arch=compute_86,code=sm_86;-gencode;arch=compute_90,code=sm_90;-gencode;arch=compute_100,code=sm_100;-gencode;arch=compute_120,code=sm_120;-gencode;arch=compute_120,code=compute_120\n  - CuDNN 92.6\n  - Magma 2.6.1\n  - Build settings: BLAS_INFO=mkl, BUILD_TYPE=Release, COMMIT_SHA=146a5a2f73e2980170c08e5bb6d0c7ffb703f7de, CUDA_FLAGS= -DLIBCUDACXX_ENABLE_SIMPLIFIED_COMPLEX_OPERATIONS -Xfatbin -compress-all -DONNX_NAMESPACE=onnx_torch -gencode arch=compute_75,code=sm_75 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_86,code=sm_86 -gencode arch=compute_90,code=sm_90 -gencode arch=compute_100,code=sm_100 -gencode arch=compute_120,code=sm_120 -gencode arch=compute_120,code=compute_120 -Xcudafe --diag_suppress=cc_clobber_ignored,--diag_suppress=field_without_dll_interface,--diag_suppress=base_class_has_different_dll_interface,--diag_suppress=dll_interface_conflict_none_assumed,--diag_suppress=dll_interface_conflict_dllexport_assumed,--diag_suppress=bad_friend_decl --expt-relaxed-constexpr --expt-extended-lambda -Xfatbin -compress-all --threads 2 -compress-mode=size -Wno-deprecated-gpu-targets --expt-extended-lambda -DCUB_WRAPPED_NAMESPACE=at_cuda_detail -DDISABLE_CUSPARSE_DEPRECATED -DCUDA_HAS_FP16=1 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -DC10_NODEPRECATED, CUDA_VERSION=13.4, CUDNN_VERSION=9.26.0, CXX_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/c++, CXX_FLAGS= -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DHAS_CUPTI -DUSE_FBGEMM -DUSE_MSLK -DUSE_PYTORCH_QNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -O2 -fPIC -DC10_NODEPRECATED -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=range-loop-construct -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-unknown-pragmas -Wno-unused-parameter -Wno-strict-overflow -Wno-strict-aliasing -Wno-stringop-overflow -Wsuggest-override -Wno-psabi -Wno-error=old-style-cast -faligned-new -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-dangling-reference -Wno-error=dangling-reference -Wno-stringop-overflow, LAPACK_INFO=mkl, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, TORCH_VERSION=2.16.0, USE_CUDA=1, USE_CUDNN=ON, USE_CUSPARSELT=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_HIPSPARSELT=OFF, USE_MKL=ON, USE_MKLDNN=ON, USE_MPI=OFF, USE_NCCL=ON, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, USE_XCCL=OFF, USE_XPU=OFF, \n",
+        "deterministic_algorithms": false,
+        "cudnn_deterministic": false,
+        "cudnn_benchmark": false,
+        "cudnn_allow_tf32": true,
+        "matmul_allow_tf32": false,
+        "backend": "sol_attn",
+        "pooling_contract": {
+          "explicit_fp32_required": true,
+          "source_sha256": {
+            "preprocess.py": "09039b41d8935b2b0df8e6cd17da73dd1d887f7144511f28e28755490ee2c297",
+            "triton_ref/preprocess.py": "59a9422fd9db974bff2984eb60ecd93de55a3a14a6bb2fd6b93833cc4ed22953"
+          }
+        }
+      },
+      "source": {
+        "package": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn",
+        "files": {
+          "THIRD_PARTY_NOTICES.md": "6487c91eb7589118e41f869b30db674f0f77941f9ab32665c70388e70cc75bfc",
+          "__init__.py": "f8dd33b38c74a834b76fad7dbd8582d7f58a116fb33b98a01aabc241d20b4a15",
+          "_vendor/__init__.py": "eb3ec1ff32f5d2344a839acc90ee48329906532f560596f3ff733d4923553078",
+          "_vendor/flash_attn/__init__.py": "42edd3f7a999b03f052836071389179a2edbc0a239221b67a5c8da8d09d127d6",
+          "_vendor/flash_attn/cute/__init__.py": "63631d004ed460922766940b7eeac674cbcd8a43eeb0e5595962845c862ca026",
+          "_vendor/flash_attn/cute/ampere_helpers.py": "cadac170a7da379e27c36d044360480d710cfa88d082dad2b9decd58e4847111",
+          "_vendor/flash_attn/cute/block_info.py": "d518a31b430b6a4aa6e925eb5171036b9984f77c9dca9840f4b32c1e2d60ccdb",
+          "_vendor/flash_attn/cute/block_sparsity.py": "bb836711cbee9baed9db96987b301709f149fb72b8fb0842c69cabe327f989d0",
+          "_vendor/flash_attn/cute/cute_dsl_utils.py": "162ba9671cb16d20fccf3547e43d606aa83e775329d5287bc9320569afe60137",
+          "_vendor/flash_attn/cute/fast_math.py": "7e5f822bf4d0ba36967558f3ae9a1408b410cb726c31222cd61703569d1be738",
+          "_vendor/flash_attn/cute/flash_fwd.py": "840e90f8e5d1fca2f73fbdb44df938027aa4750210af814fa28551f7a723ec27",
+          "_vendor/flash_attn/cute/mask.py": "f920b98640efc91d737b631bb7ea223f71cd2b086ae3dae2d3db37a28fd390d2",
+          "_vendor/flash_attn/cute/named_barrier.py": "98d1cf1f2254203769da8d566f5ddadc755fb1cb3f4e514012da3addb9233c09",
+          "_vendor/flash_attn/cute/pack_gqa.py": "e55c56628c37334e4ec672f877018dc1fce89c4c30ede05c7515b08fb5596450",
+          "_vendor/flash_attn/cute/pipeline.py": "849bce91c72be0a5c7458979e10c8290f45e05253a83600e30fb9540c61ed56a",
+          "_vendor/flash_attn/cute/seqlen_info.py": "8a922e1217b54b5185d9c8d8f928f8836058a2f4b3bddded4c38460a2e39d60f",
+          "_vendor/flash_attn/cute/softmax.py": "56ee749e3a388e0bb3f853fea0c236cf89f291d167f269f8b04d3bb2f31cc37a",
+          "_vendor/flash_attn/cute/tile_scheduler.py": "ac0d1211e34d73c2bbb44b7f62b3a77d1f9aac177653a5a028cb4f5fa1b1ce0e",
+          "_vendor/flash_attn/cute/utils.py": "f268b5af4c4d6fad6dd44bd6c6da0c475a6ec36ed90aeb1334b45aa4e1d86d57",
+          "common/__init__.py": "2d18d24871bacaaeb6417ee37f4e1b57530c6bf3f51e20ca803bad6a6e53c25b",
+          "common/layout_utils.py": "d8ed2213f8162bf820eb9934ea3ec0b4b3038c7a73fe64d65bcf025639e63c0e",
+          "common/runtime.py": "2bedf17b2c55005d53bdc2e49689b4fe48b667436e9f3c3e92debda788197fc0",
+          "common/selector.py": "3f4c9bfb24dea5e3b26f28f8c41521d3271c395dc5636d2721866bd648296723",
+          "interface.py": "2d7cd74f7528f883cb41c23b3ac6a1f6b7a2ae82eafdef10c198f335af66c378",
+          "mps/__init__.py": "21fa2ede7df2b1f41440283861fa8d681e74edb8c8c498ac9a14d086fe6ac6f6",
+          "mps/metal.py": "c401d5a2c8b1d827cc71f4e870153e83f9722eeac3da03847e4cea5219094e89",
+          "mps/preprocess.py": "e276140cd4451856669052f68b859231813a705447d690ac86e9f8a0592a1350",
+          "preprocess.py": "09039b41d8935b2b0df8e6cd17da73dd1d887f7144511f28e28755490ee2c297",
+          "sm100/LICENSE.flash-attention": "8c9ccb96c065e706135b6cbad279b721da6156e51f3a5f27c6b3329af9416d73",
+          "sm100/__init__.py": "77a77ead8e28f2a388a77497297f6e9e9385cfe0e99a1f67e2036d41ef4c1c78",
+          "sm100/kernel.py": "a614f29e002fdde2e9258da516b452d2ea07ecdeec8410722a344c72a40f61a0",
+          "sm100/mainloop.py": "7723e979b1cbe12825c4c8fd3fd73dfa45cf4cd41832154726afbabd2557e10e",
+          "sm100/math.py": "00974a22a4c5b5e47628f67a560dc966a50ef7225eb3f773a296d71b5ac5be7f",
+          "sm100/softmax.py": "22a95f6db57382e95bbfdef09da3304981dab61d6fcaad8db2525fcd0f68d1de",
+          "sm100/tmem.py": "e761576ab085c7f9c135421ed8e6f202fca5b3f96252a14ae99051e8685c00c8",
+          "sm120/__init__.py": "193997e4e5925c7a8cabe0247068698bdab1bb7fab283d0857fc01bf9a2763c1",
+          "sm120/kernel.py": "cba5a94506cb15025faf7065340d36eba8747cff5a0852816486213fbd7fb715",
+          "sm120/mainloop.py": "7f9f6fbdd045892d2c2b81ef429189c403271ac1e2751694577f1f171e3904fe",
+          "sm89/__init__.py": "9127efe4b871d477a66372ed8c92219ee55ff03fe8ba8e4a63a5c9200e6af4f9",
+          "sm89/kernel.py": "1e054a192a7287fbccde177f7b18460e60ab3557088ea3df73a6ceccca87e91f",
+          "sm89/mainloop.py": "adcae56e67e85757915d2710b37e6b72aca032c8208d1c776cb68eb7d5c7ade2",
+          "sm90/__init__.py": "3c76761acc65784e80872fa953e0057822f21896bcc45bd69992ec165eaaa96c",
+          "sm90/_compat/__init__.py": "dc9300ddffe0a8acd263d301c56b6c3094f0ddb3279be7917ace8e9cfbaf2586",
+          "sm90/_compat/activation.py": "77b1c16a9970b2fe79de4a945db9930850dcf4f4869ed4639805337c6a40a07d",
+          "sm90/_compat/copy_utils.py": "8e5e6fa9a79382995636ff1df391fdc37ed134cb5fa3d8f4db66213f476f5bd2",
+          "sm90/_compat/cute_dsl_utils.py": "afffcb709248851cc14dc91da466e104271de4438dbca73c2ac7c1c6c061bae8",
+          "sm90/_compat/layout_utils.py": "4ad6a7a87adf0bf8dc76c5aa04689d717ca63aeeaba5c754e9a96fb72787fa5a",
+          "sm90/_compat/sm90_utils.py": "3c4bfd2cc468b372671e7654f6ae06cdf5f3b64b4f7f03cf6d4467c51b4829f2",
+          "sm90/atoms.py": "bdabb2257d5384f901c8a8a4d0b3e9b8697fbe89b2f8d4f0fd3db28d21ba135a",
+          "sm90/exact.py": "e44e3e72883f50f93d2112721d7d697e6041ba1f9f2079a27da73fd0030eff6e",
+          "sm90/fwd.py": "8ee729343dd1c870a1a572a76ef82245cb1ba88753bdc8dc3f33237c0ed680ba",
+          "sm90/kernel.py": "fcc3980955a60cdbb93cc4d52187d58359fa99d7a9ec9f594fde2e50b5e497f5",
+          "sm90/mainloop.py": "5b176a1664c42c33cd203218b0da220f6d673fbf55a69ba313329db0b46ffe78",
+          "sm90/split_combine.py": "be1f14997ed4bacb8bff1fb0f7979bda6424af1394661e07d692a2f2460101c3",
+          "triton_ref/__init__.py": "7053365a47158cf36d0a244451b017cd2ff0402bbd19005b23a53cc12d866840",
+          "triton_ref/fwd.py": "f40ddc92ca481aac21def5718b876c1f6d501e167662dc1a5ac36c2d336e4825",
+          "triton_ref/preprocess.py": "59a9422fd9db974bff2984eb60ecd93de55a3a14a6bb2fd6b93833cc4ed22953"
+        },
+        "manifest_sha256": "366742568da739052d12999755ffb35c9f3f18a96983cb0fb6d9635ea02d93fb"
+      },
+      "input": {
+        "input": "/work/results/ref2va-native-sequence-450/qkv-step-10-layer-00-rank-0.pt",
+        "full_tensor_sha256": {
+          "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+          "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+          "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+          "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+        },
+        "shape": [
+          1,
+          82747,
+          28,
+          128
+        ],
+        "dtype": "torch.bfloat16",
+        "heads_selected": 28,
+        "options": {
+          "scale": 0.08838834764831845,
+          "tau": 1.0,
+          "thresh_type": "diag",
+          "sink_start": 0,
+          "sink_tokens": 0,
+          "kv_splits": 1
+        },
+        "denoise_step": 10,
+        "layer": 0,
+        "trajectory": "dense",
+        "protected_blocks": 129,
+        "selected_tensor_sha256": {
+          "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+          "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+          "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+          "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+        }
+      },
+      "initial": {
+        "input_sha256": {
+          "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+          "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+          "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+          "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+        },
+        "input_immutable": true,
+        "output": {
+          "sha256": "7c1052cb0ed21e5358a378741048645fccef68e9776e1bb9cc9dbf96952b1784",
+          "shape": [
+            1,
+            82747,
+            28,
+            128
+          ],
+          "dtype": "torch.bfloat16",
+          "finite": true
+        },
+        "source_unchanged": true,
+        "loaded_module_origins": {
+          "sol_attn": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/__init__.py",
+          "sol_attn._vendor": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/__init__.py",
+          "sol_attn._vendor.flash_attn": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/__init__.py",
+          "sol_attn._vendor.flash_attn.cute": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/__init__.py",
+          "sol_attn._vendor.flash_attn.cute.cute_dsl_utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/cute_dsl_utils.py",
+          "sol_attn._vendor.flash_attn.cute.pipeline": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/pipeline.py",
+          "sol_attn._vendor.flash_attn.cute.utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/utils.py",
+          "sol_attn.common": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/__init__.py",
+          "sol_attn.common.layout_utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/layout_utils.py",
+          "sol_attn.common.runtime": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/runtime.py",
+          "sol_attn.common.selector": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/selector.py",
+          "sol_attn.interface": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/interface.py",
+          "sol_attn.preprocess": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/preprocess.py",
+          "sol_attn.sm100": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/__init__.py",
+          "sol_attn.sm100.kernel": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/kernel.py",
+          "sol_attn.sm100.mainloop": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/mainloop.py",
+          "sol_attn.sm100.math": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/math.py",
+          "sol_attn.sm100.softmax": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/softmax.py",
+          "sol_attn.sm100.tmem": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/tmem.py",
+          "sol_attn.sm90": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/__init__.py",
+          "sol_attn.sm90._compat": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/__init__.py",
+          "sol_attn.sm90._compat.activation": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/activation.py"
+        },
+        "mode": "eager",
+        "prepared": {
+          "kc": {
+            "sha256": "a58771653017c7c583770be3752d2e138dc0f466f5577d30be671f3c4cab7ac9",
+            "shape": [
+              1,
+              1293,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "vc": {
+            "sha256": "34de5b39471c8d0fb9dc2ab5c5535c8cefbb6641cfe81216f42b75cf4030200f",
+            "shape": [
+              1,
+              1293,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "threshold": {
+            "sha256": "948201eb4c441538f79dc974efe20c0d5ceab4f74d1fa90b7f77feb06437179a",
+            "shape": [
+              1,
+              1293,
+              28
+            ],
+            "dtype": "torch.float32",
+            "finite": true
+          }
+        },
+        "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+        "prepare_python_calls": 1,
+        "preprocess_autotune": {
+          "_reduce_kc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+          "_reduce_vc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+          "_reduce_kc_stats_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None",
+          "_diag_threshold_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None"
+        }
+      },
+      "initial_untimed_calls": 1
+    },
+    "candidate": {
+      "variant": "candidate",
+      "runtime": {
+        "pid": 42983,
+        "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+        "executable": "/usr/bin/python3",
+        "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+        "environment": {
+          "CUDA_VISIBLE_DEVICES": "1,2",
+          "NVIDIA_VISIBLE_DEVICES": "1,2",
+          "CUDA_DEVICE_ORDER": null,
+          "CUDA_MODULE_LOADING": null,
+          "CUDA_CACHE_DISABLE": null,
+          "CUTE_DSL_DISABLE_FILE_CACHING": "1",
+          "CUTE_DSL_ARCH": null,
+          "CUTE_DSL_KEEP_PTX": null,
+          "CUTE_DSL_KEEP_CUBIN": null,
+          "TRITON_CACHE_DIR": "/work/triton-cache",
+          "TRITON_ALWAYS_COMPILE": null,
+          "SLURM_JOB_ID": "3279279",
+          "SLURM_STEP_ID": "6",
+          "SLURM_PROCID": "0",
+          "SLURM_LOCALID": "0",
+          "SLURM_JOB_GPUS": null,
+          "SLURM_STEP_GPUS": "1,2",
+          "SLURM_CPUS_PER_TASK": "8",
+          "PYTHONHASHSEED": null,
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "PYTHONPYCACHEPREFIX": "/tmp/sol-process-bench-pycache-8kso7nky/candidate"
+        },
+        "cpu_affinity": [
+          4,
+          5,
+          6,
+          7,
+          20,
+          21,
+          22,
+          23
+        ],
+        "torch": "2.16.0.dev20261009+cu134",
+        "torch_git": "146a5a2f73e2980170c08e5bb6d0c7ffb703f7de",
+        "cuda": "13.4",
+        "cudnn": 92600,
+        "gpu": "NVIDIA Graphics Device",
+        "gpu_uuid": "[GPU_UUID]",
+        "capability": [
+          10,
+          0
+        ],
+        "device_index_within_inherited_visibility": 0,
+        "total_memory": 191495471104,
+        "sm_count": 148,
+        "torch_config": "PyTorch built with:\n  - GCC 13.3\n  - C++ Version: 202002\n  - Intel(R) oneAPI Math Kernel Library Version 2024.2-Product Build 20240605 for Intel(R) 64 architecture applications\n  - Intel(R) MKL-DNN v3.13.3 (Git Hash b38f97eb6f2173513112f15a0481750b8a66e901)\n  - OpenMP 201511 (a.k.a. OpenMP 4.5)\n  - LAPACK is enabled (usually provided by MKL)\n  - NNPACK is enabled\n  - CPU capability usage: AVX512\n  - CUDA Runtime 13.4\n  - NVCC architecture flags: -gencode;arch=compute_75,code=sm_75;-gencode;arch=compute_80,code=sm_80;-gencode;arch=compute_86,code=sm_86;-gencode;arch=compute_90,code=sm_90;-gencode;arch=compute_100,code=sm_100;-gencode;arch=compute_120,code=sm_120;-gencode;arch=compute_120,code=compute_120\n  - CuDNN 92.6\n  - Magma 2.6.1\n  - Build settings: BLAS_INFO=mkl, BUILD_TYPE=Release, COMMIT_SHA=146a5a2f73e2980170c08e5bb6d0c7ffb703f7de, CUDA_FLAGS= -DLIBCUDACXX_ENABLE_SIMPLIFIED_COMPLEX_OPERATIONS -Xfatbin -compress-all -DONNX_NAMESPACE=onnx_torch -gencode arch=compute_75,code=sm_75 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_86,code=sm_86 -gencode arch=compute_90,code=sm_90 -gencode arch=compute_100,code=sm_100 -gencode arch=compute_120,code=sm_120 -gencode arch=compute_120,code=compute_120 -Xcudafe --diag_suppress=cc_clobber_ignored,--diag_suppress=field_without_dll_interface,--diag_suppress=base_class_has_different_dll_interface,--diag_suppress=dll_interface_conflict_none_assumed,--diag_suppress=dll_interface_conflict_dllexport_assumed,--diag_suppress=bad_friend_decl --expt-relaxed-constexpr --expt-extended-lambda -Xfatbin -compress-all --threads 2 -compress-mode=size -Wno-deprecated-gpu-targets --expt-extended-lambda -DCUB_WRAPPED_NAMESPACE=at_cuda_detail -DDISABLE_CUSPARSE_DEPRECATED -DCUDA_HAS_FP16=1 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -DC10_NODEPRECATED, CUDA_VERSION=13.4, CUDNN_VERSION=9.26.0, CXX_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/c++, CXX_FLAGS= -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DHAS_CUPTI -DUSE_FBGEMM -DUSE_MSLK -DUSE_PYTORCH_QNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -O2 -fPIC -DC10_NODEPRECATED -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=range-loop-construct -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-unknown-pragmas -Wno-unused-parameter -Wno-strict-overflow -Wno-strict-aliasing -Wno-stringop-overflow -Wsuggest-override -Wno-psabi -Wno-error=old-style-cast -faligned-new -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-dangling-reference -Wno-error=dangling-reference -Wno-stringop-overflow, LAPACK_INFO=mkl, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, TORCH_VERSION=2.16.0, USE_CUDA=1, USE_CUDNN=ON, USE_CUSPARSELT=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_HIPSPARSELT=OFF, USE_MKL=ON, USE_MKLDNN=ON, USE_MPI=OFF, USE_NCCL=ON, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, USE_XCCL=OFF, USE_XPU=OFF, \n",
+        "deterministic_algorithms": false,
+        "cudnn_deterministic": false,
+        "cudnn_benchmark": false,
+        "cudnn_allow_tf32": true,
+        "matmul_allow_tf32": false,
+        "backend": "sol_attn",
+        "pooling_contract": {
+          "explicit_fp32_required": true,
+          "source_sha256": {
+            "preprocess.py": "09039b41d8935b2b0df8e6cd17da73dd1d887f7144511f28e28755490ee2c297",
+            "triton_ref/preprocess.py": "59a9422fd9db974bff2984eb60ecd93de55a3a14a6bb2fd6b93833cc4ed22953"
+          }
+        }
+      },
+      "source": {
+        "package": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn",
+        "files": {
+          "THIRD_PARTY_NOTICES.md": "6487c91eb7589118e41f869b30db674f0f77941f9ab32665c70388e70cc75bfc",
+          "__init__.py": "f8dd33b38c74a834b76fad7dbd8582d7f58a116fb33b98a01aabc241d20b4a15",
+          "_vendor/__init__.py": "eb3ec1ff32f5d2344a839acc90ee48329906532f560596f3ff733d4923553078",
+          "_vendor/flash_attn/__init__.py": "42edd3f7a999b03f052836071389179a2edbc0a239221b67a5c8da8d09d127d6",
+          "_vendor/flash_attn/cute/__init__.py": "63631d004ed460922766940b7eeac674cbcd8a43eeb0e5595962845c862ca026",
+          "_vendor/flash_attn/cute/ampere_helpers.py": "cadac170a7da379e27c36d044360480d710cfa88d082dad2b9decd58e4847111",
+          "_vendor/flash_attn/cute/block_info.py": "d518a31b430b6a4aa6e925eb5171036b9984f77c9dca9840f4b32c1e2d60ccdb",
+          "_vendor/flash_attn/cute/block_sparsity.py": "bb836711cbee9baed9db96987b301709f149fb72b8fb0842c69cabe327f989d0",
+          "_vendor/flash_attn/cute/cute_dsl_utils.py": "162ba9671cb16d20fccf3547e43d606aa83e775329d5287bc9320569afe60137",
+          "_vendor/flash_attn/cute/fast_math.py": "7e5f822bf4d0ba36967558f3ae9a1408b410cb726c31222cd61703569d1be738",
+          "_vendor/flash_attn/cute/flash_fwd.py": "840e90f8e5d1fca2f73fbdb44df938027aa4750210af814fa28551f7a723ec27",
+          "_vendor/flash_attn/cute/mask.py": "f920b98640efc91d737b631bb7ea223f71cd2b086ae3dae2d3db37a28fd390d2",
+          "_vendor/flash_attn/cute/named_barrier.py": "98d1cf1f2254203769da8d566f5ddadc755fb1cb3f4e514012da3addb9233c09",
+          "_vendor/flash_attn/cute/pack_gqa.py": "e55c56628c37334e4ec672f877018dc1fce89c4c30ede05c7515b08fb5596450",
+          "_vendor/flash_attn/cute/pipeline.py": "849bce91c72be0a5c7458979e10c8290f45e05253a83600e30fb9540c61ed56a",
+          "_vendor/flash_attn/cute/seqlen_info.py": "8a922e1217b54b5185d9c8d8f928f8836058a2f4b3bddded4c38460a2e39d60f",
+          "_vendor/flash_attn/cute/softmax.py": "56ee749e3a388e0bb3f853fea0c236cf89f291d167f269f8b04d3bb2f31cc37a",
+          "_vendor/flash_attn/cute/tile_scheduler.py": "ac0d1211e34d73c2bbb44b7f62b3a77d1f9aac177653a5a028cb4f5fa1b1ce0e",
+          "_vendor/flash_attn/cute/utils.py": "f268b5af4c4d6fad6dd44bd6c6da0c475a6ec36ed90aeb1334b45aa4e1d86d57",
+          "common/__init__.py": "2d18d24871bacaaeb6417ee37f4e1b57530c6bf3f51e20ca803bad6a6e53c25b",
+          "common/layout_utils.py": "d8ed2213f8162bf820eb9934ea3ec0b4b3038c7a73fe64d65bcf025639e63c0e",
+          "common/runtime.py": "2bedf17b2c55005d53bdc2e49689b4fe48b667436e9f3c3e92debda788197fc0",
+          "common/selector.py": "3f4c9bfb24dea5e3b26f28f8c41521d3271c395dc5636d2721866bd648296723",
+          "interface.py": "2d7cd74f7528f883cb41c23b3ac6a1f6b7a2ae82eafdef10c198f335af66c378",
+          "mps/__init__.py": "21fa2ede7df2b1f41440283861fa8d681e74edb8c8c498ac9a14d086fe6ac6f6",
+          "mps/metal.py": "c401d5a2c8b1d827cc71f4e870153e83f9722eeac3da03847e4cea5219094e89",
+          "mps/preprocess.py": "e276140cd4451856669052f68b859231813a705447d690ac86e9f8a0592a1350",
+          "preprocess.py": "09039b41d8935b2b0df8e6cd17da73dd1d887f7144511f28e28755490ee2c297",
+          "sm100/LICENSE.flash-attention": "8c9ccb96c065e706135b6cbad279b721da6156e51f3a5f27c6b3329af9416d73",
+          "sm100/__init__.py": "77a77ead8e28f2a388a77497297f6e9e9385cfe0e99a1f67e2036d41ef4c1c78",
+          "sm100/kernel.py": "a614f29e002fdde2e9258da516b452d2ea07ecdeec8410722a344c72a40f61a0",
+          "sm100/mainloop.py": "affac2a4f7eb6561c1564ea3a3abb850db606eb60d4bd8e882236f9753917a0d",
+          "sm100/math.py": "00974a22a4c5b5e47628f67a560dc966a50ef7225eb3f773a296d71b5ac5be7f",
+          "sm100/softmax.py": "22a95f6db57382e95bbfdef09da3304981dab61d6fcaad8db2525fcd0f68d1de",
+          "sm100/tmem.py": "e761576ab085c7f9c135421ed8e6f202fca5b3f96252a14ae99051e8685c00c8",
+          "sm120/__init__.py": "193997e4e5925c7a8cabe0247068698bdab1bb7fab283d0857fc01bf9a2763c1",
+          "sm120/kernel.py": "cba5a94506cb15025faf7065340d36eba8747cff5a0852816486213fbd7fb715",
+          "sm120/mainloop.py": "7f9f6fbdd045892d2c2b81ef429189c403271ac1e2751694577f1f171e3904fe",
+          "sm89/__init__.py": "9127efe4b871d477a66372ed8c92219ee55ff03fe8ba8e4a63a5c9200e6af4f9",
+          "sm89/kernel.py": "1e054a192a7287fbccde177f7b18460e60ab3557088ea3df73a6ceccca87e91f",
+          "sm89/mainloop.py": "adcae56e67e85757915d2710b37e6b72aca032c8208d1c776cb68eb7d5c7ade2",
+          "sm90/__init__.py": "3c76761acc65784e80872fa953e0057822f21896bcc45bd69992ec165eaaa96c",
+          "sm90/_compat/__init__.py": "dc9300ddffe0a8acd263d301c56b6c3094f0ddb3279be7917ace8e9cfbaf2586",
+          "sm90/_compat/activation.py": "77b1c16a9970b2fe79de4a945db9930850dcf4f4869ed4639805337c6a40a07d",
+          "sm90/_compat/copy_utils.py": "8e5e6fa9a79382995636ff1df391fdc37ed134cb5fa3d8f4db66213f476f5bd2",
+          "sm90/_compat/cute_dsl_utils.py": "afffcb709248851cc14dc91da466e104271de4438dbca73c2ac7c1c6c061bae8",
+          "sm90/_compat/layout_utils.py": "4ad6a7a87adf0bf8dc76c5aa04689d717ca63aeeaba5c754e9a96fb72787fa5a",
+          "sm90/_compat/sm90_utils.py": "3c4bfd2cc468b372671e7654f6ae06cdf5f3b64b4f7f03cf6d4467c51b4829f2",
+          "sm90/atoms.py": "bdabb2257d5384f901c8a8a4d0b3e9b8697fbe89b2f8d4f0fd3db28d21ba135a",
+          "sm90/exact.py": "e44e3e72883f50f93d2112721d7d697e6041ba1f9f2079a27da73fd0030eff6e",
+          "sm90/fwd.py": "8ee729343dd1c870a1a572a76ef82245cb1ba88753bdc8dc3f33237c0ed680ba",
+          "sm90/kernel.py": "fcc3980955a60cdbb93cc4d52187d58359fa99d7a9ec9f594fde2e50b5e497f5",
+          "sm90/mainloop.py": "5b176a1664c42c33cd203218b0da220f6d673fbf55a69ba313329db0b46ffe78",
+          "sm90/split_combine.py": "be1f14997ed4bacb8bff1fb0f7979bda6424af1394661e07d692a2f2460101c3",
+          "triton_ref/__init__.py": "7053365a47158cf36d0a244451b017cd2ff0402bbd19005b23a53cc12d866840",
+          "triton_ref/fwd.py": "f40ddc92ca481aac21def5718b876c1f6d501e167662dc1a5ac36c2d336e4825",
+          "triton_ref/preprocess.py": "59a9422fd9db974bff2984eb60ecd93de55a3a14a6bb2fd6b93833cc4ed22953"
+        },
+        "manifest_sha256": "697ad71ed5231b3131436e4e710d2f8720cbdf6ee230c85c29ed9fd3c2730169"
+      },
+      "input": {
+        "input": "/work/results/ref2va-native-sequence-450/qkv-step-10-layer-00-rank-0.pt",
+        "full_tensor_sha256": {
+          "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+          "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+          "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+          "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+        },
+        "shape": [
+          1,
+          82747,
+          28,
+          128
+        ],
+        "dtype": "torch.bfloat16",
+        "heads_selected": 28,
+        "options": {
+          "scale": 0.08838834764831845,
+          "tau": 1.0,
+          "thresh_type": "diag",
+          "sink_start": 0,
+          "sink_tokens": 0,
+          "kv_splits": 1
+        },
+        "denoise_step": 10,
+        "layer": 0,
+        "trajectory": "dense",
+        "protected_blocks": 129,
+        "selected_tensor_sha256": {
+          "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+          "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+          "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+          "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+        }
+      },
+      "initial": {
+        "input_sha256": {
+          "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+          "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+          "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+          "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+        },
+        "input_immutable": true,
+        "output": {
+          "sha256": "7c1052cb0ed21e5358a378741048645fccef68e9776e1bb9cc9dbf96952b1784",
+          "shape": [
+            1,
+            82747,
+            28,
+            128
+          ],
+          "dtype": "torch.bfloat16",
+          "finite": true
+        },
+        "source_unchanged": true,
+        "loaded_module_origins": {
+          "sol_attn": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/__init__.py",
+          "sol_attn._vendor": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/__init__.py",
+          "sol_attn._vendor.flash_attn": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/__init__.py",
+          "sol_attn._vendor.flash_attn.cute": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/__init__.py",
+          "sol_attn._vendor.flash_attn.cute.cute_dsl_utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/cute_dsl_utils.py",
+          "sol_attn._vendor.flash_attn.cute.pipeline": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/pipeline.py",
+          "sol_attn._vendor.flash_attn.cute.utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/utils.py",
+          "sol_attn.common": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/__init__.py",
+          "sol_attn.common.layout_utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/layout_utils.py",
+          "sol_attn.common.runtime": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/runtime.py",
+          "sol_attn.common.selector": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/selector.py",
+          "sol_attn.interface": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/interface.py",
+          "sol_attn.preprocess": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/preprocess.py",
+          "sol_attn.sm100": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/__init__.py",
+          "sol_attn.sm100.kernel": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/kernel.py",
+          "sol_attn.sm100.mainloop": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/mainloop.py",
+          "sol_attn.sm100.math": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/math.py",
+          "sol_attn.sm100.softmax": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/softmax.py",
+          "sol_attn.sm100.tmem": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/tmem.py",
+          "sol_attn.sm90": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/__init__.py",
+          "sol_attn.sm90._compat": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/__init__.py",
+          "sol_attn.sm90._compat.activation": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/activation.py"
+        },
+        "mode": "eager",
+        "prepared": {
+          "kc": {
+            "sha256": "a58771653017c7c583770be3752d2e138dc0f466f5577d30be671f3c4cab7ac9",
+            "shape": [
+              1,
+              1293,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "vc": {
+            "sha256": "34de5b39471c8d0fb9dc2ab5c5535c8cefbb6641cfe81216f42b75cf4030200f",
+            "shape": [
+              1,
+              1293,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "threshold": {
+            "sha256": "948201eb4c441538f79dc974efe20c0d5ceab4f74d1fa90b7f77feb06437179a",
+            "shape": [
+              1,
+              1293,
+              28
+            ],
+            "dtype": "torch.float32",
+            "finite": true
+          }
+        },
+        "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+        "prepare_python_calls": 1,
+        "preprocess_autotune": {
+          "_reduce_kc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+          "_reduce_vc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+          "_reduce_kc_stats_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None",
+          "_diag_threshold_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None"
+        }
+      },
+      "initial_untimed_calls": 1
+    },
+    "dense": {
+      "variant": "dense",
+      "runtime": {
+        "pid": 42984,
+        "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+        "executable": "/usr/bin/python3",
+        "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+        "environment": {
+          "CUDA_VISIBLE_DEVICES": "1,2",
+          "NVIDIA_VISIBLE_DEVICES": "1,2",
+          "CUDA_DEVICE_ORDER": null,
+          "CUDA_MODULE_LOADING": null,
+          "CUDA_CACHE_DISABLE": null,
+          "CUTE_DSL_DISABLE_FILE_CACHING": "1",
+          "CUTE_DSL_ARCH": null,
+          "CUTE_DSL_KEEP_PTX": null,
+          "CUTE_DSL_KEEP_CUBIN": null,
+          "TRITON_CACHE_DIR": "/work/triton-cache",
+          "TRITON_ALWAYS_COMPILE": null,
+          "SLURM_JOB_ID": "3279279",
+          "SLURM_STEP_ID": "6",
+          "SLURM_PROCID": "0",
+          "SLURM_LOCALID": "0",
+          "SLURM_JOB_GPUS": null,
+          "SLURM_STEP_GPUS": "1,2",
+          "SLURM_CPUS_PER_TASK": "8",
+          "PYTHONHASHSEED": null,
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "PYTHONPYCACHEPREFIX": "/tmp/sol-process-bench-pycache-8kso7nky/dense"
+        },
+        "cpu_affinity": [
+          4,
+          5,
+          6,
+          7,
+          20,
+          21,
+          22,
+          23
+        ],
+        "torch": "2.16.0.dev20261009+cu134",
+        "torch_git": "146a5a2f73e2980170c08e5bb6d0c7ffb703f7de",
+        "cuda": "13.4",
+        "cudnn": 92600,
+        "gpu": "NVIDIA Graphics Device",
+        "gpu_uuid": "[GPU_UUID]",
+        "capability": [
+          10,
+          0
+        ],
+        "device_index_within_inherited_visibility": 0,
+        "total_memory": 191495471104,
+        "sm_count": 148,
+        "torch_config": "PyTorch built with:\n  - GCC 13.3\n  - C++ Version: 202002\n  - Intel(R) oneAPI Math Kernel Library Version 2024.2-Product Build 20240605 for Intel(R) 64 architecture applications\n  - Intel(R) MKL-DNN v3.13.3 (Git Hash b38f97eb6f2173513112f15a0481750b8a66e901)\n  - OpenMP 201511 (a.k.a. OpenMP 4.5)\n  - LAPACK is enabled (usually provided by MKL)\n  - NNPACK is enabled\n  - CPU capability usage: AVX512\n  - CUDA Runtime 13.4\n  - NVCC architecture flags: -gencode;arch=compute_75,code=sm_75;-gencode;arch=compute_80,code=sm_80;-gencode;arch=compute_86,code=sm_86;-gencode;arch=compute_90,code=sm_90;-gencode;arch=compute_100,code=sm_100;-gencode;arch=compute_120,code=sm_120;-gencode;arch=compute_120,code=compute_120\n  - CuDNN 92.6\n  - Magma 2.6.1\n  - Build settings: BLAS_INFO=mkl, BUILD_TYPE=Release, COMMIT_SHA=146a5a2f73e2980170c08e5bb6d0c7ffb703f7de, CUDA_FLAGS= -DLIBCUDACXX_ENABLE_SIMPLIFIED_COMPLEX_OPERATIONS -Xfatbin -compress-all -DONNX_NAMESPACE=onnx_torch -gencode arch=compute_75,code=sm_75 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_86,code=sm_86 -gencode arch=compute_90,code=sm_90 -gencode arch=compute_100,code=sm_100 -gencode arch=compute_120,code=sm_120 -gencode arch=compute_120,code=compute_120 -Xcudafe --diag_suppress=cc_clobber_ignored,--diag_suppress=field_without_dll_interface,--diag_suppress=base_class_has_different_dll_interface,--diag_suppress=dll_interface_conflict_none_assumed,--diag_suppress=dll_interface_conflict_dllexport_assumed,--diag_suppress=bad_friend_decl --expt-relaxed-constexpr --expt-extended-lambda -Xfatbin -compress-all --threads 2 -compress-mode=size -Wno-deprecated-gpu-targets --expt-extended-lambda -DCUB_WRAPPED_NAMESPACE=at_cuda_detail -DDISABLE_CUSPARSE_DEPRECATED -DCUDA_HAS_FP16=1 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -DC10_NODEPRECATED, CUDA_VERSION=13.4, CUDNN_VERSION=9.26.0, CXX_COMPILER=/opt/rh/gcc-toolset-13/root/usr/bin/c++, CXX_FLAGS= -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -DNDEBUG -DUSE_KINETO -DHAS_CUPTI -DUSE_FBGEMM -DUSE_MSLK -DUSE_PYTORCH_QNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -O2 -fPIC -DC10_NODEPRECATED -Wall -Wextra -Werror=return-type -Werror=non-virtual-dtor -Werror=range-loop-construct -Werror=bool-operation -Wnarrowing -Wno-missing-field-initializers -Wno-unknown-pragmas -Wno-unused-parameter -Wno-strict-overflow -Wno-strict-aliasing -Wno-stringop-overflow -Wsuggest-override -Wno-psabi -Wno-error=old-style-cast -faligned-new -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Wno-dangling-reference -Wno-error=dangling-reference -Wno-stringop-overflow, LAPACK_INFO=mkl, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, TORCH_VERSION=2.16.0, USE_CUDA=1, USE_CUDNN=ON, USE_CUSPARSELT=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_GLOO=ON, USE_HIPSPARSELT=OFF, USE_MKL=ON, USE_MKLDNN=ON, USE_MPI=OFF, USE_NCCL=ON, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, USE_ROCM_KERNEL_ASSERT=OFF, USE_XCCL=OFF, USE_XPU=OFF, \n",
+        "deterministic_algorithms": false,
+        "cudnn_deterministic": false,
+        "cudnn_benchmark": false,
+        "cudnn_allow_tf32": true,
+        "matmul_allow_tf32": false,
+        "backend": "CUDNN_ATTENTION (forced, no fallback)",
+        "pooling_contract": null,
+        "torch_functional_source": {
+          "path": "/usr/local/lib/python3.12/dist-packages/torch/nn/functional.py",
+          "sha256": "248df115c09150603832f63d9f7b4a267345d71bacf9789cd1830842e552321b"
+        }
+      },
+      "source": null,
+      "input": {
+        "input": "/work/results/ref2va-native-sequence-450/qkv-step-10-layer-00-rank-0.pt",
+        "full_tensor_sha256": {
+          "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+          "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+          "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+          "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+        },
+        "shape": [
+          1,
+          82747,
+          28,
+          128
+        ],
+        "dtype": "torch.bfloat16",
+        "heads_selected": 28,
+        "options": {
+          "scale": 0.08838834764831845,
+          "tau": 1.0,
+          "thresh_type": "diag",
+          "sink_start": 0,
+          "sink_tokens": 0,
+          "kv_splits": 1
+        },
+        "denoise_step": 10,
+        "layer": 0,
+        "trajectory": "dense",
+        "protected_blocks": 129,
+        "selected_tensor_sha256": {
+          "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+          "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+          "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+          "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+        }
+      },
+      "initial": {
+        "input_sha256": {
+          "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+          "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+          "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+          "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+        },
+        "input_immutable": true,
+        "output": {
+          "sha256": "b042e7caa6dc42faee96e3b692b331586974afd43a1336725765d03550af9b31",
+          "shape": [
+            1,
+            82747,
+            28,
+            128
+          ],
+          "dtype": "torch.bfloat16",
+          "finite": true
+        },
+        "source_unchanged": true,
+        "loaded_module_origins": {},
+        "mode": "eager",
+        "prepared": null,
+        "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+        "prepare_python_calls": 0,
+        "preprocess_autotune": null
+      },
+      "initial_untimed_calls": 1
+    }
+  },
+  "modes": {
+    "eager": {
+      "setup": {
+        "baseline": {
+          "mode": "eager",
+          "capture_eager_warmup": 0,
+          "capture_calls": 0,
+          "validation_replays": 0
+        },
+        "candidate": {
+          "mode": "eager",
+          "capture_eager_warmup": 0,
+          "capture_calls": 0,
+          "validation_replays": 0
+        },
+        "dense": {
+          "mode": "eager",
+          "capture_eager_warmup": 0,
+          "capture_calls": 0,
+          "validation_replays": 0
+        }
+      },
+      "warmup_order": [
+        [
+          "baseline",
+          "candidate",
+          "dense"
+        ],
+        [
+          "baseline",
+          "dense",
+          "candidate"
+        ],
+        [
+          "dense",
+          "baseline",
+          "candidate"
+        ],
+        [
+          "dense",
+          "candidate",
+          "baseline"
+        ],
+        [
+          "candidate",
+          "dense",
+          "baseline"
+        ]
+      ],
+      "before": {
+        "baseline": {
+          "input_sha256": {
+            "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+            "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+            "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+            "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+          },
+          "input_immutable": true,
+          "output": {
+            "sha256": "7c1052cb0ed21e5358a378741048645fccef68e9776e1bb9cc9dbf96952b1784",
+            "shape": [
+              1,
+              82747,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "source_unchanged": true,
+          "loaded_module_origins": {
+            "sol_attn": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/__init__.py",
+            "sol_attn._vendor": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/__init__.py",
+            "sol_attn._vendor.flash_attn": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/__init__.py",
+            "sol_attn._vendor.flash_attn.cute": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/__init__.py",
+            "sol_attn._vendor.flash_attn.cute.cute_dsl_utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/cute_dsl_utils.py",
+            "sol_attn._vendor.flash_attn.cute.pipeline": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/pipeline.py",
+            "sol_attn._vendor.flash_attn.cute.utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/utils.py",
+            "sol_attn.common": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/__init__.py",
+            "sol_attn.common.layout_utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/layout_utils.py",
+            "sol_attn.common.runtime": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/runtime.py",
+            "sol_attn.common.selector": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/selector.py",
+            "sol_attn.interface": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/interface.py",
+            "sol_attn.preprocess": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/preprocess.py",
+            "sol_attn.sm100": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/__init__.py",
+            "sol_attn.sm100.kernel": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/kernel.py",
+            "sol_attn.sm100.mainloop": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/mainloop.py",
+            "sol_attn.sm100.math": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/math.py",
+            "sol_attn.sm100.softmax": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/softmax.py",
+            "sol_attn.sm100.tmem": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/tmem.py",
+            "sol_attn.sm90": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/__init__.py",
+            "sol_attn.sm90._compat": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/__init__.py",
+            "sol_attn.sm90._compat.activation": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/activation.py"
+          },
+          "mode": "eager",
+          "prepared": {
+            "kc": {
+              "sha256": "a58771653017c7c583770be3752d2e138dc0f466f5577d30be671f3c4cab7ac9",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "vc": {
+              "sha256": "34de5b39471c8d0fb9dc2ab5c5535c8cefbb6641cfe81216f42b75cf4030200f",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "threshold": {
+              "sha256": "948201eb4c441538f79dc974efe20c0d5ceab4f74d1fa90b7f77feb06437179a",
+              "shape": [
+                1,
+                1293,
+                28
+              ],
+              "dtype": "torch.float32",
+              "finite": true
+            }
+          },
+          "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+          "prepare_python_calls": 6,
+          "preprocess_autotune": {
+            "_reduce_kc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_vc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_kc_stats_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None",
+            "_diag_threshold_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None"
+          }
+        },
+        "candidate": {
+          "input_sha256": {
+            "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+            "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+            "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+            "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+          },
+          "input_immutable": true,
+          "output": {
+            "sha256": "7c1052cb0ed21e5358a378741048645fccef68e9776e1bb9cc9dbf96952b1784",
+            "shape": [
+              1,
+              82747,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "source_unchanged": true,
+          "loaded_module_origins": {
+            "sol_attn": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/__init__.py",
+            "sol_attn._vendor": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/__init__.py",
+            "sol_attn._vendor.flash_attn": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/__init__.py",
+            "sol_attn._vendor.flash_attn.cute": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/__init__.py",
+            "sol_attn._vendor.flash_attn.cute.cute_dsl_utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/cute_dsl_utils.py",
+            "sol_attn._vendor.flash_attn.cute.pipeline": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/pipeline.py",
+            "sol_attn._vendor.flash_attn.cute.utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/utils.py",
+            "sol_attn.common": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/__init__.py",
+            "sol_attn.common.layout_utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/layout_utils.py",
+            "sol_attn.common.runtime": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/runtime.py",
+            "sol_attn.common.selector": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/selector.py",
+            "sol_attn.interface": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/interface.py",
+            "sol_attn.preprocess": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/preprocess.py",
+            "sol_attn.sm100": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/__init__.py",
+            "sol_attn.sm100.kernel": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/kernel.py",
+            "sol_attn.sm100.mainloop": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/mainloop.py",
+            "sol_attn.sm100.math": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/math.py",
+            "sol_attn.sm100.softmax": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/softmax.py",
+            "sol_attn.sm100.tmem": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/tmem.py",
+            "sol_attn.sm90": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/__init__.py",
+            "sol_attn.sm90._compat": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/__init__.py",
+            "sol_attn.sm90._compat.activation": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/activation.py"
+          },
+          "mode": "eager",
+          "prepared": {
+            "kc": {
+              "sha256": "a58771653017c7c583770be3752d2e138dc0f466f5577d30be671f3c4cab7ac9",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "vc": {
+              "sha256": "34de5b39471c8d0fb9dc2ab5c5535c8cefbb6641cfe81216f42b75cf4030200f",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "threshold": {
+              "sha256": "948201eb4c441538f79dc974efe20c0d5ceab4f74d1fa90b7f77feb06437179a",
+              "shape": [
+                1,
+                1293,
+                28
+              ],
+              "dtype": "torch.float32",
+              "finite": true
+            }
+          },
+          "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+          "prepare_python_calls": 6,
+          "preprocess_autotune": {
+            "_reduce_kc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_vc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_kc_stats_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None",
+            "_diag_threshold_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None"
+          }
+        },
+        "dense": {
+          "input_sha256": {
+            "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+            "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+            "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+            "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+          },
+          "input_immutable": true,
+          "output": {
+            "sha256": "b042e7caa6dc42faee96e3b692b331586974afd43a1336725765d03550af9b31",
+            "shape": [
+              1,
+              82747,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "source_unchanged": true,
+          "loaded_module_origins": {},
+          "mode": "eager",
+          "prepared": null,
+          "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+          "prepare_python_calls": 0,
+          "preprocess_autotune": null
+        }
+      },
+      "samples": [
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040547.6012404,
+          "start_unix_ns": 1795040547601240275,
+          "start_monotonic_ns": 962556851787671,
+          "wall_s": 0.182909854,
+          "event_ms": 182.7921600341797,
+          "round": 0,
+          "variant": "baseline",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040547.785251,
+          "start_unix_ns": 1795040547785250784,
+          "start_monotonic_ns": 962557035798040,
+          "wall_s": 0.18377801,
+          "event_ms": 183.66790771484375,
+          "round": 0,
+          "variant": "candidate",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040547.9701731,
+          "start_unix_ns": 1795040547970173279,
+          "start_monotonic_ns": 962557220720595,
+          "wall_s": 0.138029614,
+          "event_ms": 137.9225311279297,
+          "round": 0,
+          "variant": "dense",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040548.1093364,
+          "start_unix_ns": 1795040548109336218,
+          "start_monotonic_ns": 962557359883574,
+          "wall_s": 0.181730658,
+          "event_ms": 181.3996124267578,
+          "round": 1,
+          "variant": "baseline",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040548.2922313,
+          "start_unix_ns": 1795040548292231451,
+          "start_monotonic_ns": 962557542778727,
+          "wall_s": 0.134072671,
+          "event_ms": 133.74191284179688,
+          "round": 1,
+          "variant": "dense",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040548.427453,
+          "start_unix_ns": 1795040548427452947,
+          "start_monotonic_ns": 962557678004703,
+          "wall_s": 0.183505131,
+          "event_ms": 183.17666625976562,
+          "round": 1,
+          "variant": "candidate",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040548.6121426,
+          "start_unix_ns": 1795040548612142673,
+          "start_monotonic_ns": 962557862690039,
+          "wall_s": 0.134729898,
+          "event_ms": 134.39715576171875,
+          "round": 2,
+          "variant": "dense",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040548.74805,
+          "start_unix_ns": 1795040548748049896,
+          "start_monotonic_ns": 962557998597232,
+          "wall_s": 0.182694544,
+          "event_ms": 182.3634490966797,
+          "round": 2,
+          "variant": "baseline",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040548.931905,
+          "start_unix_ns": 1795040548931905056,
+          "start_monotonic_ns": 962558182452532,
+          "wall_s": 0.183371611,
+          "event_ms": 183.02259826660156,
+          "round": 2,
+          "variant": "candidate",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040549.1165543,
+          "start_unix_ns": 1795040549116554352,
+          "start_monotonic_ns": 962558367101698,
+          "wall_s": 0.134738547,
+          "event_ms": 134.41107177734375,
+          "round": 3,
+          "variant": "dense",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040549.2524886,
+          "start_unix_ns": 1795040549252488824,
+          "start_monotonic_ns": 962558503036070,
+          "wall_s": 0.183313972,
+          "event_ms": 182.98690795898438,
+          "round": 3,
+          "variant": "candidate",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040549.437018,
+          "start_unix_ns": 1795040549437017871,
+          "start_monotonic_ns": 962558687565137,
+          "wall_s": 0.182373316,
+          "event_ms": 182.02304077148438,
+          "round": 3,
+          "variant": "baseline",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040549.6206198,
+          "start_unix_ns": 1795040549620619701,
+          "start_monotonic_ns": 962558871166907,
+          "wall_s": 0.183489111,
+          "event_ms": 183.1552276611328,
+          "round": 4,
+          "variant": "candidate",
+          "order": [
+            "candidate",
+            "dense",
+            "baseline"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040549.8053398,
+          "start_unix_ns": 1795040549805339807,
+          "start_monotonic_ns": 962559055887203,
+          "wall_s": 0.134739028,
+          "event_ms": 134.4074249267578,
+          "round": 4,
+          "variant": "dense",
+          "order": [
+            "candidate",
+            "dense",
+            "baseline"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040549.94132,
+          "start_unix_ns": 1795040549941320010,
+          "start_monotonic_ns": 962559191867286,
+          "wall_s": 0.182399805,
+          "event_ms": 182.06997680664062,
+          "round": 4,
+          "variant": "baseline",
+          "order": [
+            "candidate",
+            "dense",
+            "baseline"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040550.1249638,
+          "start_unix_ns": 1795040550124963760,
+          "start_monotonic_ns": 962559375511036,
+          "wall_s": 0.183443941,
+          "event_ms": 183.11021423339844,
+          "round": 5,
+          "variant": "candidate",
+          "order": [
+            "candidate",
+            "baseline",
+            "dense"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040550.309681,
+          "start_unix_ns": 1795040550309680876,
+          "start_monotonic_ns": 962559560228142,
+          "wall_s": 0.182830863,
+          "event_ms": 182.49935913085938,
+          "round": 5,
+          "variant": "baseline",
+          "order": [
+            "candidate",
+            "baseline",
+            "dense"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040550.4938169,
+          "start_unix_ns": 1795040550493816934,
+          "start_monotonic_ns": 962559744364220,
+          "wall_s": 0.134717858,
+          "event_ms": 134.39260864257812,
+          "round": 5,
+          "variant": "dense",
+          "order": [
+            "candidate",
+            "baseline",
+            "dense"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040550.6298065,
+          "start_unix_ns": 1795040550629806507,
+          "start_monotonic_ns": 962559880353923,
+          "wall_s": 0.182450595,
+          "event_ms": 182.12261962890625,
+          "round": 6,
+          "variant": "baseline",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040550.8135493,
+          "start_unix_ns": 1795040550813549226,
+          "start_monotonic_ns": 962560064096612,
+          "wall_s": 0.183470551,
+          "event_ms": 183.14178466796875,
+          "round": 6,
+          "variant": "candidate",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040550.9983335,
+          "start_unix_ns": 1795040550998333482,
+          "start_monotonic_ns": 962560248880878,
+          "wall_s": 0.134669108,
+          "event_ms": 134.3436737060547,
+          "round": 6,
+          "variant": "dense",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040551.1343083,
+          "start_unix_ns": 1795040551134308324,
+          "start_monotonic_ns": 962560384855830,
+          "wall_s": 0.182910834,
+          "event_ms": 182.565185546875,
+          "round": 7,
+          "variant": "baseline",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040551.3185396,
+          "start_unix_ns": 1795040551318539442,
+          "start_monotonic_ns": 962560569086938,
+          "wall_s": 0.134726748,
+          "event_ms": 134.40130615234375,
+          "round": 7,
+          "variant": "dense",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040551.4546254,
+          "start_unix_ns": 1795040551454625254,
+          "start_monotonic_ns": 962560705172400,
+          "wall_s": 0.183393032,
+          "event_ms": 183.06204223632812,
+          "round": 7,
+          "variant": "candidate",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040551.6393654,
+          "start_unix_ns": 1795040551639365260,
+          "start_monotonic_ns": 962560889912326,
+          "wall_s": 0.134723418,
+          "event_ms": 134.4001007080078,
+          "round": 8,
+          "variant": "dense",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040551.7754705,
+          "start_unix_ns": 1795040551775470632,
+          "start_monotonic_ns": 962561026017908,
+          "wall_s": 0.182622845,
+          "event_ms": 182.2890625,
+          "round": 8,
+          "variant": "baseline",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040551.9594705,
+          "start_unix_ns": 1795040551959470501,
+          "start_monotonic_ns": 962561210017787,
+          "wall_s": 0.183470611,
+          "event_ms": 183.14186096191406,
+          "round": 8,
+          "variant": "candidate",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040552.1443243,
+          "start_unix_ns": 1795040552144324346,
+          "start_monotonic_ns": 962561394871722,
+          "wall_s": 0.134751178,
+          "event_ms": 134.42576599121094,
+          "round": 9,
+          "variant": "dense",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040552.2804654,
+          "start_unix_ns": 1795040552280465328,
+          "start_monotonic_ns": 962561531012604,
+          "wall_s": 0.183475751,
+          "event_ms": 183.11769104003906,
+          "round": 9,
+          "variant": "candidate",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040552.4655643,
+          "start_unix_ns": 1795040552465564052,
+          "start_monotonic_ns": 962561716111518,
+          "wall_s": 0.182610965,
+          "event_ms": 182.2845458984375,
+          "round": 9,
+          "variant": "baseline",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040552.6496599,
+          "start_unix_ns": 1795040552649659950,
+          "start_monotonic_ns": 962561900207126,
+          "wall_s": 0.183139903,
+          "event_ms": 182.8079071044922,
+          "round": 10,
+          "variant": "candidate",
+          "order": [
+            "candidate",
+            "dense",
+            "baseline"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040552.8341887,
+          "start_unix_ns": 1795040552834188927,
+          "start_monotonic_ns": 962562084736323,
+          "wall_s": 0.134783878,
+          "event_ms": 134.4588165283203,
+          "round": 10,
+          "variant": "dense",
+          "order": [
+            "candidate",
+            "dense",
+            "baseline"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040552.970436,
+          "start_unix_ns": 1795040552970435998,
+          "start_monotonic_ns": 962562220983454,
+          "wall_s": 0.182429346,
+          "event_ms": 182.08840942382812,
+          "round": 10,
+          "variant": "baseline",
+          "order": [
+            "candidate",
+            "dense",
+            "baseline"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040553.154296,
+          "start_unix_ns": 1795040553154295718,
+          "start_monotonic_ns": 962562404843094,
+          "wall_s": 0.183247422,
+          "event_ms": 182.90975952148438,
+          "round": 11,
+          "variant": "candidate",
+          "order": [
+            "candidate",
+            "baseline",
+            "dense"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040553.3389876,
+          "start_unix_ns": 1795040553338987493,
+          "start_monotonic_ns": 962562589535039,
+          "wall_s": 0.182562515,
+          "event_ms": 182.22589111328125,
+          "round": 11,
+          "variant": "baseline",
+          "order": [
+            "candidate",
+            "baseline",
+            "dense"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040553.5230293,
+          "start_unix_ns": 1795040553523029152,
+          "start_monotonic_ns": 962562773576558,
+          "wall_s": 0.134792738,
+          "event_ms": 134.457275390625,
+          "round": 11,
+          "variant": "dense",
+          "order": [
+            "candidate",
+            "baseline",
+            "dense"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040553.659289,
+          "start_unix_ns": 1795040553659288954,
+          "start_monotonic_ns": 962562909836240,
+          "wall_s": 0.182622504,
+          "event_ms": 182.27813720703125,
+          "round": 12,
+          "variant": "baseline",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040553.8433788,
+          "start_unix_ns": 1795040553843378652,
+          "start_monotonic_ns": 962563093926008,
+          "wall_s": 0.183432271,
+          "event_ms": 183.09446716308594,
+          "round": 12,
+          "variant": "candidate",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040554.0282753,
+          "start_unix_ns": 1795040554028275277,
+          "start_monotonic_ns": 962563278822483,
+          "wall_s": 0.134760768,
+          "event_ms": 134.43621826171875,
+          "round": 12,
+          "variant": "dense",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040554.1645353,
+          "start_unix_ns": 1795040554164535228,
+          "start_monotonic_ns": 962563415082644,
+          "wall_s": 0.182736464,
+          "event_ms": 182.38841247558594,
+          "round": 13,
+          "variant": "baseline",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040554.3487952,
+          "start_unix_ns": 1795040554348795206,
+          "start_monotonic_ns": 962563599342622,
+          "wall_s": 0.134731548,
+          "event_ms": 134.40867614746094,
+          "round": 13,
+          "variant": "dense",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040554.4850528,
+          "start_unix_ns": 1795040554485052887,
+          "start_monotonic_ns": 962563735600283,
+          "wall_s": 0.183061403,
+          "event_ms": 182.72988891601562,
+          "round": 13,
+          "variant": "candidate",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040554.6696503,
+          "start_unix_ns": 1795040554669650353,
+          "start_monotonic_ns": 962563920197819,
+          "wall_s": 0.134765228,
+          "event_ms": 134.43399047851562,
+          "round": 14,
+          "variant": "dense",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040554.8059564,
+          "start_unix_ns": 1795040554805956375,
+          "start_monotonic_ns": 962564056503611,
+          "wall_s": 0.182701294,
+          "event_ms": 182.36842346191406,
+          "round": 14,
+          "variant": "baseline",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040554.9902124,
+          "start_unix_ns": 1795040554990212432,
+          "start_monotonic_ns": 962564240759728,
+          "wall_s": 0.183317582,
+          "event_ms": 182.98240661621094,
+          "round": 14,
+          "variant": "candidate",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040555.1750531,
+          "start_unix_ns": 1795040555175053168,
+          "start_monotonic_ns": 962564425600434,
+          "wall_s": 0.134779167,
+          "event_ms": 134.43533325195312,
+          "round": 15,
+          "variant": "dense",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040555.3114343,
+          "start_unix_ns": 1795040555311434268,
+          "start_monotonic_ns": 962564561981514,
+          "wall_s": 0.18380153,
+          "event_ms": 183.37181091308594,
+          "round": 15,
+          "variant": "candidate",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "eager",
+          "measured": true,
+          "start_unix_s": 1795040555.4969394,
+          "start_unix_ns": 1795040555496939501,
+          "start_monotonic_ns": 962564747486717,
+          "wall_s": 0.182608614,
+          "event_ms": 182.27513122558594,
+          "round": 15,
+          "variant": "baseline",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 2
+        }
+      ],
+      "after": {
+        "baseline": {
+          "input_sha256": {
+            "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+            "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+            "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+            "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+          },
+          "input_immutable": true,
+          "output": {
+            "sha256": "7c1052cb0ed21e5358a378741048645fccef68e9776e1bb9cc9dbf96952b1784",
+            "shape": [
+              1,
+              82747,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "source_unchanged": true,
+          "loaded_module_origins": {
+            "sol_attn": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/__init__.py",
+            "sol_attn._vendor": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/__init__.py",
+            "sol_attn._vendor.flash_attn": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/__init__.py",
+            "sol_attn._vendor.flash_attn.cute": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/__init__.py",
+            "sol_attn._vendor.flash_attn.cute.cute_dsl_utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/cute_dsl_utils.py",
+            "sol_attn._vendor.flash_attn.cute.pipeline": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/pipeline.py",
+            "sol_attn._vendor.flash_attn.cute.utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/utils.py",
+            "sol_attn.common": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/__init__.py",
+            "sol_attn.common.layout_utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/layout_utils.py",
+            "sol_attn.common.runtime": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/runtime.py",
+            "sol_attn.common.selector": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/selector.py",
+            "sol_attn.interface": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/interface.py",
+            "sol_attn.preprocess": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/preprocess.py",
+            "sol_attn.sm100": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/__init__.py",
+            "sol_attn.sm100.kernel": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/kernel.py",
+            "sol_attn.sm100.mainloop": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/mainloop.py",
+            "sol_attn.sm100.math": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/math.py",
+            "sol_attn.sm100.softmax": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/softmax.py",
+            "sol_attn.sm100.tmem": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/tmem.py",
+            "sol_attn.sm90": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/__init__.py",
+            "sol_attn.sm90._compat": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/__init__.py",
+            "sol_attn.sm90._compat.activation": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/activation.py"
+          },
+          "mode": "eager",
+          "prepared": {
+            "kc": {
+              "sha256": "a58771653017c7c583770be3752d2e138dc0f466f5577d30be671f3c4cab7ac9",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "vc": {
+              "sha256": "34de5b39471c8d0fb9dc2ab5c5535c8cefbb6641cfe81216f42b75cf4030200f",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "threshold": {
+              "sha256": "948201eb4c441538f79dc974efe20c0d5ceab4f74d1fa90b7f77feb06437179a",
+              "shape": [
+                1,
+                1293,
+                28
+              ],
+              "dtype": "torch.float32",
+              "finite": true
+            }
+          },
+          "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+          "prepare_python_calls": 22,
+          "preprocess_autotune": {
+            "_reduce_kc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_vc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_kc_stats_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None",
+            "_diag_threshold_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None"
+          }
+        },
+        "candidate": {
+          "input_sha256": {
+            "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+            "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+            "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+            "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+          },
+          "input_immutable": true,
+          "output": {
+            "sha256": "7c1052cb0ed21e5358a378741048645fccef68e9776e1bb9cc9dbf96952b1784",
+            "shape": [
+              1,
+              82747,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "source_unchanged": true,
+          "loaded_module_origins": {
+            "sol_attn": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/__init__.py",
+            "sol_attn._vendor": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/__init__.py",
+            "sol_attn._vendor.flash_attn": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/__init__.py",
+            "sol_attn._vendor.flash_attn.cute": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/__init__.py",
+            "sol_attn._vendor.flash_attn.cute.cute_dsl_utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/cute_dsl_utils.py",
+            "sol_attn._vendor.flash_attn.cute.pipeline": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/pipeline.py",
+            "sol_attn._vendor.flash_attn.cute.utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/utils.py",
+            "sol_attn.common": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/__init__.py",
+            "sol_attn.common.layout_utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/layout_utils.py",
+            "sol_attn.common.runtime": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/runtime.py",
+            "sol_attn.common.selector": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/selector.py",
+            "sol_attn.interface": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/interface.py",
+            "sol_attn.preprocess": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/preprocess.py",
+            "sol_attn.sm100": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/__init__.py",
+            "sol_attn.sm100.kernel": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/kernel.py",
+            "sol_attn.sm100.mainloop": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/mainloop.py",
+            "sol_attn.sm100.math": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/math.py",
+            "sol_attn.sm100.softmax": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/softmax.py",
+            "sol_attn.sm100.tmem": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/tmem.py",
+            "sol_attn.sm90": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/__init__.py",
+            "sol_attn.sm90._compat": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/__init__.py",
+            "sol_attn.sm90._compat.activation": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/activation.py"
+          },
+          "mode": "eager",
+          "prepared": {
+            "kc": {
+              "sha256": "a58771653017c7c583770be3752d2e138dc0f466f5577d30be671f3c4cab7ac9",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "vc": {
+              "sha256": "34de5b39471c8d0fb9dc2ab5c5535c8cefbb6641cfe81216f42b75cf4030200f",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "threshold": {
+              "sha256": "948201eb4c441538f79dc974efe20c0d5ceab4f74d1fa90b7f77feb06437179a",
+              "shape": [
+                1,
+                1293,
+                28
+              ],
+              "dtype": "torch.float32",
+              "finite": true
+            }
+          },
+          "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+          "prepare_python_calls": 22,
+          "preprocess_autotune": {
+            "_reduce_kc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_vc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_kc_stats_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None",
+            "_diag_threshold_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None"
+          }
+        },
+        "dense": {
+          "input_sha256": {
+            "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+            "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+            "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+            "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+          },
+          "input_immutable": true,
+          "output": {
+            "sha256": "b042e7caa6dc42faee96e3b692b331586974afd43a1336725765d03550af9b31",
+            "shape": [
+              1,
+              82747,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "source_unchanged": true,
+          "loaded_module_origins": {},
+          "mode": "eager",
+          "prepared": null,
+          "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+          "prepare_python_calls": 0,
+          "preprocess_autotune": null
+        }
+      },
+      "metrics": {
+        "baseline": {
+          "median_ms": 182.28134155273438,
+          "mean_ms": 182.25208854675293,
+          "cv_percent": 0.16494708961981958,
+          "samples": 16
+        },
+        "candidate": {
+          "median_ms": 183.1023406982422,
+          "mean_ms": 183.09244632720947,
+          "cv_percent": 0.11806276801713741,
+          "samples": 16
+        },
+        "dense": {
+          "median_ms": 134.40987396240234,
+          "mean_ms": 134.592116355896,
+          "cv_percent": 0.6718543838411001,
+          "samples": 16
+        }
+      },
+      "validated": true
+    },
+    "graph": {
+      "setup": {
+        "baseline": {
+          "mode": "graph",
+          "capture_eager_warmup": 5,
+          "capture_calls": 1,
+          "validation_replays": 1
+        },
+        "candidate": {
+          "mode": "graph",
+          "capture_eager_warmup": 5,
+          "capture_calls": 1,
+          "validation_replays": 1
+        },
+        "dense": {
+          "mode": "graph",
+          "capture_eager_warmup": 5,
+          "capture_calls": 1,
+          "validation_replays": 1
+        }
+      },
+      "warmup_order": [
+        [
+          "baseline",
+          "candidate",
+          "dense"
+        ],
+        [
+          "baseline",
+          "dense",
+          "candidate"
+        ],
+        [
+          "dense",
+          "baseline",
+          "candidate"
+        ],
+        [
+          "dense",
+          "candidate",
+          "baseline"
+        ],
+        [
+          "candidate",
+          "dense",
+          "baseline"
+        ]
+      ],
+      "before": {
+        "baseline": {
+          "input_sha256": {
+            "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+            "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+            "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+            "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+          },
+          "input_immutable": true,
+          "output": {
+            "sha256": "7c1052cb0ed21e5358a378741048645fccef68e9776e1bb9cc9dbf96952b1784",
+            "shape": [
+              1,
+              82747,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "source_unchanged": true,
+          "loaded_module_origins": {
+            "sol_attn": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/__init__.py",
+            "sol_attn._vendor": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/__init__.py",
+            "sol_attn._vendor.flash_attn": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/__init__.py",
+            "sol_attn._vendor.flash_attn.cute": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/__init__.py",
+            "sol_attn._vendor.flash_attn.cute.cute_dsl_utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/cute_dsl_utils.py",
+            "sol_attn._vendor.flash_attn.cute.pipeline": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/pipeline.py",
+            "sol_attn._vendor.flash_attn.cute.utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/utils.py",
+            "sol_attn.common": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/__init__.py",
+            "sol_attn.common.layout_utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/layout_utils.py",
+            "sol_attn.common.runtime": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/runtime.py",
+            "sol_attn.common.selector": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/selector.py",
+            "sol_attn.interface": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/interface.py",
+            "sol_attn.preprocess": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/preprocess.py",
+            "sol_attn.sm100": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/__init__.py",
+            "sol_attn.sm100.kernel": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/kernel.py",
+            "sol_attn.sm100.mainloop": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/mainloop.py",
+            "sol_attn.sm100.math": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/math.py",
+            "sol_attn.sm100.softmax": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/softmax.py",
+            "sol_attn.sm100.tmem": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/tmem.py",
+            "sol_attn.sm90": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/__init__.py",
+            "sol_attn.sm90._compat": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/__init__.py",
+            "sol_attn.sm90._compat.activation": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/activation.py"
+          },
+          "mode": "graph",
+          "prepared": {
+            "kc": {
+              "sha256": "a58771653017c7c583770be3752d2e138dc0f466f5577d30be671f3c4cab7ac9",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "vc": {
+              "sha256": "34de5b39471c8d0fb9dc2ab5c5535c8cefbb6641cfe81216f42b75cf4030200f",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "threshold": {
+              "sha256": "948201eb4c441538f79dc974efe20c0d5ceab4f74d1fa90b7f77feb06437179a",
+              "shape": [
+                1,
+                1293,
+                28
+              ],
+              "dtype": "torch.float32",
+              "finite": true
+            }
+          },
+          "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+          "prepare_python_calls": 28,
+          "preprocess_autotune": {
+            "_reduce_kc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_vc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_kc_stats_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None",
+            "_diag_threshold_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None"
+          }
+        },
+        "candidate": {
+          "input_sha256": {
+            "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+            "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+            "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+            "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+          },
+          "input_immutable": true,
+          "output": {
+            "sha256": "7c1052cb0ed21e5358a378741048645fccef68e9776e1bb9cc9dbf96952b1784",
+            "shape": [
+              1,
+              82747,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "source_unchanged": true,
+          "loaded_module_origins": {
+            "sol_attn": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/__init__.py",
+            "sol_attn._vendor": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/__init__.py",
+            "sol_attn._vendor.flash_attn": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/__init__.py",
+            "sol_attn._vendor.flash_attn.cute": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/__init__.py",
+            "sol_attn._vendor.flash_attn.cute.cute_dsl_utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/cute_dsl_utils.py",
+            "sol_attn._vendor.flash_attn.cute.pipeline": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/pipeline.py",
+            "sol_attn._vendor.flash_attn.cute.utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/utils.py",
+            "sol_attn.common": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/__init__.py",
+            "sol_attn.common.layout_utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/layout_utils.py",
+            "sol_attn.common.runtime": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/runtime.py",
+            "sol_attn.common.selector": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/selector.py",
+            "sol_attn.interface": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/interface.py",
+            "sol_attn.preprocess": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/preprocess.py",
+            "sol_attn.sm100": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/__init__.py",
+            "sol_attn.sm100.kernel": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/kernel.py",
+            "sol_attn.sm100.mainloop": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/mainloop.py",
+            "sol_attn.sm100.math": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/math.py",
+            "sol_attn.sm100.softmax": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/softmax.py",
+            "sol_attn.sm100.tmem": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/tmem.py",
+            "sol_attn.sm90": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/__init__.py",
+            "sol_attn.sm90._compat": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/__init__.py",
+            "sol_attn.sm90._compat.activation": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/activation.py"
+          },
+          "mode": "graph",
+          "prepared": {
+            "kc": {
+              "sha256": "a58771653017c7c583770be3752d2e138dc0f466f5577d30be671f3c4cab7ac9",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "vc": {
+              "sha256": "34de5b39471c8d0fb9dc2ab5c5535c8cefbb6641cfe81216f42b75cf4030200f",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "threshold": {
+              "sha256": "948201eb4c441538f79dc974efe20c0d5ceab4f74d1fa90b7f77feb06437179a",
+              "shape": [
+                1,
+                1293,
+                28
+              ],
+              "dtype": "torch.float32",
+              "finite": true
+            }
+          },
+          "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+          "prepare_python_calls": 28,
+          "preprocess_autotune": {
+            "_reduce_kc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_vc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_kc_stats_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None",
+            "_diag_threshold_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None"
+          }
+        },
+        "dense": {
+          "input_sha256": {
+            "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+            "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+            "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+            "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+          },
+          "input_immutable": true,
+          "output": {
+            "sha256": "b042e7caa6dc42faee96e3b692b331586974afd43a1336725765d03550af9b31",
+            "shape": [
+              1,
+              82747,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "source_unchanged": true,
+          "loaded_module_origins": {},
+          "mode": "graph",
+          "prepared": null,
+          "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+          "prepare_python_calls": 0,
+          "preprocess_autotune": null
+        }
+      },
+      "samples": [
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040574.2383611,
+          "start_unix_ns": 1795040574238361125,
+          "start_monotonic_ns": 962583488908671,
+          "wall_s": 0.182878043,
+          "event_ms": 182.7736053466797,
+          "round": 0,
+          "variant": "baseline",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040574.4233584,
+          "start_unix_ns": 1795040574423358459,
+          "start_monotonic_ns": 962583673905965,
+          "wall_s": 0.183237442,
+          "event_ms": 183.1397705078125,
+          "round": 0,
+          "variant": "candidate",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040574.6087575,
+          "start_unix_ns": 1795040574608757422,
+          "start_monotonic_ns": 962583859304678,
+          "wall_s": 0.134788627,
+          "event_ms": 134.67593383789062,
+          "round": 0,
+          "variant": "dense",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040574.7454417,
+          "start_unix_ns": 1795040574745441791,
+          "start_monotonic_ns": 962583995989007,
+          "wall_s": 0.182731454,
+          "event_ms": 182.4047088623047,
+          "round": 1,
+          "variant": "baseline",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040574.9302998,
+          "start_unix_ns": 1795040574930299566,
+          "start_monotonic_ns": 962584180846932,
+          "wall_s": 0.135590564,
+          "event_ms": 135.26368713378906,
+          "round": 1,
+          "variant": "dense",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040575.067753,
+          "start_unix_ns": 1795040575067753032,
+          "start_monotonic_ns": 962584318300358,
+          "wall_s": 0.183225062,
+          "event_ms": 182.89797973632812,
+          "round": 1,
+          "variant": "candidate",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040575.2528923,
+          "start_unix_ns": 1795040575252892136,
+          "start_monotonic_ns": 962584503439372,
+          "wall_s": 0.134786898,
+          "event_ms": 134.46640014648438,
+          "round": 2,
+          "variant": "dense",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040575.3898287,
+          "start_unix_ns": 1795040575389828644,
+          "start_monotonic_ns": 962584640375860,
+          "wall_s": 0.182715044,
+          "event_ms": 182.36962890625,
+          "round": 2,
+          "variant": "baseline",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040575.574734,
+          "start_unix_ns": 1795040575574734189,
+          "start_monotonic_ns": 962584825281545,
+          "wall_s": 0.183307782,
+          "event_ms": 182.97760009765625,
+          "round": 2,
+          "variant": "candidate",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040575.7601867,
+          "start_unix_ns": 1795040575760186601,
+          "start_monotonic_ns": 962585010733827,
+          "wall_s": 0.134748618,
+          "event_ms": 134.41944885253906,
+          "round": 3,
+          "variant": "dense",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040575.897091,
+          "start_unix_ns": 1795040575897090930,
+          "start_monotonic_ns": 962585147638116,
+          "wall_s": 0.183209302,
+          "event_ms": 182.8884735107422,
+          "round": 3,
+          "variant": "candidate",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040576.082526,
+          "start_unix_ns": 1795040576082525863,
+          "start_monotonic_ns": 962585333073069,
+          "wall_s": 0.182472965,
+          "event_ms": 182.14620971679688,
+          "round": 3,
+          "variant": "baseline",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040576.2669697,
+          "start_unix_ns": 1795040576266969599,
+          "start_monotonic_ns": 962585517516855,
+          "wall_s": 0.183202002,
+          "event_ms": 182.87635803222656,
+          "round": 4,
+          "variant": "candidate",
+          "order": [
+            "candidate",
+            "dense",
+            "baseline"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040576.45213,
+          "start_unix_ns": 1795040576452130083,
+          "start_monotonic_ns": 962585702677449,
+          "wall_s": 0.134778627,
+          "event_ms": 134.45689392089844,
+          "round": 4,
+          "variant": "dense",
+          "order": [
+            "candidate",
+            "dense",
+            "baseline"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040576.5889115,
+          "start_unix_ns": 1795040576588911702,
+          "start_monotonic_ns": 962585839458958,
+          "wall_s": 0.182604184,
+          "event_ms": 182.2782440185547,
+          "round": 4,
+          "variant": "baseline",
+          "order": [
+            "candidate",
+            "dense",
+            "baseline"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040576.7737048,
+          "start_unix_ns": 1795040576773704627,
+          "start_monotonic_ns": 962586024251823,
+          "wall_s": 0.183165672,
+          "event_ms": 182.8426513671875,
+          "round": 5,
+          "variant": "candidate",
+          "order": [
+            "candidate",
+            "baseline",
+            "dense"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040576.959132,
+          "start_unix_ns": 1795040576959132010,
+          "start_monotonic_ns": 962586209679216,
+          "wall_s": 0.182647164,
+          "event_ms": 182.32025146484375,
+          "round": 5,
+          "variant": "baseline",
+          "order": [
+            "candidate",
+            "baseline",
+            "dense"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040577.1437798,
+          "start_unix_ns": 1795040577143779715,
+          "start_monotonic_ns": 962586394326921,
+          "wall_s": 0.134778298,
+          "event_ms": 134.45263671875,
+          "round": 5,
+          "variant": "dense",
+          "order": [
+            "candidate",
+            "baseline",
+            "dense"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040577.2808604,
+          "start_unix_ns": 1795040577280860443,
+          "start_monotonic_ns": 962586531407759,
+          "wall_s": 0.182638254,
+          "event_ms": 182.3087615966797,
+          "round": 6,
+          "variant": "baseline",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040577.4655132,
+          "start_unix_ns": 1795040577465513089,
+          "start_monotonic_ns": 962586716060295,
+          "wall_s": 0.183271762,
+          "event_ms": 182.94790649414062,
+          "round": 6,
+          "variant": "candidate",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040577.650836,
+          "start_unix_ns": 1795040577650835952,
+          "start_monotonic_ns": 962586901383228,
+          "wall_s": 0.134767727,
+          "event_ms": 134.44371032714844,
+          "round": 6,
+          "variant": "dense",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040577.787921,
+          "start_unix_ns": 1795040577787920990,
+          "start_monotonic_ns": 962587038468166,
+          "wall_s": 0.182619174,
+          "event_ms": 182.29388427734375,
+          "round": 7,
+          "variant": "baseline",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040577.9726074,
+          "start_unix_ns": 1795040577972607425,
+          "start_monotonic_ns": 962587223154621,
+          "wall_s": 0.134799478,
+          "event_ms": 134.4764404296875,
+          "round": 7,
+          "variant": "dense",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040578.1094995,
+          "start_unix_ns": 1795040578109499404,
+          "start_monotonic_ns": 962587360046720,
+          "wall_s": 0.183153072,
+          "event_ms": 182.83071899414062,
+          "round": 7,
+          "variant": "candidate",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040578.2949467,
+          "start_unix_ns": 1795040578294946626,
+          "start_monotonic_ns": 962587545493852,
+          "wall_s": 0.134790078,
+          "event_ms": 134.466552734375,
+          "round": 8,
+          "variant": "dense",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040578.4320939,
+          "start_unix_ns": 1795040578432093844,
+          "start_monotonic_ns": 962587682641070,
+          "wall_s": 0.182411565,
+          "event_ms": 182.0800323486328,
+          "round": 8,
+          "variant": "baseline",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040578.6166224,
+          "start_unix_ns": 1795040578616622390,
+          "start_monotonic_ns": 962587867169636,
+          "wall_s": 0.183271742,
+          "event_ms": 182.94281005859375,
+          "round": 8,
+          "variant": "candidate",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040578.802218,
+          "start_unix_ns": 1795040578802218102,
+          "start_monotonic_ns": 962588052765338,
+          "wall_s": 0.134796967,
+          "event_ms": 134.4737548828125,
+          "round": 9,
+          "variant": "dense",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040578.939356,
+          "start_unix_ns": 1795040578939356209,
+          "start_monotonic_ns": 962588189903405,
+          "wall_s": 0.183362432,
+          "event_ms": 183.04319763183594,
+          "round": 9,
+          "variant": "candidate",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040579.1250935,
+          "start_unix_ns": 1795040579125093260,
+          "start_monotonic_ns": 962588375640456,
+          "wall_s": 0.182339166,
+          "event_ms": 182.01219177246094,
+          "round": 9,
+          "variant": "baseline",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040579.3098528,
+          "start_unix_ns": 1795040579309852836,
+          "start_monotonic_ns": 962588560400082,
+          "wall_s": 0.183353331,
+          "event_ms": 183.02915954589844,
+          "round": 10,
+          "variant": "candidate",
+          "order": [
+            "candidate",
+            "dense",
+            "baseline"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040579.49555,
+          "start_unix_ns": 1795040579495550037,
+          "start_monotonic_ns": 962588746097263,
+          "wall_s": 0.134780508,
+          "event_ms": 134.45596313476562,
+          "round": 10,
+          "variant": "dense",
+          "order": [
+            "candidate",
+            "dense",
+            "baseline"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040579.632754,
+          "start_unix_ns": 1795040579632754174,
+          "start_monotonic_ns": 962588883301360,
+          "wall_s": 0.182608485,
+          "event_ms": 182.28489685058594,
+          "round": 10,
+          "variant": "baseline",
+          "order": [
+            "candidate",
+            "dense",
+            "baseline"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040579.8175406,
+          "start_unix_ns": 1795040579817540490,
+          "start_monotonic_ns": 962589068087726,
+          "wall_s": 0.183357291,
+          "event_ms": 183.03106689453125,
+          "round": 11,
+          "variant": "candidate",
+          "order": [
+            "candidate",
+            "baseline",
+            "dense"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040580.0032747,
+          "start_unix_ns": 1795040580003274691,
+          "start_monotonic_ns": 962589253821877,
+          "wall_s": 0.182689404,
+          "event_ms": 182.36639404296875,
+          "round": 11,
+          "variant": "baseline",
+          "order": [
+            "candidate",
+            "baseline",
+            "dense"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040580.1884127,
+          "start_unix_ns": 1795040580188412664,
+          "start_monotonic_ns": 962589438959870,
+          "wall_s": 0.134761978,
+          "event_ms": 134.436767578125,
+          "round": 11,
+          "variant": "dense",
+          "order": [
+            "candidate",
+            "baseline",
+            "dense"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040580.3255782,
+          "start_unix_ns": 1795040580325578352,
+          "start_monotonic_ns": 962589576125618,
+          "wall_s": 0.182683464,
+          "event_ms": 182.3368377685547,
+          "round": 12,
+          "variant": "baseline",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040580.510717,
+          "start_unix_ns": 1795040580510716945,
+          "start_monotonic_ns": 962589761264141,
+          "wall_s": 0.183388431,
+          "event_ms": 183.06434631347656,
+          "round": 12,
+          "variant": "candidate",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040580.6965802,
+          "start_unix_ns": 1795040580696580176,
+          "start_monotonic_ns": 962589947127402,
+          "wall_s": 0.134790277,
+          "event_ms": 134.46823120117188,
+          "round": 12,
+          "variant": "dense",
+          "order": [
+            "baseline",
+            "candidate",
+            "dense"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040580.8338282,
+          "start_unix_ns": 1795040580833828083,
+          "start_monotonic_ns": 962590084375309,
+          "wall_s": 0.182598764,
+          "event_ms": 182.27154541015625,
+          "round": 13,
+          "variant": "baseline",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040581.0189018,
+          "start_unix_ns": 1795040581018901727,
+          "start_monotonic_ns": 962590269449173,
+          "wall_s": 0.134782288,
+          "event_ms": 134.459716796875,
+          "round": 13,
+          "variant": "dense",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040581.156172,
+          "start_unix_ns": 1795040581156171934,
+          "start_monotonic_ns": 962590406719390,
+          "wall_s": 0.183342551,
+          "event_ms": 183.01174926757812,
+          "round": 13,
+          "variant": "candidate",
+          "order": [
+            "baseline",
+            "dense",
+            "candidate"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040581.342099,
+          "start_unix_ns": 1795040581342098974,
+          "start_monotonic_ns": 962590592646300,
+          "wall_s": 0.134860947,
+          "event_ms": 134.49813842773438,
+          "round": 14,
+          "variant": "dense",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040581.4791658,
+          "start_unix_ns": 1795040581479165592,
+          "start_monotonic_ns": 962590729712818,
+          "wall_s": 0.182418585,
+          "event_ms": 182.08511352539062,
+          "round": 14,
+          "variant": "baseline",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040581.66391,
+          "start_unix_ns": 1795040581663909767,
+          "start_monotonic_ns": 962590914457233,
+          "wall_s": 0.183180662,
+          "event_ms": 182.845947265625,
+          "round": 14,
+          "variant": "candidate",
+          "order": [
+            "dense",
+            "baseline",
+            "candidate"
+          ],
+          "position": 2
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040581.849317,
+          "start_unix_ns": 1795040581849317150,
+          "start_monotonic_ns": 962591099864836,
+          "wall_s": 0.134766568,
+          "event_ms": 134.43186950683594,
+          "round": 15,
+          "variant": "dense",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 0
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040581.9863756,
+          "start_unix_ns": 1795040581986375808,
+          "start_monotonic_ns": 962591236923184,
+          "wall_s": 0.183405981,
+          "event_ms": 183.06985473632812,
+          "round": 15,
+          "variant": "candidate",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 1
+        },
+        {
+          "mode": "graph",
+          "measured": true,
+          "start_unix_s": 1795040582.1720738,
+          "start_unix_ns": 1795040582172073849,
+          "start_monotonic_ns": 962591422621355,
+          "wall_s": 0.182565275,
+          "event_ms": 182.2289581298828,
+          "round": 15,
+          "variant": "baseline",
+          "order": [
+            "dense",
+            "candidate",
+            "baseline"
+          ],
+          "position": 2
+        }
+      ],
+      "after": {
+        "baseline": {
+          "input_sha256": {
+            "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+            "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+            "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+            "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+          },
+          "input_immutable": true,
+          "output": {
+            "sha256": "7c1052cb0ed21e5358a378741048645fccef68e9776e1bb9cc9dbf96952b1784",
+            "shape": [
+              1,
+              82747,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "source_unchanged": true,
+          "loaded_module_origins": {
+            "sol_attn": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/__init__.py",
+            "sol_attn._vendor": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/__init__.py",
+            "sol_attn._vendor.flash_attn": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/__init__.py",
+            "sol_attn._vendor.flash_attn.cute": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/__init__.py",
+            "sol_attn._vendor.flash_attn.cute.cute_dsl_utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/cute_dsl_utils.py",
+            "sol_attn._vendor.flash_attn.cute.pipeline": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/pipeline.py",
+            "sol_attn._vendor.flash_attn.cute.utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/utils.py",
+            "sol_attn.common": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/__init__.py",
+            "sol_attn.common.layout_utils": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/layout_utils.py",
+            "sol_attn.common.runtime": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/runtime.py",
+            "sol_attn.common.selector": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/common/selector.py",
+            "sol_attn.interface": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/interface.py",
+            "sol_attn.preprocess": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/preprocess.py",
+            "sol_attn.sm100": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/__init__.py",
+            "sol_attn.sm100.kernel": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/kernel.py",
+            "sol_attn.sm100.mainloop": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/mainloop.py",
+            "sol_attn.sm100.math": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/math.py",
+            "sol_attn.sm100.softmax": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/softmax.py",
+            "sol_attn.sm100.tmem": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm100/tmem.py",
+            "sol_attn.sm90": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/__init__.py",
+            "sol_attn.sm90._compat": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/__init__.py",
+            "sol_attn.sm90._compat.activation": "/work/source/candidate-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/activation.py"
+          },
+          "mode": "graph",
+          "prepared": {
+            "kc": {
+              "sha256": "a58771653017c7c583770be3752d2e138dc0f466f5577d30be671f3c4cab7ac9",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "vc": {
+              "sha256": "34de5b39471c8d0fb9dc2ab5c5535c8cefbb6641cfe81216f42b75cf4030200f",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "threshold": {
+              "sha256": "948201eb4c441538f79dc974efe20c0d5ceab4f74d1fa90b7f77feb06437179a",
+              "shape": [
+                1,
+                1293,
+                28
+              ],
+              "dtype": "torch.float32",
+              "finite": true
+            }
+          },
+          "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+          "prepare_python_calls": 28,
+          "preprocess_autotune": {
+            "_reduce_kc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_vc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_kc_stats_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None",
+            "_diag_threshold_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None"
+          }
+        },
+        "candidate": {
+          "input_sha256": {
+            "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+            "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+            "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+            "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+          },
+          "input_immutable": true,
+          "output": {
+            "sha256": "7c1052cb0ed21e5358a378741048645fccef68e9776e1bb9cc9dbf96952b1784",
+            "shape": [
+              1,
+              82747,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "source_unchanged": true,
+          "loaded_module_origins": {
+            "sol_attn": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/__init__.py",
+            "sol_attn._vendor": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/__init__.py",
+            "sol_attn._vendor.flash_attn": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/__init__.py",
+            "sol_attn._vendor.flash_attn.cute": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/__init__.py",
+            "sol_attn._vendor.flash_attn.cute.cute_dsl_utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/cute_dsl_utils.py",
+            "sol_attn._vendor.flash_attn.cute.pipeline": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/pipeline.py",
+            "sol_attn._vendor.flash_attn.cute.utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/utils.py",
+            "sol_attn.common": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/__init__.py",
+            "sol_attn.common.layout_utils": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/layout_utils.py",
+            "sol_attn.common.runtime": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/runtime.py",
+            "sol_attn.common.selector": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/common/selector.py",
+            "sol_attn.interface": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/interface.py",
+            "sol_attn.preprocess": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/preprocess.py",
+            "sol_attn.sm100": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/__init__.py",
+            "sol_attn.sm100.kernel": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/kernel.py",
+            "sol_attn.sm100.mainloop": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/mainloop.py",
+            "sol_attn.sm100.math": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/math.py",
+            "sol_attn.sm100.softmax": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/softmax.py",
+            "sol_attn.sm100.tmem": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm100/tmem.py",
+            "sol_attn.sm90": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/__init__.py",
+            "sol_attn.sm90._compat": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/__init__.py",
+            "sol_attn.sm90._compat.activation": "/work/source/protected-q-contiguous-fp32/techniques/sparse_backends/sol_attn/sm90/_compat/activation.py"
+          },
+          "mode": "graph",
+          "prepared": {
+            "kc": {
+              "sha256": "a58771653017c7c583770be3752d2e138dc0f466f5577d30be671f3c4cab7ac9",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "vc": {
+              "sha256": "34de5b39471c8d0fb9dc2ab5c5535c8cefbb6641cfe81216f42b75cf4030200f",
+              "shape": [
+                1,
+                1293,
+                28,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "finite": true
+            },
+            "threshold": {
+              "sha256": "948201eb4c441538f79dc974efe20c0d5ceab4f74d1fa90b7f77feb06437179a",
+              "shape": [
+                1,
+                1293,
+                28
+              ],
+              "dtype": "torch.float32",
+              "finite": true
+            }
+          },
+          "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+          "prepare_python_calls": 28,
+          "preprocess_autotune": {
+            "_reduce_kc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_vc_kernel": "num_warps: 4, num_ctas: 1, num_stages: 1, maxnreg: None",
+            "_reduce_kc_stats_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None",
+            "_diag_threshold_kernel": "num_warps: 4, num_ctas: 1, num_stages: 2, maxnreg: None"
+          }
+        },
+        "dense": {
+          "input_sha256": {
+            "q": "2b29f02414185f54327b84502015a8ceac0969f029773df21217cae78eab349a",
+            "k": "eb29cdfb1d8eaf1464abcd938e9d33ffb7685373e1c5398a55eea06aab9c6edc",
+            "v": "4ffb90995101a3bd45f5f72d83d5ec7df6fd311fe81387d8d6826599198112f2",
+            "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+          },
+          "input_immutable": true,
+          "output": {
+            "sha256": "b042e7caa6dc42faee96e3b692b331586974afd43a1336725765d03550af9b31",
+            "shape": [
+              1,
+              82747,
+              28,
+              128
+            ],
+            "dtype": "torch.bfloat16",
+            "finite": true
+          },
+          "source_unchanged": true,
+          "loaded_module_origins": {},
+          "mode": "graph",
+          "prepared": null,
+          "prepared_strategy": "retain actual native prepare outputs; end-to-end preprocessing remains timed",
+          "prepare_python_calls": 0,
+          "preprocess_autotune": null
+        }
+      },
+      "metrics": {
+        "baseline": {
+          "median_ms": 182.28939056396484,
+          "mean_ms": 182.28507900238037,
+          "cv_percent": 0.09506591911757584,
+          "samples": 16
+        },
+        "candidate": {
+          "median_ms": 182.96275329589844,
+          "mean_ms": 182.96497440338135,
+          "cv_percent": 0.05175702294408194,
+          "samples": 16
+        },
+        "dense": {
+          "median_ms": 134.4630584716797,
+          "mean_ms": 134.52163410186768,
+          "cv_percent": 0.15320821300736534,
+          "samples": 16
+        }
+      },
+      "validated": true
+    }
+  },
+  "error": null,
+  "correctness_scope": "SOL output and actual KC/VC/threshold byte identity to the supplied baseline; Dense hash is recorded separately. Native preprocessing remains included in all timings. This is not an independent numerical oracle.",
+  "cleanup_errors": [],
+  "child_exit_codes": {
+    "baseline": 0,
+    "candidate": 0,
+    "dense": 0
+  }
+}

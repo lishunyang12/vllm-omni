@@ -34,8 +34,8 @@ claim. No SSIM/PSNR/LPIPS or video generation was done in this follow-up.
 Earlier benchmark/ablation tables are retained as HISTORICAL/CONFOUNDED:
 prepared tensor identity was not controlled. Revalidate any performance or
 candidate rejection claim with the common repair and matched launch configs.
-Fresh full-forward and separate-process attention measurements are recorded
-separately as they finish. #594 remains draft pending valid performance review.
+Corrected full-forward and independent-process attention measurements are now
+complete; see REPORT.txt. #594 remains draft pending dependencies and CI.
 Hardware:SM100 engineering GPU, cluster B100 label, NVIDIA Graphics Device,
 CC10.0,148SMs,183359MiB. This is not a production B200 validation.
 

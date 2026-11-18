@@ -1,155 +1,105 @@
-Standalone synthetic regression reproduction (no weights needed):
-Use the pinned CUDA environment, then run:
+Reproduce the corrected H3 Ref2VA SM100 comparison
+
+Use the pinned image:
+  vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
+Preserve the scheduler's CUDA_VISIBLE_DEVICES. The tested environment and
+versions are in manifest.json and environment/. Test hardware was SM100
+engineering, not production B200. No generated-video quality claim is made.
+
+1. Minimal pooling regression, no model weights
+Use an existing pinned CUDA/Triton/PyTorch/pytest environment and allocated GPU:
   bash reproduce/reproduce_pool_fp32.sh --workdir /tmp/empty-pool-check
-This downloads SHA-pinned public sources, verifies the exact fix-only diff, and
-requires old numerical-test failure plus all12fixed tests passing. See
-reproduce/REPRODUCE_POOL_FP32.txt. The wrapper has run successfully on GPU:12old numerical failures,12fixed passes,
-zero runtime errors or skips. See results/pooling-standalone/report.json.
+The wrapper fetches cf67a3a and0f0d973, verifies the full-archive diff is exactly
+the four casts and regression test, then runs the same test in separate
+processes. Actual result:12old numerical failures,12fixed passes,zero errors or
+skips. No installs unless explicitly requested with --install-pytest.
+See reproduce/REPRODUCE_POOL_FP32.txt and results/pooling-standalone/.
 
-CORRECTION: the earlier #594 attention-kernel attribution was confounded
-2026-11-18, controlled pooling follow-up
-
-The previous warning is superseded by controlled evidence. We retract the
-claim that the old 8193-token comparison established an attention regression
-in #594. Native and pointer-reference preprocessing both reduced BF16 values
-without explicit promotion. Installed Triton TTIR contains bf16 tt.reduce /
-arith.addf; 4- and 8-warp reduction trees produce different pooled KC/VC values.
-The independently autotuned pointer oracle shared this upstream issue.
-Different pooled inputs alter thresholds and discrete exact/approx routing.
-CuTe cache aliasing has NOT been established as the cause.
-
-Controls and results:
-* Forced old pooling configs: four token sizes, 4/8 warps x stages1..4. At8193,
-  KC differed from Float64-then-BF16 reference in10535/10541 elements (4/8warps).
-  Mismatches include complete blocks, not only a partial final tile.
-* Freeze exactly the same native KC/VC/threshold tensors: #593 and #594 produce
-  identical output SHA256 5b21c4ec0967384ec591f7209dd634959ee57ec5dd55205624032d4d9085db56
-  on the original8193-token counterexample. No attention source change.
-* Minimal repair: explicitly promote inputs of all four native/pointer pooling
-  sums to FP32. Outputs remain BF16; API, autotune configs and attention math
-  remain unchanged.
-* 32 forced native config cases after repair: zero KC/VC-sum mismatches against
-  Float64-then-BF16 reference. All configs agree for each tested input.
-* New pooling pytest:12passed, every production config forced twice, full/tail,
-  multiple batches/heads, immutable inputs and pointer padding sentinels.
-* #593+same repair vs #594+same repair:29 independent-process cases, all input,
-  prepared KC/VC/threshold and output hashes equal, including8 graph updates.
-* Full attention validation:73/73passed, including existing oracle tolerances,
-  tails, masks, long shapes and CUDA-graph input/mask mutation checks.
-
-These are bounded numerical/correctness tests, not an end-to-end video quality
-claim. No SSIM/PSNR/LPIPS or video generation was done in this follow-up.
-Earlier benchmark/ablation tables are retained as HISTORICAL/CONFOUNDED:
-prepared tensor identity was not controlled. Revalidate any performance or
-candidate rejection claim with the common repair and matched launch configs.
-Fresh full-forward and separate-process attention measurements are recorded
-separately as they finish. #594 remains draft pending valid performance review.
-Hardware:SM100 engineering GPU, cluster B100 label, NVIDIA Graphics Device,
-CC10.0,148SMs,183359MiB. This is not a production B200 validation.
-
-Evidence:results/preprocess-sweep/report.json,
-results/preprocess-fp32-sweep/report.json,results/frozen-prepared/*/report.json,
-results/fp32-matrix/comparison.json,results/fp32-validation/pooling.log and
-full.json/full.log. Source repair:reproduce/patches/pool-fp32.patch.
-Raw tensor and compiled binary archives remain private.
-
-Current minimal repair: apply reproduce/patches/pool-fp32-with-tests.patch to
-NVlabs/Sana sol-engine cf67a3acad7511acb85053e56a05e5dd24c82ba0.
-PYTHONPATH=techniques/sparse_backends python -m pytest -q techniques/sparse_backends/tests/test_preprocess_precision.py
-Validation environment is pinned in manifest and raw reports. Full validation
-compares#59363b4e65 and#594150114b with the same pool-fp32.patch applied to both.
-See reproduce/validate_fp32_all.sh and run_fp32_matrix.sh.
-
-Historical reproduction notes below; old results are confounded.
-
-CURRENT CORRECTNESS BLOCKER: read CORRECTNESS_BLOCKER.txt first.
-The historical timing scripts do not establish acceptance. For any new run,
-set CUTE_DSL_DISABLE_FILE_CACHING=1 and verify each source in a fresh process.
-
-Reproduce H3 Ref2VA SM100 mask ablation and rejected kernel experiments
-=====================================================================
-All timings are measurements, not estimates. The experimental patches are not
-production recommendations. See REPORT.txt for acceptance/failure status.
-
-Hardware used: 2 allocated SM100 engineering GPUs, cluster label B100,
-NVIDIA Graphics Device, CC 10.0, 148 SMs, 183359 MiB each. This does not establish
-production B200 performance. Do not override scheduler CUDA_VISIBLE_DEVICES.
-Image: vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
-
-Copy the contents of reproduce/ to an empty WORK/scripts directory and mount
-WORK at /work in the pinned image. Keep HF credentials outside published logs.
-The commands below run inside that container. They require model download access
-and sufficient local disk/RAM. Input media hashes are enforced by the harness.
-
-  python3 /work/scripts/fetch_sources.py /work
+2. Prepare the H3 experiment
+Copy reproduce/ contents into a fresh WORK/scripts directory and mount WORK at
+/work inside the pinned image. The commands below run inside the container.
+They require model access and substantial local disk/RAM. Keep credentials out
+of logs; input-media hashes and model revisions are enforced by the harness.
+  python3 /work/scripts/fetch_fp32_sources.py /work
   bash /work/scripts/prepare_forward.sh /work
   HF_HOME=/work/hf-cache python3 /work/scripts/download_models.py /work
+The source setup applies the identical pooling patch to #593/#594 and verifies
+all55runtime source hashes per variant against the actual GPU validation.
+It also materializes the rejected contiguous-load candidate for reproduction.
+Clean public downloads and all165runtime hashes were verified locally.
 
-Generate private real-QKV captures at steps 0, 10, 25 of the same Dense trajectory,
-and measure step-10 full forward (Dense / #593 / #594), 3 warmups + 9 paired rounds:
+3. Run correctness gates before timing
+  bash /work/scripts/validate_fp32_all.sh
+  bash /work/scripts/run_fp32_matrix.sh
+  python3 /work/scripts/require_fp32_validation.py /work
+Require12pooling passes,all73attention checks and29independent input/prepared/
+output hash matches. The first script records exit files; the final gate checks
+both exit codes and complete source-matched results and fails closed.
 
-  H3_GPU_COUNT=2 H3_CPU_OFFLOAD=0 H3_RUN_ID=sequence-450 \
-    H3_GPU_FREQ_REQUEST_MHZ=450 bash /work/scripts/run_sequence.sh /work
-
-IMPORTANT: H3_GPU_FREQ_REQUEST_MHZ records the intended condition only. It does
-not set clocks. The published run used control_sequence.sh outside the container
-to lock only allocated GPUs to 450 MHz, collect telemetry and restore clocks in
-an EXIT trap. Its cluster-specific invocation is:
-
-  bash scripts/control_sequence.sh WORK CONTAINER 2 sequence-450 \
+4. Full first-conditional single-forward comparison
+  H3_DESIGN_VARIANT=candidate-fp32 \
+  H3_CANDIDATE_PATCH_SHA256=$(sha256sum /work/scripts/patches/pool-fp32.patch | cut -d' ' -f1) \
+  H3_GPU_COUNT=2 H3_CPU_OFFLOAD=0 H3_RUN_ID=fp32-450 \
+  H3_GPU_FREQ_REQUEST_MHZ=450 bash /work/scripts/run_fp32_forward.sh /work
+This is the executed timing harness:3warmup+9rotating/reversed rounds, Dense /
+#593+shared fix / #594+shared fix,50layers,TP1/Ulysses2,BF16,cacheoff. It checks
+first/last bytes, finiteness and input immutability, then stops before sampler
+advancement/VAE decode. It produces no video.
+H3_GPU_FREQ_REQUEST_MHZ records intent only; it does NOT set clocks. The tested
+cluster control wrapper locks only allocated GPUs, records telemetry and
+restores clocks in an EXIT trap. From the host inside your allocation:
+  H3_DESIGN_VARIANT=candidate-fp32 H3_CANDIDATE_PATCH_SHA256=PATCH_SHA \
+    bash WORK/scripts/control_fp32_forward.sh WORK CONTAINER 2 fp32-450 \
     ALLOCATED_PHYSICAL_GPU_INDICES 450 WORK:/work 0 12
+For another scheduler/container runtime, reproduce those ownership checks,
+clock/telemetry controls and unconditional clock restoration. Do not raise power
+limits. The published full-forward median is max synchronized wall time across
+ranks; power.draw was unavailable on this engineering hardware.
 
-For another scheduler/container runtime, reproduce that wrapper's operations:
-verify GPU ownership, lock allocated GPUs, start gpu_telemetry.py, execute the
-container command above, then always restore clocks. Do not alter power limits.
-This diagnostic intentionally stops after step-25 QKV capture, before VAE decode;
-check summary.json capture_complete=true and both rank reports. It does not
-produce video quality metrics or an end-to-end generation latency.
+5. Regenerate private Dense-trajectory QKV for attention timing
+  H3_GPU_COUNT=2 H3_CPU_OFFLOAD=0 H3_RUN_ID=sequence-450 \
+    H3_GPU_FREQ_REQUEST_MHZ=450 bash /work/scripts/run_sequence_fp32.sh /work
+The Dense capture logic is the executed sequence harness. Its new FP32 wrapper
+only replaces the step10SOL replay's pooling with the validated common fix and
+4/1configuration, avoiding the old autotune confound; this wrapper adjustment
+was syntax/diff checked, not rerun as a complete25step capture in this follow-up.
+All published attention timings used the already captured Dense SP2 trajectory.
+The wrapper still returns/checks the same Dense output before sampler advancement.
+Use control_sequence_fp32.sh with the same host argument shape as
+control_fp32_forward.sh to set/restore clocks and collect telemetry.
+Captures include steps0/10/25,layers0/25,after Ulysses exchange. Private tensors
+are deliberately excluded from public artifacts and must be regenerated.
 
-Frozen-input attention ablation, 5 warmups + 16 interleaved/reversed rounds,
-eager and CUDA graph. Set the allocated GPUs to 750 MHz and record telemetry:
+6. Independent-process attention comparison,750MHz with telemetry
+  bash /work/scripts/run_process_benchmark.sh process-fp32-750
+Host control wrapper:
+  bash WORK/scripts/control_process_benchmark.sh WORK CONTAINER \
+    ALLOCATED_PHYSICAL_GPU_INDICES 750 process-fp32-750
+Separate source processes, serialized calls,5warmups+16measured rounds per mode,
+eager and graph, native preprocessing included, fixed4/1pooling. Mandatory
+actual KC/VC/threshold and output hashes must match before/after each mode.
+For a custom capture use process_benchmark.py --baseline ROOT --candidate ROOT
+--input CAPTURE --report NEW_JSON. Inputs must use the recorded payload schema.
 
-  bash /work/scripts/run_later_ablation.sh later-750
+7. Reproduce the next candidate's lack of gain
+  bash /work/scripts/validate_contiguous_fp32.sh
+  bash /work/scripts/run_contiguous_benchmark.sh contiguous-fp32-750
+Use control_contiguous_benchmark.sh at750MHz as above. Require all73+29checks
+before timing. This compares corrected#594 against protected-q-contiguous-fp32.
+The candidate is NOT in PR594; it did not improve either tested layer.
+Untimed resource export:
+  bash /work/scripts/export_contiguous_fp32_resources.sh \
+    /work/source/candidate-fp32 /work/source/protected-q-contiguous-fp32 \
+    /work/results/contiguous-fp32-resources
+This records actual cuobjdump resource usage and static PTX sites; neither is a
+runtime occupancy measurement. No timing runs overlap this probe.
 
-Cluster wrapper (sets/restores clocks):
-  bash scripts/control_later_ablation.sh WORK CONTAINER \
-    ALLOCATED_PHYSICAL_GPU_INDICES 750 later-750
-
-For one input or a custom captured tensor:
-  python3 /work/scripts/ablation.py \
-    --input /work/results/ref2va-native-sequence-450/qkv-step-10-layer-25-rank-0.pt \
-    --output /work/results/one-case.json
-
-Mask None/zero controls REMOVE H3 text/audio protection. They diagnose costs and
-are not valid quality-preserving substitutes. Static protection encodes exactly
-the same protected block ranges as the actual mask. Mandatory exact-byte groups:
-upstream_none == extension_none == extension_zero;
-extension_mask == extension_static == optimized_mask.
-Dense vs sparse is intentionally not claimed to be bit-identical.
-
-Count exact routes outside timing (instrumented output must match original):
-  bash /work/scripts/run_routes.sh
-
-Correctness gates for a design patch (ROOT names are fetch_sources.py outputs):
-  PYTHONPATH=/work/source/smem-p-serial/techniques/sparse_backends \
-    python3 /work/source/smem-p-serial/techniques/sparse_backends/benchmarks/benchmark_sm100.py \
-    --baseline-root /work/source/candidate/techniques/sparse_backends \
-    --stress-only --output /work/results/serial-stress.json
-  python3 /work/scripts/validate_design.py \
-    --baseline /work/source/candidate --candidate /work/source/smem-p-serial \
-    --report /work/results/serial-full.json
-
-Do not run/advertise performance for a design that fails correctness. The
-benchmark does exact-byte checks on real QKV before and after eager/graph timing.
-For qualified designs use benchmark_sm100.py --input CAPTURE --output RESULT
-with --baseline-root as above. Old design-first/design-d results used first 28
-heads of an earlier SP1 frozen capture; later-750 uses freshly captured SP2 QKV.
-Do not treat those input sets as interchangeable. Current sequence scripts
-regenerate the latter. Private tensor archives are deliberately not published.
-
-Telemetry audit:
-  python3 /work/scripts/audit_timing_telemetry.py RESULTS_DIR TELEMETRY.csv \
-    --gpu-index ALLOCATED_PHYSICAL_GPU_INDEX --output /work/telemetry-summary.json
-Short attention calls have partial polling coverage; summary counts report it.
-A zero flag count means none observed, not proof that every instant was covered.
-Full-forward times are max wall time across ranks; attention times are CUDA events.
+8. Route counts and summary
+  bash /work/scripts/run_fp32_routes.sh
+  python3 /work/scripts/summarize_fp32_results.py /work
+The untimed tracer must match uninstrumented output/prepared hashes. Its no-mask
+control removes H3 protection and is diagnostic only. Every accepted performance
+result uses the original protection. Short attention calls have partial telemetry
+coverage; zero flags means none observed, not continuous coverage.
+Old ablation and design-comparison tables remain historical/uncontrolled. Use
+corrected-latency.csv and corrected-fp32-summary.json for the qualified result.

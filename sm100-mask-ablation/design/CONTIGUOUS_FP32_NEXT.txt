@@ -1,0 +1,77 @@
+Selected next candidate: protected-q-contiguous-fp32
+==================================================
+Source: design-agent/protected-q-contiguous-fp32.
+Baseline: source/candidate-fp32 (#594 150114b6 plus shared FP32 pooling repair).
+Delta: protected-q-contiguous-fp32.patch, SHA256
+be4e9f77ee72f5f371fe197b52b75a1560c750d0313f94bf08ef529395a90cac.
+Full package digests and static checks: protected-q-contiguous-fp32-manifest.json.
+
+This deliberately reuses the existing C design, including A's protected-Q
+route bypass, and adds only the common four pooling casts. Against the fixed
+#594 baseline the sole changed package file is sm100/mainloop.py. Historical
+unfixed-pooling validation is not treated as acceptance. No GPU work was done.
+
+Concrete reduction
+  Original exact K gather issues four64x64 BF16 TMA copies per pair; V also
+  issues four. Protected Q selects every valid KV block in ascending order.
+  The candidate uses one full128x128 TMA for K and one for V on complete pairs:
+  eight source-level TMA copy issues become two (75% fewer), with identical
+  transferred bytes. It also retains A's removal of needless route work for
+  those protected query CTAs. This targets the single producer warp's work.
+  Actual lowered instruction counts and register/spill effects still need GPU
+  compilation; no speedup is inferred merely from source instruction counts.
+
+Correctness/resource boundaries
+  G256 starts are multiples of256 blocks. Thus pair starts are even and the
+  full-tile coordinate block0//2 addresses exactly block0 and block0+1.
+  Unprotected queries keep arbitrary gathered pairs. An unpaired final block
+  keeps the original duplicated/masked fallback. A paired partial token tail
+  relies on the existing descriptor zero-fill and unchanged valid-token masks.
+  The protected predicate is read from the device mask each launch, preserving
+  graph mask updates. No constant-mask specialization is added.
+  Existing canonical K/V shared layouts, producer acquisitions, barrier byte
+  expectations, completion-backed releases and MMA/softmax order are preserved.
+  SharedStorage and NamedBarrier/PipelineTmaUmma constructor ASTs match baseline;
+  no SMEM/TMEM storage or stages are added. Two extra descriptors/prefetches and
+  extra branch/address live ranges remain resource risks. The reduction may be
+  hidden behind the exact MMA/softmax critical path; this needs measurement.
+
+Static validation completed
+  Entire package Python sources compile. Ruff E/W/F/UP at120 columns passes
+  the changed mainloop and both fixed preprocessing files. Patch apply check
+  passes against candidate-fp32. Package scope comparison proves only mainloop
+  differs from that baseline; the old C package differs only in the two shared
+  preprocessing modules. Existing gather-helper and cute.gemm call ASTs match
+  baseline. No tests, tolerances, byte gates or root harness files were changed.
+
+Validation then paired timing (parent's existing CUDA environment/allocation)
+  After syncing this candidate directory under /work/design-agent, run the
+  commands below serially. Target roughly five minutes for warm cached tooling,
+  but compilation time is environment-dependent; do not shorten gates to meet
+  that estimate. All73 tests must pass before starting paired timing.
+
+  export CUTE_DSL_DISABLE_FILE_CACHING=1
+  mkdir -p /work/results/contiguous-fp32
+  python /work/scripts/validate_design.py \
+    --baseline /work/source/candidate-fp32 \
+    --candidate /work/design-agent/protected-q-contiguous-fp32 \
+    --tests-root /work/source/candidate/techniques/sparse_backends/tests \
+    --report /work/results/contiguous-fp32/full.json
+
+  # Expect ALL PASSED 73; this includes partial tails, long streams, arbitrary
+  # masks, group boundaries, graph mask/input updates and independent oracles.
+  for layer in 00 25; do
+    python /work/scripts/process_benchmark.py \
+      --baseline /work/source/candidate-fp32 \
+      --candidate /work/design-agent/protected-q-contiguous-fp32 \
+      --input /work/captures/qkv-layer-${layer}-rank-0.pt \
+      --warmup 5 --rounds 16 \
+      --report /work/results/contiguous-fp32/layer-${layer}.json
+  done
+
+Use fail-fast shell semantics (set -euo pipefail) for the above sequence.
+The root process benchmark fixes native pooling to4warps/1stage on both sides,
+keeps preprocessing timed, and rejects prepared/output hash mismatches. Its
+original-name independent workers provide the separate-process real-input gate.
+Inspect eager/graph dispersion and both layers; a noise-sized gain does not
+justify adoption. A failed case remains a failed gate with no tolerance changes.
