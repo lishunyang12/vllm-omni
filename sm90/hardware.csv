@@ -1,0 +1,3 @@
+index, uuid, name, compute_cap, memory.total [MiB], driver_version
+0, [GPU_UUID], NVIDIA GH200 96GB HBM3, 9.0, 97871 MiB, 580.196.07
+1, [GPU_UUID], NVIDIA GH200 96GB HBM3, 9.0, 97871 MiB, 580.196.07

@@ -1,0 +1,49 @@
+<!doctype html><meta charset="utf-8"><title>PR 10513 regression test results</title><style>body{background:#10161f;color:#e6edf3;margin:0;padding:32px;font:18px/1.5 monospace}pre{white-space:pre-wrap;overflow-wrap:anywhere}h1{font:25px sans-serif;color:#79d7a0}small{color:#aebaca}</style><h1>PR #10513 · captured validation log</h1><small>Redacted log summary · source logs and JUnit provided alongside</small><pre>PR #10513 — attention selector regression validation
+Fix: 731ea29270e2d9f30e68f94d43a31021b4727eef
+Baseline: 6f5a99768f668bff08e40b3219e308743157d36c
+
+Image: vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
+Linux aarch64; Python 3.12.3; torch 2.16.0.dev20261009+cu134
+vLLM 0.33.0rc1.dev992+g1648fefab.d20261107.cu134; pytest 9.2.0
+Triton 3.8.0+git3f6e4113; cuDNN 9.26.0.51; cuDNN frontend 1.31.0
+diffusers 0.40.0; transformers 5.19.0
+
+Executed baseline command (in repository root):
+python3 -m pytest -q \
+  tests/diffusion/attention/test_impl_overrides.py \
+  tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py \
+  --run-level=core_model --junitxml=/work/evidence/before.xml
+
+Executed fixed command (in repository root):
+python3 -m pytest -q \
+  tests/diffusion/attention/test_impl_overrides.py \
+  tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py \
+  tests/diffusion/attention/test_attention_config.py \
+  --run-level=core_model --junitxml=/work/evidence/after.xml
+
+GH200 96GB (SM90), driver 580.196.07
+  before: 7 failed, 5 passed, 17 warnings in 4.47s
+  after: 170 passed, 20 warnings in 38.76s
+  JUnit: impl_overrides=9 passed, wan22=3 passed, attention_config=158 passed
+
+GB200 (SM100), driver 595.84.01
+  before: 7 failed, 5 passed, 34 warnings in 6.03s
+  after: 170 passed, 37 warnings in 41.87s
+  JUnit: impl_overrides=9 passed, wan22=3 passed, attention_config=158 passed
+
+All 12 cases from the two named files ran on both hosts; none skipped.
+These tests use CPU tensors, including real Wan forward + Inductor compilation.
+CUDA attention kernel/performance suites are outside this focused regression validation.
+Assertions retained: backend identity, options, specialization, error propagation,
+bit-identical outputs, graph counts, error_on_recompile, metadata, new resolution.
+
+Pre-commit: exit 0; all applicable hooks passed (including Ruff, mypy 3.10, CI marks).
+Tested file SHA-256 (matches the fix commit):
+tests/diffusion/attention/test_impl_overrides.py
+ae51a94db29bc1de37686295c87c89bcf7b3ffc0f45e4f674594d247b3eb2a7d
+tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py
+381015f4ac5e3b4c2e596287e3e592eab6800c79d17fe6e4b11a3d1c892d0001
+
+Redactions: internal hostnames, GPU UUIDs, home paths and local TCP endpoints.
+Screenshot is a browser capture of this redacted log summary; raw redacted logs and JUnit are alongside it.
+</pre>

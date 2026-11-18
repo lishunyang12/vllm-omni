@@ -1,0 +1,705 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="7" skipped="0" tests="12" time="6.029" timestamp="2026-11-18T07:58:23.100235+00:00" hostname="REDACTED"><testcase classname="tests.diffusion.attention.test_impl_overrides" name="test_specialization_preserves_selected_backend_and_options[False-False]" time="0.006"><failure message="AssertionError: expected call not found.&#10;Expected: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False)&#10;  Actual: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False, inherited_backend_overrides=None)&#10;&#10;pytest introspection follows:&#10;&#10;Kwargs:&#10;assert {'role': 'vid...: 'self', ...} == {'role': 'vid...: 'self', ...}&#10;  &#10;[+4 more lines; full report in element text]">mocker = &lt;pytest_mock.plugin.MockerFixture object at 0xe148d4381d90&gt;
+local_attention = None, explicit = False, override = False
+
+    @pytest.mark.parametrize("explicit", [False, True])
+    @pytest.mark.parametrize("override", [False, True])
+    def test_specialization_preserves_selected_backend_and_options(mocker, local_attention, explicit, override):
+        spec = AttentionSpec(backend="FASTVIDEO_VSA", fastvideo_vsa_topk=7) if explicit else None
+        select = mocker.patch.object(layer, "get_attn_backend_for_role", return_value=(FastVideoVSABackend, spec))
+        attention = layer.Attention(
+            num_heads=2,
+            head_size=8,
+            softmax_scale=8**-0.5,
+            causal=False,
+            role="video.self",
+            role_category="self",
+            qkv_layout="BSND",
+            impl_overrides={"FASTVIDEO_VSA": _SpecializedImpl} if override else None,
+        )
+    
+        assert attention.attn_backend is FastVideoVSABackend
+        assert type(attention.attention) is (_SpecializedImpl if override else FastVideoVSAImpl)
+        assert attention.attention.topk == (7 if explicit else 64)
+        assert attention.attention.qkv_layout == "BSND"
+        assert attention.backend_pref == "FASTVIDEO_VSA"
+        assert attention.backend_explicit is explicit
+        assert attention.attn_spec is spec
+        assert isinstance(attention.parallel_strategy, NoParallelAttention)
+&gt;       select.assert_called_once_with(
+            role="video.self", head_size=8, attention_config=None, role_category="self", allow_trtllm_default=False
+        )
+E       AssertionError: expected call not found.
+E       Expected: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False)
+E         Actual: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False, inherited_backend_overrides=None)
+E       
+E       pytest introspection follows:
+E       
+E       Kwargs:
+E       assert {'role': 'vid...: 'self', ...} == {'role': 'vid...: 'self', ...}
+E         
+E         Omitting 5 identical items, use -vv to show
+E         Left contains 1 more item:
+E         {'inherited_backend_overrides': None}
+E         Use -v to get more diff
+
+tests/diffusion/attention/test_impl_overrides.py:49: AssertionError</failure></testcase><testcase classname="tests.diffusion.attention.test_impl_overrides" name="test_specialization_preserves_selected_backend_and_options[False-True]" time="0.002"><failure message="AssertionError: expected call not found.&#10;Expected: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False)&#10;  Actual: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False, inherited_backend_overrides=None)&#10;&#10;pytest introspection follows:&#10;&#10;Kwargs:&#10;assert {'role': 'vid...: 'self', ...} == {'role': 'vid...: 'self', ...}&#10;  &#10;[+4 more lines; full report in element text]">mocker = &lt;pytest_mock.plugin.MockerFixture object at 0xe148d42a67e0&gt;
+local_attention = None, explicit = True, override = False
+
+    @pytest.mark.parametrize("explicit", [False, True])
+    @pytest.mark.parametrize("override", [False, True])
+    def test_specialization_preserves_selected_backend_and_options(mocker, local_attention, explicit, override):
+        spec = AttentionSpec(backend="FASTVIDEO_VSA", fastvideo_vsa_topk=7) if explicit else None
+        select = mocker.patch.object(layer, "get_attn_backend_for_role", return_value=(FastVideoVSABackend, spec))
+        attention = layer.Attention(
+            num_heads=2,
+            head_size=8,
+            softmax_scale=8**-0.5,
+            causal=False,
+            role="video.self",
+            role_category="self",
+            qkv_layout="BSND",
+            impl_overrides={"FASTVIDEO_VSA": _SpecializedImpl} if override else None,
+        )
+    
+        assert attention.attn_backend is FastVideoVSABackend
+        assert type(attention.attention) is (_SpecializedImpl if override else FastVideoVSAImpl)
+        assert attention.attention.topk == (7 if explicit else 64)
+        assert attention.attention.qkv_layout == "BSND"
+        assert attention.backend_pref == "FASTVIDEO_VSA"
+        assert attention.backend_explicit is explicit
+        assert attention.attn_spec is spec
+        assert isinstance(attention.parallel_strategy, NoParallelAttention)
+&gt;       select.assert_called_once_with(
+            role="video.self", head_size=8, attention_config=None, role_category="self", allow_trtllm_default=False
+        )
+E       AssertionError: expected call not found.
+E       Expected: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False)
+E         Actual: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False, inherited_backend_overrides=None)
+E       
+E       pytest introspection follows:
+E       
+E       Kwargs:
+E       assert {'role': 'vid...: 'self', ...} == {'role': 'vid...: 'self', ...}
+E         
+E         Omitting 5 identical items, use -vv to show
+E         Left contains 1 more item:
+E         {'inherited_backend_overrides': None}
+E         Use -v to get more diff
+
+tests/diffusion/attention/test_impl_overrides.py:49: AssertionError</failure></testcase><testcase classname="tests.diffusion.attention.test_impl_overrides" name="test_specialization_preserves_selected_backend_and_options[True-False]" time="0.002"><failure message="AssertionError: expected call not found.&#10;Expected: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False)&#10;  Actual: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False, inherited_backend_overrides=None)&#10;&#10;pytest introspection follows:&#10;&#10;Kwargs:&#10;assert {'role': 'vid...: 'self', ...} == {'role': 'vid...: 'self', ...}&#10;  &#10;[+4 more lines; full report in element text]">mocker = &lt;pytest_mock.plugin.MockerFixture object at 0xe148d42a4ef0&gt;
+local_attention = None, explicit = False, override = True
+
+    @pytest.mark.parametrize("explicit", [False, True])
+    @pytest.mark.parametrize("override", [False, True])
+    def test_specialization_preserves_selected_backend_and_options(mocker, local_attention, explicit, override):
+        spec = AttentionSpec(backend="FASTVIDEO_VSA", fastvideo_vsa_topk=7) if explicit else None
+        select = mocker.patch.object(layer, "get_attn_backend_for_role", return_value=(FastVideoVSABackend, spec))
+        attention = layer.Attention(
+            num_heads=2,
+            head_size=8,
+            softmax_scale=8**-0.5,
+            causal=False,
+            role="video.self",
+            role_category="self",
+            qkv_layout="BSND",
+            impl_overrides={"FASTVIDEO_VSA": _SpecializedImpl} if override else None,
+        )
+    
+        assert attention.attn_backend is FastVideoVSABackend
+        assert type(attention.attention) is (_SpecializedImpl if override else FastVideoVSAImpl)
+        assert attention.attention.topk == (7 if explicit else 64)
+        assert attention.attention.qkv_layout == "BSND"
+        assert attention.backend_pref == "FASTVIDEO_VSA"
+        assert attention.backend_explicit is explicit
+        assert attention.attn_spec is spec
+        assert isinstance(attention.parallel_strategy, NoParallelAttention)
+&gt;       select.assert_called_once_with(
+            role="video.self", head_size=8, attention_config=None, role_category="self", allow_trtllm_default=False
+        )
+E       AssertionError: expected call not found.
+E       Expected: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False)
+E         Actual: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False, inherited_backend_overrides=None)
+E       
+E       pytest introspection follows:
+E       
+E       Kwargs:
+E       assert {'role': 'vid...: 'self', ...} == {'role': 'vid...: 'self', ...}
+E         
+E         Omitting 5 identical items, use -vv to show
+E         Left contains 1 more item:
+E         {'inherited_backend_overrides': None}
+E         Use -v to get more diff
+
+tests/diffusion/attention/test_impl_overrides.py:49: AssertionError</failure></testcase><testcase classname="tests.diffusion.attention.test_impl_overrides" name="test_specialization_preserves_selected_backend_and_options[True-True]" time="0.002"><failure message="AssertionError: expected call not found.&#10;Expected: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False)&#10;  Actual: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False, inherited_backend_overrides=None)&#10;&#10;pytest introspection follows:&#10;&#10;Kwargs:&#10;assert {'role': 'vid...: 'self', ...} == {'role': 'vid...: 'self', ...}&#10;  &#10;[+4 more lines; full report in element text]">mocker = &lt;pytest_mock.plugin.MockerFixture object at 0xe148d42a8290&gt;
+local_attention = None, explicit = True, override = True
+
+    @pytest.mark.parametrize("explicit", [False, True])
+    @pytest.mark.parametrize("override", [False, True])
+    def test_specialization_preserves_selected_backend_and_options(mocker, local_attention, explicit, override):
+        spec = AttentionSpec(backend="FASTVIDEO_VSA", fastvideo_vsa_topk=7) if explicit else None
+        select = mocker.patch.object(layer, "get_attn_backend_for_role", return_value=(FastVideoVSABackend, spec))
+        attention = layer.Attention(
+            num_heads=2,
+            head_size=8,
+            softmax_scale=8**-0.5,
+            causal=False,
+            role="video.self",
+            role_category="self",
+            qkv_layout="BSND",
+            impl_overrides={"FASTVIDEO_VSA": _SpecializedImpl} if override else None,
+        )
+    
+        assert attention.attn_backend is FastVideoVSABackend
+        assert type(attention.attention) is (_SpecializedImpl if override else FastVideoVSAImpl)
+        assert attention.attention.topk == (7 if explicit else 64)
+        assert attention.attention.qkv_layout == "BSND"
+        assert attention.backend_pref == "FASTVIDEO_VSA"
+        assert attention.backend_explicit is explicit
+        assert attention.attn_spec is spec
+        assert isinstance(attention.parallel_strategy, NoParallelAttention)
+&gt;       select.assert_called_once_with(
+            role="video.self", head_size=8, attention_config=None, role_category="self", allow_trtllm_default=False
+        )
+E       AssertionError: expected call not found.
+E       Expected: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False)
+E         Actual: get_attn_backend_for_role(role='video.self', head_size=8, attention_config=None, role_category='self', allow_trtllm_default=False, inherited_backend_overrides=None)
+E       
+E       pytest introspection follows:
+E       
+E       Kwargs:
+E       assert {'role': 'vid...: 'self', ...} == {'role': 'vid...: 'self', ...}
+E         
+E         Omitting 5 identical items, use -vv to show
+E         Left contains 1 more item:
+E         {'inherited_backend_overrides': None}
+E         Use -v to get more diff
+
+tests/diffusion/attention/test_impl_overrides.py:49: AssertionError</failure></testcase><testcase classname="tests.diffusion.attention.test_impl_overrides" name="test_unselected_specialization_does_not_replace_dense_backend" time="0.002" /><testcase classname="tests.diffusion.attention.test_impl_overrides" name="test_specialization_does_not_bypass_selection_errors" time="0.002" /><testcase classname="tests.diffusion.attention.test_impl_overrides" name="test_specialization_must_extend_selected_implementation" time="0.002" /><testcase classname="tests.diffusion.attention.test_impl_overrides" name="test_platform_backend_capabilities_survive_model_specialization" time="0.350" /><testcase classname="tests.diffusion.attention.test_impl_overrides" name="test_incompatible_platform_implementation_is_not_discarded" time="0.002" /><testcase classname="tests.diffusion.models.wan2_2.test_wan22_scheduled_attention_compile" name="test_real_wan_forward_is_one_graph_per_block_and_matches_a_service_without_a_schedule" time="0.505"><failure message="TypeError: _resolve() got an unexpected keyword argument 'inherited_backend_overrides'">wan_env = None
+
+    def test_real_wan_forward_is_one_graph_per_block_and_matches_a_service_without_a_schedule(wan_env):
+&gt;       plain = _service(None)
+                ^^^^^^^^^^^^^^
+
+tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py:190: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py:134: in _service
+    model = wan_mod.WanTransformer3DModel(
+vllm_omni/diffusion/models/wan2_2/wan2_2_transformer.py:1031: in __init__
+    self.start_layer, self.end_layer, self.blocks = make_layers(
+/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/utils.py:1003: in make_layers
+    + get_offloader().wrap_modules(
+/usr/local/lib/python3.12/dist-packages/vllm/model_executor/offloader/base.py:120: in wrap_modules
+    return list(modules_generator)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/utils.py:1004: in &lt;genexpr&gt;
+    layer_fn(prefix=f"{prefix}.{idx}") for idx in range(start_layer, end_layer)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+vllm_omni/diffusion/models/wan2_2/wan2_2_transformer.py:1006: in _make_block
+    return WanTransformerBlock(
+vllm_omni/diffusion/models/wan2_2/wan2_2_transformer.py:720: in __init__
+    self.attn1 = WanSelfAttention(
+vllm_omni/diffusion/models/wan2_2/wan2_2_transformer.py:426: in __init__
+    self.attn = Attention(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Attention(), num_heads = 2, head_size = 64, causal = False
+softmax_scale = 0.125, num_kv_heads = 2, prefix = 'blocks.0.attn1'
+role = 'self', role_category = None, qkv_layout = 'BSND', scatter_idx = 2
+gather_idx = 1, use_sync = False, skip_sequence_parallel = False
+disable_kv_quant = False, paged_kv_cache_role = None
+paged_kv_cache_dtype = None, custom_attention = None
+allow_fp32_fallback = False, impl_overrides = None, computation = None
+cross_parallel_layout = None, cross_mask_kind = None
+inherited_backend_overrides = None
+
+    def __init__(
+        self,
+        num_heads: int,
+        head_size: int,
+        causal: bool,
+        softmax_scale: float,
+        num_kv_heads: int | None = None,
+        prefix: str = "",
+        # Per-role backend selection (RFC: per-role attention backend)
+        role: str = "self",
+        role_category: str | None = None,
+        # Model-defined Q/K/V tensor layout hint for backend execution.
+        qkv_layout: str | None = None,
+        # ulysses attention
+        scatter_idx: int = 2,
+        gather_idx: int = 1,
+        use_sync: bool = False,
+        skip_sequence_parallel: bool = False,
+        # Opt-out for KV-cache quantization at this specific attention layer.
+        # Set by the model author when quant is known to degrade quality or
+        # perf for this layer (e.g. Wan2.2 cross-attn has short sequences and
+        # block-FP8 quant offers no win). Default False = follow global config.
+        disable_kv_quant: bool = False,
+        # Opt-in marker for Scheduler-managed paged KV. Unmarked diffusion
+        # attention remains dense and contributes no native KVCacheSpec.
+        paged_kv_cache_role: str | None = None,
+        paged_kv_cache_dtype: torch.dtype | None = None,
+        # Model-owned kernel for architectures whose attention contract cannot
+        # be represented by the generic backend interface (for example packed
+        # varlen attention with learned sink logits). The shared Attention
+        # layer still owns parallel dispatch and compile boundaries.
+        custom_attention: nn.Module | None = None,
+        # Preserve dense FP32 inference for models opting into CUDA auto fallback.
+        allow_fp32_fallback: bool = False,
+        # Model-owned implementation subclasses, keyed by backend name.
+        # Keep the platform-selected backend and its capabilities unchanged.
+        # Each override must preserve the selected implementation's contract.
+        impl_overrides: Mapping[str, type[AttentionImpl]] | None = None,
+        # Computation semantics are independent of the role used for config.
+        # Omitted for legacy callers; new cross-attention callers set it.
+        computation: AttentionComputation | str | None = None,
+        cross_parallel_layout: CrossAttentionParallelLayout | str | None = None,
+        cross_mask_kind: str | None = None,
+        inherited_backend_overrides: Mapping[str, "AttentionSpec"] | None = None,
+    ):
+        super().__init__()
+    
+        self.role = role
+        self.role_category = role_category
+        self.qkv_layout = qkv_layout
+        default_computation = "cross" if role == "cross" else "self"
+        self.computation = AttentionComputation(computation if computation is not None else default_computation)
+        self._explicit_cross_contract = computation is not None and self.computation is AttentionComputation.CROSS
+        self.cross_parallel_layout = (
+            CrossAttentionParallelLayout(cross_parallel_layout) if cross_parallel_layout is not None else None
+        )
+        self.cross_mask_kind = cross_mask_kind
+        if self._explicit_cross_contract:
+            if causal:
+                raise NotImplementedError("The first cross-attention contract supports noncausal execution only")
+            if qkv_layout != "BSND":
+                raise ValueError("The first cross-attention contract requires qkv_layout='BSND'")
+            if skip_sequence_parallel and self.cross_parallel_layout is None:
+                raise ValueError("Skipping SP for cross attention requires an explicit Q/KV placement")
+            if (
+                self.cross_parallel_layout in (CrossAttentionParallelLayout.REPLICATED_Q_SHARDED_KV,)
+                and skip_sequence_parallel
+            ):
+                raise ValueError("Sharded-KV cross attention requires SP communication")
+            if paged_kv_cache_role is not None:
+                raise ValueError("Conditioning cross attention does not use Scheduler-managed paged KV")
+            if cross_mask_kind not in (None, "kv", "pair"):
+                raise ValueError("Cross mask kind must be 'kv' or 'pair'")
+        # ``prefix`` is also the stable layer identity used by vLLM's native
+        # KV-cache metadata.  Keep it on the Omni layer so the active paged
+        # adapter can dispatch the already-resharded Q/K/V to the matching
+        # native cache tensor without replacing this Omni execution path.
+        self.prefix = prefix
+        if paged_kv_cache_role == "":
+            raise ValueError("paged_kv_cache_role must be non-empty when provided")
+        self.paged_kv_cache_role = paged_kv_cache_role
+        self.paged_kv_cache_dtype = paged_kv_cache_dtype
+        self.num_heads = num_heads
+        self.num_kv_heads = num_kv_heads if num_kv_heads is not None else num_heads
+        self.head_size = head_size
+        if self._explicit_cross_contract and (
+            num_heads &lt;= 0 or self.num_kv_heads &lt;= 0 or num_heads % self.num_kv_heads or head_size &lt;= 0
+        ):
+            raise ValueError("Cross attention requires positive head dimensions and Q heads divisible by KV heads")
+    
+        self._has_custom_attention = custom_attention is not None
+    
+        # Per-step schedule candidates. Empty unless a startup schedule
+        # is configured, so without a schedule no extra impl is built.
+        # AttentionImpl is not an nn.Module, so keeping these in a plain dict
+        # registers no submodule and leaves state_dict untouched.
+        self._schedule_profiles: tuple[str, ...] = ()
+        self._schedule_candidates: dict[str, ScheduleCandidate] = {}
+        # Model-owned requirements on every candidate of this layer (add_schedule_candidate_check).
+        self._schedule_candidate_checks: list[Callable[[ScheduleCandidate], str | None]] = []
+    
+        # Resolve backend via role-aware config.
+        # The global diffusion config is set during model init via
+        # set_current_diffusion_config(); no env-var re-parsing needed here.
+        backend_kwargs: dict | None = None
+        self.backend_pref = None
+        self.backend_explicit = False
+    
+        config = get_current_diffusion_config_or_none()
+        attention_config = config.diffusion_attention_config if config is not None else None
+        parallel_config = getattr(config, "parallel_config", None)
+        self._hsdp_compile_boundary_enabled = bool(getattr(parallel_config, "use_hsdp", False))
+    
+        from vllm_omni.diffusion.model_metadata import get_diffusion_model_metadata
+    
+        model_class_name = getattr(config, "model_class_name", None) if config is not None else None
+        allow_trtllm_default = get_diffusion_model_metadata(model_class_name).attention_mask_free
+    
+        scheduler_paged_kv = (
+            config is not None
+            and getattr(config, "diffusion_kv_mode", DiffusionKVCacheMode.DENSE_LEGACY)
+            is DiffusionKVCacheMode.PAGED_SCHEDULER
+        )
+        self._scheduler_paged_kv = scheduler_paged_kv
+        self.attn_backend: type[AttentionBackend] | None
+        self.attention: AttentionImpl | nn.Module
+        self.sdpa_fallback: SDPAImpl | None
+        if custom_attention is None:
+&gt;           selected_backend_cls, spec = get_attn_backend_for_role(
+                role=role,
+                head_size=head_size,
+                attention_config=attention_config,
+                role_category=role_category,
+                allow_trtllm_default=allow_trtllm_default,
+                inherited_backend_overrides=inherited_backend_overrides,
+            )
+E           TypeError: _resolve() got an unexpected keyword argument 'inherited_backend_overrides'
+
+vllm_omni/diffusion/attention/layer.py:572: TypeError</failure></testcase><testcase classname="tests.diffusion.models.wan2_2.test_wan22_scheduled_attention_compile" name="test_op_hands_wan_metadata_to_attention_and_schedules_do_not_recompile" time="0.480"><failure message="TypeError: _resolve() got an unexpected keyword argument 'inherited_backend_overrides'">wan_env = None
+
+    def test_op_hands_wan_metadata_to_attention_and_schedules_do_not_recompile(wan_env):
+&gt;       model, config, counter = _service(_schedule())
+                                 ^^^^^^^^^^^^^^^^^^^^^
+
+tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py:208: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py:134: in _service
+    model = wan_mod.WanTransformer3DModel(
+vllm_omni/diffusion/models/wan2_2/wan2_2_transformer.py:1031: in __init__
+    self.start_layer, self.end_layer, self.blocks = make_layers(
+/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/utils.py:1003: in make_layers
+    + get_offloader().wrap_modules(
+/usr/local/lib/python3.12/dist-packages/vllm/model_executor/offloader/base.py:120: in wrap_modules
+    return list(modules_generator)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/utils.py:1004: in &lt;genexpr&gt;
+    layer_fn(prefix=f"{prefix}.{idx}") for idx in range(start_layer, end_layer)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+vllm_omni/diffusion/models/wan2_2/wan2_2_transformer.py:1006: in _make_block
+    return WanTransformerBlock(
+vllm_omni/diffusion/models/wan2_2/wan2_2_transformer.py:720: in __init__
+    self.attn1 = WanSelfAttention(
+vllm_omni/diffusion/models/wan2_2/wan2_2_transformer.py:426: in __init__
+    self.attn = Attention(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Attention(), num_heads = 2, head_size = 64, causal = False
+softmax_scale = 0.125, num_kv_heads = 2, prefix = 'blocks.0.attn1'
+role = 'self', role_category = None, qkv_layout = 'BSND', scatter_idx = 2
+gather_idx = 1, use_sync = False, skip_sequence_parallel = False
+disable_kv_quant = False, paged_kv_cache_role = None
+paged_kv_cache_dtype = None, custom_attention = None
+allow_fp32_fallback = False, impl_overrides = None, computation = None
+cross_parallel_layout = None, cross_mask_kind = None
+inherited_backend_overrides = None
+
+    def __init__(
+        self,
+        num_heads: int,
+        head_size: int,
+        causal: bool,
+        softmax_scale: float,
+        num_kv_heads: int | None = None,
+        prefix: str = "",
+        # Per-role backend selection (RFC: per-role attention backend)
+        role: str = "self",
+        role_category: str | None = None,
+        # Model-defined Q/K/V tensor layout hint for backend execution.
+        qkv_layout: str | None = None,
+        # ulysses attention
+        scatter_idx: int = 2,
+        gather_idx: int = 1,
+        use_sync: bool = False,
+        skip_sequence_parallel: bool = False,
+        # Opt-out for KV-cache quantization at this specific attention layer.
+        # Set by the model author when quant is known to degrade quality or
+        # perf for this layer (e.g. Wan2.2 cross-attn has short sequences and
+        # block-FP8 quant offers no win). Default False = follow global config.
+        disable_kv_quant: bool = False,
+        # Opt-in marker for Scheduler-managed paged KV. Unmarked diffusion
+        # attention remains dense and contributes no native KVCacheSpec.
+        paged_kv_cache_role: str | None = None,
+        paged_kv_cache_dtype: torch.dtype | None = None,
+        # Model-owned kernel for architectures whose attention contract cannot
+        # be represented by the generic backend interface (for example packed
+        # varlen attention with learned sink logits). The shared Attention
+        # layer still owns parallel dispatch and compile boundaries.
+        custom_attention: nn.Module | None = None,
+        # Preserve dense FP32 inference for models opting into CUDA auto fallback.
+        allow_fp32_fallback: bool = False,
+        # Model-owned implementation subclasses, keyed by backend name.
+        # Keep the platform-selected backend and its capabilities unchanged.
+        # Each override must preserve the selected implementation's contract.
+        impl_overrides: Mapping[str, type[AttentionImpl]] | None = None,
+        # Computation semantics are independent of the role used for config.
+        # Omitted for legacy callers; new cross-attention callers set it.
+        computation: AttentionComputation | str | None = None,
+        cross_parallel_layout: CrossAttentionParallelLayout | str | None = None,
+        cross_mask_kind: str | None = None,
+        inherited_backend_overrides: Mapping[str, "AttentionSpec"] | None = None,
+    ):
+        super().__init__()
+    
+        self.role = role
+        self.role_category = role_category
+        self.qkv_layout = qkv_layout
+        default_computation = "cross" if role == "cross" else "self"
+        self.computation = AttentionComputation(computation if computation is not None else default_computation)
+        self._explicit_cross_contract = computation is not None and self.computation is AttentionComputation.CROSS
+        self.cross_parallel_layout = (
+            CrossAttentionParallelLayout(cross_parallel_layout) if cross_parallel_layout is not None else None
+        )
+        self.cross_mask_kind = cross_mask_kind
+        if self._explicit_cross_contract:
+            if causal:
+                raise NotImplementedError("The first cross-attention contract supports noncausal execution only")
+            if qkv_layout != "BSND":
+                raise ValueError("The first cross-attention contract requires qkv_layout='BSND'")
+            if skip_sequence_parallel and self.cross_parallel_layout is None:
+                raise ValueError("Skipping SP for cross attention requires an explicit Q/KV placement")
+            if (
+                self.cross_parallel_layout in (CrossAttentionParallelLayout.REPLICATED_Q_SHARDED_KV,)
+                and skip_sequence_parallel
+            ):
+                raise ValueError("Sharded-KV cross attention requires SP communication")
+            if paged_kv_cache_role is not None:
+                raise ValueError("Conditioning cross attention does not use Scheduler-managed paged KV")
+            if cross_mask_kind not in (None, "kv", "pair"):
+                raise ValueError("Cross mask kind must be 'kv' or 'pair'")
+        # ``prefix`` is also the stable layer identity used by vLLM's native
+        # KV-cache metadata.  Keep it on the Omni layer so the active paged
+        # adapter can dispatch the already-resharded Q/K/V to the matching
+        # native cache tensor without replacing this Omni execution path.
+        self.prefix = prefix
+        if paged_kv_cache_role == "":
+            raise ValueError("paged_kv_cache_role must be non-empty when provided")
+        self.paged_kv_cache_role = paged_kv_cache_role
+        self.paged_kv_cache_dtype = paged_kv_cache_dtype
+        self.num_heads = num_heads
+        self.num_kv_heads = num_kv_heads if num_kv_heads is not None else num_heads
+        self.head_size = head_size
+        if self._explicit_cross_contract and (
+            num_heads &lt;= 0 or self.num_kv_heads &lt;= 0 or num_heads % self.num_kv_heads or head_size &lt;= 0
+        ):
+            raise ValueError("Cross attention requires positive head dimensions and Q heads divisible by KV heads")
+    
+        self._has_custom_attention = custom_attention is not None
+    
+        # Per-step schedule candidates. Empty unless a startup schedule
+        # is configured, so without a schedule no extra impl is built.
+        # AttentionImpl is not an nn.Module, so keeping these in a plain dict
+        # registers no submodule and leaves state_dict untouched.
+        self._schedule_profiles: tuple[str, ...] = ()
+        self._schedule_candidates: dict[str, ScheduleCandidate] = {}
+        # Model-owned requirements on every candidate of this layer (add_schedule_candidate_check).
+        self._schedule_candidate_checks: list[Callable[[ScheduleCandidate], str | None]] = []
+    
+        # Resolve backend via role-aware config.
+        # The global diffusion config is set during model init via
+        # set_current_diffusion_config(); no env-var re-parsing needed here.
+        backend_kwargs: dict | None = None
+        self.backend_pref = None
+        self.backend_explicit = False
+    
+        config = get_current_diffusion_config_or_none()
+        attention_config = config.diffusion_attention_config if config is not None else None
+        parallel_config = getattr(config, "parallel_config", None)
+        self._hsdp_compile_boundary_enabled = bool(getattr(parallel_config, "use_hsdp", False))
+    
+        from vllm_omni.diffusion.model_metadata import get_diffusion_model_metadata
+    
+        model_class_name = getattr(config, "model_class_name", None) if config is not None else None
+        allow_trtllm_default = get_diffusion_model_metadata(model_class_name).attention_mask_free
+    
+        scheduler_paged_kv = (
+            config is not None
+            and getattr(config, "diffusion_kv_mode", DiffusionKVCacheMode.DENSE_LEGACY)
+            is DiffusionKVCacheMode.PAGED_SCHEDULER
+        )
+        self._scheduler_paged_kv = scheduler_paged_kv
+        self.attn_backend: type[AttentionBackend] | None
+        self.attention: AttentionImpl | nn.Module
+        self.sdpa_fallback: SDPAImpl | None
+        if custom_attention is None:
+&gt;           selected_backend_cls, spec = get_attn_backend_for_role(
+                role=role,
+                head_size=head_size,
+                attention_config=attention_config,
+                role_category=role_category,
+                allow_trtllm_default=allow_trtllm_default,
+                inherited_backend_overrides=inherited_backend_overrides,
+            )
+E           TypeError: _resolve() got an unexpected keyword argument 'inherited_backend_overrides'
+
+vllm_omni/diffusion/attention/layer.py:572: TypeError</failure></testcase><testcase classname="tests.diffusion.models.wan2_2.test_wan22_scheduled_attention_compile" name="test_new_resolution_compiles_no_more_than_a_service_without_a_schedule" time="0.444"><failure message="TypeError: _resolve() got an unexpected keyword argument 'inherited_backend_overrides'">wan_env = None
+
+    def test_new_resolution_compiles_no_more_than_a_service_without_a_schedule(wan_env):
+&gt;       plain = _service(None)
+                ^^^^^^^^^^^^^^
+
+tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py:229: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py:134: in _service
+    model = wan_mod.WanTransformer3DModel(
+vllm_omni/diffusion/models/wan2_2/wan2_2_transformer.py:1031: in __init__
+    self.start_layer, self.end_layer, self.blocks = make_layers(
+/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/utils.py:1003: in make_layers
+    + get_offloader().wrap_modules(
+/usr/local/lib/python3.12/dist-packages/vllm/model_executor/offloader/base.py:120: in wrap_modules
+    return list(modules_generator)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/utils.py:1004: in &lt;genexpr&gt;
+    layer_fn(prefix=f"{prefix}.{idx}") for idx in range(start_layer, end_layer)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+vllm_omni/diffusion/models/wan2_2/wan2_2_transformer.py:1006: in _make_block
+    return WanTransformerBlock(
+vllm_omni/diffusion/models/wan2_2/wan2_2_transformer.py:720: in __init__
+    self.attn1 = WanSelfAttention(
+vllm_omni/diffusion/models/wan2_2/wan2_2_transformer.py:426: in __init__
+    self.attn = Attention(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Attention(), num_heads = 2, head_size = 64, causal = False
+softmax_scale = 0.125, num_kv_heads = 2, prefix = 'blocks.0.attn1'
+role = 'self', role_category = None, qkv_layout = 'BSND', scatter_idx = 2
+gather_idx = 1, use_sync = False, skip_sequence_parallel = False
+disable_kv_quant = False, paged_kv_cache_role = None
+paged_kv_cache_dtype = None, custom_attention = None
+allow_fp32_fallback = False, impl_overrides = None, computation = None
+cross_parallel_layout = None, cross_mask_kind = None
+inherited_backend_overrides = None
+
+    def __init__(
+        self,
+        num_heads: int,
+        head_size: int,
+        causal: bool,
+        softmax_scale: float,
+        num_kv_heads: int | None = None,
+        prefix: str = "",
+        # Per-role backend selection (RFC: per-role attention backend)
+        role: str = "self",
+        role_category: str | None = None,
+        # Model-defined Q/K/V tensor layout hint for backend execution.
+        qkv_layout: str | None = None,
+        # ulysses attention
+        scatter_idx: int = 2,
+        gather_idx: int = 1,
+        use_sync: bool = False,
+        skip_sequence_parallel: bool = False,
+        # Opt-out for KV-cache quantization at this specific attention layer.
+        # Set by the model author when quant is known to degrade quality or
+        # perf for this layer (e.g. Wan2.2 cross-attn has short sequences and
+        # block-FP8 quant offers no win). Default False = follow global config.
+        disable_kv_quant: bool = False,
+        # Opt-in marker for Scheduler-managed paged KV. Unmarked diffusion
+        # attention remains dense and contributes no native KVCacheSpec.
+        paged_kv_cache_role: str | None = None,
+        paged_kv_cache_dtype: torch.dtype | None = None,
+        # Model-owned kernel for architectures whose attention contract cannot
+        # be represented by the generic backend interface (for example packed
+        # varlen attention with learned sink logits). The shared Attention
+        # layer still owns parallel dispatch and compile boundaries.
+        custom_attention: nn.Module | None = None,
+        # Preserve dense FP32 inference for models opting into CUDA auto fallback.
+        allow_fp32_fallback: bool = False,
+        # Model-owned implementation subclasses, keyed by backend name.
+        # Keep the platform-selected backend and its capabilities unchanged.
+        # Each override must preserve the selected implementation's contract.
+        impl_overrides: Mapping[str, type[AttentionImpl]] | None = None,
+        # Computation semantics are independent of the role used for config.
+        # Omitted for legacy callers; new cross-attention callers set it.
+        computation: AttentionComputation | str | None = None,
+        cross_parallel_layout: CrossAttentionParallelLayout | str | None = None,
+        cross_mask_kind: str | None = None,
+        inherited_backend_overrides: Mapping[str, "AttentionSpec"] | None = None,
+    ):
+        super().__init__()
+    
+        self.role = role
+        self.role_category = role_category
+        self.qkv_layout = qkv_layout
+        default_computation = "cross" if role == "cross" else "self"
+        self.computation = AttentionComputation(computation if computation is not None else default_computation)
+        self._explicit_cross_contract = computation is not None and self.computation is AttentionComputation.CROSS
+        self.cross_parallel_layout = (
+            CrossAttentionParallelLayout(cross_parallel_layout) if cross_parallel_layout is not None else None
+        )
+        self.cross_mask_kind = cross_mask_kind
+        if self._explicit_cross_contract:
+            if causal:
+                raise NotImplementedError("The first cross-attention contract supports noncausal execution only")
+            if qkv_layout != "BSND":
+                raise ValueError("The first cross-attention contract requires qkv_layout='BSND'")
+            if skip_sequence_parallel and self.cross_parallel_layout is None:
+                raise ValueError("Skipping SP for cross attention requires an explicit Q/KV placement")
+            if (
+                self.cross_parallel_layout in (CrossAttentionParallelLayout.REPLICATED_Q_SHARDED_KV,)
+                and skip_sequence_parallel
+            ):
+                raise ValueError("Sharded-KV cross attention requires SP communication")
+            if paged_kv_cache_role is not None:
+                raise ValueError("Conditioning cross attention does not use Scheduler-managed paged KV")
+            if cross_mask_kind not in (None, "kv", "pair"):
+                raise ValueError("Cross mask kind must be 'kv' or 'pair'")
+        # ``prefix`` is also the stable layer identity used by vLLM's native
+        # KV-cache metadata.  Keep it on the Omni layer so the active paged
+        # adapter can dispatch the already-resharded Q/K/V to the matching
+        # native cache tensor without replacing this Omni execution path.
+        self.prefix = prefix
+        if paged_kv_cache_role == "":
+            raise ValueError("paged_kv_cache_role must be non-empty when provided")
+        self.paged_kv_cache_role = paged_kv_cache_role
+        self.paged_kv_cache_dtype = paged_kv_cache_dtype
+        self.num_heads = num_heads
+        self.num_kv_heads = num_kv_heads if num_kv_heads is not None else num_heads
+        self.head_size = head_size
+        if self._explicit_cross_contract and (
+            num_heads &lt;= 0 or self.num_kv_heads &lt;= 0 or num_heads % self.num_kv_heads or head_size &lt;= 0
+        ):
+            raise ValueError("Cross attention requires positive head dimensions and Q heads divisible by KV heads")
+    
+        self._has_custom_attention = custom_attention is not None
+    
+        # Per-step schedule candidates. Empty unless a startup schedule
+        # is configured, so without a schedule no extra impl is built.
+        # AttentionImpl is not an nn.Module, so keeping these in a plain dict
+        # registers no submodule and leaves state_dict untouched.
+        self._schedule_profiles: tuple[str, ...] = ()
+        self._schedule_candidates: dict[str, ScheduleCandidate] = {}
+        # Model-owned requirements on every candidate of this layer (add_schedule_candidate_check).
+        self._schedule_candidate_checks: list[Callable[[ScheduleCandidate], str | None]] = []
+    
+        # Resolve backend via role-aware config.
+        # The global diffusion config is set during model init via
+        # set_current_diffusion_config(); no env-var re-parsing needed here.
+        backend_kwargs: dict | None = None
+        self.backend_pref = None
+        self.backend_explicit = False
+    
+        config = get_current_diffusion_config_or_none()
+        attention_config = config.diffusion_attention_config if config is not None else None
+        parallel_config = getattr(config, "parallel_config", None)
+        self._hsdp_compile_boundary_enabled = bool(getattr(parallel_config, "use_hsdp", False))
+    
+        from vllm_omni.diffusion.model_metadata import get_diffusion_model_metadata
+    
+        model_class_name = getattr(config, "model_class_name", None) if config is not None else None
+        allow_trtllm_default = get_diffusion_model_metadata(model_class_name).attention_mask_free
+    
+        scheduler_paged_kv = (
+            config is not None
+            and getattr(config, "diffusion_kv_mode", DiffusionKVCacheMode.DENSE_LEGACY)
+            is DiffusionKVCacheMode.PAGED_SCHEDULER
+        )
+        self._scheduler_paged_kv = scheduler_paged_kv
+        self.attn_backend: type[AttentionBackend] | None
+        self.attention: AttentionImpl | nn.Module
+        self.sdpa_fallback: SDPAImpl | None
+        if custom_attention is None:
+&gt;           selected_backend_cls, spec = get_attn_backend_for_role(
+                role=role,
+                head_size=head_size,
+                attention_config=attention_config,
+                role_category=role_category,
+                allow_trtllm_default=allow_trtllm_default,
+                inherited_backend_overrides=inherited_backend_overrides,
+            )
+E           TypeError: _resolve() got an unexpected keyword argument 'inherited_backend_overrides'
+
+vllm_omni/diffusion/attention/layer.py:572: TypeError</failure></testcase></testsuite></testsuites>
