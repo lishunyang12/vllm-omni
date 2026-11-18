@@ -1,0 +1,67 @@
+H3 Ref2VA: direct upstream SOL versus Dense cuDNN
+
+Scope: first conditional denoising step, full 50-layer DiT forward, then an
+intentional stop before sampler advancement/VAE decode. No SSIM/PSNR/LPIPS
+or end-to-end generation quality claim is made.
+
+Exact image:
+  vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
+Measured Omni source: 3da353c45224f5863808da320d694be045c16ef8
+SOL dependency: 088897e0c6a9cb970f00b43ab2177c3be7336b36
+H3 checkpoint: MiniMaxAI/MiniMax-H3 at 0919fb684102ef115126612f3fbb84d1027e7317
+
+Validated full-model hardware: 2x GH200 96GB with NVLink, 512GB host RAM.
+Provide sufficient checkpoint/cache space (350 GiB recommended). Downloads use
+immutable revisions and standard HF cache reuse; scripts never evict caches.
+
+Copy this artifact's reproduce directory to WORK/native, then mount WORK as
+/work in the exact image, with two visible GPUs and host IPC:
+
+  bash /work/native/bootstrap.sh /work
+  H3_RUN_ID=1 bash /work/native/run.sh /work
+  H3_RUN_ID=2 bash /work/native/run.sh /work
+
+Bootstrap installs the exact sources and dependency constraints and downloads
+Ref2VA only. Runtime constraints preserve the image's PyTorch/vLLM/CUDA stack.
+This bootstrap assembles the validated environment; provisioning itself was
+not rerun from an empty checkpoint cache. Full installed environments and
+actual model-run protocols are retained in the evidence directories.
+
+The run script starts a fresh process for each invocation, loads the same
+weights once, and alternates Dense/SOL order. Three warmup pairs precede nine
+measured pairs. Each sample is a synchronized full DiT forward; the reported
+latency is the median of the maximum wall time across ranks. Dense uses
+CuDNNAttentionImpl as the dense guard on the same attention objects; SOL uses
+the unmodified production sparse path. All 50 DiT blocks are checked. Model
+CPU offload is enabled equally on GH200 for capacity; weights are resident
+inside the measured forward. First/last output tensors and input hashes are
+saved outside timing. Existing result directories are rejected.
+
+The harness patches only the measurement boundary and switches the two
+attention paths outside timed calls. Production serving needs only:
+  --diffusion-attention-backend SOL_ATTN
+No provider/native flag is accepted.
+
+Tests (inside the validated environment):
+  cd /work/source/native
+  python3 -m pytest -q tests/diffusion/attention/test_sol_attn_backend.py \
+    tests/diffusion/attention/test_impl_overrides.py \
+    tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py \
+    tests/diffusion/attention/test_attention_config.py \
+    tests/diffusion/models/minimax_h3/test_minimax_h3_contract.py --run-level=core_model
+  python3 -m pytest -q tests/diffusion/attention/test_sol_attn_cuda.py --run-level=core_model
+  cd /work/source/sana
+  python3 -m pytest -q techniques/sparse_backends/tests/test_exact_block_mask.py
+
+The single-GPU Omni suite plus two-GPU Ulysses cases were executed on GH200;
+SP4 was not run. The pinned upstream suite was also executed on GB200. This
+does not establish full H3 forward latency on GB200, SM103 or SM120.
+
+The upstream PR follows newer sol-engine history separately from the pinned
+backport. Its current full sparse-backend suite was tested on GH200/GB200;
+see manifest.json for distinct source commits and the logs for skipped cases.
+
+All public logs redact hostnames, IPs, GPU UUIDs and home paths. Private tensor
+captures and model weights are not included. compare_outputs.py can derive
+forward-tensor error and repeatability from locally saved captures; those
+metrics are not decoded-video quality measurements.

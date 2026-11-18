@@ -1,0 +1,50 @@
+Direct upstream SOL for H3 Ref2VA — final validation
+
+Omni PR #10513 head: d446f12a9e297402d973e2ca4241bd8b592675eb
+Measured code: 3da353c45224f5863808da320d694be045c16ef8 (head adds recipe wording only)
+SOL pin: 088897e0c6a9cb970f00b43ab2177c3be7336b36
+Upstream PR #593 head: 1c522ed3e1e5d43f24258f6cc27bb7b7e189d508
+
+SOL_ATTN calls the upstream fused implementation. No provider/native flag,
+cuDNN BSA composition, or Omni residual kernel remains. H3's disjoint block64
+text/audio metadata is forwarded as exact_block_mask, protecting both Q/KV axes.
+The dependency adds that generic API to the upstream kernels.
+
+Final 2x GH200 96GB Ref2VA, official 768p/5s request, BF16, TP1/Ulysses2:
+  Dense cuDNN: 10752.560 ms; CV 0.0899%; range 10735.598–10765.670 ms
+  Upstream SOL: 6555.892 ms; CV 0.0725%; range 6550.321–6565.456 ms
+  Ratio of medians: 1.640137x; latency reduction 39.029%
+  Median paired speedup: 1.640572x; all 9 pairs faster.
+
+Each process uses three warmup pairs and nine measured pairs, alternating order.
+Each sample is the synchronized maximum wall latency across two ranks for one
+full 50-layer DiT forward. CPU offload is equal for capacity; transfers precede
+the measured boundary. The run intentionally stops before sampler advancement
+and VAE decode. This is not end-to-end video generation latency.
+
+Independent earlier process (before byte-alignment hardening):
+  Dense 10745.810 ms; SOL 6561.000 ms.
+  Input hashes and outputs for each implementation match across both processes.
+  The earlier process used Omni f352a407 / SOL 8bbb1a82; keep provenance distinct.
+
+Correctness / limitations:
+  All first/last video/audio tensors are finite and byte-identical for each
+  implementation, on both ranks and across both fresh processes.
+  SOL versus Dense relative L2: video 8.1722%, audio 12.1825%.
+  FP64 cosine: video 0.99669134, audio 0.99258635.
+  These are forward-tensor differences, not acceptable-quality certification.
+  SSIM/PSNR/LPIPS and generated videos require full denoising/decoding and were
+  not measured. Full-model native SM100/SM103/SM120 latency was not measured.
+
+Validation:
+  Omni CPU contracts: 592 passed, 2 skipped.
+  Omni GH200 single-GPU CUDA: 35 passed; SP2: 2 passed. SP4 not run.
+  Pinned SOL exact-block suite: GH200 35 passed; GB200 33 passed, 2 skipped.
+  Current upstream PR full suite: GH200 47 passed, 17 skipped;
+  GB200 45 passed, 19 skipped. Hardware-dependent SM80/MPS and SM90-only split
+  cases explain skips; SM89/SM120 were not executed on their hardware.
+  Pre-commit passed. Reproduction script syntax checked; bootstrap assembled
+  from validated provisioning steps, not rerun from an empty checkpoint cache.
+
+See manifest.json, REPRODUCE.txt, raw samples, test logs/JUnit and environment.
+Public evidence excludes model weights and raw tensor captures.

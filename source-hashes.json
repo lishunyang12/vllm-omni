@@ -1,0 +1,7 @@
+{
+  "vllm_omni/diffusion/attention/backends/sol_attn.py": "4981f9273a9829ac193b0871c733c66b32646d39c1e4847ed3863e3b9ede3f23",
+  "vllm_omni/diffusion/attention/ops/sol_attn.py": "779251b5ea93c3f0af2ca2768b80ca0e052ffecd47c9bf73026d1afe2924c843",
+  "vllm_omni/diffusion/data.py": "5742ee4aa6c4db6ec60948efbcc76513901107746c701bb05b4a5b5c75811c75",
+  "tests/diffusion/attention/test_sol_attn_backend.py": "9424af90ebcd7d4aab85b35a11032bbe21c5e0afd0dbe070ad99d4f69c72a711",
+  "tests/diffusion/attention/test_sol_attn_cuda.py": "f45ab5f75b7c24d8dc3df078eba9479a30de3019ea175f11a30516259ec79119"
+}

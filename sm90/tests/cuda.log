@@ -1,0 +1,129 @@
+/usr/local/lib/python3.12/dist-packages/pytest_asyncio/plugin.py:290: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session". Set it to "fixture-scope" to keep the current behavior.
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+...............................sss....                                   [100%]
+=============================== warnings summary ===============================
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell/blockscaled_contiguous_gather_grouped_gemm_act_fusion.py:3459
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell/blockscaled_contiguous_gather_grouped_gemm_act_fusion.py:3459: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell/moe_w4a16_kernel.py:2639
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell/moe_w4a16_kernel.py:2639: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:29
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:29: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    a_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:31
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:31: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    b_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:34
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:34: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:968
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:968: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    a_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:970
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:970: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    b_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:427
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:427: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    epi_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:2391
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:2391: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/cute_dsl/low_latency_blockscaled_gemm.py:103
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/cute_dsl/low_latency_blockscaled_gemm.py:103: DeprecationWarning: cutlass.utils.smem_allocator.get_smem_capacity_in_bytes is deprecated; use cutlass.memory.get_smem_capacity_in_bytes instead. It will be removed in a future release.
+    _SMEM_CAPACITY_BYTES = cutlass.utils.get_smem_capacity_in_bytes("sm_100")
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_rubin.py:218
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_rubin.py:218: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95: DeprecationWarning: cutlass.utils.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/collective_store_tma.py:6
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/collective_store_tma.py:6: DeprecationWarning: cutlass.utils.tensormap_manager.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils.tensormap_manager import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55: DeprecationWarning: cutlass.utils.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136
+  /usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136: DeprecationWarning: Arch from arch.py is deprecated. Use Arch from enums.py instead.
+    from cutlass.base_dsl.arch import Arch
+
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-63-5]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-63-5]
+  /work/native-only/upstream/sol_attn/sm90/mainloop.py:14: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    from cutlass.utils import LayoutEnum
+
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-63-5]
+  /work/native-only/upstream/sol_attn/sm90/mainloop.py:18: DeprecationWarning: Arch from arch.py is deprecated. Use Arch from enums.py instead.
+    from cutlass.base_dsl.arch import Arch
+
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-63-5]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-63-5]
+  /work/native-only/upstream/sol_attn/sm90/_compat/sm90_utils.py:11: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    from cutlass.utils import LayoutEnum
+
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-63-5]
+  /work/native-only/upstream/sol_attn/_vendor/flash_attn/cute/flash_fwd.py:20: DeprecationWarning: Arch from arch.py is deprecated. Use Arch from enums.py instead.
+    from cutlass.base_dsl.arch import Arch
+
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-63-5]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-64-5]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-257-5]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-4097-951]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_compile_dynamic_sequence_without_explicit_length
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_matches_hybrid_oracle[63-False-1000000.0-diag]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_matches_hybrid_oracle[257-False-1000000.0-diag]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_matches_hybrid_oracle[513-True-1000000.0-diag]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_wan_transformer_forward
+  /usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/_mlir_helpers/op.py:493: DeprecationWarning: FastDivmodDivisor is deprecated in favor of cute.FastDivmodDivisorV2 / cute.fast_divmod_create_divisor_v2. V2 additionally carries the scalar divisor across kernel boundaries (2 MLIR values per object instead of 1), so '.divisor' is readable inside kernels; arithmetic (divmod, //, %) is unchanged.
+    res_or_list = opFunc(*args, **kwargs, loc=loc)
+
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-63-5]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-64-5]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-257-5]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-4097-951]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_compile_dynamic_sequence_without_explicit_length
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_matches_hybrid_oracle[63-False-1000000.0-diag]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_matches_hybrid_oracle[257-False-1000000.0-diag]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_matches_hybrid_oracle[513-True-1000000.0-diag]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_wan_transformer_forward
+  /work/native-only/upstream/sol_attn/sm90/mainloop.py:1223: DeprecationWarning: cutlass.utils.smem_allocator.SmemAllocator is deprecated; use cutlass.memory.SmemAllocator instead. It will be removed in a future release.
+    smem = cutlass.utils.SmemAllocator()
+
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-63-5]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-64-5]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-257-5]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_kernel_padding_and_sink[diag-False-4097-951]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_compile_dynamic_sequence_without_explicit_length
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_matches_hybrid_oracle[63-False-1000000.0-diag]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_matches_hybrid_oracle[257-False-1000000.0-diag]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_matches_hybrid_oracle[513-True-1000000.0-diag]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_wan_transformer_forward
+  /work/native-only/upstream/sol_attn/sm90/mainloop.py:267: DSLOptimizationWarning: This static loop has 64 iterations, which may be very slow to compile, consider using `cutlass.range(..., unroll_full=True)` instead.
+    for off in cutlass.range_constexpr(self.tile_n):
+
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_h3_simple_selection_and_forward[shorthand]
+  /work/native-only/source/vllm_omni/diffusion/data.py:1972: FutureWarning: Diffusion config field 'diffusion_attention_backend' is deprecated; use 'diffusion_attention_config'.
+    config_kwargs = normalize_omni_diffusion_kwargs(raw_kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+--- Running Summary
+35 passed, 3 skipped, 51 warnings in 49.92s

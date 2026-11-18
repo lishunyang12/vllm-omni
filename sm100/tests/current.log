@@ -1,0 +1,18 @@
+sss.................................ss............ssssssssssssss         [100%]
+=============================== warnings summary ===============================
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-257-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-513-1000000.0]
+tests/test_exact_block_mask.py::test_empty_mask_preserves_legacy_output_and_mutated_mask_uses_current_values[native]
+  /work/current/techniques/sparse_backends/sol_attn/sm100/mainloop.py:392: DeprecationWarning: cutlass.utils.smem_allocator.SmemAllocator is deprecated; use cutlass.memory.SmemAllocator instead. It will be removed in a future release.
+    smem = utils.SmemAllocator()
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-257-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-513-1000000.0]
+tests/test_exact_block_mask.py::test_empty_mask_preserves_legacy_output_and_mutated_mask_uses_current_values[native]
+  /work/current/techniques/sparse_backends/sol_attn/sm100/mainloop.py:469: DeprecationWarning: cutlass.utils.tmem_allocator.TmemAllocator is deprecated; use cutlass.memory.TmemAllocator instead. It will be removed in a future release.
+    tmem = utils.TmemAllocator(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+45 passed, 19 skipped, 8 warnings in 24.97s

@@ -1,0 +1,49 @@
+{
+  "omni_final_pr_head": "d446f12a9e297402d973e2ca4241bd8b592675eb",
+  "omni_measured_source": "3da353c45224f5863808da320d694be045c16ef8",
+  "head_difference": "H3 recipe wording only",
+  "sol_dependency": "088897e0c6a9cb970f00b43ab2177c3be7336b36",
+  "sol_release_base": "f4035e0a976d828ed41c7b0b799e9712b47cd60d",
+  "upstream_pr_head": "1c522ed3e1e5d43f24258f6cc27bb7b7e189d508",
+  "upstream_pr_base": "cf67a3acad7511acb85053e56a05e5dd24c82ba0",
+  "image": "vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb",
+  "checkpoint": "MiniMaxAI/MiniMax-H3@0919fb684102ef115126612f3fbb84d1027e7317",
+  "tests": {
+    "omni_cpu": {
+      "passed": 592,
+      "skipped": 2,
+      "source": "f352a407950b1ccf90fed1a7b6830a441871adae",
+      "later_changes": "dependency URL / documentation only"
+    },
+    "omni_cuda_sm90": {
+      "passed": 35,
+      "skipped": 3,
+      "source": "f352a407950b1ccf90fed1a7b6830a441871adae"
+    },
+    "omni_sp2_sm90": {
+      "passed": 2,
+      "deselected": 36
+    },
+    "pinned_upstream_sm90": {
+      "passed": 35
+    },
+    "pinned_upstream_sm100": {
+      "passed": 33,
+      "skipped": 2
+    },
+    "current_upstream_sm90": {
+      "passed": 47,
+      "skipped": 17
+    },
+    "current_upstream_sm100": {
+      "passed": 45,
+      "skipped": 19
+    }
+  },
+  "limits": [
+    "SP4 not rerun",
+    "SM80/SM89/SM120/MPS hardware not tested",
+    "Full-model native SM100/SM103/SM120 latency not measured",
+    "No decoded quality or end-to-end generation results"
+  ]
+}

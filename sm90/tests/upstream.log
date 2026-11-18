@@ -1,0 +1,59 @@
+/usr/local/lib/python3.12/dist-packages/pytest_asyncio/plugin.py:290: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session". Set it to "fixture-scope" to keep the current behavior.
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+...................................                                      [100%]
+=============================== warnings summary ===============================
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+  /work/native-only/upstream/sol_attn/sm90/mainloop.py:14: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    from cutlass.utils import LayoutEnum
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+  /work/native-only/upstream/sol_attn/sm90/mainloop.py:18: DeprecationWarning: Arch from arch.py is deprecated. Use Arch from enums.py instead.
+    from cutlass.base_dsl.arch import Arch
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+  /work/native-only/upstream/sol_attn/sm90/_compat/sm90_utils.py:11: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    from cutlass.utils import LayoutEnum
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+  /work/native-only/upstream/sol_attn/_vendor/flash_attn/cute/flash_fwd.py:20: DeprecationWarning: Arch from arch.py is deprecated. Use Arch from enums.py instead.
+    from cutlass.base_dsl.arch import Arch
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-257-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-513-1000000.0]
+tests/test_exact_block_mask.py::test_empty_mask_preserves_legacy_output_and_mutated_mask_uses_current_values[native]
+tests/test_exact_block_mask.py::test_sm90_split_kv_protects_disjoint_query_rows[2]
+tests/test_exact_block_mask.py::test_sm90_split_kv_protects_disjoint_query_rows[2]
+tests/test_exact_block_mask.py::test_sm90_split_kv_protects_disjoint_query_rows[4]
+tests/test_exact_block_mask.py::test_sm90_split_kv_protects_disjoint_query_rows[4]
+  /usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/_mlir_helpers/op.py:493: DeprecationWarning: FastDivmodDivisor is deprecated in favor of cute.FastDivmodDivisorV2 / cute.fast_divmod_create_divisor_v2. V2 additionally carries the scalar divisor across kernel boundaries (2 MLIR values per object instead of 1), so '.divisor' is readable inside kernels; arithmetic (divmod, //, %) is unchanged.
+    res_or_list = opFunc(*args, **kwargs, loc=loc)
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-257-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-513-1000000.0]
+tests/test_exact_block_mask.py::test_empty_mask_preserves_legacy_output_and_mutated_mask_uses_current_values[native]
+tests/test_exact_block_mask.py::test_sm90_split_kv_protects_disjoint_query_rows[2]
+tests/test_exact_block_mask.py::test_sm90_split_kv_protects_disjoint_query_rows[4]
+  /work/native-only/upstream/sol_attn/sm90/mainloop.py:1223: DeprecationWarning: cutlass.utils.smem_allocator.SmemAllocator is deprecated; use cutlass.memory.SmemAllocator instead. It will be removed in a future release.
+    smem = cutlass.utils.SmemAllocator()
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-257-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-513-1000000.0]
+tests/test_exact_block_mask.py::test_empty_mask_preserves_legacy_output_and_mutated_mask_uses_current_values[native]
+tests/test_exact_block_mask.py::test_sm90_split_kv_protects_disjoint_query_rows[2]
+tests/test_exact_block_mask.py::test_sm90_split_kv_protects_disjoint_query_rows[4]
+  /work/native-only/upstream/sol_attn/sm90/mainloop.py:267: DSLOptimizationWarning: This static loop has 64 iterations, which may be very slow to compile, consider using `cutlass.range(..., unroll_full=True)` instead.
+    for off in cutlass.range_constexpr(self.tile_n):
+
+tests/test_exact_block_mask.py::test_sm90_split_kv_protects_disjoint_query_rows[2]
+tests/test_exact_block_mask.py::test_sm90_split_kv_protects_disjoint_query_rows[4]
+  /work/native-only/upstream/sol_attn/sm90/split_combine.py:290: DeprecationWarning: cutlass.utils.smem_allocator.SmemAllocator is deprecated; use cutlass.memory.SmemAllocator instead. It will be removed in a future release.
+    smem = cutlass.utils.SmemAllocator()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+35 passed, 27 warnings in 75.90s (0:01:15)

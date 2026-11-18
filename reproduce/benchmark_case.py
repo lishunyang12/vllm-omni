@@ -1,0 +1,99 @@
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import statistics
+import sys
+import urllib.request
+
+# multiprocessing spawn imports this main module in each worker.
+if os.environ.get('H3_FORWARD_RESULT'):
+    from forward_probe import install
+    install()
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument('--work', type=Path, default=Path('/work'))
+    p.add_argument('--task', choices=['t2va', 'fl2va', 'ref2va'], required=True)
+    p.add_argument('--backend', choices=['CUDNN_ATTN', 'SOL_ATTN'], required=True)
+    p.add_argument('--cpu-offload', action='store_true')
+    a = p.parse_args()
+    request_path = a.work / 'bundle' / f'{a.task}-request.json'
+    request = json.loads(request_path.read_text())
+    model_info = json.loads((a.work / 'evidence/models.json').read_text())
+    model = model_info['paths']['Ref2VA' if a.task == 'ref2va' else 'FL2VA']
+    out = Path(os.environ['H3_FORWARD_RESULT'])
+    out.mkdir(parents=True, exist_ok=True)
+    if list(out.glob('rank-*.json')):
+        raise RuntimeError('Refusing to mix old results into a fresh benchmark')
+    multi_modal = {}
+    assets = []
+    for i, item in enumerate(request.get('conditions', [])):
+        ext = {'image': '.jpg', 'video': '.mp4', 'audio': '.mp3'}[item['type']]
+        target = a.work / 'assets' / f'{a.task}-{i}{ext}'
+        if not target.exists():
+            urllib.request.urlretrieve(item['uri'], target)
+        assets.append({'path': target.name, 'source': item['uri'], 'sha256': hashlib.sha256(target.read_bytes()).hexdigest()})
+        multi_modal.setdefault(item['type'], []).append(str(target))
+    from vllm_omni.entrypoints.omni import Omni
+    from vllm_omni.inputs.data import OmniDiffusionSamplingParams
+    source_root = Path(sys.modules['vllm_omni'].__file__).resolve().parent.parent
+    source_hashes = {}
+    for name in ['vllm_omni/diffusion/attention/ops/sol_attn.py',
+                 'vllm_omni/diffusion/attention/backends/sol_attn.py']:
+        path = source_root / name
+        if path.exists():
+            source_hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    settings = dict(model=model, dtype='bfloat16', trust_remote_code=True, num_gpus=2,
+                    tensor_parallel_size=1, ulysses_degree=2, ring_degree=1,
+                    text_encoder_tp_size=2, vae_patch_parallel_size=2,
+                    vae_use_tiling=True, enforce_eager=True,
+                    diffusion_attention_backend=a.backend,
+                    task_type='ref2va' if a.task == 'ref2va' else 'fl2va',
+                    enable_cpu_offload=a.cpu_offload,
+                    init_timeout=1800, stage_init_timeout=1800)
+    protocol = dict(request=request, request_sha256=hashlib.sha256(request_path.read_bytes()).hexdigest(),
+                    assets=assets, model=model_info, engine=settings,
+                    runtime_commit=os.environ['H3_SOURCE_COMMIT'],
+                    upstream_commit=os.environ["H3_UPSTREAM_COMMIT"],
+                    source_hashes=source_hashes,
+                    variant=os.environ['H3_VARIANT'],
+                    test_fix_commit='731ea29270e2d9f30e68f94d43a31021b4727eef',
+                    measurement='Paired same-process Dense cuDNN vs upstream SOL; alternating order; 3 warmup pairs + 9 measured pairs; max rank wall latency')
+    (out / 'protocol.json').write_text(json.dumps(protocol, indent=2) + '\n')
+    engine = Omni(**settings)
+    terminal_exception = None
+    try:
+        params = OmniDiffusionSamplingParams(height=None, width=None, num_frames=1,
+                    num_inference_steps=50, seed=request['seed'], fps=24, guidance_scale=1.0,
+                    extra_args={'task': a.task, 'target': request['target'], 'flow_shift': 12.0, 'audio_flow_shift': 3.0})
+        (out / 'armed').write_text('Capture the first conditional DiT call of this real request.\n')
+        engine.generate({'prompt': request['prompt'], 'multi_modal_data': multi_modal, 'modalities': ['video']}, params)
+    except Exception as exc:
+        terminal_exception = f'{type(exc).__name__}: {exc}'
+        print('TERMINAL_EXCEPTION', terminal_exception, flush=True)
+    finally:
+        engine.close()
+    reports = [json.loads((out / f'rank-{r}.json').read_text()) for r in range(2)]
+    assert all(r['finite'] and r['intentional_abort'] for r in reports)
+    n = reports[0]['repeats']
+    assert n == reports[1]['repeats'] and n == 9
+    summary = {'protocol': 'alternating-order pairs in one model process', 'warmup_pairs': 3,
+               'measured_pairs': n, 'runs': {}, 'terminal_exception': terminal_exception}
+    for variant in ['dense', 'sol']:
+        rank_samples = [[x for x in r['samples'] if x['variant'] == variant] for r in reports]
+        assert all(len(x) == n for x in rank_samples)
+        times = [max(rs[i]['wall_s'] for rs in rank_samples) for i in range(n)]
+        summary['runs'][variant] = dict(samples_ms=[1000*t for t in times],
+            median_ms=1000*statistics.median(times), min_ms=1000*min(times), max_ms=1000*max(times),
+            cv_percent=100*statistics.stdev(times)/statistics.mean(times))
+    ratios = [a/b for a,b in zip(summary['runs']['dense']['samples_ms'],summary['runs']['sol']['samples_ms'])]
+    summary['paired_speedups'] = ratios
+    summary['median_paired_speedup'] = statistics.median(ratios)
+    (out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+    print('PAIRED_SUMMARY',json.dumps(summary),flush=True)
+
+if __name__ == '__main__':
+    main()
