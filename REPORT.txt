@@ -1,3 +1,7 @@
+Follow-up (2026-11-18): see power-followup/REPORT.txt for controlled SM100 clocks
+and B300A/GB300 SM103 measurements. Matched-clock SOL is slower than Dense;
+the old equal-clock availability limitation below has been resolved.
+
 H3 Ref2VA: direct upstream SOL on SM90, SM100 and SM120
 
 Same official 768p/5s request, reference assets, seed 0, checkpoint and source pins.
@@ -39,9 +43,10 @@ SM100 hardware qualification:
   Default-node results show a modest reproducible full-forward gain.
   GPU0 Dense ran at a sampled median 892 MHz with a power-cap flag active
   in all 199 polls, versus SOL at median 1200 MHz. Per-rank profile shows
-  substantial Dense imbalance. Equal-clock kernel speedup is unresolved:
-  Slurm returned GpuFreq=control_disabled, and that diagnostic stopped
-  before measurement. Original clocks/power settings stayed unchanged.
+  substantial Dense imbalance. The initial Slurm frequency-control request
+  was unavailable. A later follow-up used explicitly delegated nvidia-smi
+  and completed controlled runs: SOL is about 22% slower at 600/750 MHz.
+  See power-followup/REPORT.txt for the new evidence and restored clocks.
   See sm100/profile/INTERPRETATION.txt, raw telemetry and kernel summaries.
 
 Approximation: full-forward SOL-vs-Dense relative L2 error (FP64 analysis):

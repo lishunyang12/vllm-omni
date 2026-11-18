@@ -1,0 +1,151 @@
+
+==============NVSMI LOG==============
+
+Timestamp                                              : Wed Nov 18 06:58:07 2026
+Driver Version                                         : 620.70.02 [Deprecated; will be removed in CUDA 14.0. Use KMD Version instead]
+CUDA Version                                           : 13.5 [Deprecated; will be removed in CUDA 14.0. Use CUDA UMD Version instead]
+KMD Version                                            : 620.70.02
+CUDA UMD Version                                       : 13.5
+
+Attached GPUs                                          : 4
+GPU 00000009:06:00.0
+    GPU Power Readings
+        Average Power Draw                             : 184.38 W
+        Instantaneous Power Draw                       : 184.21 W
+        GPU Ceiling Power Limit
+            Current Power Limit                        : 1400.00 W
+            Requested Power Limit                      : 1400.00 W
+            Default Power Limit                        : 1400.00 W
+        GPU Base Power
+            Current Base Power                         : N/A
+            Requested Base Power                       : N/A
+            Default Base Power                         : N/A
+        Min Power Limit                                : 200.00 W
+        Max Power Limit                                : 1400.00 W
+    Power Samples
+        Duration                                       : 2.39 sec
+        Number of Samples                              : 119
+        Max                                            : 191.92 W
+        Min                                            : 184.09 W
+        Avg                                            : 186.55 W
+    GPU Memory Power Readings
+        Average Power Draw                             : 45.67 W
+        Instantaneous Power Draw                       : N/A
+    Module Power Readings
+        Average Power Draw                             : 489.30 W
+        Instantaneous Power Draw                       : 488.42 W
+        Current Power Limit                            : 2900.00 W
+        Requested Power Limit                          : 2900.00 W
+        Default Power Limit                            : 2900.00 W
+        Min Power Limit                                : 500.00 W
+        Max Power Limit                                : 2900.00 W
+    EDPp Multiplier                                    : 100.00%
+    Clocks
+        Graphics                                       : 195 MHz
+        SM                                             : 195 MHz
+        Memory                                         : 3996 MHz
+        Video                                          : 1110 MHz
+    Applications Clocks
+        Graphics                                       : Requested functionality has been deprecated
+        Memory                                         : Requested functionality has been deprecated
+    Default Applications Clocks
+        Graphics                                       : Requested functionality has been deprecated
+        Memory                                         : Requested functionality has been deprecated
+    Deferred Clocks
+        Memory                                         : N/A
+    Max Clocks
+        Graphics                                       : 2070 MHz
+        SM                                             : 2070 MHz
+        Memory                                         : 3996 MHz
+        Video                                          : 1912 MHz
+    Max Customer Boost Clocks
+        Graphics                                       : 2070 MHz
+    SM Clock Samples
+        Duration                                       : N/A
+        Number of Samples                              : N/A
+        Max                                            : N/A
+        Min                                            : N/A
+        Avg                                            : N/A
+    Memory Clock Samples
+        Duration                                       : N/A
+        Number of Samples                              : N/A
+        Max                                            : N/A
+        Min                                            : N/A
+        Avg                                            : N/A
+    Clock Policy
+        Auto Boost                                     : N/A
+        Auto Boost Default                             : N/A
+    DLA Clocks
+        Engine                                         : N/A
+        Max Engine                                     : N/A
+
+GPU 00000018:06:00.0
+    GPU Power Readings
+        Average Power Draw                             : 187.37 W
+        Instantaneous Power Draw                       : 183.97 W
+        GPU Ceiling Power Limit
+            Current Power Limit                        : 1400.00 W
+            Requested Power Limit                      : 1400.00 W
+            Default Power Limit                        : 1400.00 W
+        GPU Base Power
+            Current Base Power                         : N/A
+            Requested Base Power                       : N/A
+            Default Base Power                         : N/A
+        Min Power Limit                                : 200.00 W
+        Max Power Limit                                : 1400.00 W
+    Power Samples
+        Duration                                       : 2.42 sec
+        Number of Samples                              : 119
+        Max                                            : 238.61 W
+        Min                                            : 183.97 W
+        Avg                                            : 191.47 W
+    GPU Memory Power Readings
+        Average Power Draw                             : 41.97 W
+        Instantaneous Power Draw                       : N/A
+    Module Power Readings
+        Average Power Draw                             : 507.24 W
+        Instantaneous Power Draw                       : 501.75 W
+        Current Power Limit                            : 2900.00 W
+        Requested Power Limit                          : 2900.00 W
+        Default Power Limit                            : 2900.00 W
+        Min Power Limit                                : 500.00 W
+        Max Power Limit                                : 2900.00 W
+    EDPp Multiplier                                    : 100.00%
+    Clocks
+        Graphics                                       : 217 MHz
+        SM                                             : 217 MHz
+        Memory                                         : 3996 MHz
+        Video                                          : 1132 MHz
+    Applications Clocks
+        Graphics                                       : Requested functionality has been deprecated
+        Memory                                         : Requested functionality has been deprecated
+    Default Applications Clocks
+        Graphics                                       : Requested functionality has been deprecated
+        Memory                                         : Requested functionality has been deprecated
+    Deferred Clocks
+        Memory                                         : N/A
+    Max Clocks
+        Graphics                                       : 2070 MHz
+        SM                                             : 2070 MHz
+        Memory                                         : 3996 MHz
+        Video                                          : 1912 MHz
+    Max Customer Boost Clocks
+        Graphics                                       : 2070 MHz
+    SM Clock Samples
+        Duration                                       : N/A
+        Number of Samples                              : N/A
+        Max                                            : N/A
+        Min                                            : N/A
+        Avg                                            : N/A
+    Memory Clock Samples
+        Duration                                       : N/A
+        Number of Samples                              : N/A
+        Max                                            : N/A
+        Min                                            : N/A
+        Avg                                            : N/A
+    Clock Policy
+        Auto Boost                                     : N/A
+        Auto Boost Default                             : N/A
+    DLA Clocks
+        Engine                                         : N/A
+        Max Engine                                     : N/A

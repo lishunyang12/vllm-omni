@@ -66,10 +66,9 @@
   "limits": [
     "SP4 untested",
     "SM80/SM89/MPS hardware untested",
-    "SM103 full-model latency untested",
     "No decoded quality or end-to-end generation results",
     "Different GPU counts and encoder-generated tensors across architectures",
-    "SM100 default-node result depends on power/clock behavior; equal-clock diagnostic unavailable"
+    "Controlled SM100/SM103 follow-up published separately; SOL remains slower than Dense at matched clocks."
   ],
   "measurements": [
     {
@@ -142,5 +141,6 @@
     "Input SHA256 preflight",
     "Optional post-measurement profiling",
     "Timestamp-correlated read-only GPU telemetry"
-  ]
+  ],
+  "followup": "power-followup/manifest.json"
 }

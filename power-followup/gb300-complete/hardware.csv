@@ -1,0 +1,5 @@
+index, name, compute_cap, memory.total [MiB], driver_version
+0, NVIDIA GB300, 10.3, 284208 MiB, 620.70.02
+1, NVIDIA GB300, 10.3, 284208 MiB, 620.70.02
+2, NVIDIA GB300, 10.3, 284208 MiB, 620.70.02
+3, NVIDIA GB300, 10.3, 284208 MiB, 620.70.02

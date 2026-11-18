@@ -1,0 +1,329 @@
+{
+  "scope": "Read-only samples within measured forward windows; excludes 0.5s at each boundary. Physical GPU mapping comes from the run protocol.",
+  "results": [
+    {
+      "rank": 0,
+      "physical_gpu_index": 1,
+      "variant": "dense",
+      "telemetry_samples": 84,
+      "window_coverage": [
+        {
+          "sample_index": 0,
+          "poll_count": 10,
+          "max_observation_gap_s": 0.2916438579559326
+        },
+        {
+          "sample_index": 1,
+          "poll_count": 8,
+          "max_observation_gap_s": 0.5304734706878662
+        },
+        {
+          "sample_index": 2,
+          "poll_count": 7,
+          "max_observation_gap_s": 1.2840299606323242
+        },
+        {
+          "sample_index": 3,
+          "poll_count": 10,
+          "max_observation_gap_s": 0.28595829010009766
+        },
+        {
+          "sample_index": 4,
+          "poll_count": 8,
+          "max_observation_gap_s": 0.5212993621826172
+        },
+        {
+          "sample_index": 5,
+          "poll_count": 10,
+          "max_observation_gap_s": 0.28450822830200195
+        },
+        {
+          "sample_index": 6,
+          "poll_count": 10,
+          "max_observation_gap_s": 0.29927563667297363
+        },
+        {
+          "sample_index": 7,
+          "poll_count": 11,
+          "max_observation_gap_s": 0.29108142852783203
+        },
+        {
+          "sample_index": 8,
+          "poll_count": 10,
+          "max_observation_gap_s": 0.2992675304412842
+        }
+      ],
+      "stats": {
+        "clocks.sm": {
+          "min": 1485.0,
+          "median": 1545.0,
+          "max": 1965.0
+        },
+        "power.draw": {
+          "min": 1290.86,
+          "median": 1367.755,
+          "max": 1395.68
+        },
+        "temperature.gpu": {
+          "min": 56.47,
+          "median": 62.075,
+          "max": 64.91
+        },
+        "utilization.gpu": {
+          "min": 100.0,
+          "median": 100.0,
+          "max": 100.0
+        },
+        "clocks_event_reasons.sw_power_cap": {
+          "active_fraction": 1.0
+        },
+        "clocks_event_reasons.hw_thermal_slowdown": {
+          "active_fraction": 0.0
+        }
+      }
+    },
+    {
+      "rank": 0,
+      "physical_gpu_index": 1,
+      "variant": "sol",
+      "telemetry_samples": 104,
+      "window_coverage": [
+        {
+          "sample_index": 0,
+          "poll_count": 12,
+          "max_observation_gap_s": 0.28501033782958984
+        },
+        {
+          "sample_index": 1,
+          "poll_count": 10,
+          "max_observation_gap_s": 0.4471321105957031
+        },
+        {
+          "sample_index": 2,
+          "poll_count": 11,
+          "max_observation_gap_s": 0.29734230041503906
+        },
+        {
+          "sample_index": 3,
+          "poll_count": 12,
+          "max_observation_gap_s": 0.285205602645874
+        },
+        {
+          "sample_index": 4,
+          "poll_count": 12,
+          "max_observation_gap_s": 0.28386640548706055
+        },
+        {
+          "sample_index": 5,
+          "poll_count": 12,
+          "max_observation_gap_s": 0.2834305763244629
+        },
+        {
+          "sample_index": 6,
+          "poll_count": 11,
+          "max_observation_gap_s": 0.28948211669921875
+        },
+        {
+          "sample_index": 7,
+          "poll_count": 12,
+          "max_observation_gap_s": 0.2855246067047119
+        },
+        {
+          "sample_index": 8,
+          "poll_count": 12,
+          "max_observation_gap_s": 0.2844419479370117
+        }
+      ],
+      "stats": {
+        "clocks.sm": {
+          "min": 1732.0,
+          "median": 2070.0,
+          "max": 2070.0
+        },
+        "power.draw": {
+          "min": 1167.16,
+          "median": 1204.335,
+          "max": 1263.2
+        },
+        "temperature.gpu": {
+          "min": 55.03,
+          "median": 56.5,
+          "max": 60.56
+        },
+        "utilization.gpu": {
+          "min": 100.0,
+          "median": 100.0,
+          "max": 100.0
+        },
+        "clocks_event_reasons.sw_power_cap": {
+          "active_fraction": 0.2692307692307692
+        },
+        "clocks_event_reasons.hw_thermal_slowdown": {
+          "active_fraction": 0.0
+        }
+      }
+    },
+    {
+      "rank": 1,
+      "physical_gpu_index": 2,
+      "variant": "dense",
+      "telemetry_samples": 84,
+      "window_coverage": [
+        {
+          "sample_index": 0,
+          "poll_count": 10,
+          "max_observation_gap_s": 0.2916438579559326
+        },
+        {
+          "sample_index": 1,
+          "poll_count": 8,
+          "max_observation_gap_s": 0.5304720401763916
+        },
+        {
+          "sample_index": 2,
+          "poll_count": 7,
+          "max_observation_gap_s": 1.2840299606323242
+        },
+        {
+          "sample_index": 3,
+          "poll_count": 10,
+          "max_observation_gap_s": 0.28595829010009766
+        },
+        {
+          "sample_index": 4,
+          "poll_count": 8,
+          "max_observation_gap_s": 0.5212993621826172
+        },
+        {
+          "sample_index": 5,
+          "poll_count": 10,
+          "max_observation_gap_s": 0.28450822830200195
+        },
+        {
+          "sample_index": 6,
+          "poll_count": 10,
+          "max_observation_gap_s": 0.29927563667297363
+        },
+        {
+          "sample_index": 7,
+          "poll_count": 11,
+          "max_observation_gap_s": 0.29108142852783203
+        },
+        {
+          "sample_index": 8,
+          "poll_count": 10,
+          "max_observation_gap_s": 0.2992675304412842
+        }
+      ],
+      "stats": {
+        "clocks.sm": {
+          "min": 1455.0,
+          "median": 1552.0,
+          "max": 1935.0
+        },
+        "power.draw": {
+          "min": 1287.56,
+          "median": 1371.2649999999999,
+          "max": 1395.05
+        },
+        "temperature.gpu": {
+          "min": 58.72,
+          "median": 63.705,
+          "max": 66.66
+        },
+        "utilization.gpu": {
+          "min": 97.0,
+          "median": 100.0,
+          "max": 100.0
+        },
+        "clocks_event_reasons.sw_power_cap": {
+          "active_fraction": 1.0
+        },
+        "clocks_event_reasons.hw_thermal_slowdown": {
+          "active_fraction": 0.0
+        }
+      }
+    },
+    {
+      "rank": 1,
+      "physical_gpu_index": 2,
+      "variant": "sol",
+      "telemetry_samples": 104,
+      "window_coverage": [
+        {
+          "sample_index": 0,
+          "poll_count": 12,
+          "max_observation_gap_s": 0.28501033782958984
+        },
+        {
+          "sample_index": 1,
+          "poll_count": 10,
+          "max_observation_gap_s": 0.4471321105957031
+        },
+        {
+          "sample_index": 2,
+          "poll_count": 11,
+          "max_observation_gap_s": 0.29734230041503906
+        },
+        {
+          "sample_index": 3,
+          "poll_count": 12,
+          "max_observation_gap_s": 0.285205602645874
+        },
+        {
+          "sample_index": 4,
+          "poll_count": 12,
+          "max_observation_gap_s": 0.28386640548706055
+        },
+        {
+          "sample_index": 5,
+          "poll_count": 12,
+          "max_observation_gap_s": 0.2834305763244629
+        },
+        {
+          "sample_index": 6,
+          "poll_count": 11,
+          "max_observation_gap_s": 0.28948211669921875
+        },
+        {
+          "sample_index": 7,
+          "poll_count": 12,
+          "max_observation_gap_s": 0.2855246067047119
+        },
+        {
+          "sample_index": 8,
+          "poll_count": 12,
+          "max_observation_gap_s": 0.2844419479370117
+        }
+      ],
+      "stats": {
+        "clocks.sm": {
+          "min": 1657.0,
+          "median": 2070.0,
+          "max": 2070.0
+        },
+        "power.draw": {
+          "min": 1162.93,
+          "median": 1190.3249999999998,
+          "max": 1246.61
+        },
+        "temperature.gpu": {
+          "min": 55.47,
+          "median": 57.62,
+          "max": 62.62
+        },
+        "utilization.gpu": {
+          "min": 100.0,
+          "median": 100.0,
+          "max": 100.0
+        },
+        "clocks_event_reasons.sw_power_cap": {
+          "active_fraction": 0.19230769230769232
+        },
+        "clocks_event_reasons.hw_thermal_slowdown": {
+          "active_fraction": 0.0
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+physical_gpu_indices=0
+requested_clock_mhz=default
+cpu_offload=1

@@ -1,0 +1,167 @@
+{
+  "scope": "Read-only samples within measured forward windows; excludes 0.5s at each boundary. Physical GPU mapping comes from the run protocol.",
+  "results": [
+    {
+      "rank": 0,
+      "physical_gpu_index": 0,
+      "variant": "dense",
+      "telemetry_samples": 497,
+      "window_coverage": [
+        {
+          "sample_index": 0,
+          "poll_count": 55,
+          "max_observation_gap_s": 0.27225780487060547
+        },
+        {
+          "sample_index": 1,
+          "poll_count": 56,
+          "max_observation_gap_s": 0.2787611484527588
+        },
+        {
+          "sample_index": 2,
+          "poll_count": 56,
+          "max_observation_gap_s": 0.27226686477661133
+        },
+        {
+          "sample_index": 3,
+          "poll_count": 56,
+          "max_observation_gap_s": 0.272097110748291
+        },
+        {
+          "sample_index": 4,
+          "poll_count": 55,
+          "max_observation_gap_s": 0.28011322021484375
+        },
+        {
+          "sample_index": 5,
+          "poll_count": 55,
+          "max_observation_gap_s": 0.2739284038543701
+        },
+        {
+          "sample_index": 6,
+          "poll_count": 55,
+          "max_observation_gap_s": 0.27208423614501953
+        },
+        {
+          "sample_index": 7,
+          "poll_count": 55,
+          "max_observation_gap_s": 0.27264404296875
+        },
+        {
+          "sample_index": 8,
+          "poll_count": 54,
+          "max_observation_gap_s": 0.2725238800048828
+        }
+      ],
+      "stats": {
+        "clocks.sm": {
+          "min": 1410.0,
+          "median": 1635.0,
+          "max": 1792.0
+        },
+        "power.draw": {
+          "min": 492.99,
+          "median": 561.1,
+          "max": 619.94
+        },
+        "temperature.gpu": {
+          "min": 83.0,
+          "median": 87.0,
+          "max": 90.0
+        },
+        "utilization.gpu": {
+          "min": 100.0,
+          "median": 100.0,
+          "max": 100.0
+        },
+        "clocks_event_reasons.sw_power_cap": {
+          "active_fraction": 0.42052313883299797
+        },
+        "clocks_event_reasons.hw_thermal_slowdown": {
+          "active_fraction": 0.07042253521126761
+        }
+      }
+    },
+    {
+      "rank": 0,
+      "physical_gpu_index": 0,
+      "variant": "sol",
+      "telemetry_samples": 656,
+      "window_coverage": [
+        {
+          "sample_index": 0,
+          "poll_count": 73,
+          "max_observation_gap_s": 0.27693939208984375
+        },
+        {
+          "sample_index": 1,
+          "poll_count": 72,
+          "max_observation_gap_s": 0.27143263816833496
+        },
+        {
+          "sample_index": 2,
+          "poll_count": 73,
+          "max_observation_gap_s": 0.275287389755249
+        },
+        {
+          "sample_index": 3,
+          "poll_count": 73,
+          "max_observation_gap_s": 0.2713735103607178
+        },
+        {
+          "sample_index": 4,
+          "poll_count": 73,
+          "max_observation_gap_s": 0.27137231826782227
+        },
+        {
+          "sample_index": 5,
+          "poll_count": 73,
+          "max_observation_gap_s": 0.2723374366760254
+        },
+        {
+          "sample_index": 6,
+          "poll_count": 73,
+          "max_observation_gap_s": 0.28307056427001953
+        },
+        {
+          "sample_index": 7,
+          "poll_count": 73,
+          "max_observation_gap_s": 0.27129173278808594
+        },
+        {
+          "sample_index": 8,
+          "poll_count": 73,
+          "max_observation_gap_s": 0.277925968170166
+        }
+      ],
+      "stats": {
+        "clocks.sm": {
+          "min": 1635.0,
+          "median": 2085.0,
+          "max": 2085.0
+        },
+        "power.draw": {
+          "min": 449.17,
+          "median": 513.585,
+          "max": 549.22
+        },
+        "temperature.gpu": {
+          "min": 79.0,
+          "median": 84.0,
+          "max": 89.0
+        },
+        "utilization.gpu": {
+          "min": 100.0,
+          "median": 100.0,
+          "max": 100.0
+        },
+        "clocks_event_reasons.sw_power_cap": {
+          "active_fraction": 0.4100609756097561
+        },
+        "clocks_event_reasons.hw_thermal_slowdown": {
+          "active_fraction": 0.0
+        }
+      }
+    }
+  ]
+}

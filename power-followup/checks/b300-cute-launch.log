@@ -1,0 +1,72 @@
+srun: Job step's --cpus-per-task value exceeds that of job (12 > 1). Job step may never run.
+Traceback (most recent call last):
+  File "/work/native/gpu_telemetry.py", line 38, in <module>
+    main()
+  File "/work/native/gpu_telemetry.py", line 27, in main
+    result = subprocess.run(command, check=True, text=True, capture_output=True, timeout=10)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 550, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 1209, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 2116, in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+  File "/usr/lib/python3.12/subprocess.py", line 1253, in _check_timeout
+    raise TimeoutExpired(
+subprocess.TimeoutExpired: Command '['nvidia-smi', '-i', '0', '--query-gpu=index,clocks.sm,power.draw,power.limit,clocks_event_reasons.sw_power_cap,clocks_event_reasons.hw_thermal_slowdown,temperature.gpu,utilization.gpu', '--format=csv,noheader']' timed out after 10 seconds
+{
+  "protocol": "alternating-order pairs in one model process",
+  "warmup_pairs": 3,
+  "measured_pairs": 9,
+  "runs": {
+    "dense": {
+      "samples_ms": [
+        15527.591831982136,
+        15640.76896943152,
+        15714.524039067328,
+        15646.521471440792,
+        15684.524394571781,
+        15613.422820344567,
+        15680.413353256881,
+        15572.401111014187,
+        15659.067607484758
+      ],
+      "median_ms": 15646.521471440792,
+      "min_ms": 15527.591831982136,
+      "max_ms": 15714.524039067328,
+      "cv_percent": 0.37451831836431376
+    },
+    "sol": {
+      "samples_ms": [
+        17400.281010195613,
+        17455.35563863814,
+        17485.24914868176,
+        17477.266592904925,
+        17498.650634661317,
+        17472.956641577184,
+        17499.042073264718,
+        17486.509217880666,
+        17468.687475658953
+      ],
+      "median_ms": 17477.266592904925,
+      "min_ms": 17400.281010195613,
+      "max_ms": 17499.042073264718,
+      "cv_percent": 0.1727310642835903
+    }
+  },
+  "terminal_exception": "RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode",
+  "paired_speedups": [
+    0.8923759232901938,
+    0.8960441307085169,
+    0.8987303472454135,
+    0.8952499172721127,
+    0.8963276496019575,
+    0.8935764645115741,
+    0.8960726700128139,
+    0.8905380094439189,
+    0.8964077941919942
+  ],
+  "median_paired_speedup": 0.8960441307085169
+}

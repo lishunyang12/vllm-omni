@@ -1,0 +1,40 @@
+/usr/local/lib/python3.12/dist-packages/pytest_asyncio/plugin.py:290: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session". Set it to "fixture-scope" to keep the current behavior.
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+........................................ss                               [100%]
+=============================== warnings summary ===============================
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+  /work/source/sana-sm103/techniques/sparse_backends/sol_attn/sm90/mainloop.py:14: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    from cutlass.utils import LayoutEnum
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+  /work/source/sana-sm103/techniques/sparse_backends/sol_attn/sm90/mainloop.py:18: DeprecationWarning: Arch from arch.py is deprecated. Use Arch from enums.py instead.
+    from cutlass.base_dsl.arch import Arch
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+  /work/source/sana-sm103/techniques/sparse_backends/sol_attn/sm90/_compat/sm90_utils.py:11: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    from cutlass.utils import LayoutEnum
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+  /work/source/sana-sm103/techniques/sparse_backends/sol_attn/_vendor/flash_attn/cute/flash_fwd.py:20: DeprecationWarning: Arch from arch.py is deprecated. Use Arch from enums.py instead.
+    from cutlass.base_dsl.arch import Arch
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-257-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-513-1000000.0]
+tests/test_exact_block_mask.py::test_empty_mask_preserves_legacy_output_and_mutated_mask_uses_current_values[native]
+  /work/source/sana-sm103/techniques/sparse_backends/sol_attn/sm100/mainloop.py:392: DeprecationWarning: cutlass.utils.smem_allocator.SmemAllocator is deprecated; use cutlass.memory.SmemAllocator instead. It will be removed in a future release.
+    smem = utils.SmemAllocator()
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-257-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-513-1000000.0]
+tests/test_exact_block_mask.py::test_empty_mask_preserves_legacy_output_and_mutated_mask_uses_current_values[native]
+  /work/source/sana-sm103/techniques/sparse_backends/sol_attn/sm100/mainloop.py:469: DeprecationWarning: cutlass.utils.tmem_allocator.TmemAllocator is deprecated; use cutlass.memory.TmemAllocator instead. It will be removed in a future release.
+    tmem = utils.TmemAllocator(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+40 passed, 2 skipped, 14 warnings in 24.45s

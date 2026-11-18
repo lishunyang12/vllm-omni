@@ -1,0 +1,131 @@
+
+==============NVSMI LOG==============
+
+Timestamp                                              : Wed Nov 18 06:28:17 2026
+Driver Version                                         : 580.173.02
+CUDA Version                                           : 13.0
+
+Attached GPUs                                          : 4
+GPU 00000018:01:00.0
+    GPU Power Readings
+        Average Power Draw                             : 220.58 W
+        Instantaneous Power Draw                       : 235.16 W
+        Current Power Limit                            : 1200.00 W
+        Requested Power Limit                          : 1200.00 W
+        Default Power Limit                            : 1200.00 W
+        Min Power Limit                                : 200.00 W
+        Max Power Limit                                : 1200.00 W
+    Power Samples
+        Duration                                       : 2.36 sec
+        Number of Samples                              : 119
+        Max                                            : 235.16 W
+        Min                                            : 219.48 W
+        Avg                                            : 220.26 W
+    GPU Memory Power Readings
+        Average Power Draw                             : 30.03 W
+        Instantaneous Power Draw                       : N/A
+    Module Power Readings
+        Average Power Draw                             : 605.00 W
+        Instantaneous Power Draw                       : 629.69 W
+        Current Power Limit                            : 2500.00 W
+        Requested Power Limit                          : 2500.00 W
+        Default Power Limit                            : 2500.00 W
+        Min Power Limit                                : 500.00 W
+        Max Power Limit                                : 2500.00 W
+    Clocks
+        Graphics                                       : 1200 MHz
+        SM                                             : 1200 MHz
+        Memory                                         : 4000 MHz
+        Video                                          : 1162 MHz
+    Applications Clocks
+        Graphics                                       : 1200 MHz
+        Memory                                         : 4000 MHz
+    Default Applications Clocks
+        Graphics                                       : 1200 MHz
+        Memory                                         : 4000 MHz
+    Deferred Clocks
+        Memory                                         : N/A
+    Max Clocks
+        Graphics                                       : 1965 MHz
+        SM                                             : 1965 MHz
+        Memory                                         : 4000 MHz
+        Video                                          : 2077 MHz
+    Max Customer Boost Clocks
+        Graphics                                       : 1200 MHz
+    SM Clock Samples
+        Duration                                       : N/A
+        Number of Samples                              : N/A
+        Max                                            : N/A
+        Min                                            : N/A
+        Avg                                            : N/A
+    Memory Clock Samples
+        Duration                                       : N/A
+        Number of Samples                              : N/A
+        Max                                            : N/A
+        Min                                            : N/A
+        Avg                                            : N/A
+    Clock Policy
+        Auto Boost                                     : N/A
+        Auto Boost Default                             : N/A
+
+GPU 00000019:01:00.0
+    GPU Power Readings
+        Average Power Draw                             : 232.38 W
+        Instantaneous Power Draw                       : 239.55 W
+        Current Power Limit                            : 1200.00 W
+        Requested Power Limit                          : 1200.00 W
+        Default Power Limit                            : 1200.00 W
+        Min Power Limit                                : 200.00 W
+        Max Power Limit                                : 1200.00 W
+    Power Samples
+        Duration                                       : 2.36 sec
+        Number of Samples                              : 119
+        Max                                            : 243.48 W
+        Min                                            : 231.69 W
+        Avg                                            : 234.26 W
+    GPU Memory Power Readings
+        Average Power Draw                             : 36.19 W
+        Instantaneous Power Draw                       : N/A
+    Module Power Readings
+        Average Power Draw                             : 597.97 W
+        Instantaneous Power Draw                       : 614.51 W
+        Current Power Limit                            : 2500.00 W
+        Requested Power Limit                          : 2500.00 W
+        Default Power Limit                            : 2500.00 W
+        Min Power Limit                                : 500.00 W
+        Max Power Limit                                : 2500.00 W
+    Clocks
+        Graphics                                       : 817 MHz
+        SM                                             : 817 MHz
+        Memory                                         : 4000 MHz
+        Video                                          : 1117 MHz
+    Applications Clocks
+        Graphics                                       : 1200 MHz
+        Memory                                         : 4000 MHz
+    Default Applications Clocks
+        Graphics                                       : 1200 MHz
+        Memory                                         : 4000 MHz
+    Deferred Clocks
+        Memory                                         : N/A
+    Max Clocks
+        Graphics                                       : 1965 MHz
+        SM                                             : 1965 MHz
+        Memory                                         : 4000 MHz
+        Video                                          : 2077 MHz
+    Max Customer Boost Clocks
+        Graphics                                       : 1200 MHz
+    SM Clock Samples
+        Duration                                       : N/A
+        Number of Samples                              : N/A
+        Max                                            : N/A
+        Min                                            : N/A
+        Avg                                            : N/A
+    Memory Clock Samples
+        Duration                                       : N/A
+        Number of Samples                              : N/A
+        Max                                            : N/A
+        Min                                            : N/A
+        Avg                                            : N/A
+    Clock Policy
+        Auto Boost                                     : N/A
+        Auto Boost Default                             : N/A

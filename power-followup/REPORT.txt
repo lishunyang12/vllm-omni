@@ -1,0 +1,96 @@
+H3 Ref2VA: SM100 controlled clocks and SM103 native dispatch
+
+One full 50-layer conditional DiT forward at step 0; BF16, eager, TP1.
+Same official 768p/5s request, assets, seed 0 and checkpoint as the parent report.
+3 warmup pairs + 9 measured pairs per process; alternating order; max-rank wall P50.
+Default clocks and fixed clocks are separate operating points, never pooled.
+
+Hardware / condition                         Dense s    SOL s   Dense/SOL   CV Dense/SOL
+2x GB200 / default                              7.331    7.042      1.041x  0.4138%/0.1552%
+2x GB200 / 600 MHz run 1                       11.190   13.634      0.821x  0.0029%/0.0125%
+2x GB200 / 600 MHz run 2                       11.204   13.635      0.822x  0.1824%/0.0849%
+2x GB200 / 750 MHz                              9.000   10.942      0.822x  0.1876%/0.0954%
+1x B300A engineering device / Triton default   15.923   20.681      0.770x  0.5640%/0.0423%
+1x B300A engineering device / CuTe default     15.647   17.477      0.895x  0.3745%/0.1727%
+2x GB300 / Triton default                       3.883    5.052      0.768x  0.2339%/0.1334%
+2x GB300 / CuTe default run 1                   3.880    4.328      0.896x  0.2308%/0.2089%
+2x GB300 / CuTe default run 2                   3.877    4.321      0.897x  0.2345%/0.2253%
+2x GB300 / CuTe 1200 MHz                        4.949    6.723      0.736x  0.0416%/0.0286%
+
+Findings:
+SM100 power/clock confounding is resolved for the controlled measurements.
+The site explicitly delegates nvidia-smi clock management. Only the two
+allocated GPUs were locked. Both ran at exactly 600 or 750 MHz in measured
+telemetry polls, with no software power-cap or thermal-throttle flags.
+The default and firmware maximum power cap is already 1200 W; it was not raised.
+Clock locks were reset after each run and restoration logs are included.
+Telemetry is sampled: 600 MHz maximum gaps are below 0.66 s; the 750 MHz
+diagnostic includes gaps up to 3.58 s, exposed in per-window coverage.
+At matched clocks SOL is about 22% slower than Dense, consistently across
+two fresh 600 MHz processes and a separate 750 MHz process. Default-node
+gains of roughly 4%-7% must not be described as equal-clock kernel speedups.
+Underclocking is a diagnostic control, not a production speed optimization.
+
+The 750 MHz post-measurement profile localizes the difference to attention:
+50 Dense kernels total 6.493 / 6.494 s on ranks 0/1; 50 SOL kernels total
+8.372 / 8.343 s. The major GEMM totals are nearly unchanged. NCCL is much
+more balanced than in the earlier default-clock profile. Diagnostic kernel
+activity sums can overlap and are not substituted for measured wall latency.
+
+SM103 was missing from the pinned upstream CuTe architecture map and launch
+branch. The patch maps (10,3) to the existing SM100 kernel family in both
+places. No Omni native/provider flag, BSA adapter or threshold change is added.
+CuTe reduces SOL latency versus the old Triton path on B300A and GB300,
+but both SOL implementations remain slower than their matching Dense baseline.
+GB300 CuTe results are reproduced in two independent processes, with
+byte-identical per-implementation outputs across those processes. Default
+GB300 is also power-capped: Dense median clocks are about 1.54 GHz versus
+SOL 2.07 GHz. The requested and maximum power limit is already 1400 W.
+At 1200 MHz GB300 measures Dense 4.949 s versus SOL 6.723 s (35.8% slower).
+All measured clock polls are 1200 MHz with no power/thermal flags; clocks
+were reset afterward. Outputs match default-clock runs byte-for-byte. This
+clock-controlled run also favors Dense; the matched
+clock result does not establish a native SOL speedup over Dense. Inspect
+the raw timing and sampled telemetry for that separate operating point.
+
+B300A qualification: the cluster labels this B300A/GB112, but the driver
+reports NVIDIA Graphics Device, SM103, ~139 GiB and a 600 W maximum cap.
+It is an engineering device, not a production full B300 or GB300 result.
+Default B300A measurements include power caps and some Dense thermal flags.
+One telemetry query timed out during CuTe startup; resumed samples and the
+original exception are preserved. The first of nine measured CuTe SOL
+windows has no telemetry; all nine latency samples remain recorded. Clock
+summaries include per-window poll counts and maximum gaps. B300A results
+are exploratory and node-condition-qualified, not equal-clock comparisons.
+
+Comparability and output limits:
+GB200/GB300 use Ulysses2; B300A uses one GPU with equal CPU offload for both
+variants. Weights are resident inside each measured forward. Do not compare
+these products as an architecture ranking. Encoder values can differ across
+hardware; identical within-node DiT inputs are replayed for each pair.
+SM100 inputs and each implementation's outputs are byte-identical across
+default clocks, both 600 MHz runs, and 750 MHz. Output comparison JSON also
+records per-run first/last stability and SM103 Triton/CuTe tensor differences.
+No decoded videos, SSIM, PSNR, LPIPS, HTTP or end-to-end quality claim is made.
+
+Sources:
+Omni measured implementation: 3da353c45224f5863808da320d694be045c16ef8.
+Omni new PR head: ca5cc9fdeddf654d2ebaf08d116d46c15327a27e (dependency hint/docs only).
+Old SOL pin: 088897e0c6a9cb970f00b43ab2177c3be7336b36.
+New release pin: d9ef6321230cff13398cfc86aa107f97f093e925.
+Upstream PR #593 head: 63b4e65e9db1dfea45cc7d394902145c2f520821.
+The release backport and current upstream PR are separately tested sources.
+
+Validation:
+Release candidate on B300A: 40 passed, 2 SM90-only split cases skipped.
+Current upstream on GB300: 53 passed, 19 hardware-dependent cases skipped
+(11 SM80, 6 MPS, 2 SM90 KV split). New architecture tests preserve fallback
+behavior, SM89/90/100/120 dispatch and rejection of unsupported pre-SM80 GPUs.
+Final Omni ca5cc9f plus the new release pin on GB300: 629 passed, 3 skipped.
+See checks/gb300-omni-tests.log for the complete CPU/CUDA contract log.
+Local Omni pre-commit passed. Existing selector/options precedence, Wan
+no-recompile and exact disjoint Q-row/KV-column protection tests are retained.
+
+Read REPRODUCE.txt for fixed image, immutable sources, commands and provenance.
+Raw tensors and weights are excluded; private archives were kept locally.
+AI assistance: OpenAI Codex implemented and tested the patch and assembled this evidence.

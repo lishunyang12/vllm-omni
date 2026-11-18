@@ -1,0 +1,55 @@
+Quick self-review: SM103 native dispatch and SM100 power qualification
+
+Human-stated intent retained from the existing contribution:
+- Outcome: improve H3 Ref2VA attention performance and publish measured evidence.
+- Variable: single complete DiT-forward latency under a reproducible workload.
+- Mechanism: call the upstream native implementation automatically; remove the
+  Omni-side BSA adapter and avoid a new native/provider flag.
+- User need: H3 deployments on SM90/SM100/SM120, with B300/GB300 also acceptable,
+  need stable latency comparisons and explicit output-quality limitations.
+Existing instructions explicitly request implementing and submitting the PR.
+This follow-up updates the existing PR; it does not open another Omni PR.
+
+Observed failure and narrow change:
+SOL 088897e dispatches SM103 to Triton although the existing SM100 CuTe kernel
+passes SM103 oracle tests. Both the map and the architecture launch branch
+must recognize (10,3); changing only the map would enter the SM120 branch.
+The same H3 workload confirms lower SOL latency after the correction, while
+SOL remains slower than Dense on these SM103 machines. Both outcomes are reported.
+
+Measured release source d9ef632 and current upstream source 63b4e65 are distinct.
+Their SM100 kernel family is identical; the latter retains upstream SM89/MPS
+changes. Current-upstream dispatch tests cover every mapped architecture,
+CuTe-unavailable fallback, an unknown architecture and pre-SM80 rejection.
+Existing hybrid-oracle Q-row/KV-column protection tests were not weakened.
+
+Omni ca5cc9f only updates the install hint and backend guide to the measured
+immutable source. No new runtime API, provider switch, synchronization, copies,
+exception swallowing, kwargs handling, dependency family or Python example is added.
+The active attention-selection ownership/precedence contract is unchanged.
+The support guide is updated; the draft diffusion-runtime contract needs no change.
+No evidence-backed additional simplification was found in this narrow diff.
+
+Validation:
+- B300A release/API plus exact-block suite: 40 passed, 2 SM90-only skips.
+- GB300 current-upstream suite: 53 passed, 19 hardware-dependent skips.
+- GB300 exact Omni head with measured release pin: 629 passed, 3 skipped.
+  Includes backend/options precedence, Wan no-recompile, H3 contracts and
+  real CUDA kernels plus two-GPU sequence parallelism; SP4 is not run.
+- Omni pre-commit: all applicable checks passed, including Ruff, formatting,
+  mypy, SPDX, forbidden-import checks and Markdown lint.
+- git diff --check passed in both repositories.
+
+Evidence-matching lesson L002 was checked against PR #8057 and this revision.
+Fixed request/assets/checkpoint, warmups, repeat count, timing boundary,
+source pins, complete raw rank samples and operating conditions are recorded.
+No throughput, end-to-end, generated-media or SSIM/PSNR/LPIPS claim is made.
+Power-controlled SM100 is slower for SOL; reporting preserves that regression.
+B300A is an engineering part with power/thermal limits and a telemetry gap.
+Default GB300 has Dense power caps too; it is not an equal-clock kernel claim.
+The benchmark does not raise power limits. Clock changes target allocated GPUs
+only and are restored by the wrapper, with evidence saved.
+
+AI assistance: OpenAI Codex implemented, tested and documented this change.
+This is agent self-review; it does not claim independent human review or CI admission.
+No merge is performed. Existing maintainer review and CI gates remain in place.

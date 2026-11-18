@@ -1,0 +1,69 @@
+{
+  "omni_measured_source": "3da353c45224f5863808da320d694be045c16ef8",
+  "omni_pr_head": "ca5cc9fdeddf654d2ebaf08d116d46c15327a27e",
+  "upstream_pr_head": "63b4e65e9db1dfea45cc7d394902145c2f520821",
+  "old_sol_pin": "088897e0c6a9cb970f00b43ab2177c3be7336b36",
+  "new_sol_pin": "d9ef6321230cff13398cfc86aa107f97f093e925",
+  "fixed_image": "vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb",
+  "runs": [
+    {
+      "path": "runs/sm100-default",
+      "sol_source": "088897e0c6a9cb970f00b43ab2177c3be7336b36",
+      "gpu_count": 2
+    },
+    {
+      "path": "runs/sm100-600-1",
+      "sol_source": "088897e0c6a9cb970f00b43ab2177c3be7336b36",
+      "gpu_count": 2
+    },
+    {
+      "path": "runs/sm100-600-2",
+      "sol_source": "088897e0c6a9cb970f00b43ab2177c3be7336b36",
+      "gpu_count": 2
+    },
+    {
+      "path": "runs/sm100-750-profile",
+      "sol_source": "088897e0c6a9cb970f00b43ab2177c3be7336b36",
+      "gpu_count": 2
+    },
+    {
+      "path": "runs/b300a-default",
+      "sol_source": "088897e0c6a9cb970f00b43ab2177c3be7336b36",
+      "gpu_count": 1
+    },
+    {
+      "path": "runs/b300a-cute-default",
+      "sol_source": "d9ef6321230cff13398cfc86aa107f97f093e925",
+      "gpu_count": 1
+    },
+    {
+      "path": "runs/gb300-triton-default",
+      "sol_source": "088897e0c6a9cb970f00b43ab2177c3be7336b36",
+      "gpu_count": 2
+    },
+    {
+      "path": "runs/gb300-cute-default-1",
+      "sol_source": "d9ef6321230cff13398cfc86aa107f97f093e925",
+      "gpu_count": 2
+    },
+    {
+      "path": "runs/gb300-cute-default-2",
+      "sol_source": "d9ef6321230cff13398cfc86aa107f97f093e925",
+      "gpu_count": 2
+    },
+    {
+      "path": "runs/gb300-cute-1200",
+      "sol_source": "d9ef6321230cff13398cfc86aa107f97f093e925",
+      "gpu_count": 2
+    }
+  ],
+  "forward_probe_sha256": "00bff710d55f6b51cbb6009a2ad72c09aa8e85c2055dc9d979ef76ab0d6ac6a8",
+  "source_files": {
+    "upstream-sm103/techniques/sparse_backends/sol_attn/interface.py": "a7c3311f10fb91e8b5f1dd452a738021f68f47b3b6e421470a9de0d4e8b7f549",
+    "upstream-sm103/techniques/sparse_backends/sol_attn/sm100/kernel.py": "a614f29e002fdde2e9258da516b452d2ea07ecdeec8410722a344c72a40f61a0",
+    "upstream-sm103/techniques/sparse_backends/sol_attn/sm100/mainloop.py": "dc171d8c6ed249d83bf5ebd87e918f45b08723e590d241a81d26ac83d87cc2ce",
+    "upstream-current-sm103/techniques/sparse_backends/sol_attn/interface.py": "2d7cd74f7528f883cb41c23b3ac6a1f6b7a2ae82eafdef10c198f335af66c378",
+    "upstream-current-sm103/techniques/sparse_backends/sol_attn/sm100/kernel.py": "a614f29e002fdde2e9258da516b452d2ea07ecdeec8410722a344c72a40f61a0",
+    "upstream-current-sm103/techniques/sparse_backends/sol_attn/sm100/mainloop.py": "dc171d8c6ed249d83bf5ebd87e918f45b08723e590d241a81d26ac83d87cc2ce"
+  }
+}

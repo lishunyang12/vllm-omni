@@ -1,0 +1,510 @@
+W1118 06:23:25.392000 3047507 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W1118 06:23:25.393000 3047507 torch/_library/opaque_object.py:294] register_opaque_type is deprecated, use register_custom_class instead
+W1118 06:23:25.394000 3047507 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+/work/source/native/vllm_omni/config/omni_config.py:1543: FutureWarning: Diffusion config field 'diffusion_attention_backend' is deprecated; use 'diffusion_attention_config'.
+  normalized = normalize_omni_diffusion_kwargs(mixed_kwargs, apply_defaults=False)
+W1118 06:23:47.739000 3047725 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W1118 06:23:47.740000 3047725 torch/_library/opaque_object.py:294] register_opaque_type is deprecated, use register_custom_class instead
+W1118 06:23:47.742000 3047725 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+W1118 06:23:47.748000 3047726 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W1118 06:23:47.749000 3047726 torch/_library/opaque_object.py:294] register_opaque_type is deprecated, use register_custom_class instead
+W1118 06:23:47.749000 3047726 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+(DiffusionWorker pid=3047726) INFO 11-18 06:24:01 [diffusion_worker.py:1787] Worker 1 created result MessageQueue
+(DiffusionWorker pid=3047725) INFO 11-18 06:24:01 [diffusion_worker.py:1787] Worker 0 created result MessageQueue
+(DiffusionWorker pid=3047726) INFO 11-18 06:24:01 [scheduler.py:354] Chunked prefill is enabled with max_num_batched_tokens=2048.
+(DiffusionWorker pid=3047726) INFO 11-18 06:24:01 [kernel.py:517] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(DiffusionWorker pid=3047726) INFO 11-18 06:24:01 [diffusion_worker.py:600] Final IR op priority after setting vLLM-Omni overrides: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native'])
+(DiffusionWorker pid=3047725) INFO 11-18 06:24:01 [scheduler.py:354] Chunked prefill is enabled with max_num_batched_tokens=2048.
+(DiffusionWorker pid=3047725) INFO 11-18 06:24:01 [kernel.py:517] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(DiffusionWorker pid=3047725) INFO 11-18 06:24:01 [diffusion_worker.py:600] Final IR op priority after setting vLLM-Omni overrides: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native'])
+(DiffusionWorker pid=3047725) INFO 11-18 06:24:03 [diffusion_worker.py:617] Worker 0: Initialized device and distributed environment.
+(DiffusionWorker pid=3047726) INFO 11-18 06:24:03 [diffusion_worker.py:617] Worker 1: Initialized device and distributed environment.
+(DiffusionWorker pid=3047725) INFO 11-18 06:24:03 [parallel_state.py:759] Building SP subgroups from explicit sp_group_ranks (sp_size=2, ulysses=2, ring=1, use_ulysses_low=True).
+(DiffusionWorker pid=3047726) INFO 11-18 06:24:03 [parallel_state.py:759] Building SP subgroups from explicit sp_group_ranks (sp_size=2, ulysses=2, ring=1, use_ulysses_low=True).
+(DiffusionWorker pid=3047725) INFO 11-18 06:24:04 [parallel_state.py:801] SP group details for rank 0: sp_group=[0, 1], ulysses_group=[0, 1], ring_group=[0]
+(DiffusionWorker pid=3047726) INFO 11-18 06:24:04 [parallel_state.py:801] SP group details for rank 1: sp_group=[0, 1], ulysses_group=[0, 1], ring_group=[1]
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:04 [diffusion_worker.py:393] FlashInfer autotune auto-enabled for this diffusion stage (CUDA SM100+); the first request of each new shape is slower while it tunes. Disable with --no-diffusion-flashinfer-autotune.
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:04 [selector.py:85] Resolved diffusion attention backend 'SDPA' for role='minimax_h3.token_refiner' (role_category='self') via attention_config.default (model override SOL_ATTN -> TORCH_SDPA)
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:04 [selector.py:94] Resolved diffusion attention backend 'SOL_ATTN' for role='self' via attention_config.default
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:05 [selector.py:85] Resolved diffusion attention backend 'SDPA' for role='minimax_h3.token_refiner' (role_category='self') via attention_config.default (model override SOL_ATTN -> TORCH_SDPA)
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:05 [selector.py:94] Resolved diffusion attention backend 'SOL_ATTN' for role='self' via attention_config.default
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:06 [encoder.py:1201] MiniMax H3 Qwen3-VL encoder: 50 retained decoder layers, text_encoder_tp_size=2, vision replicated
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:06 [encoder.py:1201] MiniMax H3 Qwen3-VL encoder: 50 retained decoder layers, text_encoder_tp_size=2, vision replicated
+The config attributes {'vae_ratio': 16, 'vae_ratio_t': 4} were passed to AutoencoderKLLegacy, but are not expected and will be ignored. Please verify your config.json configuration file.
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:21 [vae_temporal.py:280] MiniMax-H3 VAE encode_temporal tail-padding patch installed
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:21 [vae_temporal.py:289] MiniMax-H3 VAE streaming uint8 decode patch installed
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:21 [vae_temporal.py:280] MiniMax-H3 VAE encode_temporal tail-padding patch installed
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:21 [vae_temporal.py:289] MiniMax-H3 VAE streaming uint8 decode patch installed
+/usr/local/lib/python3.12/dist-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+/usr/local/lib/python3.12/dist-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:23 [registry.py:740] Applying sequence parallelism to MiniMaxH3DiTModel (transformer) (sp_size=2, ulysses=2, ring=1, allgather=1)
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:23 [registry.py:740] Applying sequence parallelism to MiniMaxH3DiTModel (transformer) (sp_size=2, ulysses=2, ring=1, allgather=1)
+
+Multi-thread loading shards:   0% Completed | 0/13 [00:00<?, ?it/s]
+
+Multi-thread loading shards:   8% Completed | 1/13 [00:01<00:12,  1.02s/it]
+
+Multi-thread loading shards:  15% Completed | 2/13 [00:02<00:10,  1.00it/s]
+
+Multi-thread loading shards:  23% Completed | 3/13 [00:03<00:10,  1.05s/it]
+
+Multi-thread loading shards:  31% Completed | 4/13 [00:04<00:09,  1.03s/it]
+
+Multi-thread loading shards:  38% Completed | 5/13 [00:05<00:08,  1.02s/it]
+
+Multi-thread loading shards:  46% Completed | 6/13 [00:06<00:07,  1.02s/it]
+
+Multi-thread loading shards:  54% Completed | 7/13 [00:07<00:06,  1.02s/it]
+
+Multi-thread loading shards:  62% Completed | 8/13 [00:08<00:05,  1.02s/it]
+
+Multi-thread loading shards:  69% Completed | 9/13 [00:09<00:04,  1.02s/it]
+
+Multi-thread loading shards:  77% Completed | 10/13 [00:10<00:03,  1.02s/it]
+
+Multi-thread loading shards:  85% Completed | 11/13 [00:11<00:02,  1.01s/it]
+
+Multi-thread loading shards:  92% Completed | 12/13 [00:12<00:01,  1.01s/it]
+
+Multi-thread loading shards: 100% Completed | 13/13 [00:13<00:00,  1.05it/s]
+
+Multi-thread loading shards: 100% Completed | 13/13 [00:13<00:00,  1.00s/it]
+
+
+Multi-thread loading shards:   0% Completed | 0/14 [00:00<?, ?it/s]
+
+Multi-thread loading shards:   7% Completed | 1/14 [00:00<00:12,  1.07it/s]
+
+Multi-thread loading shards:  14% Completed | 2/14 [00:01<00:09,  1.29it/s]
+
+Multi-thread loading shards:  21% Completed | 3/14 [00:02<00:07,  1.38it/s]
+
+Multi-thread loading shards:  29% Completed | 4/14 [00:02<00:06,  1.46it/s]
+
+Multi-thread loading shards:  36% Completed | 5/14 [00:03<00:06,  1.43it/s]
+
+Multi-thread loading shards:  43% Completed | 6/14 [00:04<00:05,  1.48it/s]
+
+Multi-thread loading shards:  50% Completed | 7/14 [00:04<00:04,  1.49it/s]
+
+Multi-thread loading shards:  57% Completed | 8/14 [00:05<00:04,  1.50it/s]
+
+Multi-thread loading shards:  64% Completed | 9/14 [00:06<00:03,  1.48it/s]
+
+Multi-thread loading shards:  79% Completed | 11/14 [00:06<00:01,  1.99it/s]
+
+Multi-thread loading shards:  86% Completed | 12/14 [00:07<00:00,  2.33it/s]
+
+Multi-thread loading shards: 100% Completed | 14/14 [00:07<00:00,  3.00it/s]
+
+Multi-thread loading shards: 100% Completed | 14/14 [00:07<00:00,  1.87it/s]
+
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:44 [diffusers_loader.py:1242] Loading weights took 20.56 seconds
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:46 [diffusion_model_runner.py:450] Model loading took 92.1838 GiB and 41.893825 seconds
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:46 [diffusion_model_runner.py:456] Model runner: Model loaded successfully.
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:46 [diffusion_model_runner.py:544] Model runner: Initialization complete.
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:46 [diffusion_model_runner.py:450] Model loading took 92.1838 GiB and 41.931811 seconds
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:46 [diffusion_model_runner.py:456] Model runner: Model loaded successfully.
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:46 [diffusion_model_runner.py:544] Model runner: Initialization complete.
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:47 [diffusion_worker.py:859] Worker 1: Process-scoped GPU memory after model loading: 97.79 GiB.
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:47 [diffusion_worker.py:859] Worker 0: Process-scoped GPU memory after model loading: 97.79 GiB.
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:47 [manager.py:219] Initializing LoRAManager: device=cuda:1, dtype=torch.bfloat16, max_cached_adapters=1, static_lora_path=None
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:47 [diffusion_worker.py:545] Worker 1: Initialization complete.
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:47 [diffusion_worker.py:2393] Worker 1: Scheduler loop started.
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:47 [diffusion_worker.py:2220] Worker 1 ready to receive requests via shared memory
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:47 [manager.py:219] Initializing LoRAManager: device=cuda:0, dtype=torch.bfloat16, max_cached_adapters=1, static_lora_path=None
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:47 [diffusion_worker.py:545] Worker 0: Initialization complete.
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:47 [diffusion_worker.py:2393] Worker 0: Scheduler loop started.
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:47 [diffusion_worker.py:2220] Worker 0 ready to receive requests via shared memory
+
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s](DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:24:47 [diffusion_worker.py:807] Worker 0: FlashInfer autotune enabled, cache /work/xdg-cache/vllm/flashinfer_autotune/diffusion/86be9aa168548bf0/rank0.json
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:24:47 [diffusion_worker.py:807] Worker 1: FlashInfer autotune enabled, cache /work/xdg-cache/vllm/flashinfer_autotune/diffusion/86be9aa168548bf0/rank1.json
+2026-11-18 06:24:47,361 - INFO - autotuner.py:1121 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+2026-11-18 06:24:47,361 - INFO - autotuner.py:1121 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+[transformers] Qwen3VL video processing does not apply the per-frame pixel cap the reference implementation (qwen-vl-utils) applies, so some videos cost far more tokens than they would there. In v5.22 the capped behavior will become the default and `cap_pixels_per_frame` will be removed. Pass `cap_pixels_per_frame=True` to adopt the reference behavior now, or `False` to keep the current behavior and silence this warning.
+
+  0%|          | 0/50 [00:00<?, ?it/s]H3_PAIRED_REPLAY rank=0 variant=dense warmup=True iteration=0 wall_s=9.529834
+H3_PAIRED_REPLAY rank=1 variant=dense warmup=True iteration=0 wall_s=9.529839
+H3_PAIRED_REPLAY rank=0 variant=sol warmup=True iteration=0 wall_s=13.471388
+H3_PAIRED_REPLAY rank=1 variant=sol warmup=True iteration=0 wall_s=13.471388
+H3_PAIRED_REPLAY rank=0 variant=sol warmup=True iteration=1 wall_s=7.030668
+H3_PAIRED_REPLAY rank=1 variant=sol warmup=True iteration=1 wall_s=7.030672
+H3_PAIRED_REPLAY rank=0 variant=dense warmup=True iteration=1 wall_s=7.278280
+H3_PAIRED_REPLAY rank=1 variant=dense warmup=True iteration=1 wall_s=7.278312
+H3_PAIRED_REPLAY rank=0 variant=dense warmup=True iteration=2 wall_s=7.318708
+H3_PAIRED_REPLAY rank=1 variant=dense warmup=True iteration=2 wall_s=7.318736
+H3_PAIRED_REPLAY rank=0 variant=sol warmup=True iteration=2 wall_s=7.041645
+H3_PAIRED_REPLAY rank=1 variant=sol warmup=True iteration=2 wall_s=7.041654
+H3_PAIRED_REPLAY rank=0 variant=sol warmup=False iteration=3 wall_s=7.038273
+H3_PAIRED_REPLAY rank=1 variant=sol warmup=False iteration=3 wall_s=7.038280
+H3_PAIRED_REPLAY rank=1 variant=dense warmup=False iteration=3 wall_s=7.289730
+H3_PAIRED_REPLAY rank=0 variant=dense warmup=False iteration=3 wall_s=7.289709
+H3_PAIRED_REPLAY rank=0 variant=dense warmup=False iteration=4 wall_s=7.325689
+H3_PAIRED_REPLAY rank=1 variant=dense warmup=False iteration=4 wall_s=7.325712
+H3_PAIRED_REPLAY rank=1 variant=sol warmup=False iteration=4 wall_s=7.059194
+H3_PAIRED_REPLAY rank=0 variant=sol warmup=False iteration=4 wall_s=7.059202
+H3_PAIRED_REPLAY rank=1 variant=sol warmup=False iteration=5 wall_s=7.020709
+H3_PAIRED_REPLAY rank=0 variant=sol warmup=False iteration=5 wall_s=7.020725
+H3_PAIRED_REPLAY rank=0 variant=dense warmup=False iteration=5 wall_s=7.335383
+H3_PAIRED_REPLAY rank=1 variant=dense warmup=False iteration=5 wall_s=7.335412
+H3_PAIRED_REPLAY rank=0 variant=dense warmup=False iteration=6 wall_s=7.368712
+H3_PAIRED_REPLAY rank=1 variant=dense warmup=False iteration=6 wall_s=7.368734
+H3_PAIRED_REPLAY rank=1 variant=sol warmup=False iteration=6 wall_s=7.049188
+H3_PAIRED_REPLAY rank=0 variant=sol warmup=False iteration=6 wall_s=7.049183
+H3_PAIRED_REPLAY rank=0 variant=sol warmup=False iteration=7 wall_s=7.039852
+H3_PAIRED_REPLAY rank=1 variant=sol warmup=False iteration=7 wall_s=7.039865
+H3_PAIRED_REPLAY rank=0 variant=dense warmup=False iteration=7 wall_s=7.316157
+H3_PAIRED_REPLAY rank=1 variant=dense warmup=False iteration=7 wall_s=7.316190
+H3_PAIRED_REPLAY rank=0 variant=dense warmup=False iteration=8 wall_s=7.381288
+H3_PAIRED_REPLAY rank=1 variant=dense warmup=False iteration=8 wall_s=7.381295
+H3_PAIRED_REPLAY rank=1 variant=sol warmup=False iteration=8 wall_s=7.036838
+H3_PAIRED_REPLAY rank=0 variant=sol warmup=False iteration=8 wall_s=7.036833
+H3_PAIRED_REPLAY rank=1 variant=sol warmup=False iteration=9 wall_s=7.041623
+H3_PAIRED_REPLAY rank=0 variant=sol warmup=False iteration=9 wall_s=7.041636
+H3_PAIRED_REPLAY rank=1 variant=dense warmup=False iteration=9 wall_s=7.305039
+H3_PAIRED_REPLAY rank=0 variant=dense warmup=False iteration=9 wall_s=7.305035
+H3_PAIRED_REPLAY rank=0 variant=dense warmup=False iteration=10 wall_s=7.361166
+H3_PAIRED_REPLAY rank=1 variant=dense warmup=False iteration=10 wall_s=7.361193
+H3_PAIRED_REPLAY rank=0 variant=sol warmup=False iteration=10 wall_s=7.052218
+H3_PAIRED_REPLAY rank=1 variant=sol warmup=False iteration=10 wall_s=7.052216
+H3_PAIRED_REPLAY rank=0 variant=sol warmup=False iteration=11 wall_s=7.044937
+H3_PAIRED_REPLAY rank=1 variant=sol warmup=False iteration=11 wall_s=7.044809
+H3_PAIRED_REPLAY rank=0 variant=dense warmup=False iteration=11 wall_s=7.331013
+H3_PAIRED_REPLAY rank=1 variant=dense warmup=False iteration=11 wall_s=7.331041
+
+  0%|          | 0/50 [03:01<?, ?it/s]
+2026-11-18 06:28:01,832 - INFO - autotuner.py:1146 - flashinfer.jit: [Autotuner]: Autotuning process ends
+2026-11-18 06:28:01,832 - INFO - autotuner.py:1146 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637] Error executing method 'execute_model'. This might cause issues in distributed execution.
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637] Traceback (most recent call last):
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2633, in execute_method
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     return func(*args, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]            ^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 1245, in execute_model
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     output = self.model_runner.execute_model(request, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 1116, in execute_model
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     runner_output = self._execute_request_list(
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 1023, in _execute_request_list
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     raw_outputs = self.pipeline.forward(batch)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 158, in no_grad
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     return func(*args, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]            ^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3.py", line 3908, in forward
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     video_latent, audio_latent = self.diffuse(
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]                                  ^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3.py", line 2414, in diffuse
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     video_rows, audio_rows = minimax_h3_denoise_loop(
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]                              ^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/denoise_loop.py", line 424, in minimax_h3_denoise_loop
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     sampler_object(sampler).sample(
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 348, in sample
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     self.sampler_function(model, states, num_steps=num_steps, callback=callback, step_context=step_context)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 256, in sample_euler
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     predictions = _evaluate(model, _current_evaluations(active))
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 192, in _evaluate
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     predictions = model(evaluations)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]                   ^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/sampling.py", line 215, in __call__
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     video, audio = models[0].transformer(**kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1787, in _wrapped_call_impl
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     return self._call_impl(*args, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1798, in _call_impl
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     return forward_call(*args, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/native/forward_probe.py", line 136, in measured
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     raise RuntimeError('H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode')
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2637] RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637] Error executing method 'execute_model'. This might cause issues in distributed execution.
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637] Traceback (most recent call last):
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2633, in execute_method
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     return func(*args, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]            ^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 1245, in execute_model
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     output = self.model_runner.execute_model(request, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 1116, in execute_model
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     runner_output = self._execute_request_list(
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 1023, in _execute_request_list
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     raw_outputs = self.pipeline.forward(batch)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 158, in no_grad
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     return func(*args, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]            ^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3.py", line 3908, in forward
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     video_latent, audio_latent = self.diffuse(
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]                                  ^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3.py", line 2414, in diffuse
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     video_rows, audio_rows = minimax_h3_denoise_loop(
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]                              ^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/denoise_loop.py", line 424, in minimax_h3_denoise_loop
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     sampler_object(sampler).sample(
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 348, in sample
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     self.sampler_function(model, states, num_steps=num_steps, callback=callback, step_context=step_context)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 256, in sample_euler
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     predictions = _evaluate(model, _current_evaluations(active))
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 192, in _evaluate
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     predictions = model(evaluations)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]                   ^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/sampling.py", line 215, in __call__
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     video, audio = models[0].transformer(**kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1787, in _wrapped_call_impl
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     return self._call_impl(*args, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1798, in _call_impl
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     return forward_call(*args, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]   File "/work/native/forward_probe.py", line 136, in measured
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637]     raise RuntimeError('H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode')
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2637] RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165] Error executing RPC: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165] Traceback (most recent call last):
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2163, in _execute_rpc
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     result = self.worker.execute_method(method, *args, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2638, in execute_method
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     raise e
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2633, in execute_method
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     return func(*args, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]            ^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 1245, in execute_model
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     output = self.model_runner.execute_model(request, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 1116, in execute_model
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     runner_output = self._execute_request_list(
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 1023, in _execute_request_list
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     raw_outputs = self.pipeline.forward(batch)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 158, in no_grad
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     return func(*args, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]            ^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3.py", line 3908, in forward
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     video_latent, audio_latent = self.diffuse(
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]                                  ^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3.py", line 2414, in diffuse
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     video_rows, audio_rows = minimax_h3_denoise_loop(
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]                              ^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/denoise_loop.py", line 424, in minimax_h3_denoise_loop
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     sampler_object(sampler).sample(
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 348, in sample
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     self.sampler_function(model, states, num_steps=num_steps, callback=callback, step_context=step_context)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 256, in sample_euler
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     predictions = _evaluate(model, _current_evaluations(active))
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 192, in _evaluate
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     predictions = model(evaluations)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]                   ^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/sampling.py", line 215, in __call__
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     video, audio = models[0].transformer(**kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1787, in _wrapped_call_impl
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     return self._call_impl(*args, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1798, in _call_impl
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     return forward_call(*args, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/native/forward_probe.py", line 136, in measured
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     raise RuntimeError('H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode')
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2165] RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165] Error executing RPC: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165] Traceback (most recent call last):
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2163, in _execute_rpc
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     result = self.worker.execute_method(method, *args, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2638, in execute_method
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     raise e
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2633, in execute_method
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     return func(*args, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]            ^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 1245, in execute_model
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     output = self.model_runner.execute_model(request, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 1116, in execute_model
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     runner_output = self._execute_request_list(
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 1023, in _execute_request_list
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     raw_outputs = self.pipeline.forward(batch)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 158, in no_grad
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     return func(*args, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]            ^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3.py", line 3908, in forward
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     video_latent, audio_latent = self.diffuse(
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]                                  ^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3.py", line 2414, in diffuse
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     video_rows, audio_rows = minimax_h3_denoise_loop(
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]                              ^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/denoise_loop.py", line 424, in minimax_h3_denoise_loop
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     sampler_object(sampler).sample(
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 348, in sample
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     self.sampler_function(model, states, num_steps=num_steps, callback=callback, step_context=step_context)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 256, in sample_euler
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     predictions = _evaluate(model, _current_evaluations(active))
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 192, in _evaluate
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     predictions = model(evaluations)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]                   ^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/sampling.py", line 215, in __call__
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     video, audio = models[0].transformer(**kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1787, in _wrapped_call_impl
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     return self._call_impl(*args, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1798, in _call_impl
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     return forward_call(*args, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]   File "/work/native/forward_probe.py", line 136, in measured
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165]     raise RuntimeError('H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode')
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2165] RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257] Error processing RPC: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257] Traceback (most recent call last):
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2253, in _worker_busy_loop
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     result, should_reply = self._execute_rpc(msg)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                            ^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2163, in _execute_rpc
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     result = self.worker.execute_method(method, *args, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2638, in execute_method
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     raise e
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2633, in execute_method
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     return func(*args, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]            ^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 1245, in execute_model
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     output = self.model_runner.execute_model(request, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 1116, in execute_model
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     runner_output = self._execute_request_list(
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 1023, in _execute_request_list
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     raw_outputs = self.pipeline.forward(batch)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 158, in no_grad
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     return func(*args, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]            ^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3.py", line 3908, in forward
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     video_latent, audio_latent = self.diffuse(
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                                  ^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3.py", line 2414, in diffuse
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     video_rows, audio_rows = minimax_h3_denoise_loop(
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                              ^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/denoise_loop.py", line 424, in minimax_h3_denoise_loop
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     sampler_object(sampler).sample(
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 348, in sample
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     self.sampler_function(model, states, num_steps=num_steps, callback=callback, step_context=step_context)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 256, in sample_euler
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     predictions = _evaluate(model, _current_evaluations(active))
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 192, in _evaluate
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     predictions = model(evaluations)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                   ^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/sampling.py", line 215, in __call__
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     video, audio = models[0].transformer(**kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1787, in _wrapped_call_impl
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     return self._call_impl(*args, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1798, in _call_impl
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     return forward_call(*args, **kwargs)
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/native/forward_probe.py", line 136, in measured
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     raise RuntimeError('H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode')
+(DiffusionWorker_SP0 pid=3047725) ERROR 11-18 06:28:01 [diffusion_worker.py:2257] RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257] Error processing RPC: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257] Traceback (most recent call last):
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2253, in _worker_busy_loop
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     result, should_reply = self._execute_rpc(msg)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                            ^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2163, in _execute_rpc
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     result = self.worker.execute_method(method, *args, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2638, in execute_method
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     raise e
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 2633, in execute_method
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     return func(*args, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]            ^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_worker.py", line 1245, in execute_model
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     output = self.model_runner.execute_model(request, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 1116, in execute_model
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     runner_output = self._execute_request_list(
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 1023, in _execute_request_list
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     raw_outputs = self.pipeline.forward(batch)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 158, in no_grad
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     return func(*args, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]            ^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3.py", line 3908, in forward
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     video_latent, audio_latent = self.diffuse(
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                                  ^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3.py", line 2414, in diffuse
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     video_rows, audio_rows = minimax_h3_denoise_loop(
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                              ^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/denoise_loop.py", line 424, in minimax_h3_denoise_loop
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     sampler_object(sampler).sample(
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 348, in sample
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     self.sampler_function(model, states, num_steps=num_steps, callback=callback, step_context=step_context)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 256, in sample_euler
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     predictions = _evaluate(model, _current_evaluations(active))
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/sampler.py", line 192, in _evaluate
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     predictions = model(evaluations)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                   ^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/source/native/vllm_omni/diffusion/models/minimax_h3/sampling.py", line 215, in __call__
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     video, audio = models[0].transformer(**kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1787, in _wrapped_call_impl
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     return self._call_impl(*args, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py", line 1798, in _call_impl
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     return forward_call(*args, **kwargs)
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]   File "/work/native/forward_probe.py", line 136, in measured
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257]     raise RuntimeError('H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode')
+(DiffusionWorker_SP1 pid=3047726) ERROR 11-18 06:28:01 [diffusion_worker.py:2257] RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+Diffusion request 0_5e1f3fcf-38c4-405c-b318-f2b70359510f failed: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+Traceback (most recent call last):
+  File "/work/source/native/vllm_omni/diffusion/inline_stage_diffusion_client.py", line 168, in _dispatch_request
+    async for results in self._engine.step_streaming(request):
+  File "/work/source/native/vllm_omni/diffusion/diffusion_engine.py", line 567, in step_streaming
+    formatted_outputs = self.postprocess_output(request, output)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work/source/native/vllm_omni/diffusion/diffusion_engine.py", line 637, in postprocess_output
+    raise RuntimeError(output.error)
+RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+
+Processed prompts:   0%|          | 0/1 [03:15<?, ?it/s]
+[Omni] Failed to run generation: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+Traceback (most recent call last):
+  File "/work/source/native/vllm_omni/entrypoints/omni.py", line 98, in generate
+    return list(self._run_generation(prompts, sampling_params_list, use_tqdm))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work/source/native/vllm_omni/entrypoints/omni.py", line 191, in _run_generation
+    should_continue, req_id, stage_id, req_state = self._handle_output_message(msg)
+                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work/source/native/vllm_omni/entrypoints/omni_base.py", line 523, in _handle_output_message
+    self._raise_nonfatal_error_message(msg)
+  File "/work/source/native/vllm_omni/entrypoints/omni_base.py", line 563, in _raise_nonfatal_error_message
+    raise_client_error_or(
+  File "/work/source/native/vllm_omni/errors.py", line 81, in raise_client_error_or
+    raise fallback(message)
+RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+TERMINAL_EXCEPTION RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:28:02 [diffusion_worker.py:2309] Worker 1: Received shutdown message
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:28:02 [diffusion_worker.py:2333] event loop terminated.
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:28:02 [diffusion_worker.py:2309] Worker 0: Received shutdown message
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:28:02 [diffusion_worker.py:2333] event loop terminated.
+(DiffusionWorker_SP1 pid=3047726) INFO 11-18 06:28:08 [diffusion_worker.py:2416] Worker 1: Shutdown complete.
+(DiffusionWorker_SP0 pid=3047725) INFO 11-18 06:28:08 [diffusion_worker.py:2416] Worker 0: Shutdown complete.
+PAIRED_SUMMARY {"protocol": "alternating-order pairs in one model process", "warmup_pairs": 3, "measured_pairs": 9, "runs": {"dense": {"samples_ms": [7289.73036899697, 7325.711503974162, 7335.412389948033, 7368.733894894831, 7316.1895900266245, 7381.295271101408, 7305.039023980498, 7361.192828044295, 7331.0407269746065], "median_ms": 7331.0407269746065, "min_ms": 7289.73036899697, "max_ms": 7381.295271101408, "cv_percent": 0.4138078831088212}, "sol": {"samples_ms": [7038.280341075733, 7059.20185695868, 7020.72498598136, 7049.187764059752, 7039.864782942459, 7036.837943014689, 7041.635987930931, 7052.218309021555, 7044.937232974917], "median_ms": 7041.635987930931, "min_ms": 7020.72498598136, "max_ms": 7059.20185695868, "cv_percent": 0.15520240397894866}}, "terminal_exception": "RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode", "paired_speedups": [1.0357260603067717, 1.0377535098748831, 1.0448226364933857, 1.0453309149267216, 1.0392514367255603, 1.0489505841794544, 1.0374065112853077, 1.0438123871785825, 1.0406112197367123], "median_paired_speedup": 1.0406112197367123}

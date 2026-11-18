@@ -1,0 +1,140 @@
+H3 Ref2VA: reproducible SM100 power controls and SM103 dispatch comparison
+
+Scope: one complete first-step, 50-layer H3 DiT forward, BF16/eager, TP1.
+3 warmup pairs + 9 measured pairs, alternating Dense/SOL in one process.
+Same request, reference assets, seed and pinned checkpoint as ../REPRODUCE.txt.
+This does not generate or assess decoded videos.
+
+Image (unchanged):
+vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
+Omni measured implementation: 3da353c45224f5863808da320d694be045c16ef8
+Old SOL: 088897e0c6a9cb970f00b43ab2177c3be7336b36
+SM103 CuTe SOL: d9ef6321230cff13398cfc86aa107f97f093e925
+Current upstream PR tested separately: 63b4e65e9db1dfea45cc7d394902145c2f520821
+Final Omni PR tested separately: ca5cc9fdeddf654d2ebaf08d116d46c15327a27e
+
+Setup inside the fixed image, with this directory's reproduce/ copied to
+/work/native, writable /work, and enough cache/host memory:
+
+  bash /work/native/bootstrap.sh /work
+  bash /work/native/prepare_sm103.sh /work
+
+The bootstrap installs the original immutable Omni/SOL baseline and validated
+Python versions, downloads only pinned Ref2VA weights, and checks asset hashes.
+It preserves the image's Torch/vLLM/CUDA libraries. Reuse the same container.
+No checkpoint/cache eviction is performed. A 350 GiB work/cache volume is advised.
+
+Default-policy 2x GB300 comparison:
+
+  H3_GPU_COUNT=2 H3_RUN_ID=gb300-triton-default \
+    bash /work/native/run.sh /work
+
+  H3_SOL_SOURCE_DIR=/work/source/sana-sm103 \
+  H3_UPSTREAM_COMMIT=d9ef6321230cff13398cfc86aa107f97f093e925 \
+  H3_GPU_COUNT=2 H3_RUN_ID=gb300-cute-default-1 \
+    bash /work/native/run.sh /work
+
+  H3_SOL_SOURCE_DIR=/work/source/sana-sm103 \
+  H3_UPSTREAM_COMMIT=d9ef6321230cff13398cfc86aa107f97f093e925 \
+  H3_GPU_COUNT=2 H3_RUN_ID=gb300-cute-default-2 H3_PROFILE_AFTER=1 \
+    bash /work/native/run.sh /work
+
+These source-directory variables belong to the benchmark harness. They select
+which immutable upstream checkout to import; they are not vLLM-Omni provider
+flags. Production usage remains --diffusion-attention-backend SOL_ATTN.
+On B300A use H3_GPU_COUNT=1 H3_CPU_OFFLOAD=1 and distinct run IDs. This specific
+engineering device has ~139 GiB visible VRAM; it is not a full production B300.
+SM100 GB200 uses H3_GPU_COUNT=2 and the original SOL pin, without CPU offload.
+
+Clock-controlled runs use the included host-side control_run.sh in an existing
+Slurm allocation and named Pyxis container. Its positional arguments are:
+
+  control_run.sh WORK CONTAINER GPU_COUNT RUN_ID PHYSICAL_IDS CLOCK_MHZ \
+    CONTAINER_MOUNTS CPU_OFFLOAD INNER_CPUS
+
+Example (replace JOB_ID, work path, container name and allocated physical IDs
+with those from your allocation; the wrapper rejects a mismatched allocation):
+
+  srun --jobid=JOB_ID --overlap --ntasks=1 --cpus-per-task=1 --cpu-bind=none \
+    bash /your/work/native/control_run.sh \
+    /your/work h3-test 2 sm100-600-1 2,3 600 /your/work:/work auto 16
+
+Repeat with a fresh RUN_ID sm100-600-2. For a different operating point use
+750 MHz and a new ID. For default policy pass default instead of numeric MHz.
+For the extra GB300 controlled run, select the SM103 source variables above,
+use physical IDs from its allocation, and pass 1200 MHz with a fresh run ID.
+If HF cache is mounted separately, repeat both mounts on every Pyxis step.
+This deployment used the site's explicit sudo delegation for nvidia-smi.
+It never raises the power limit: GB200 default and maximum were both 1200 W.
+The wrapper locks only the validated allocated GPU IDs and resets their clocks
+on exit/signals, saving before/after, setter/reset logs and exit status.
+If clock control is unavailable, report that operating point as untested.
+Requested MHz alone is not evidence of actual matched clocks: inspect telemetry.
+
+Read-only telemetry records timestamped clock, power, power-cap/thermal flags,
+temperature and utilization. Logical-rank/physical-GPU mapping is saved in the
+protocol. Query timeouts are logged as gaps, never interpolated or hidden.
+B300A's first observer stopped on a query timeout; its separately resumed CSV
+is preserved. The first of nine measured B300A CuTe SOL windows lacks telemetry.
+joined-telemetry.csv is a timestamp-sorted concatenation. Per-window coverage
+is explicit in clock-summary.json; no missing clocks are inferred.
+Fixed-clock SM100 measured polls have no power/thermal flags and only the
+requested clock values. The two 600 MHz runs have subsecond maximum polling
+gaps; the 750 MHz diagnostic has gaps up to 3.58 seconds. This is sampled
+telemetry, not a continuous hardware trace. Default-policy results remain power/clock qualified.
+
+Recompute timing and correlate telemetry (standard Python only):
+
+  python3 /work/native/summarize.py /work/results/ref2va-native-sm100-600-1
+  python3 /work/native/summarize_clocks.py \
+    /work/results/ref2va-native-sm100-600-1 \
+    /your/work/evidence/sm100-600-1-control/telemetry.csv \
+    --output /work/results/ref2va-native-sm100-600-1/clock-summary.json
+
+Within the image, compare saved DiT tensors in FP64:
+
+  OMP_NUM_THREADS=4 python3 /work/native/compare_outputs.py \
+    /work/results/ref2va-native-gb300-triton-default \
+    /work/results/ref2va-native-gb300-cute-default-1 \
+    /work/results/ref2va-native-gb300-cute-default-2 \
+    --cross-process --output /work/evidence/sm103-output-comparison.json
+
+The timed runs save first/last Dense/SOL outputs outside the timed windows.
+The intentional H3_FORWARD_BENCHMARK_COMPLETE exception terminates generation
+before sampler progression or VAE decode. Successful runs have all rank reports,
+summary.json and control exit-code.txt=0. Raw tensors/weights are excluded from
+public evidence; rerunning creates them locally.
+
+Optional profiling is only after all unprofiled timed calls. H3_PROFILE_AFTER=1
+creates separate Torch CPU/CUDA traces; summarize them with summarize_trace.py.
+Do not mix profile kernel activity sums with wall medians or run concurrent GPU
+work during benchmark sampling.
+
+Validation commands in the corresponding source checkouts:
+
+  # Release candidate d9ef632 on B300A, PYTHONPATH set to its sparse_backends:
+  python3 -m pytest -q tests/test_sol_attn_integration.py techniques/sparse_backends/tests
+
+  # Current upstream 63b4e65 on GB300:
+  python3 -m pytest -q techniques/sparse_backends/tests
+
+  # Omni ca5cc9f on GB300, with SOL d9ef632 on PYTHONPATH:
+  python3 -m pytest -q \
+    tests/diffusion/attention/test_sol_attn_backend.py \
+    tests/diffusion/attention/test_impl_overrides.py \
+    tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py \
+    tests/diffusion/attention/test_attention_config.py \
+    tests/diffusion/models/minimax_h3/test_minimax_h3_contract.py \
+    tests/diffusion/attention/test_sol_attn_cuda.py --run-level=core_model
+
+See checks/ for actual results, environment files for exact packages and
+manifest.json for source provenance. SM80, SM89, MPS and 4-GPU SP4 hardware
+cases are not established by the two-GPU GB300 run.
+
+Harness provenance: forward_probe.py and its 3+9 timing boundary are unchanged
+from the previously published benchmark. This follow-up adds physical GPU
+mapping, an explicit CPU-offload override and immutable SOL checkout selection.
+Before the SM103 runs, protocol metadata was extended to record the imported
+interface hash and selected backend. Telemetry retry and per-window coverage
+reporting were added after observing the B300A query timeout; original records
+are retained. These metadata/observer changes do not alter the timed workload.

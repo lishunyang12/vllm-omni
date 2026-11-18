@@ -1,0 +1,2 @@
+index, name, compute_cap, memory.total [MiB], driver_version
+0, NVIDIA Graphics Device, 10.3, 142103 MiB, 595.84.01

@@ -1,0 +1,809 @@
+{
+  "scope": "Full-forward output tensors only; no SSIM, PSNR, LPIPS or decoded quality assessment.",
+  "comparisons": {
+    "ref2va-native-gb300-triton-default": {
+      "rank0": {
+        "sol_vs_dense": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": false,
+            "max_abs": 2.3995032012462616,
+            "rmse": 0.09050728801645855,
+            "relative_l2": 0.08341827715216084,
+            "cosine": 0.9965500525808799
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": false,
+            "max_abs": 1.4453553557395935,
+            "rmse": 0.10888666335463286,
+            "relative_l2": 0.12548670308373305,
+            "cosine": 0.9921348365017381
+          }
+        ],
+        "dense_last_vs_first": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999997562
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999999883
+          }
+        ],
+        "sol_last_vs_first": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999997501
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999999893
+          }
+        ]
+      },
+      "rank1": {
+        "sol_vs_dense": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": false,
+            "max_abs": 2.3995032012462616,
+            "rmse": 0.09050728801645855,
+            "relative_l2": 0.08341827715216084,
+            "cosine": 0.9965500525808799
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": false,
+            "max_abs": 1.4453553557395935,
+            "rmse": 0.10888666335463286,
+            "relative_l2": 0.12548670308373305,
+            "cosine": 0.9921348365017381
+          }
+        ],
+        "dense_last_vs_first": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999997562
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999999883
+          }
+        ],
+        "sol_last_vs_first": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999997501
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999999893
+          }
+        ]
+      }
+    },
+    "ref2va-native-gb300-cute-default-1": {
+      "rank0": {
+        "sol_vs_dense": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": false,
+            "max_abs": 2.458093613386154,
+            "rmse": 0.08904506117790431,
+            "relative_l2": 0.08207057967551426,
+            "cosine": 0.9966574943878433
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": false,
+            "max_abs": 1.4150307774543762,
+            "rmse": 0.10261015652278967,
+            "relative_l2": 0.11825332734289196,
+            "cosine": 0.9930123984562438
+          }
+        ],
+        "dense_last_vs_first": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999997562
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999999883
+          }
+        ],
+        "sol_last_vs_first": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999997624
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.99999999999999
+          }
+        ]
+      },
+      "rank1": {
+        "sol_vs_dense": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": false,
+            "max_abs": 2.458093613386154,
+            "rmse": 0.08904506117790431,
+            "relative_l2": 0.08207057967551426,
+            "cosine": 0.9966574943878433
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": false,
+            "max_abs": 1.4150307774543762,
+            "rmse": 0.10261015652278967,
+            "relative_l2": 0.11825332734289196,
+            "cosine": 0.9930123984562438
+          }
+        ],
+        "dense_last_vs_first": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999997562
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999999883
+          }
+        ],
+        "sol_last_vs_first": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999997624
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.99999999999999
+          }
+        ]
+      }
+    },
+    "ref2va-native-gb300-cute-default-2": {
+      "rank0": {
+        "sol_vs_dense": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": false,
+            "max_abs": 2.458093613386154,
+            "rmse": 0.08904506117790431,
+            "relative_l2": 0.08207057967551426,
+            "cosine": 0.9966574943878433
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": false,
+            "max_abs": 1.4150307774543762,
+            "rmse": 0.10261015652278967,
+            "relative_l2": 0.11825332734289196,
+            "cosine": 0.9930123984562438
+          }
+        ],
+        "dense_last_vs_first": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999997562
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999999883
+          }
+        ],
+        "sol_last_vs_first": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999997624
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.99999999999999
+          }
+        ]
+      },
+      "rank1": {
+        "sol_vs_dense": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": false,
+            "max_abs": 2.458093613386154,
+            "rmse": 0.08904506117790431,
+            "relative_l2": 0.08207057967551426,
+            "cosine": 0.9966574943878433
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": false,
+            "max_abs": 1.4150307774543762,
+            "rmse": 0.10261015652278967,
+            "relative_l2": 0.11825332734289196,
+            "cosine": 0.9930123984562438
+          }
+        ],
+        "dense_last_vs_first": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999997562
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999999883
+          }
+        ],
+        "sol_last_vs_first": [
+          {
+            "output": "video",
+            "shape": [
+              74592,
+              96
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.9999999999997624
+          },
+          {
+            "output": "audio",
+            "shape": [
+              1242,
+              32
+            ],
+            "dtype": "torch.float32",
+            "finite": true,
+            "bitwise_equal": true,
+            "max_abs": 0.0,
+            "rmse": 0.0,
+            "relative_l2": 0.0,
+            "cosine": 0.99999999999999
+          }
+        ]
+      }
+    }
+  },
+  "fresh_process_comparisons": {
+    "ref2va-native-gb300-cute-default-1": {
+      "dense_rank0_vs_ref2va-native-gb300-triton-default": [
+        {
+          "output": "video",
+          "shape": [
+            74592,
+            96
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": true,
+          "max_abs": 0.0,
+          "rmse": 0.0,
+          "relative_l2": 0.0,
+          "cosine": 0.9999999999997562
+        },
+        {
+          "output": "audio",
+          "shape": [
+            1242,
+            32
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": true,
+          "max_abs": 0.0,
+          "rmse": 0.0,
+          "relative_l2": 0.0,
+          "cosine": 0.9999999999999883
+        }
+      ],
+      "sol_rank0_vs_ref2va-native-gb300-triton-default": [
+        {
+          "output": "video",
+          "shape": [
+            74592,
+            96
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": false,
+          "max_abs": 0.5596257597208023,
+          "rmse": 0.013490570556343562,
+          "relative_l2": 0.012372630913209916,
+          "cosine": 0.9999235207736447
+        },
+        {
+          "output": "audio",
+          "shape": [
+            1242,
+            32
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": false,
+          "max_abs": 0.9996483214199543,
+          "rmse": 0.07736972504600395,
+          "relative_l2": 0.08907658057183826,
+          "cosine": 0.9960311811727134
+        }
+      ],
+      "dense_rank1_vs_ref2va-native-gb300-triton-default": [
+        {
+          "output": "video",
+          "shape": [
+            74592,
+            96
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": true,
+          "max_abs": 0.0,
+          "rmse": 0.0,
+          "relative_l2": 0.0,
+          "cosine": 0.9999999999997562
+        },
+        {
+          "output": "audio",
+          "shape": [
+            1242,
+            32
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": true,
+          "max_abs": 0.0,
+          "rmse": 0.0,
+          "relative_l2": 0.0,
+          "cosine": 0.9999999999999883
+        }
+      ],
+      "sol_rank1_vs_ref2va-native-gb300-triton-default": [
+        {
+          "output": "video",
+          "shape": [
+            74592,
+            96
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": false,
+          "max_abs": 0.5596257597208023,
+          "rmse": 0.013490570556343562,
+          "relative_l2": 0.012372630913209916,
+          "cosine": 0.9999235207736447
+        },
+        {
+          "output": "audio",
+          "shape": [
+            1242,
+            32
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": false,
+          "max_abs": 0.9996483214199543,
+          "rmse": 0.07736972504600395,
+          "relative_l2": 0.08907658057183826,
+          "cosine": 0.9960311811727134
+        }
+      ]
+    },
+    "ref2va-native-gb300-cute-default-2": {
+      "dense_rank0_vs_ref2va-native-gb300-triton-default": [
+        {
+          "output": "video",
+          "shape": [
+            74592,
+            96
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": true,
+          "max_abs": 0.0,
+          "rmse": 0.0,
+          "relative_l2": 0.0,
+          "cosine": 0.9999999999997562
+        },
+        {
+          "output": "audio",
+          "shape": [
+            1242,
+            32
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": true,
+          "max_abs": 0.0,
+          "rmse": 0.0,
+          "relative_l2": 0.0,
+          "cosine": 0.9999999999999883
+        }
+      ],
+      "sol_rank0_vs_ref2va-native-gb300-triton-default": [
+        {
+          "output": "video",
+          "shape": [
+            74592,
+            96
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": false,
+          "max_abs": 0.5596257597208023,
+          "rmse": 0.013490570556343562,
+          "relative_l2": 0.012372630913209916,
+          "cosine": 0.9999235207736447
+        },
+        {
+          "output": "audio",
+          "shape": [
+            1242,
+            32
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": false,
+          "max_abs": 0.9996483214199543,
+          "rmse": 0.07736972504600395,
+          "relative_l2": 0.08907658057183826,
+          "cosine": 0.9960311811727134
+        }
+      ],
+      "dense_rank1_vs_ref2va-native-gb300-triton-default": [
+        {
+          "output": "video",
+          "shape": [
+            74592,
+            96
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": true,
+          "max_abs": 0.0,
+          "rmse": 0.0,
+          "relative_l2": 0.0,
+          "cosine": 0.9999999999997562
+        },
+        {
+          "output": "audio",
+          "shape": [
+            1242,
+            32
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": true,
+          "max_abs": 0.0,
+          "rmse": 0.0,
+          "relative_l2": 0.0,
+          "cosine": 0.9999999999999883
+        }
+      ],
+      "sol_rank1_vs_ref2va-native-gb300-triton-default": [
+        {
+          "output": "video",
+          "shape": [
+            74592,
+            96
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": false,
+          "max_abs": 0.5596257597208023,
+          "rmse": 0.013490570556343562,
+          "relative_l2": 0.012372630913209916,
+          "cosine": 0.9999235207736447
+        },
+        {
+          "output": "audio",
+          "shape": [
+            1242,
+            32
+          ],
+          "dtype": "torch.float32",
+          "finite": true,
+          "bitwise_equal": false,
+          "max_abs": 0.9996483214199543,
+          "rmse": 0.07736972504600395,
+          "relative_l2": 0.08907658057183826,
+          "cosine": 0.9960311811727134
+        }
+      ]
+    }
+  }
+}

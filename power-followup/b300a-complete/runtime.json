@@ -1,0 +1,1 @@
+{"name": "NVIDIA Graphics Device", "capability": [10, 3], "backend": "triton", "torch": "2.16.0.dev20261009+cu134"}

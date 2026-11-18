@@ -1,0 +1,3 @@
+physical_gpu_indices=1,2
+requested_clock_mhz=1200
+cpu_offload=auto
