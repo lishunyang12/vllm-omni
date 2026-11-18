@@ -42,6 +42,7 @@
     "inspect_local_memory.py": "b89f91f5d035f78517df3d66a9146aa8fd9f68017e75f9f000c66f662cebeaa0",
     "gpu_telemetry.py": "ad56aa67f5228641a94870ec47f0150a3df3371933245bb6db46dd67f8c2cd94",
     "route_helpers.py": "c35c891562993d0b133b470aa883a4eb85b2afdf318fccb83839ff44bf8a0783",
+    "reproduce_blocker.sh": "4df8276ed6671e33933ad4fb3a8edfb2fff94ff69c97b9808bdcbaee25eeb613",
     "sequence_case.py": "a3fdb5009542dc9a3d2a76ebe843e71884a2c9816160c54172f0c02f97507bf8",
     "control_design_d.sh": "23b6bc87842d334a204827b6d6fbc4752b8e756c2ed5e0e20867d931189000a5",
     "EXPERIMENTAL_STATUS.txt": "be81a0e02aed45549b69031bbe006c95097ecd481ac5a30d33f5c3cd80c3af2e",
