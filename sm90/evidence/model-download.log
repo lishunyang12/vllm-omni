@@ -1,0 +1,25 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+DOWNLOADED FL2VA/audio_vae/config.json 1973
+DOWNLOADED FL2VA/audio_vae/config.yaml 91
+DOWNLOADED FL2VA/audio_vae/dac_alias_free_act.py 835
+DOWNLOADED FL2VA/audio_vae/dac_activations.py 2189
+DOWNLOADED FL2VA/audio_vae/dac_alias_free_filter.py 3300
+DOWNLOADED FL2VA/audio_vae/dac_attn_proj.py 3317
+DOWNLOADED FL2VA/audio_vae/dac_alias_free_resample.py 1740
+DOWNLOADED FL2VA/audio_vae/dac_audio_vae.py 7266
+DOWNLOADED FL2VA/audio_vae/dac_utils.py 362
+DOWNLOADED FL2VA/audio_vae/minimax_h3_audio_vae.py 3532
+DOWNLOADED FL2VA/audio_vae/metadata.json 440
+DOWNLOADED FL2VA/audio_vae/dac_bigvgan.py 7102
+DOWNLOADED FL2VA/processor/chat_template.json 5499
+DOWNLOADED FL2VA/model_index.json 719
+DOWNLOADED FL2VA/processor/merges.txt 1671839
+DOWNLOADED FL2VA/processor/preprocessor_config.json 390
+DOWNLOADED FL2VA/processor/tokenizer_config.json 11003
+DOWNLOADED FL2VA/processor/tokenizer.json 7032403
+DOWNLOADED FL2VA/processor/video_preprocessor_config.json 385
+DOWNLOADED FL2VA/text_encoder/chat_template.json 5499
+DOWNLOADED FL2VA/processor/vocab.json 2776833
+DOWNLOADED FL2VA/text_encoder/config.json 1474
+DOWNLOADED FL2VA/text_encoder/merges.txt 1671839
+DOWNLOADED FL2VA/audio_vae/model.safetensors 605429308

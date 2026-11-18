@@ -1,0 +1,6 @@
+{
+  "status": "aborted_stalled_first_warmup",
+  "CUDA_DEVICE_MAX_CONNECTIONS": "1",
+  "reason": "Same CPU submission location as default: layer49 residual chunk9984, cuLaunchKernel; zero complete replays",
+  "sample_count": 0
+}

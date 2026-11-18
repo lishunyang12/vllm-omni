@@ -1,0 +1,9 @@
+{
+  "status": "aborted_stalled_first_warmup",
+  "diagnostic_patch": {
+    "use_clc": false,
+    "stock_PR": false
+  },
+  "reason": "Same CPU submission stall at layer49 residual chunk9984; no complete replay",
+  "sample_count": 0
+}

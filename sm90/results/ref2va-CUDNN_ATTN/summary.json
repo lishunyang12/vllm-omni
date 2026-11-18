@@ -1,0 +1,25 @@
+{
+  "task": "ref2va",
+  "backend": "CUDNN_ATTN",
+  "gpu": "NVIDIA GH200 96GB HBM3",
+  "warmup": 3,
+  "repeats": 9,
+  "max_rank_wall_samples_s": [
+    10.728203459992073,
+    10.75462434894871,
+    10.743993684998713,
+    10.738934571039863,
+    10.736122931004502,
+    10.770305629004724,
+    10.756537480046973,
+    10.756398272002116,
+    10.743491651955992
+  ],
+  "median_s": 10.743993684998713,
+  "median_first3_s": 10.743993684998713,
+  "min_s": 10.728203459992073,
+  "max_s": 10.770305629004724,
+  "cv_percent": 0.12019828837438754,
+  "terminal_exception": "RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode",
+  "quality_checked": false
+}

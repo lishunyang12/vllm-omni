@@ -1,0 +1,468 @@
+{
+  "rank": 1,
+  "world_size": 2,
+  "gpu": "NVIDIA GB200",
+  "capability": [
+    10,
+    0
+  ],
+  "memory_bytes": 197890015232,
+  "warmup": 3,
+  "repeats": 9,
+  "denoise_step": 0,
+  "input": {
+    "img_position_ids": {
+      "shape": [
+        1,
+        61056,
+        3
+      ],
+      "dtype": "torch.float64",
+      "sha256": "fe53e0a84a87b99058b935c3c665275f6b411c4059facec9cd459b3510f5b262"
+    },
+    "update_mask": {
+      "shape": [
+        58464
+      ],
+      "dtype": "torch.bool",
+      "sha256": "13ace4c0070401d943091a22f36577e7ed73c0b7a99fc1c9b06edbcd139bd965"
+    },
+    "token_tags": {
+      "shape": [
+        61056
+      ],
+      "dtype": "torch.int64",
+      "sha256": "02c846b1766f9e7d67e38c03c3ba7dae3d10205aedb304855d4627e6166be160"
+    },
+    "skip_mask_out_condition": false,
+    "prompt_embeds": {
+      "shape": [
+        1935,
+        5120
+      ],
+      "dtype": "torch.bfloat16",
+      "sha256": "f5f58b28382389f0d24bc9f0864b45f6dcd4a217c459cdd0c7b137f35a9e1c22"
+    },
+    "img_pos_info": {
+      "position_ids": {
+        "shape": [
+          58464
+        ],
+        "dtype": "torch.int64",
+        "sha256": "0c45d6f3ce9d3611e9c48871553f07cb65b3e89e6429a1485fe0770c2717f5d0"
+      }
+    },
+    "audio_pos_info": {
+      "position_ids": {
+        "shape": [
+          640
+        ],
+        "dtype": "torch.int64",
+        "sha256": "c2cf3a89aaee96cd656f2b3fe113a89e5307043d36325c460829a2e54dfa2cd6"
+      }
+    },
+    "text_pos_info": {
+      "position_ids": {
+        "shape": [
+          1935
+        ],
+        "dtype": "torch.int64",
+        "sha256": "c69a618c7fed5aeef74e0778ffdb68f8325db842f12f9d6ca33e6a1c1cd1526f"
+      }
+    },
+    "img_pos_for_infer_output_info": {
+      "position_ids": {
+        "shape": [
+          58464
+        ],
+        "dtype": "torch.int64",
+        "sha256": "0c45d6f3ce9d3611e9c48871553f07cb65b3e89e6429a1485fe0770c2717f5d0"
+      }
+    },
+    "packed_seq_params": {
+      "cu_seqlens_q": {
+        "shape": [
+          3
+        ],
+        "dtype": "torch.int32",
+        "sha256": "7c258a53ac5e685456bdbbdc81995fff25a8b50760b8b25bc79646c816464b2b"
+      },
+      "max_seqlen_q": 61039,
+      "num_requests": 1,
+      "text_audio_block_mask": {
+        "used_len": 61039,
+        "block_size": 64,
+        "blocks": {
+          "shape": [
+            954
+          ],
+          "dtype": "torch.bool",
+          "sha256": "b1ab9d5988a8738fa93c826e720b8c2166a65ce77da0597f372565fc4340e103"
+        }
+      },
+      "vsa_prefix_segments": [
+        6,
+        1010,
+        919,
+        1008,
+        640
+      ]
+    },
+    "refiner_packed_seq_params": {
+      "cu_seqlens_q": {
+        "shape": [
+          3
+        ],
+        "dtype": "torch.int32",
+        "sha256": "f2c6b1fe0fdc1b07fb8b3dc5edb32a006d5fc8409de62ba0891d65cb7084f205"
+      },
+      "max_seqlen_q": 1935
+    },
+    "video_token_layout": {
+      "prefix_len": null,
+      "latent_grid": null,
+      "used_len": 61039,
+      "video_spans": [
+        {
+          "start": 3583,
+          "latent_grid": [
+            57,
+            24,
+            42
+          ],
+          "role": "target"
+        }
+      ]
+    },
+    "x": {
+      "shape": [
+        1,
+        61056,
+        96
+      ],
+      "dtype": "torch.float32",
+      "sha256": "d111c4e077d000ba174072d8cd1a6dcfdfce6e758683b6c2dfa92d2506b6fc18"
+    },
+    "audio_x": {
+      "shape": [
+        1,
+        61056,
+        32
+      ],
+      "dtype": "torch.float32",
+      "sha256": "60693f7982fd777d61d4255d9751cf6cc401308531caae9dd2c3e9a78854c532"
+    },
+    "unique_timesteps": {
+      "shape": [
+        2
+      ],
+      "dtype": "torch.float32",
+      "sha256": "51f59c29e653d3337d19bf29ce93757dbceec127329298aefb45a81556bd292e"
+    },
+    "inverse_indices": {
+      "shape": [
+        61056
+      ],
+      "dtype": "torch.int64",
+      "sha256": "1af01d86e8c270473646aa571d7fdcc8868f897e8ab8101fa5573634774b3933"
+    }
+  },
+  "backends": {
+    "token_refiner.blocks.0.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "token_refiner.blocks.1.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.0.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.1.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.2.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.3.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.4.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.5.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.6.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.7.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.8.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.9.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.10.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.11.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.12.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.13.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.14.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.15.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.16.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.17.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.18.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.19.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.20.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.21.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.22.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.23.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.24.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.25.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.26.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.27.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.28.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.29.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.30.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.31.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.32.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.33.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.34.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.35.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.36.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.37.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.38.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.39.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.40.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.41.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.42.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.43.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.44.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.45.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.46.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.47.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.48.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    },
+    "blocks.49.attn.attention": {
+      "backend": "CUDNN_ATTN",
+      "impl": "CuDNNAttentionImpl"
+    }
+  },
+  "samples": [
+    {
+      "index": 0,
+      "wall_s": 2.9981763779651374,
+      "cuda_event_s": 2.998121826171875
+    },
+    {
+      "index": 1,
+      "wall_s": 2.998877370962873,
+      "cuda_event_s": 2.99882275390625
+    },
+    {
+      "index": 2,
+      "wall_s": 2.998608347028494,
+      "cuda_event_s": 2.9985546875
+    },
+    {
+      "index": 3,
+      "wall_s": 3.0040120389312506,
+      "cuda_event_s": 3.00395947265625
+    },
+    {
+      "index": 4,
+      "wall_s": 2.9945969788823277,
+      "cuda_event_s": 2.99454052734375
+    },
+    {
+      "index": 5,
+      "wall_s": 3.0005594878457487,
+      "cuda_event_s": 3.000501708984375
+    },
+    {
+      "index": 6,
+      "wall_s": 3.0002651838585734,
+      "cuda_event_s": 3.000203125
+    },
+    {
+      "index": 7,
+      "wall_s": 2.9994456300046295,
+      "cuda_event_s": 2.999372314453125
+    },
+    {
+      "index": 8,
+      "wall_s": 2.999648191034794,
+      "cuda_event_s": 2.999587890625
+    }
+  ],
+  "output": [
+    {
+      "shape": [
+        58464,
+        96
+      ],
+      "dtype": "torch.float32",
+      "sha256": "1c9113f8b5fedb8c49162c00ee40fc0dd7c030c010e3966c68b2bdf98921e32d"
+    },
+    {
+      "shape": [
+        640,
+        32
+      ],
+      "dtype": "torch.float32",
+      "sha256": "25096b9d221191c3e17e36b97e4acf212d99f39a6ca6dc97f16543f1a08fa4e7"
+    }
+  ],
+  "finite": true,
+  "peak_allocated_bytes": 105449811968,
+  "parallel_config": {
+    "pipeline_parallel_size": 1,
+    "data_parallel_size": 1,
+    "tensor_parallel_size": 1,
+    "enable_expert_parallel": false,
+    "sequence_parallel_size": 2,
+    "ulysses_degree": 2,
+    "ring_degree": 1,
+    "allgather_degree": 1,
+    "ulysses_mode": "strict",
+    "ulysses_a2a_permute": false,
+    "cfg_parallel_size": 1,
+    "vae_patch_parallel_size": 2,
+    "text_encoder_tp_size": 2,
+    "vae_parallel_mode": "tile",
+    "use_hsdp": false,
+    "mask_sp_padding": false,
+    "hsdp_shard_size": -1,
+    "hsdp_replicate_size": 1
+  },
+  "intentional_abort": true
+}

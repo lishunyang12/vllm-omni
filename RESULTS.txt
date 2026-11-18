@@ -1,0 +1,66 @@
+PR #10513: measured H3 DiT forward results on SM90 and SM100
+Date: 2026-11-18 UTC
+
+These measurements do not reproduce the user-provided SM120 speedup.
+Each completed case: 3 warmups + 9 measured identical-input replays,
+median of max-rank synchronized wall time; full 50-layer first conditional
+DiT forward at step 0, BF16, TP1/Ulysses2. Not end-to-end generation.
+
+GPU          Task     Dense s    SOL s     Dense/SOL    Status
+NVIDIA GH200 96GB HBM3   t2va       8.908   10.152     0.878x  complete_matched_inputs
+NVIDIA GH200 96GB HBM3   fl2va      6.485    7.515     0.863x  complete_matched_inputs
+NVIDIA GH200 96GB HBM3   ref2va    10.744   13.634     0.788x  complete_matched_inputs
+NVIDIA GB200             t2va       4.062      N/A        N/A  SOL_timeout_300s_zero_complete_forward_samples
+NVIDIA GB200             fl2va      2.999      N/A        N/A  SOL_timeout_300s_zero_complete_forward_samples
+NVIDIA GB200             ref2va     4.989      N/A        N/A  SOL_stalled_first_warmup_manually_stopped_zero_samples
+
+SM90: every Dense/SOL pair has identical per-rank input hashes and parallel
+configuration; finite outputs and unchanged inputs after replay. All six
+within-run CV values are below 0.16%. These are single-load repeated-call
+measurements, not an independent multi-launch or multi-host stability study.
+GH200 96GB uses model-level CPU offload for capacity. Transfers occur before
+the measured DiT; its full weights remain resident for all repeated calls.
+GB200 uses no offload. Compare backends within each hardware configuration.
+
+SM100: all SOL cases produced zero completed forward samples. Python stacks
+on both ranks remain at block index 49 in _merge_sol_bsa_residual, chunk
+9984:10240. A Ref2VA CUDA_LAUNCH_BLOCKING=1 diagnostic locates a blocking
+cuDNN block64 CuTe DSL BSA launch. Root cause is not established.
+CUDA_DEVICE_MAX_CONNECTIONS=1 and an external use_clc=False diagnostic did
+not resolve the stall. They are separate diagnostic runs, not default results.
+The max-connections Dense control median is 4.999s; input/output hashes
+match the default Dense control. No timeout duration is treated as latency.
+
+Pins and environment:
+Image: vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
+Runtime source: 6f5a99768f668bff08e40b3219e308743157d36c
+Test-only fix: 731ea29270e2d9f30e68f94d43a31021b4727eef (same production code)
+MiniMaxAI/MiniMax-H3 snapshot: 0919fb684102ef115126612f3fbb84d1027e7317
+Sana/SOL: f4035e0a976d828ed41c7b0b799e9712b47cd60d / sol-attn 0.5.0
+Linux aarch64, Python 3.12.3, torch 2.16.0.dev20261009+cu134,
+vLLM 0.33.0rc1.dev992+g1648fefab.d20261107.cu134,
+Triton 3.8.0+git3f6e4113, cuDNN 9.26.0.51 / frontend 1.31.0,
+transformers 5.19.0, diffusers 0.40.0.
+Drivers: GH200 580.196.07, GB200 595.84.01; the GB200 native diagnostic
+stack loads compatibility libcuda 615.71.09. This does not prove causation.
+
+Reproduction: copy reproduce/ to /work/bundle in the pinned image with
+exactly two visible NVLink GPUs, host IPC and 300+ GiB checkpoint cache.
+Run: bash /work/bundle/bootstrap.sh /work
+Existing prepared environment: bash /work/bundle/run_forward.sh /work
+The default script stops at failures and has no per-case timeout.
+For the GB200 remaining T2VA/FL2VA cases after stopping stalled Ref2VA:
+  bash /work/bundle/run_remaining.sh /work
+That script records a 300s process timeout per case, including model loading.
+Use fresh result directories; the harness refuses existing rank reports.
+The intentional H3_FORWARD_BENCHMARK_COMPLETE exception ends successful
+measurements before sampler advancement and VAE decoding. Success requires
+two complete rank reports, not just that exception string.
+
+The exact original SM120 harness was not supplied. This reconstructs its
+stated protocol and retains first-three medians, but does not independently
+reproduce or supersede that user-provided table.
+SM103 was not tested. No video/audio outputs, SSIM, PSNR, LPIPS, HTTP serving,
+or end-to-end speedup were measured. No production kernel workaround was
+added to the PR. Redacted logs, individual samples, input hashes, protocols
+and environment manifests are stored beside this report.

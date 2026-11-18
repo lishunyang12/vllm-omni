@@ -1,0 +1,895 @@
+Process 3713260: vLLM-Omni::DiffusionWorker_SP0
+Python v3.12.3 (/usr/bin/python3.12)
+
+Thread 3713260 (active): "MainThread"
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    cuLaunchKernelEx (libcuda.so.615.71.09)
+    [ADDRESS] (libcute_dsl_runtime.so)
+    [ADDRESS] (libcute_dsl_runtime.so)
+    [ADDRESS] (?)
+    [ADDRESS] (?)
+    wrapper (<string>:3)
+        Arguments:
+            mQ: <Tensor at [ADDRESS]>
+            mK: <Tensor at [ADDRESS]>
+            mV: <Tensor at [ADDRESS]>
+            mO: <Tensor at [ADDRESS]>
+            mLSE: <Tensor at [ADDRESS]>
+            mQScale: None
+            mKScale: None
+            mVScale: None
+            softmax_scale: 0.08838834764831845
+            mBlockIndex: <Tensor at [ADDRESS]>
+            mBlockSizes: <Tensor at [ADDRESS]>
+            block_sparse_num: 0
+            mBlockNums: <Tensor at [ADDRESS]>
+            mSplitOffsets: None
+            stream: <cuda.bindings.driver.CUstream at [ADDRESS]>
+    TVMFFIJitCompiledFunctionWithKwargs.__call__ (cutlass/cutlass_dsl/tvm_ffi_provider.py:1084)
+        Arguments:
+            self: <TVMFFIJitCompiledFunctionWithKwargs at [ADDRESS]>
+        Locals:
+            args: (<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, ...)
+            kwargs: {}
+    bsa_attn_fwd_blk64_cutedsl (cudnn/block_sparse_attention/_interface.py:1672)
+        Arguments:
+            q: <Tensor at [ADDRESS]>
+            k: <Tensor at [ADDRESS]>
+            v: <Tensor at [ADDRESS]>
+            q2k_block_index: <Tensor at [ADDRESS]>
+            block_sizes: <Tensor at [ADDRESS]>
+            q2k_block_nums: <Tensor at [ADDRESS]>
+            softmax_scale: 0.08838834764831845
+            layout: "bshd"
+            block_sparse_num: 1293
+            allow_empty_block_nums: True
+            use_clc: None
+            kv_splits: 1
+            q_scale: None
+            k_scale: None
+            v_scale: None
+        Locals:
+            is_sage_fp8: False
+            auto_kv_splits: False
+            kv_splits_i: 1
+            q_bhsd: <Tensor at [ADDRESS]>
+            k_bhsd: <Tensor at [ADDRESS]>
+            v_bhsd: <Tensor at [ADDRESS]>
+            batch_size: 1
+            num_head: 28
+            seqlen_q: 82752
+            head_dim: 128
+            seqlen_k: 82752
+            num_head_kv: 28
+            head_dim_v: 128
+            has_block_sizes: True
+            num_q_blocks: 1293
+            has_variable_block_nums: True
+            uniform_block_sparse_num: 0
+            use_int64_kv_strides: False
+            use_exact_kv_layout: False
+            dtype: 0
+            output_dtype: <torch.dtype at [ADDRESS]>
+            arch: 100
+            sparse_block_size: 64
+            qhead_per_kvhead: 1
+            tile_m: 64
+            tile_n: 256
+            use_clc_scheduler: True
+            is_persistent: True
+            pack_gqa: False
+            input_layout: "bhsd_native"
+            split_offsets: None
+            out_bhsd: <Tensor at [ADDRESS]>
+            lse: <Tensor at [ADDRESS]>
+            current_stream: <cuda.bindings.driver.CUstream at [ADDRESS]>
+            compile_key: ("sm100_blk64_fwd", 0, 128, 128, 1, False, 64, 256, 64, 100, True, True, True, 1, <torch.dtype at [ADDRESS]>, True, ...)
+    block_sparse_attention_forward (cudnn/block_sparse_attention/api.py:274)
+        Arguments:
+            q_tensor: <Tensor at [ADDRESS]>
+            k_tensor: <Tensor at [ADDRESS]>
+            v_tensor: <Tensor at [ADDRESS]>
+            q2k_block_index: <Tensor at [ADDRESS]>
+            block_sparse_num: 1293
+            block_sizes: <Tensor at [ADDRESS]>
+            q2k_block_nums: <Tensor at [ADDRESS]>
+        Locals:
+            sparse_block_size: 64
+            allow_empty_block_nums: True
+            softmax_scale: 0.08838834764831845
+            pack_gqa: None
+            layout: "bshd"
+            kv_splits: 1
+            use_clc: None
+            batch: 1
+            num_q_heads: 28
+            num_kv_heads: 28
+            seqlen_q: 82752
+            seqlen_k: 82752
+            head_dim: 128
+            value_dim: 128
+            arch: 100
+            arch_family: 10
+            gqa_ratio: 1
+            pack_gqa_effective: False
+            metadata_heads: 28
+            metadata_q_blocks: 1293
+            expected_prefix: (1, 28, 1293)
+            num_kv_blocks: 1293
+            allowed_block_size_ranks: (1)
+            _interface: <module at [ADDRESS]>
+    _cudnn_block_sparse_attn (cudnn_block_sparse.py:46)
+        Arguments:
+            query: <Tensor at [ADDRESS]>
+            key: <Tensor at [ADDRESS]>
+            value: <Tensor at [ADDRESS]>
+            indices: <Tensor at [ADDRESS]>
+            counts: <Tensor at [ADDRESS]>
+            sizes: <Tensor at [ADDRESS]>
+            scale: 0.08838834764831845
+            block_size: 64
+        Locals:
+            kernel: <function at [ADDRESS]>
+    CustomOpDef.register_kernel.<locals>.inner.<locals>.wrapped_fn (torch/_library/custom_ops.py:503)
+        Locals:
+            args: (<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, ...)
+            kwargs: {}
+    DisableContext.__call__.<locals>._fn (torch/_dynamo/eval_frame.py:1552)
+        Locals:
+            args: (<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, ...)
+            kwargs: {}
+            prior: None
+            callback: None
+    _disable_dynamo.<locals>.inner (torch/_compile.py:54)
+        Locals:
+            args: (<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, ...)
+            kwargs: {}
+            disable_fn: <function at [ADDRESS]>
+    CustomOpDef.register_kernel.<locals>.inner.<locals>.backend_impl (torch/_library/custom_ops.py:442)
+        Locals:
+            args: (<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, ...)
+            kwargs: <cell at [ADDRESS]>
+    OpOverload.__call__ (torch/_ops.py:916)
+        Arguments:
+            self: <OpOverload at [ADDRESS]>
+        Locals:
+            args: (<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, ...)
+            kwargs: {}
+    CustomOpDef.__call__ (torch/_library/custom_ops.py:877)
+        Arguments:
+            self: <CustomOpDef at [ADDRESS]>
+        Locals:
+            args: (<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, ...)
+            kwargs: {}
+    cudnn_block_sparse_attention (cudnn_block_sparse.py:105)
+        Arguments:
+            query: <Tensor at [ADDRESS]>
+            key: <Tensor at [ADDRESS]>
+            value: <Tensor at [ADDRESS]>
+            block_map: <Tensor at [ADDRESS]>
+            block_sizes: <Tensor at [ADDRESS]>
+            softmax_scale: 0.08838834764831845
+            block_size: 64
+        Locals:
+            return_lse: True
+            indices: <Tensor at [ADDRESS]>
+            counts: <Tensor at [ADDRESS]>
+    block_sparse_attn_bshd (block_sparse.py:365)
+        Arguments:
+            query: <Tensor at [ADDRESS]>
+            key: <Tensor at [ADDRESS]>
+            value: <Tensor at [ADDRESS]>
+            block_map: <Tensor at [ADDRESS]>
+            block_sizes: <Tensor at [ADDRESS]>
+            softmax_scale: 0.08838834764831845
+        Locals:
+            provider: "cudnn"
+            precision: "bf16"
+            block_size: <cell at [ADDRESS]>
+            return_lse: True
+            cudnn_block_sparse_attention: <function at [ADDRESS]>
+    _sol_bsa_attention (sol_attn.py:174)
+        Arguments:
+            query: <Tensor at [ADDRESS]>
+            key: <Tensor at [ADDRESS]>
+            value: <Tensor at [ADDRESS]>
+            scale: 0.08838834764831845
+            tau: 1
+            thresh_type: "diag"
+            sink_start: 0
+            sink_tokens: 0
+            provider: "cudnn"
+            sink_block_mask: <Tensor at [ADDRESS]>
+        Locals:
+            prepare: <function at [ADDRESS]>
+            tokens: 82747
+            blocks: 1293
+            key_centroids: <Tensor at [ADDRESS]>
+            value_sums: <Tensor at [ADDRESS]>
+            threshold: <Tensor at [ADDRESS]>
+            sizes: <Tensor at [ADDRESS]>
+            query_padded: <Tensor at [ADDRESS]>
+            key_padded: <Tensor at [ADDRESS]>
+            value_padded: <Tensor at [ADDRESS]>
+            selected: <Tensor at [ADDRESS]>
+    CustomOpDef.register_kernel.<locals>.inner.<locals>.wrapped_fn (torch/_library/custom_ops.py:503)
+        Locals:
+            args: (<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, 0.08838834764831845, 1, "diag", 0, ...)
+            kwargs: {}
+    DisableContext.__call__.<locals>._fn (torch/_dynamo/eval_frame.py:1552)
+        Locals:
+            args: (<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, 0.08838834764831845, 1, "diag", 0, ...)
+            kwargs: {}
+            prior: None
+            callback: None
+    _disable_dynamo.<locals>.inner (torch/_compile.py:54)
+        Locals:
+            args: (<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, 0.08838834764831845, 1, "diag", 0, ...)
+            kwargs: {}
+            disable_fn: <function at [ADDRESS]>
+    CustomOpDef.register_kernel.<locals>.inner.<locals>.backend_impl (torch/_library/custom_ops.py:442)
+        Locals:
+            args: (<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, 0.08838834764831845, 1, "diag", 0, ...)
+            kwargs: <cell at [ADDRESS]>
+    OpOverloadPacket.__call__ (torch/_ops.py:1350)
+        Arguments:
+            self: <OpOverloadPacket at [ADDRESS]>
+        Locals:
+            args: (<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, 0.08838834764831845, 1, "diag", 0, ...)
+            kwargs: {}
+    SolAttnImpl.forward_cuda (vllm_omni/diffusion/attention/backends/sol_attn.py:313)
+        Arguments:
+            self: <SolAttnImpl at [ADDRESS]>
+            query: <Tensor at [ADDRESS]>
+            key: <Tensor at [ADDRESS]>
+            value: <Tensor at [ADDRESS]>
+            attn_metadata: <AttentionMetadata at [ADDRESS]>
+        Locals:
+            sink_start: 0
+            sink_tokens: 0
+            sink_block_mask: <Tensor at [ADDRESS]>
+            query_used: <Tensor at [ADDRESS]>
+            key_used: <Tensor at [ADDRESS]>
+            value_used: <Tensor at [ADDRESS]>
+    AttentionImpl.forward (vllm_omni/diffusion/attention/backends/abstract.py:409)
+        Arguments:
+            self: <SolAttnImpl at [ADDRESS]>
+            query: <Tensor at [ADDRESS]>
+            key: <Tensor at [ADDRESS]>
+            value: <Tensor at [ADDRESS]>
+            attn_metadata: <AttentionMetadata at [ADDRESS]>
+    Attention._run_local_attention (vllm_omni/diffusion/attention/layer.py:1599)
+        Arguments:
+            self: <Attention at [ADDRESS]>
+            query: <Tensor at [ADDRESS]>
+            key: <Tensor at [ADDRESS]>
+            value: <Tensor at [ADDRESS]>
+            attn_metadata: <AttentionMetadata at [ADDRESS]>
+        Locals:
+            effective_impl: <SolAttnImpl at [ADDRESS]>
+            effective_backend: 0
+            effective_spec: <AttentionSpec at [ADDRESS]>
+            dense_mask: None
+            spans_take_precedence: False
+            in_kv_memory_profile: False
+    Attention._forward_impl (vllm_omni/diffusion/attention/layer.py:1336)
+        Arguments:
+            self: <Attention at [ADDRESS]>
+            query: <Tensor at [ADDRESS]>
+            key: <Tensor at [ADDRESS]>
+            value: <Tensor at [ADDRESS]>
+            attn_metadata: <AttentionMetadata at [ADDRESS]>
+        Locals:
+            strategy: <UlyssesParallelAttention at [ADDRESS]>
+            paged_adapter: None
+            in_kv_memory_profile: False
+            use_paged_attention: False
+            ctx: <_UlyssesCtx at [ADDRESS]>
+            post_parallel_ref: None
+            paged_sp_padding: 0
+    Attention.forward (vllm_omni/diffusion/attention/layer.py:988)
+        Arguments:
+            self: <Attention at [ADDRESS]>
+            query: <Tensor at [ADDRESS]>
+            key: <Tensor at [ADDRESS]>
+            value: <Tensor at [ADDRESS]>
+            attn_metadata: <AttentionMetadata at [ADDRESS]>
+    Module._call_impl (torch/nn/modules/module.py:1798)
+        Arguments:
+            self: <cell at [ADDRESS]>
+        Locals:
+            args: <cell at [ADDRESS]>
+            kwargs: <cell at [ADDRESS]>
+    Module._wrapped_call_impl (torch/nn/modules/module.py:1787)
+        Arguments:
+            self: <Attention at [ADDRESS]>
+        Locals:
+            args: (<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, ...)
+            kwargs: {}
+    MiniMaxH3Attention._run_packed_attention (vllm_omni/diffusion/models/minimax_h3/minimax_h3_blocks.py:478)
+        Arguments:
+            self: <MiniMaxH3Attention at [ADDRESS]>
+            q: <Tensor at [ADDRESS]>
+            k: <Tensor at [ADDRESS]>
+            v: <Tensor at [ADDRESS]>
+        Locals:
+            cu_seqlens: <Tensor at [ADDRESS]>
+            max_seqlen: 82747
+            packed_total: 82752
+            num_requests: 1
+            video_layout: <VideoTokenLayout at [ADDRESS]>
+            text_audio_block_mask: <TextAudioBlockMask at [ADDRESS]>
+            vsa_prefix_segments: (6913, 414, 37296, 414, 414)
+            gate_compress: None
+            reference_kv_state: None
+            reference_kv_layer_index: 49
+            reference_kv_compact: False
+            vdn_window: None
+            reference_rows: 0
+            kv_total: 82752
+            kv_max_seqlen: 82747
+            kv_cu_seqlens: <Tensor at [ADDRESS]>
+            attn_mask: None
+            mask_free_packed_padding: True
+            use_ring: False
+            backend: 0
+            used_q: 82747
+            used_kv: 82747
+            no_mask: True
+            extra: {"cu_seqlens_q": <Tensor at [ADDRESS]>, "cu_seqlens_k": <Tensor at [ADDRESS]>, "max_seqlen_q": 82747, ...}
+            metadata: <AttentionMetadata at [ADDRESS]>
+    DisableContext.__call__.<locals>._fn (torch/_dynamo/eval_frame.py:1552)
+        Locals:
+            args: (<MiniMaxH3Attention at [ADDRESS]>, <Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>, ...)
+            kwargs: {"cu_seqlens": <Tensor at [ADDRESS]>, "max_seqlen": 82747, "packed_total": 82752, "num_requests": 1, ...}
+            prior: None
+            callback: None
+    MiniMaxH3Attention.forward (vllm_omni/diffusion/models/minimax_h3/minimax_h3_blocks.py:567)
+        Arguments:
+            self: <MiniMaxH3Attention at [ADDRESS]>
+            x: <Tensor at [ADDRESS]>
+        Locals:
+            rope_table: <Tensor at [ADDRESS]>
+            cu_seqlens: <Tensor at [ADDRESS]>
+            max_seqlen: 82747
+            packed_total: 82752
+            num_requests: 1
+            sp_seq_lens: None
+            video_layout: <VideoTokenLayout at [ADDRESS]>
+            text_audio_block_mask: <TextAudioBlockMask at [ADDRESS]>
+            vsa_prefix_segments: (6913, 414, 37296, 414, 414)
+            reference_kv_state: None
+            reference_kv_layer_index: 49
+            reference_kv_compact: False
+            vdn_window: None
+            total: 41376
+            q: <Tensor at [ADDRESS]>
+            k: <Tensor at [ADDRESS]>
+            v: <Tensor at [ADDRESS]>
+            q_raw: <Tensor at [ADDRESS]>
+            k_raw: <Tensor at [ADDRESS]>
+            gate_compress: None
+    Module._call_impl (torch/nn/modules/module.py:1798)
+        Arguments:
+            self: <cell at [ADDRESS]>
+        Locals:
+            args: <cell at [ADDRESS]>
+            kwargs: <cell at [ADDRESS]>
+    Module._wrapped_call_impl (torch/nn/modules/module.py:1787)
+        Arguments:
+            self: <MiniMaxH3Attention at [ADDRESS]>
+        Locals:
+            args: (<Tensor at [ADDRESS]>)
+            kwargs: {"rope_table": <Tensor at [ADDRESS]>, "cu_seqlens": <Tensor at [ADDRESS]>, "max_seqlen": 82747, ...}
+    MiniMaxH3DiTBlock.forward (vllm_omni/diffusion/models/minimax_h3/minimax_h3_blocks.py:853)
+        Arguments:
+            self: <MiniMaxH3DiTBlock at [ADDRESS]>
+            x: <Tensor at [ADDRESS]>
+        Locals:
+            t_emb: <Tensor at [ADDRESS]>
+            combined_indices: <Tensor at [ADDRESS]>
+            rope_table: <Tensor at [ADDRESS]>
+            cu_seqlens: <Tensor at [ADDRESS]>
+            max_seqlen: 82747
+            packed_total: 82752
+            num_requests: 1
+            sp_seq_lens: None
+            video_layout: <VideoTokenLayout at [ADDRESS]>
+            text_audio_block_mask: <TextAudioBlockMask at [ADDRESS]>
+            vsa_prefix_segments: (6913, 414, 37296, 414, 414)
+            reference_kv_state: None
+            reference_kv_compact: False
+            vdn_window: None
+            shift_msa: <Tensor at [ADDRESS]>
+            scale_msa: <Tensor at [ADDRESS]>
+            gate_msa: <Tensor at [ADDRESS]>
+            shift_mlp: <Tensor at [ADDRESS]>
+            scale_mlp: <Tensor at [ADDRESS]>
+            gate_mlp: <Tensor at [ADDRESS]>
+            residual: <Tensor at [ADDRESS]>
+            h: <Tensor at [ADDRESS]>
+    Module._call_impl (torch/nn/modules/module.py:1798)
+        Arguments:
+            self: <cell at [ADDRESS]>
+        Locals:
+            args: <cell at [ADDRESS]>
+            kwargs: <cell at [ADDRESS]>
+    Module._wrapped_call_impl (torch/nn/modules/module.py:1787)
+        Arguments:
+            self: <MiniMaxH3DiTBlock at [ADDRESS]>
+        Locals:
+            args: (<Tensor at [ADDRESS]>)
+            kwargs: {"t_emb": <Tensor at [ADDRESS]>, "combined_indices": <Tensor at [ADDRESS]>, ...}
+    MiniMaxH3DiTModel.forward (vllm_omni/diffusion/models/minimax_h3/minimax_h3_transformer.py:1611)
+        Arguments:
+            self: <MiniMaxH3DiTModel at [ADDRESS]>
+        Locals:
+            pdd_step: None
+            kwargs: {"img_position_ids": <Tensor at [ADDRESS]>, "update_mask": <Tensor at [ADDRESS]>, ...}
+            unexpected: []
+            x: <Tensor at [ADDRESS]>
+            audio_x: <Tensor at [ADDRESS]>
+            img_position_ids: <Tensor at [ADDRESS]>
+            unique_timesteps: <Tensor at [ADDRESS]>
+            inverse_indices: <Tensor at [ADDRESS]>
+            update_mask: <Tensor at [ADDRESS]>
+            token_tags: <Tensor at [ADDRESS]>
+            skip_mask_out_condition: False
+            text_selected: <Tensor at [ADDRESS]>
+            img_pos: <Tensor at [ADDRESS]>
+            audio_pos: <Tensor at [ADDRESS]>
+            text_pos: <Tensor at [ADDRESS]>
+            infer_out_pos: <Tensor at [ADDRESS]>
+            psp: {"cu_seqlens_q": <Tensor at [ADDRESS]>, "max_seqlen_q": 82747, "num_requests": 1, ...}
+            cu_seqlens: <Tensor at [ADDRESS]>
+            max_seqlen: 82747
+            num_requests: 1
+            vsa_prefix_segments: (6913, 414, 37296, 414, 414)
+            text_audio_block_mask: <TextAudioBlockMask at [ADDRESS]>
+            refiner_psp: {"cu_seqlens_q": <Tensor at [ADDRESS]>, "max_seqlen_q": 6913}
+            refiner_cu: <Tensor at [ADDRESS]>
+            refiner_max: 6913
+            video_layout: <VideoTokenLayout at [ADDRESS]>
+            reference_kv_state: None
+            vdn_window: None
+            seq_len: 82752
+            device: <torch.device at [ADDRESS]>
+            local_span: (0, 41376)
+            local_start: 0
+            local_len: 41376
+            compact_reference: False
+            active_positions: None
+            compact_local_positions: None
+            rope_table: <Tensor at [ADDRESS]>
+            rope_position_ids: <Tensor at [ADDRESS]>
+            decoder_input: <Tensor at [ADDRESS]>
+            t_emb: <Tensor at [ADDRESS]>
+            combined_indices: <Tensor at [ADDRESS]>
+            hidden: <Tensor at [ADDRESS]>
+            block_rope: <Tensor at [ADDRESS]>
+            block_combined: <Tensor at [ADDRESS]>
+            block_packed_total: 82752
+            block_max_seqlen: 82747
+            reference_mask: None
+            block_video_layout: <VideoTokenLayout at [ADDRESS]>
+            control_rows: None
+            control_scale: 1
+            hints: {}
+            block_index: 49
+            block: <MiniMaxH3DiTBlock at [ADDRESS]>
+    install.<locals>.measured (forward_probe.py:66)
+        Arguments:
+            self: <MiniMaxH3DiTModel at [ADDRESS]>
+        Locals:
+            args: ()
+            kwargs: {"img_position_ids": <Tensor at [ADDRESS]>, "update_mask": <Tensor at [ADDRESS]>, ...}
+            root: <PosixPath at [ADDRESS]>
+            rank: 0
+            world: 2
+            meta: {"img_position_ids": {"shape": [1, 82752, 3], "dtype": "torch.float64", ...}, ...}
+            config: <OmniDiffusionConfig at [ADDRESS]>
+            parallel: <DiffusionParallelConfig at [ADDRESS]>
+            backends: {"token_refiner.blocks.0.attn.attention": {"backend": "SDPA", "impl": "SDPAImpl"}, ...}
+            name: "final_layer.audio_out"
+            module: <ColumnParallelLinear at [ADDRESS]>
+            device: 0
+            props: <torch._C._CudaDeviceProperties at [ADDRESS]>
+            warmup: 1
+            repeats: 3
+            samples: []
+            i: 0
+            start: <Event at [ADDRESS]>
+            stop: <Event at [ADDRESS]>
+            wall: 1227068.804457662
+    Module._call_impl (torch/nn/modules/module.py:1798)
+        Arguments:
+            self: <cell at [ADDRESS]>
+        Locals:
+            args: <cell at [ADDRESS]>
+            kwargs: <cell at [ADDRESS]>
+    Module._wrapped_call_impl (torch/nn/modules/module.py:1787)
+        Arguments:
+            self: <MiniMaxH3DiTModel at [ADDRESS]>
+        Locals:
+            args: ()
+            kwargs: {"img_position_ids": <Tensor at [ADDRESS]>, "update_mask": <Tensor at [ADDRESS]>, ...}
+    MiniMaxH3ModelBatch.__call__ (vllm_omni/diffusion/models/minimax_h3/sampling.py:215)
+        Arguments:
+            self: <MiniMaxH3ModelBatch at [ADDRESS]>
+            evaluations: [<ModelEvaluation at [ADDRESS]>]
+        Locals:
+            minimax_h3_batched_forward_kwargs: <function at [ADDRESS]>
+            minimax_h3_publish_denoise_progress: <function at [ADDRESS]>
+            models: [<MiniMaxH3Model at [ADDRESS]>]
+            request_progress: [(0, 1, 50)]
+            uniform_progress: True
+            context: <ForwardContext at [ADDRESS]>
+            pdd: False
+            prepared: [((<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>), [(<Tensor at [ADDRESS]>, None), (...)], (0, 0), (...))]
+            _: (<Tensor at [ADDRESS]>, <Tensor at [ADDRESS]>)
+            rows: [(<Tensor at [ADDRESS]>, None), (<Tensor at [ADDRESS]>, None)]
+            times: (0, 0)
+            cond: (0.999, 1)
+            kwargs: {"img_position_ids": <Tensor at [ADDRESS]>, "update_mask": <Tensor at [ADDRESS]>, ...}
+            reference_kv_state: None
+    _evaluate (vllm_omni/diffusion/sampler.py:192)
+        Arguments:
+            model: <MiniMaxH3ModelBatch at [ADDRESS]>
+            evaluations: [<ModelEvaluation at [ADDRESS]>]
+        Locals:
+            evaluation: <ModelEvaluation at [ADDRESS]>
+            latent: <Tensor at [ADDRESS]>
+    sample_euler (vllm_omni/diffusion/sampler.py:256)
+        Arguments:
+            model: <MiniMaxH3ModelBatch at [ADDRESS]>
+            states: [<SamplingState at [ADDRESS]>]
+        Locals:
+            num_steps: None
+            callback: <function at [ADDRESS]>
+            step_context: <function at [ADDRESS]>
+            active: [<SamplingState at [ADDRESS]>]
+            state: <cell at [ADDRESS]>
+    KSAMPLER.sample (vllm_omni/diffusion/sampler.py:348)
+        Arguments:
+            self: <KSAMPLER at [ADDRESS]>
+            model: <MiniMaxH3ModelBatch at [ADDRESS]>
+            states: [<SamplingState at [ADDRESS]>]
+        Locals:
+            num_steps: None
+            callback: <function at [ADDRESS]>
+            step_context: <function at [ADDRESS]>
+    minimax_h3_denoise_loop (vllm_omni/diffusion/models/minimax_h3/denoise_loop.py:424)
+        Locals:
+            model: <MiniMaxH3DiTModel at [ADDRESS]>
+            positive: <MiniMaxH3DenoiseBranch at [ADDRESS]>
+            initial_video_rows: <Tensor at [ADDRESS]>
+            initial_audio_rows: <Tensor at [ADDRESS]>
+            keyframe_cond_rows: <Tensor at [ADDRESS]>
+            audio_ref_rows: <Tensor at [ADDRESS]>
+            video_edit: None
+            audio_edit: None
+            sigmas_video: [1, 0.998302161693573, 0.9965397715568542, 0.9947089552879333, 0.9928057789802551, 0.9908256530761719, ...]
+            sigmas_audio: [1, 0.9932432770729065, 0.9863013029098511, 0.9791666269302368, 0.9718309044837952, 0.964285671710968, ...]
+            device: <torch.device at [ADDRESS]>
+            imgvid_cond_noise_aug_for_inference: 0.999
+            audio_cond_noise_aug_for_inference: 1
+            update_progress: <cell at [ADDRESS]>
+            step_profiler: <cell at [ADDRESS]>
+            sampler: "euler"
+            update: <Tensor at [ADDRESS]>
+            audio_update: <Tensor at [ADDRESS]>
+            reference_kv_state: None
+            create_reference_kv_state: <method at [ADDRESS]>
+            state: <SamplingState at [ADDRESS]>
+            write_back_and_update_progress: <function at [ADDRESS]>
+            step_context: <function at [ADDRESS]>
+    MiniMaxH3Pipeline.diffuse (vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3.py:2414)
+        Arguments:
+            self: <MiniMaxH3Pipeline at [ADDRESS]>
+        Locals:
+            task: "ref2va"
+            text_embeddings: <Tensor at [ADDRESS]>
+            text_tags: <Tensor at [ADDRESS]>
+            seed: 0
+            latent_t: 37
+            latent_h: 48
+            latent_w: 84
+            audio_t: 207
+            num_frames: 124
+            num_steps: 50
+            video_shift: 12
+            audio_shift: 3
+            base_schedule: None
+            visual_condition: <Tensor at [ADDRESS]>
+            visual_condition_shape: (37, 48, 84)
+            audio_condition: <Tensor at [ADDRESS]>
+            ref_audio_t: None
+            ref_blocks: [{"kind": "video_audio", "ref_audio_t": 207, "latent_t": 37, "latent_h": 48, "latent_w": 84}, {"kind": "audio", ...}]
+            visual_condition_shapes: [(37, 48, 84)]
+            audio_condition_lengths: [207, 207]
+            keyframe_frame_indices: None
+            control_rows: None
+            control_context_scale: 1
+            guide_blocks: None
+            pad_seq_len: None
+            locked_audio_rows: None
+            temporal_offset: 0
+            media_time_origin: None
+            video_edit_clean_rows: None
+            video_edit_mask_rows: None
+            video_edit_restore_mask_rows: None
+            audio_edit_clean_rows: None
+            audio_edit_mask_rows: None
+            audio_edit_restore_mask_rows: None
+            sampler: "euler"
+            init_latents: None
+            refine: None
+            request_context: {"continuation": None, "latent_continuation": None, "latent_cache_key": None, "task": "ref2va", "control_rows": None, ...}
+            inputs: {"branch": <MiniMaxH3DenoiseBranch at [ADDRESS]>, "video_rows": <Tensor at [ADDRESS]>, ...}
+            branch: <MiniMaxH3DenoiseBranch at [ADDRESS]>
+            transformer: <MiniMaxH3DiTModel at [ADDRESS]>
+            registry: None
+            cache_runtime: <RequestScopedCacheDiTRuntime at [ADDRESS]>
+    MiniMaxH3Pipeline.forward (vllm_omni/diffusion/models/minimax_h3/pipeline_minimax_h3.py:3908)
+        Arguments:
+            self: <MiniMaxH3Pipeline at [ADDRESS]>
+            request: <DiffusionRequestBatch at [ADDRESS]>
+        Locals:
+            context: {"continuation": None, "latent_continuation": None, "latent_cache_key": None, "task": "ref2va", "control_rows": None, ...}
+            denoise_kwargs: {"task": "ref2va", "text_embeddings": <Tensor at [ADDRESS]>, "text_tags": <Tensor at [ADDRESS]>, "seed": 0, ...}
+            num_outputs: 1
+            upscale_target: None
+            latent_refine: None
+            height: 768
+            width: 1344
+            latent_continuation: None
+            prefix: None
+            trim: None
+            videos: []
+            audios: []
+            frame_counts: []
+            regenerate_source: None
+            output_index: 0
+            output_seed: 0
+            output_kwargs: {"task": "ref2va", "text_embeddings": <Tensor at [ADDRESS]>, "text_tags": <Tensor at [ADDRESS]>, "seed": 0, ...}
+    no_grad (torch/utils/_contextlib.py:158)
+        Locals:
+            args: (<MiniMaxH3Pipeline at [ADDRESS]>, <DiffusionRequestBatch at [ADDRESS]>)
+            kwargs: {}
+    DiffusionModelRunner._execute_request_list (vllm_omni/diffusion/worker/diffusion_model_runner.py:1023)
+        Arguments:
+            self: <DiffusionModelRunner at [ADDRESS]>
+            reqs: [<OmniDiffusionRequest at [ADDRESS]>]
+        Locals:
+            od_config: <OmniDiffusionConfig at [ADDRESS]>
+            allow_single_output: True
+            require_request_batch_support: False
+            kv_prefetch_job: None
+            record_name: "pipeline_forward"
+            record_output_peak_memory: True
+            in_diffusion_kv_memory_profile: False
+            diffusion_kv_metadata: None
+            req: <OmniDiffusionRequest at [ADDRESS]>
+            service: None
+            sampling_params: [<OmniDiffusionSamplingParams at [ADDRESS]>]
+            attention_schedule: ()
+            sigma_schedule: ()
+            use_hsdp: False
+            use_distributed_offload: False
+            grad_context: <inference_mode at [ADDRESS]>
+            batch: <DiffusionRequestBatch at [ADDRESS]>
+            is_primary: True
+            paged_kv_runtime: None
+            paged_kv_context: <nullcontext at [ADDRESS]>
+            paged_kv_cached_prefix_len: 0
+            run_stage: None
+    DiffusionModelRunner.execute_model (vllm_omni/diffusion/worker/diffusion_model_runner.py:1116)
+        Arguments:
+            self: <DiffusionModelRunner at [ADDRESS]>
+            req: <OmniDiffusionRequest at [ADDRESS]>
+            kv_prefetch_job: None
+            diffusion_kv_metadata: None
+        Locals:
+            installed_request: False
+    DiffusionWorker.execute_model (vllm_omni/diffusion/worker/diffusion_worker.py:1245)
+        Arguments:
+            self: <DiffusionWorker at [ADDRESS]>
+            req: <OmniDiffusionRequest at [ADDRESS]>
+            od_config: <OmniDiffusionConfig at [ADDRESS]>
+            kv_prefetch_job: None
+            diffusion_kv_metadata: None
+        Locals:
+            is_batch: False
+            request: <OmniDiffusionRequest at [ADDRESS]>
+            profiler: None
+            ctx: <nullcontext at [ADDRESS]>
+            kwargs: {"kv_prefetch_job": None}
+    WorkerWrapperBase.execute_method (vllm_omni/diffusion/worker/diffusion_worker.py:2633)
+        Arguments:
+            self: <WorkerWrapperBase at [ADDRESS]>
+            method: "execute_model"
+        Locals:
+            args: (<OmniDiffusionRequest at [ADDRESS]>, <OmniDiffusionConfig at [ADDRESS]>, None)
+            kwargs: {}
+            func: <method at [ADDRESS]>
+    WorkerProc._execute_rpc (vllm_omni/diffusion/worker/diffusion_worker.py:2163)
+        Arguments:
+            self: <WorkerProc at [ADDRESS]>
+            rpc_request: {"type": "rpc", "method": "execute_model", "args": (<OmniDiffusionRequest at [ADDRESS]>, ...), "kwargs": {}, ...}
+        Locals:
+            method: "execute_model"
+            args: (<OmniDiffusionRequest at [ADDRESS]>, <OmniDiffusionConfig at [ADDRESS]>, None)
+            kwargs: {}
+            output_rank: 0
+            exec_all_ranks: True
+            collect_rank_status: False
+            wave_id: None
+            should_execute: True
+            should_reply: True
+            result: None
+            status: {"rank": 0, "ok": True, "error": None, "error_type": None, "traceback": None, "bool_result": None}
+    WorkerProc._worker_busy_loop (vllm_omni/diffusion/worker/diffusion_worker.py:2253)
+        Arguments:
+            self: <WorkerProc at [ADDRESS]>
+        Locals:
+            msg: {"type": "rpc", "method": "execute_model", "args": (<OmniDiffusionRequest at [ADDRESS]>, ...), "kwargs": {}, ...}
+            rpc_id: "1"
+    WorkerProc.worker_main (vllm_omni/diffusion/worker/diffusion_worker.py:2400)
+        Arguments:
+            rank: 0
+            od_config: <OmniDiffusionConfig at [ADDRESS]>
+            pipe_writer: <Connection at [ADDRESS]>
+            broadcast_handle: <Handle at [ADDRESS]>
+            wake_event: <Event at [ADDRESS]>
+            worker_extension_cls: None
+            custom_pipeline_args: None
+        Locals:
+            sharing_registry: None
+            load_omni_general_plugins: <function at [ADDRESS]>
+            log_level: "INFO"
+            signal_handler: <function at [ADDRESS]>
+            worker_proc: <WorkerProc at [ADDRESS]>
+    BaseProcess.run (multiprocessing/process.py:108)
+        Arguments:
+            self: <SpawnProcess at [ADDRESS]>
+    BaseProcess._bootstrap (multiprocessing/process.py:314)
+        Arguments:
+            self: <SpawnProcess at [ADDRESS]>
+            parent_sentinel: 3
+        Locals:
+            util: <module at [ADDRESS]>
+            context: <module at [ADDRESS]>
+    _main (multiprocessing/spawn.py:135)
+        Arguments:
+            fd: 56
+            parent_sentinel: 3
+        Locals:
+            from_parent: <_io.BufferedReader at [ADDRESS]>
+            preparation_data: {"log_to_stderr": False, "authkey": <AuthenticationString at [ADDRESS]>, "name": "DiffusionWorker-0", ...}
+            self: <SpawnProcess at [ADDRESS]>
+    spawn_main (multiprocessing/spawn.py:122)
+        Arguments:
+            pipe_handle: 56
+            parent_pid: None
+            tracker_fd: 35
+        Locals:
+            fd: 56
+            parent_sentinel: 3
+            resource_tracker: <module at [ADDRESS]>
+    <module> (<string>:1)
+Thread 3713298 (idle): "ThreadPoolExecutor-0_0"
+    [ADDRESS] (libc.so.6)
+    [ADDRESS] (libc.so.6)
+    PyThread_acquire_lock_timed (python3.12)
+    PyThread_acquire_lock_timed (python3.12)
+    _worker (concurrent/futures/thread.py:89)
+        Arguments:
+            executor_reference: <weakref.ReferenceType at [ADDRESS]>
+            work_queue: <_queue.SimpleQueue at [ADDRESS]>
+            initializer: None
+            initargs: ()
+    Thread.run (threading.py:1010)
+        Arguments:
+            self: <Thread at [ADDRESS]>
+    Thread._bootstrap_inner (threading.py:1073)
+        Arguments:
+            self: <Thread at [ADDRESS]>
+    Thread._bootstrap (threading.py:1030)
+        Arguments:
+            self: <Thread at [ADDRESS]>
+Thread 3713299 (idle): "ThreadPoolExecutor-0_1"
+    [ADDRESS] (libc.so.6)
+    [ADDRESS] (libc.so.6)
+    PyThread_acquire_lock_timed (python3.12)
+    PyThread_acquire_lock_timed (python3.12)
+    _worker (concurrent/futures/thread.py:89)
+        Arguments:
+            executor_reference: <weakref.ReferenceType at [ADDRESS]>
+            work_queue: <_queue.SimpleQueue at [ADDRESS]>
+            initializer: None
+            initargs: ()
+    Thread.run (threading.py:1010)
+        Arguments:
+            self: <Thread at [ADDRESS]>
+    Thread._bootstrap_inner (threading.py:1073)
+        Arguments:
+            self: <Thread at [ADDRESS]>
+    Thread._bootstrap (threading.py:1030)
+        Arguments:
+            self: <Thread at [ADDRESS]>
+Thread 3713505 (idle): "tqdm_monitor"
+    [ADDRESS] (libc.so.6)
+    [ADDRESS] (libc.so.6)
+    PyThread_acquire_lock_timed (python3.12)
+    PyThread_acquire_lock_timed (python3.12)
+    Condition.wait (threading.py:359)
+        Arguments:
+            self: <Condition at [ADDRESS]>
+            timeout: 10
+        Locals:
+            waiter: <_thread.lock at [ADDRESS]>
+            saved_state: None
+            gotit: False
+    Event.wait (threading.py:655)
+        Arguments:
+            self: <Event at [ADDRESS]>
+            timeout: 10
+        Locals:
+            signaled: False
+    TMonitor.run (tqdm/_monitor.py:69)
+        Arguments:
+            self: <TMonitor at [ADDRESS]>
+        Locals:
+            cur_t: 1794991214.0793657
+    Thread._bootstrap_inner (threading.py:1073)
+        Arguments:
+            self: <TMonitor at [ADDRESS]>
+    Thread._bootstrap (threading.py:1030)
+        Arguments:
+            self: <TMonitor at [ADDRESS]>
+Thread 3713529 (idle): "DiffusionAsyncOutput"
+    [ADDRESS] (libc.so.6)
+    [ADDRESS] (libc.so.6)
+    PyThread_acquire_lock_timed (python3.12)
+    PyThread_acquire_lock_timed (python3.12)
+    Condition.wait (threading.py:355)
+        Arguments:
+            self: <Condition at [ADDRESS]>
+            timeout: None
+        Locals:
+            waiter: <_thread.lock at [ADDRESS]>
+            saved_state: None
+            gotit: False
+    Queue.get (queue.py:171)
+        Arguments:
+            self: <Queue at [ADDRESS]>
+            block: True
+            timeout: None
+    WorkerProc._async_output_loop (vllm_omni/diffusion/worker/diffusion_worker.py:1902)
+        Arguments:
+            self: <WorkerProc at [ADDRESS]>
+        Locals:
+            device: <torch.device at [ADDRESS]>
+            d2h_stream: <torch.Stream at [ADDRESS]>
+            transport_options: {}
+            output_queue: <Queue at [ADDRESS]>
+    Thread.run (threading.py:1010)
+        Arguments:
+            self: <Thread at [ADDRESS]>
+    Thread._bootstrap_inner (threading.py:1073)
+        Arguments:
+            self: <Thread at [ADDRESS]>
+    Thread._bootstrap (threading.py:1030)
+        Arguments:
+            self: <Thread at [ADDRESS]>

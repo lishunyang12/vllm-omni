@@ -1,0 +1,5 @@
+index, uuid, name, compute_cap, memory.total [MiB], driver_version
+0, [GPU_UUID], NVIDIA GB200, 10.0, 189471 MiB, 595.84.01
+1, [GPU_UUID], NVIDIA GB200, 10.0, 189471 MiB, 595.84.01
+2, [GPU_UUID], NVIDIA GB200, 10.0, 189471 MiB, 595.84.01
+3, [GPU_UUID], NVIDIA GB200, 10.0, 189471 MiB, 595.84.01

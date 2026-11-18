@@ -1,0 +1,80 @@
+[
+  {
+    "hardware": "sm90",
+    "gpu": "NVIDIA GH200 96GB HBM3",
+    "task": "t2va",
+    "dense_s": 8.908381475950591,
+    "sol_s": 10.151726113981567,
+    "speedup": 0.8775238196863322,
+    "dense_cv_percent": 0.09711006648129097,
+    "sol_cv_percent": 0.09712577747189068,
+    "warmup": 3,
+    "measured_replays": 9,
+    "status": "complete_matched_inputs"
+  },
+  {
+    "hardware": "sm90",
+    "gpu": "NVIDIA GH200 96GB HBM3",
+    "task": "fl2va",
+    "dense_s": 6.484508304973133,
+    "sol_s": 7.514672853052616,
+    "speedup": 0.8629129213973687,
+    "dense_cv_percent": 0.10029711713342405,
+    "sol_cv_percent": 0.15157506188532222,
+    "warmup": 3,
+    "measured_replays": 9,
+    "status": "complete_matched_inputs"
+  },
+  {
+    "hardware": "sm90",
+    "gpu": "NVIDIA GH200 96GB HBM3",
+    "task": "ref2va",
+    "dense_s": 10.743993684998713,
+    "sol_s": 13.634199306019582,
+    "speedup": 0.7880179425171799,
+    "dense_cv_percent": 0.12019828837438754,
+    "sol_cv_percent": 0.07132177032090692,
+    "warmup": 3,
+    "measured_replays": 9,
+    "status": "complete_matched_inputs"
+  },
+  {
+    "hardware": "sm100",
+    "gpu": "NVIDIA GB200",
+    "task": "t2va",
+    "dense_s": 4.061751885106787,
+    "sol_s": null,
+    "speedup": null,
+    "dense_cv_percent": 0.3310563947309366,
+    "sol_cv_percent": null,
+    "warmup": 3,
+    "measured_replays": 9,
+    "status": "SOL_timeout_300s_zero_complete_forward_samples"
+  },
+  {
+    "hardware": "sm100",
+    "gpu": "NVIDIA GB200",
+    "task": "fl2va",
+    "dense_s": 2.9994493739213794,
+    "sol_s": null,
+    "speedup": null,
+    "dense_cv_percent": 0.08240876154088299,
+    "sol_cv_percent": null,
+    "warmup": 3,
+    "measured_replays": 9,
+    "status": "SOL_timeout_300s_zero_complete_forward_samples"
+  },
+  {
+    "hardware": "sm100",
+    "gpu": "NVIDIA GB200",
+    "task": "ref2va",
+    "dense_s": 4.989461882971227,
+    "sol_s": null,
+    "speedup": null,
+    "dense_cv_percent": 0.5670218170597946,
+    "sol_cv_percent": null,
+    "warmup": 3,
+    "measured_replays": 9,
+    "status": "SOL_stalled_first_warmup_manually_stopped_zero_samples"
+  }
+]

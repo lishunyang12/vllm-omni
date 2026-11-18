@@ -1,0 +1,125 @@
+W1118 08:58:47.825000 3762406 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W1118 08:58:47.826000 3762406 torch/_library/opaque_object.py:294] register_opaque_type is deprecated, use register_custom_class instead
+W1118 08:58:47.827000 3762406 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+/work/source/head/vllm_omni/config/omni_config.py:1543: FutureWarning: Diffusion config field 'diffusion_attention_backend' is deprecated; use 'diffusion_attention_config'.
+  normalized = normalize_omni_diffusion_kwargs(mixed_kwargs, apply_defaults=False)
+W1118 08:59:04.966000 3762477 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W1118 08:59:04.967000 3762477 torch/_library/opaque_object.py:294] register_opaque_type is deprecated, use register_custom_class instead
+W1118 08:59:04.967000 3762477 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+W1118 08:59:05.098000 3762476 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W1118 08:59:05.099000 3762476 torch/_library/opaque_object.py:294] register_opaque_type is deprecated, use register_custom_class instead
+W1118 08:59:05.100000 3762476 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+(DiffusionWorker pid=3762476) INFO 11-18 08:59:17 [diffusion_worker.py:1787] Worker 0 created result MessageQueue
+(DiffusionWorker pid=3762476) INFO 11-18 08:59:17 [scheduler.py:354] Chunked prefill is enabled with max_num_batched_tokens=2048.
+(DiffusionWorker pid=3762476) INFO 11-18 08:59:17 [kernel.py:517] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(DiffusionWorker pid=3762476) INFO 11-18 08:59:17 [diffusion_worker.py:600] Final IR op priority after setting vLLM-Omni overrides: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native'])
+(DiffusionWorker pid=3762477) INFO 11-18 08:59:19 [diffusion_worker.py:1787] Worker 1 created result MessageQueue
+(DiffusionWorker pid=3762477) INFO 11-18 08:59:19 [scheduler.py:354] Chunked prefill is enabled with max_num_batched_tokens=2048.
+(DiffusionWorker pid=3762477) INFO 11-18 08:59:19 [kernel.py:517] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(DiffusionWorker pid=3762477) INFO 11-18 08:59:19 [diffusion_worker.py:600] Final IR op priority after setting vLLM-Omni overrides: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native'])
+(DiffusionWorker pid=3762477) INFO 11-18 08:59:20 [diffusion_worker.py:617] Worker 1: Initialized device and distributed environment.
+(DiffusionWorker pid=3762476) INFO 11-18 08:59:20 [diffusion_worker.py:617] Worker 0: Initialized device and distributed environment.
+(DiffusionWorker pid=3762476) INFO 11-18 08:59:21 [parallel_state.py:759] Building SP subgroups from explicit sp_group_ranks (sp_size=2, ulysses=2, ring=1, use_ulysses_low=True).
+(DiffusionWorker pid=3762477) INFO 11-18 08:59:21 [parallel_state.py:759] Building SP subgroups from explicit sp_group_ranks (sp_size=2, ulysses=2, ring=1, use_ulysses_low=True).
+(DiffusionWorker pid=3762476) INFO 11-18 08:59:21 [parallel_state.py:801] SP group details for rank 0: sp_group=[0, 1], ulysses_group=[0, 1], ring_group=[0]
+(DiffusionWorker pid=3762477) INFO 11-18 08:59:21 [parallel_state.py:801] SP group details for rank 1: sp_group=[0, 1], ulysses_group=[0, 1], ring_group=[1]
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:21 [diffusion_worker.py:393] FlashInfer autotune auto-enabled for this diffusion stage (CUDA SM100+); the first request of each new shape is slower while it tunes. Disable with --no-diffusion-flashinfer-autotune.
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:21 [selector.py:85] Resolved diffusion attention backend 'SDPA' for role='minimax_h3.token_refiner' (role_category='self') via attention_config.default (model override SOL_ATTN -> TORCH_SDPA)
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:21 [selector.py:94] Resolved diffusion attention backend 'SOL_ATTN' for role='self' via attention_config.default
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:22 [selector.py:85] Resolved diffusion attention backend 'SDPA' for role='minimax_h3.token_refiner' (role_category='self') via attention_config.default (model override SOL_ATTN -> TORCH_SDPA)
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:22 [selector.py:94] Resolved diffusion attention backend 'SOL_ATTN' for role='self' via attention_config.default
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:22 [encoder.py:1201] MiniMax H3 Qwen3-VL encoder: 50 retained decoder layers, text_encoder_tp_size=2, vision replicated
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:22 [encoder.py:1201] MiniMax H3 Qwen3-VL encoder: 50 retained decoder layers, text_encoder_tp_size=2, vision replicated
+The config attributes {'vae_ratio': 16, 'vae_ratio_t': 4} were passed to AutoencoderKLLegacy, but are not expected and will be ignored. Please verify your config.json configuration file.
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:37 [vae_temporal.py:280] MiniMax-H3 VAE encode_temporal tail-padding patch installed
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:37 [vae_temporal.py:289] MiniMax-H3 VAE streaming uint8 decode patch installed
+/usr/local/lib/python3.12/dist-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:37 [vae_temporal.py:280] MiniMax-H3 VAE encode_temporal tail-padding patch installed
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:37 [vae_temporal.py:289] MiniMax-H3 VAE streaming uint8 decode patch installed
+/usr/local/lib/python3.12/dist-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:39 [registry.py:740] Applying sequence parallelism to MiniMaxH3DiTModel (transformer) (sp_size=2, ulysses=2, ring=1, allgather=1)
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:39 [registry.py:740] Applying sequence parallelism to MiniMaxH3DiTModel (transformer) (sp_size=2, ulysses=2, ring=1, allgather=1)
+
+Multi-thread loading shards:   0% Completed | 0/13 [00:00<?, ?it/s]
+
+Multi-thread loading shards:   8% Completed | 1/13 [00:00<00:05,  2.11it/s]
+
+Multi-thread loading shards:  15% Completed | 2/13 [00:00<00:05,  2.08it/s]
+
+Multi-thread loading shards:  23% Completed | 3/13 [00:01<00:05,  1.72it/s]
+
+Multi-thread loading shards:  31% Completed | 4/13 [00:02<00:05,  1.55it/s]
+
+Multi-thread loading shards:  38% Completed | 5/13 [00:02<00:04,  1.67it/s]
+
+Multi-thread loading shards:  46% Completed | 6/13 [00:03<00:04,  1.62it/s]
+
+Multi-thread loading shards:  54% Completed | 7/13 [00:04<00:03,  1.66it/s]
+
+Multi-thread loading shards:  62% Completed | 8/13 [00:04<00:03,  1.55it/s]
+
+Multi-thread loading shards:  69% Completed | 9/13 [00:05<00:02,  1.49it/s]
+
+Multi-thread loading shards:  77% Completed | 10/13 [00:06<00:02,  1.44it/s]
+
+Multi-thread loading shards:  85% Completed | 11/13 [00:06<00:01,  1.54it/s]
+
+Multi-thread loading shards:  92% Completed | 12/13 [00:07<00:00,  1.57it/s]
+
+Multi-thread loading shards: 100% Completed | 13/13 [00:08<00:00,  1.49it/s]
+
+Multi-thread loading shards: 100% Completed | 13/13 [00:08<00:00,  1.57it/s]
+
+
+Multi-thread loading shards:   0% Completed | 0/14 [00:00<?, ?it/s]
+
+Multi-thread loading shards:   7% Completed | 1/14 [00:00<00:03,  3.83it/s]
+
+Multi-thread loading shards:  14% Completed | 2/14 [00:00<00:03,  3.56it/s]
+
+Multi-thread loading shards:  21% Completed | 3/14 [00:00<00:02,  3.84it/s]
+
+Multi-thread loading shards:  29% Completed | 4/14 [00:01<00:02,  3.86it/s]
+
+Multi-thread loading shards:  36% Completed | 5/14 [00:01<00:02,  3.53it/s]
+
+Multi-thread loading shards:  43% Completed | 6/14 [00:01<00:02,  3.54it/s]
+
+Multi-thread loading shards:  50% Completed | 7/14 [00:01<00:01,  3.78it/s]
+
+Multi-thread loading shards:  57% Completed | 8/14 [00:02<00:01,  3.65it/s]
+
+Multi-thread loading shards:  64% Completed | 9/14 [00:02<00:01,  3.71it/s]
+
+Multi-thread loading shards:  71% Completed | 10/14 [00:02<00:01,  3.75it/s]
+
+Multi-thread loading shards: 100% Completed | 14/14 [00:02<00:00,  7.64it/s]
+
+Multi-thread loading shards: 100% Completed | 14/14 [00:02<00:00,  4.81it/s]
+
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:50 [diffusers_loader.py:1242] Loading weights took 11.19 seconds
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:51 [diffusion_model_runner.py:450] Model loading took 92.1838 GiB and 30.286793 seconds
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:51 [diffusion_model_runner.py:456] Model runner: Model loaded successfully.
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:51 [diffusion_model_runner.py:544] Model runner: Initialization complete.
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:51 [diffusion_model_runner.py:450] Model loading took 92.1838 GiB and 30.271677 seconds
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:51 [diffusion_model_runner.py:456] Model runner: Model loaded successfully.
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:51 [diffusion_model_runner.py:544] Model runner: Initialization complete.
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:52 [diffusion_worker.py:859] Worker 0: Process-scoped GPU memory after model loading: 96.94 GiB.
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:52 [manager.py:219] Initializing LoRAManager: device=cuda:0, dtype=torch.bfloat16, max_cached_adapters=1, static_lora_path=None
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:52 [diffusion_worker.py:545] Worker 0: Initialization complete.
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:52 [diffusion_worker.py:2393] Worker 0: Scheduler loop started.
+(DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:52 [diffusion_worker.py:2220] Worker 0 ready to receive requests via shared memory
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:52 [diffusion_worker.py:859] Worker 1: Process-scoped GPU memory after model loading: 96.94 GiB.
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:52 [manager.py:219] Initializing LoRAManager: device=cuda:1, dtype=torch.bfloat16, max_cached_adapters=1, static_lora_path=None
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:52 [diffusion_worker.py:545] Worker 1: Initialization complete.
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:52 [diffusion_worker.py:2393] Worker 1: Scheduler loop started.
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:52 [diffusion_worker.py:2220] Worker 1 ready to receive requests via shared memory
+
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s](DiffusionWorker_SP0 pid=3762476) INFO 11-18 08:59:52 [diffusion_worker.py:807] Worker 0: FlashInfer autotune enabled, cache /work/xdg-cache/vllm/flashinfer_autotune/diffusion/7b0391918b0c2f92/rank0.json
+(DiffusionWorker_SP1 pid=3762477) INFO 11-18 08:59:52 [diffusion_worker.py:807] Worker 1: FlashInfer autotune enabled, cache /work/xdg-cache/vllm/flashinfer_autotune/diffusion/7b0391918b0c2f92/rank1.json
+2026-11-18 08:59:52,326 - INFO - autotuner.py:1121 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+2026-11-18 08:59:52,327 - INFO - autotuner.py:1121 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+
+  0%|          | 0/50 [00:00<?, ?it/s]

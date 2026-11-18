@@ -1,0 +1,11 @@
+{
+  "status": "aborted_stalled_first_warmup",
+  "reason": "Both ranks repeatedly remained in layer 49, residual chunk start 9984, CUDA kernel launch; no measured sample completed",
+  "pids": [
+    3687822,
+    3687888,
+    3687891,
+    3687892
+  ],
+  "sample_count": 0
+}

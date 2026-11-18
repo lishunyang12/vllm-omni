@@ -1,0 +1,8 @@
+{
+  "repo": "MiniMaxAI/MiniMax-H3",
+  "revision": "0919fb684102ef115126612f3fbb84d1027e7317",
+  "paths": {
+    "FL2VA": "/work/hf-cache/hub/models--MiniMaxAI--MiniMax-H3/snapshots/0919fb684102ef115126612f3fbb84d1027e7317/FL2VA",
+    "Ref2VA": "/work/hf-cache/hub/models--MiniMaxAI--MiniMax-H3/snapshots/0919fb684102ef115126612f3fbb84d1027e7317/Ref2VA"
+  }
+}

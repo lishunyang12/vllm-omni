@@ -1,0 +1,468 @@
+{
+  "rank": 1,
+  "world_size": 2,
+  "gpu": "NVIDIA GH200 96GB HBM3",
+  "capability": [
+    9,
+    0
+  ],
+  "memory_bytes": 102085361664,
+  "warmup": 3,
+  "repeats": 9,
+  "denoise_step": 0,
+  "input": {
+    "img_position_ids": {
+      "shape": [
+        1,
+        61056,
+        3
+      ],
+      "dtype": "torch.float64",
+      "sha256": "fe53e0a84a87b99058b935c3c665275f6b411c4059facec9cd459b3510f5b262"
+    },
+    "update_mask": {
+      "shape": [
+        58464
+      ],
+      "dtype": "torch.bool",
+      "sha256": "13ace4c0070401d943091a22f36577e7ed73c0b7a99fc1c9b06edbcd139bd965"
+    },
+    "token_tags": {
+      "shape": [
+        61056
+      ],
+      "dtype": "torch.int64",
+      "sha256": "02c846b1766f9e7d67e38c03c3ba7dae3d10205aedb304855d4627e6166be160"
+    },
+    "skip_mask_out_condition": false,
+    "prompt_embeds": {
+      "shape": [
+        1935,
+        5120
+      ],
+      "dtype": "torch.bfloat16",
+      "sha256": "479b612b4a2b1966f31b25a32d58ee6c074a004978e1cf8ad2dd681e140eb07d"
+    },
+    "img_pos_info": {
+      "position_ids": {
+        "shape": [
+          58464
+        ],
+        "dtype": "torch.int64",
+        "sha256": "0c45d6f3ce9d3611e9c48871553f07cb65b3e89e6429a1485fe0770c2717f5d0"
+      }
+    },
+    "audio_pos_info": {
+      "position_ids": {
+        "shape": [
+          640
+        ],
+        "dtype": "torch.int64",
+        "sha256": "c2cf3a89aaee96cd656f2b3fe113a89e5307043d36325c460829a2e54dfa2cd6"
+      }
+    },
+    "text_pos_info": {
+      "position_ids": {
+        "shape": [
+          1935
+        ],
+        "dtype": "torch.int64",
+        "sha256": "c69a618c7fed5aeef74e0778ffdb68f8325db842f12f9d6ca33e6a1c1cd1526f"
+      }
+    },
+    "img_pos_for_infer_output_info": {
+      "position_ids": {
+        "shape": [
+          58464
+        ],
+        "dtype": "torch.int64",
+        "sha256": "0c45d6f3ce9d3611e9c48871553f07cb65b3e89e6429a1485fe0770c2717f5d0"
+      }
+    },
+    "packed_seq_params": {
+      "cu_seqlens_q": {
+        "shape": [
+          3
+        ],
+        "dtype": "torch.int32",
+        "sha256": "7c258a53ac5e685456bdbbdc81995fff25a8b50760b8b25bc79646c816464b2b"
+      },
+      "max_seqlen_q": 61039,
+      "num_requests": 1,
+      "text_audio_block_mask": {
+        "used_len": 61039,
+        "block_size": 64,
+        "blocks": {
+          "shape": [
+            954
+          ],
+          "dtype": "torch.bool",
+          "sha256": "b1ab9d5988a8738fa93c826e720b8c2166a65ce77da0597f372565fc4340e103"
+        }
+      },
+      "vsa_prefix_segments": [
+        6,
+        1010,
+        919,
+        1008,
+        640
+      ]
+    },
+    "refiner_packed_seq_params": {
+      "cu_seqlens_q": {
+        "shape": [
+          3
+        ],
+        "dtype": "torch.int32",
+        "sha256": "f2c6b1fe0fdc1b07fb8b3dc5edb32a006d5fc8409de62ba0891d65cb7084f205"
+      },
+      "max_seqlen_q": 1935
+    },
+    "video_token_layout": {
+      "prefix_len": null,
+      "latent_grid": null,
+      "used_len": 61039,
+      "video_spans": [
+        {
+          "start": 3583,
+          "latent_grid": [
+            57,
+            24,
+            42
+          ],
+          "role": "target"
+        }
+      ]
+    },
+    "x": {
+      "shape": [
+        1,
+        61056,
+        96
+      ],
+      "dtype": "torch.float32",
+      "sha256": "ab3eb52c4aef3975677808624b36230a9f6389a87cc5c773dc0c70cfb5fdc908"
+    },
+    "audio_x": {
+      "shape": [
+        1,
+        61056,
+        32
+      ],
+      "dtype": "torch.float32",
+      "sha256": "60693f7982fd777d61d4255d9751cf6cc401308531caae9dd2c3e9a78854c532"
+    },
+    "unique_timesteps": {
+      "shape": [
+        2
+      ],
+      "dtype": "torch.float32",
+      "sha256": "51f59c29e653d3337d19bf29ce93757dbceec127329298aefb45a81556bd292e"
+    },
+    "inverse_indices": {
+      "shape": [
+        61056
+      ],
+      "dtype": "torch.int64",
+      "sha256": "1af01d86e8c270473646aa571d7fdcc8868f897e8ab8101fa5573634774b3933"
+    }
+  },
+  "backends": {
+    "token_refiner.blocks.0.attn.attention": {
+      "backend": "SDPA",
+      "impl": "SDPAImpl"
+    },
+    "token_refiner.blocks.1.attn.attention": {
+      "backend": "SDPA",
+      "impl": "SDPAImpl"
+    },
+    "blocks.0.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.1.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.2.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.3.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.4.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.5.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.6.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.7.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.8.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.9.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.10.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.11.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.12.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.13.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.14.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.15.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.16.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.17.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.18.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.19.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.20.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.21.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.22.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.23.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.24.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.25.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.26.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.27.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.28.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.29.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.30.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.31.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.32.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.33.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.34.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.35.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.36.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.37.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.38.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.39.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.40.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.41.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.42.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.43.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.44.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.45.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.46.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.47.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.48.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.49.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    }
+  },
+  "samples": [
+    {
+      "index": 0,
+      "wall_s": 7.502821900998242,
+      "cuda_event_s": 7.5028154296875
+    },
+    {
+      "index": 1,
+      "wall_s": 7.5154292229563,
+      "cuda_event_s": 7.51542431640625
+    },
+    {
+      "index": 2,
+      "wall_s": 7.518497465061955,
+      "cuda_event_s": 7.5184912109375
+    },
+    {
+      "index": 3,
+      "wall_s": 7.526922302902676,
+      "cuda_event_s": 7.5269140625
+    },
+    {
+      "index": 4,
+      "wall_s": 7.514672853052616,
+      "cuda_event_s": 7.51466845703125
+    },
+    {
+      "index": 5,
+      "wall_s": 7.498858485952951,
+      "cuda_event_s": 7.49885302734375
+    },
+    {
+      "index": 6,
+      "wall_s": 7.503369253012352,
+      "cuda_event_s": 7.50336279296875
+    },
+    {
+      "index": 7,
+      "wall_s": 7.533268374041654,
+      "cuda_event_s": 7.53326220703125
+    },
+    {
+      "index": 8,
+      "wall_s": 7.511227173032239,
+      "cuda_event_s": 7.5112197265625
+    }
+  ],
+  "output": [
+    {
+      "shape": [
+        58464,
+        96
+      ],
+      "dtype": "torch.float32",
+      "sha256": "4dcebbd0bc53d5537de4e87dc5a56b93fe7c159ad226a2217a6341e57799568c"
+    },
+    {
+      "shape": [
+        640,
+        32
+      ],
+      "dtype": "torch.float32",
+      "sha256": "e3398e583a9528c725d33e7eb318671566a2f60cbefde1da062bcc1f7e80469b"
+    }
+  ],
+  "finite": true,
+  "peak_allocated_bytes": 73451071488,
+  "parallel_config": {
+    "pipeline_parallel_size": 1,
+    "data_parallel_size": 1,
+    "tensor_parallel_size": 1,
+    "enable_expert_parallel": false,
+    "sequence_parallel_size": 2,
+    "ulysses_degree": 2,
+    "ring_degree": 1,
+    "allgather_degree": 1,
+    "ulysses_mode": "strict",
+    "ulysses_a2a_permute": false,
+    "cfg_parallel_size": 1,
+    "vae_patch_parallel_size": 2,
+    "text_encoder_tp_size": 2,
+    "vae_parallel_mode": "tile",
+    "use_hsdp": false,
+    "mask_sp_padding": false,
+    "hsdp_shard_size": -1,
+    "hsdp_replicate_size": 1
+  },
+  "intentional_abort": true
+}

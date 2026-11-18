@@ -1,0 +1,25 @@
+{
+  "task": "t2va",
+  "backend": "CUDNN_ATTN",
+  "gpu": "NVIDIA GB200",
+  "warmup": 3,
+  "repeats": 9,
+  "max_rank_wall_samples_s": [
+    4.059799240203574,
+    4.077099949819967,
+    4.040841662092134,
+    4.061751885106787,
+    4.0585883900057524,
+    4.0798508380539715,
+    4.080564761068672,
+    4.058693161001429,
+    4.077163794077933
+  ],
+  "median_s": 4.061751885106787,
+  "median_first3_s": 4.059799240203574,
+  "min_s": 4.040841662092134,
+  "max_s": 4.080564761068672,
+  "cv_percent": 0.3310563947309366,
+  "terminal_exception": "RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode",
+  "quality_checked": false
+}

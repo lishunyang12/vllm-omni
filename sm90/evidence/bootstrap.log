@@ -1,0 +1,479 @@
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+100 5889k    0 5889k    0     0  9641k      0 --:--:-- --:--:-- --:--:-- 9638k
+100 24.5M    0 24.5M    0     0  15.1M      0 --:--:--  0:00:01 --:--:-- 15.1M
+100 37.5M    0 37.5M    0     0  14.2M      0 --:--:--  0:00:02 --:--:-- 14.2M
+100 45.2M    0 45.2M    0     0  12.5M      0 --:--:--  0:00:03 --:--:-- 12.5M
+100 47.4M    0 47.4M    0     0  12.4M      0 --:--:--  0:00:03 --:--:-- 12.4M
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+100 8097k    0 8097k    0     0  10.1M      0 --:--:-- --:--:-- --:--:-- 10.0M
+100 24.2M    0 24.2M    0     0  13.4M      0 --:--:--  0:00:01 --:--:-- 13.4M
+100 35.7M    0 35.7M    0     0  12.6M      0 --:--:--  0:00:02 --:--:-- 12.6M
+100 42.0M    0 42.0M    0     0  11.0M      0 --:--:--  0:00:03 --:--:-- 11.0M
+100 47.5M    0 47.5M    0     0  10.5M      0 --:--:--  0:00:04 --:--:-- 10.5M
+Using Python 3.12.3 environment at: /usr
+Resolved 163 packages in 1.60s
+   Building vllm-omni @ file:///work/source/head
+   Building openai-whisper==20250625
+Downloading onnxruntime (22.1MiB)
+Downloading soundfile (1.2MiB)
+Downloading scikit-image (13.5MiB)
+Downloading virtualenv (5.4MiB)
+Downloading kernels-data (1.2MiB)
+Downloading scipy (32.4MiB)
+Downloading imageio-ffmpeg (58.1MiB)
+Downloading av (31.2MiB)
+Downloading onnx (8.2MiB)
+Downloading nvidia-cudnn-frontend (9.5MiB)
+Downloading transformers (12.0MiB)
+Downloading diffusers (5.6MiB)
+Downloading opencv-python (47.5MiB)
+Downloading rfc3161-client (2.5MiB)
+Downloading nltk (1.6MiB)
+Downloading nvidia-cusparselt-cu13 (210.8MiB)
+ Downloaded soundfile
+ Downloaded kernels-data
+ Downloaded nltk
+      Built vllm-omni @ file:///work/source/head
+ Downloaded rfc3161-client
+ Downloaded virtualenv
+ Downloaded diffusers
+      Built openai-whisper==20250625
+ Downloaded onnx
+ Downloaded nvidia-cudnn-frontend
+ Downloaded transformers
+ Downloaded scikit-image
+ Downloaded onnxruntime
+ Downloaded av
+ Downloaded scipy
+ Downloaded opencv-python
+ Downloaded imageio-ffmpeg
+ Downloaded nvidia-cusparselt-cu13
+Prepared 66 packages in 4.27s
+Uninstalled 5 packages in 184ms
+Installed 66 packages in 229ms
+Bytecode compiled 8912 files in 890ms
+ - accelerate==1.15.0
+ + accelerate==1.12.0
+ + aenum==3.1.16
+ + av==19.0.2
+ + better-profanity==0.7.0
+ + cache-dit==1.5.0
+ + cfgv==3.5.0
+ + cosmos-guardrail==0.3.2
+ + defusedxml==0.8.0rc2
+ + diffusers==0.40.0
+ + distlib==0.4.4
+ + einx==0.4.3
+ + execnet==2.1.2
+ + flatbuffers==25.12.19
+ + frozendict==2.5.1
+ - huggingface-hub==2.4.0
+ + huggingface-hub==1.33.0
+ + id==1.6.1
+ + identify==2.6.20
+ + imageio==2.38.1
+ + imageio-ffmpeg==0.8.1
+ + janus==2.0.0
+ + joblib==1.6.0
+ + kernels==0.16.1
+ + kernels-data==0.16.2
+ + lazy-loader==0.6
+ + lpips==0.1.4
+ + more-itertools==11.2.1
+ + nltk==3.10.4
+ + nodeenv==1.12.0
+ - nvidia-cudnn-frontend==1.32.2
+ + nvidia-cudnn-frontend==1.31.0
+ ~ nvidia-cusparselt-cu13==0.8.1
+ + omegaconf==2.4.1rc2
+ + onnx==1.23.2
+ + onnxruntime==1.32.0
+ + openai-whisper==20250625
+ + opencv-python==5.0.0.93
+ + peft==0.21.3
+ + platformdirs==4.14.5
+ + pre-commit==4.7.0
+ + prettytable==3.18.0
+ + pytest-asyncio==2.0.0a1
+ + pytest-mock==3.17.0
+ + pytest-xdist==3.8.0
+ + python-discovery==1.9.5
+ + retinaface-py==0.0.2
+ + rfc3161-client==1.0.9
+ + rfc8785==0.1.4
+ + s3tokenizer==0.3.0
+ + scikit-image==0.25.2
+ + scipy==1.18.1
+ + securesystemslib==1.6.0
+ + sigstore==4.5.1
+ + sigstore-models==0.0.6
+ + sigstore-rekor-types==0.0.18
+ + soundfile==0.14.0
+ + soxr==1.1.0
+ + tifffile==2026.11.12
+ + tomlkit==0.15.2
+ + torch-einops-utils==0.2.6
+ + torchsde==0.2.6
+ + trampoline==0.1.2
+ - transformers==5.22.2
+ + transformers==5.19.0
+ + tuf==7.0.1
+ + virtualenv==21.15.6
+ + vllm-omni==0.33.0+g6f5a9976.validation (from file:///work/source/head)
+ + wcwidth==0.9.4
+ + x-transformers==2.31.20
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+100 16.7M    0 16.7M    0     0  19.3M      0 --:--:-- --:--:-- --:--:-- 19.3M
+100 30.2M    0 30.2M    0     0  21.2M      0 --:--:--  0:00:01 --:--:-- 21.3M
+Using Python 3.12.3 environment at: /usr
+Resolved 1 package in 0.90ms
+   Building sol-attn @ file:///work/source/sana/techniques/sparse_backends
+      Built sol-attn @ file:///work/source/sana/techniques/sparse_backends
+Prepared 1 package in 531ms
+Installed 1 package in 3ms
+Bytecode compiled 49 files in 36ms
+ + sol-attn==0.5.0 (from file:///work/source/sana/techniques/sparse_backends)
+Using Python 3.12.3 environment at: /usr
+==> /work/evidence/before.log <==
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:31: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    b_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:34
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:34: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:968
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:968: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    a_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:970
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:970: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    b_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:427
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:427: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    epi_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:2391
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:2391: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/cute_dsl/low_latency_blockscaled_gemm.py:103
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/cute_dsl/low_latency_blockscaled_gemm.py:103: DeprecationWarning: cutlass.utils.smem_allocator.get_smem_capacity_in_bytes is deprecated; use cutlass.memory.get_smem_capacity_in_bytes instead. It will be removed in a future release.
+    _SMEM_CAPACITY_BYTES = cutlass.utils.get_smem_capacity_in_bytes("sm_100")
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_rubin.py:218
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_rubin.py:218: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95: DeprecationWarning: cutlass.utils.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/collective_store_tma.py:6
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/collective_store_tma.py:6: DeprecationWarning: cutlass.utils.tensormap_manager.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils.tensormap_manager import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55: DeprecationWarning: cutlass.utils.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136
+  /usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136: DeprecationWarning: Arch from arch.py is deprecated. Use Arch from enums.py instead.
+    from cutlass.base_dsl.arch import Arch
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+--- Running Summary
+=========================== short test summary info ============================
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[False-False]
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[False-True]
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[True-False]
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[True-True]
+FAILED tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py::test_real_wan_forward_is_one_graph_per_block_and_matches_a_service_without_a_schedule
+FAILED tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py::test_op_hands_wan_metadata_to_attention_and_schedules_do_not_recompile
+FAILED tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py::test_new_resolution_compiles_no_more_than_a_service_without_a_schedule
+7 failed, 5 passed, 17 warnings in 4.47s
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+--- Running Summary
+=========================== short test summary info ============================
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[False-False]
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[False-True]
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[True-False]
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[True-True]
+FAILED tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py::test_real_wan_forward_is_one_graph_per_block_and_matches_a_service_without_a_schedule
+FAILED tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py::test_op_hands_wan_metadata_to_attention_and_schedules_do_not_recompile
+FAILED tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py::test_new_resolution_compiles_no_more_than_a_service_without_a_schedule
+7 failed, 5 passed, 17 warnings in 4.47s
+  /usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136: DeprecationWarning: Arch from arch.py is deprecated. Use Arch from enums.py instead.
+    from cutlass.base_dsl.arch import Arch
+
+tests/diffusion/attention/test_attention_config.py::TestOmniDiffusionConfigAttentionParsing::test_diffusion_attention_backend_sets_default
+tests/diffusion/attention/test_attention_config.py::TestOmniDiffusionConfigAttentionParsing::test_diffusion_attention_backend_auto_means_platform_default
+tests/diffusion/attention/test_attention_config.py::TestOmniDiffusionConfigAttentionParsing::test_diffusion_attention_backend_and_default_are_mutually_exclusive
+  /work/source/head/vllm_omni/diffusion/data.py:1972: FutureWarning: Diffusion config field 'diffusion_attention_backend' is deprecated; use 'diffusion_attention_config'.
+    config_kwargs = normalize_omni_diffusion_kwargs(raw_kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+--- Running Summary
+170 passed, 20 warnings in 38.76s
+cp: cannot create directory '/evidence-out/evidence': No space left on device
+==> /work/evidence/before.log <==
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:31: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    b_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:34
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:34: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:968
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:968: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    a_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:970
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:970: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    b_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:427
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:427: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    epi_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:2391
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:2391: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/cute_dsl/low_latency_blockscaled_gemm.py:103
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/cute_dsl/low_latency_blockscaled_gemm.py:103: DeprecationWarning: cutlass.utils.smem_allocator.get_smem_capacity_in_bytes is deprecated; use cutlass.memory.get_smem_capacity_in_bytes instead. It will be removed in a future release.
+    _SMEM_CAPACITY_BYTES = cutlass.utils.get_smem_capacity_in_bytes("sm_100")
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_rubin.py:218
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_rubin.py:218: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95: DeprecationWarning: cutlass.utils.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/collective_store_tma.py:6
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/collective_store_tma.py:6: DeprecationWarning: cutlass.utils.tensormap_manager.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils.tensormap_manager import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55: DeprecationWarning: cutlass.utils.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136
+  /usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136: DeprecationWarning: Arch from arch.py is deprecated. Use Arch from enums.py instead.
+    from cutlass.base_dsl.arch import Arch
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+--- Running Summary
+=========================== short test summary info ============================
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[False-False]
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[False-True]
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[True-False]
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[True-True]
+FAILED tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py::test_real_wan_forward_is_one_graph_per_block_and_matches_a_service_without_a_schedule
+FAILED tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py::test_op_hands_wan_metadata_to_attention_and_schedules_do_not_recompile
+FAILED tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py::test_new_resolution_compiles_no_more_than_a_service_without_a_schedule
+7 failed, 5 passed, 17 warnings in 4.47s
+
+==> /work/evidence/after.log <==
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:31
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:31: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    b_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:34
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:34: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:968
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:968: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    a_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:970
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:970: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    b_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:427
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:427: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    epi_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:2391
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:2391: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/cute_dsl/low_latency_blockscaled_gemm.py:103
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/cute_dsl/low_latency_blockscaled_gemm.py:103: DeprecationWarning: cutlass.utils.smem_allocator.get_smem_capacity_in_bytes is deprecated; use cutlass.memory.get_smem_capacity_in_bytes instead. It will be removed in a future release.
+    _SMEM_CAPACITY_BYTES = cutlass.utils.get_smem_capacity_in_bytes("sm_100")
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_rubin.py:218
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_rubin.py:218: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95: DeprecationWarning: cutlass.utils.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/collective_store_tma.py:6
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/collective_store_tma.py:6: DeprecationWarning: cutlass.utils.tensormap_manager.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils.tensormap_manager import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55: DeprecationWarning: cutlass.utils.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136
+  /usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136: DeprecationWarning: Arch from arch.py is deprecated. Use Arch from enums.py instead.
+    from cutlass.base_dsl.arch import Arch
+
+tests/diffusion/attention/test_attention_config.py::TestOmniDiffusionConfigAttentionParsing::test_diffusion_attention_backend_sets_default
+tests/diffusion/attention/test_attention_config.py::TestOmniDiffusionConfigAttentionParsing::test_diffusion_attention_backend_auto_means_platform_default
+tests/diffusion/attention/test_attention_config.py::TestOmniDiffusionConfigAttentionParsing::test_diffusion_attention_backend_and_default_are_mutually_exclusive
+  /work/source/head/vllm_omni/diffusion/data.py:1972: FutureWarning: Diffusion config field 'diffusion_attention_backend' is deprecated; use 'diffusion_attention_config'.
+    config_kwargs = normalize_omni_diffusion_kwargs(raw_kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+--- Running Summary
+170 passed, 20 warnings in 38.76s
+cp: cannot create directory '/evidence-out/evidence': No space left on device
+cp: cannot create directory '/evidence-out/results': No space left on device
+==> /work/evidence/before.log <==
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:31: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    b_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:34
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:34: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:968
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:968: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    a_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:970
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:970: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    b_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:427
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:427: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    epi_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:2391
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:2391: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/cute_dsl/low_latency_blockscaled_gemm.py:103
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/cute_dsl/low_latency_blockscaled_gemm.py:103: DeprecationWarning: cutlass.utils.smem_allocator.get_smem_capacity_in_bytes is deprecated; use cutlass.memory.get_smem_capacity_in_bytes instead. It will be removed in a future release.
+    _SMEM_CAPACITY_BYTES = cutlass.utils.get_smem_capacity_in_bytes("sm_100")
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_rubin.py:218
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_rubin.py:218: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95: DeprecationWarning: cutlass.utils.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/collective_store_tma.py:6
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/collective_store_tma.py:6: DeprecationWarning: cutlass.utils.tensormap_manager.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils.tensormap_manager import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55: DeprecationWarning: cutlass.utils.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136
+  /usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136: DeprecationWarning: Arch from arch.py is deprecated. Use Arch from enums.py instead.
+    from cutlass.base_dsl.arch import Arch
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+--- Running Summary
+=========================== short test summary info ============================
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[False-False]
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[False-True]
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[True-False]
+FAILED tests/diffusion/attention/test_impl_overrides.py::test_specialization_preserves_selected_backend_and_options[True-True]
+FAILED tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py::test_real_wan_forward_is_one_graph_per_block_and_matches_a_service_without_a_schedule
+FAILED tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py::test_op_hands_wan_metadata_to_attention_and_schedules_do_not_recompile
+FAILED tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py::test_new_resolution_compiles_no_more_than_a_service_without_a_schedule
+7 failed, 5 passed, 17 warnings in 4.47s
+
+==> /work/evidence/after.log <==
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:31
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:31: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    b_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:34
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:34: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:968
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:968: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    a_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:970
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:970: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    b_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:427
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:427: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    epi_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:2391
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:2391: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/cute_dsl/low_latency_blockscaled_gemm.py:103
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/cute_dsl/low_latency_blockscaled_gemm.py:103: DeprecationWarning: cutlass.utils.smem_allocator.get_smem_capacity_in_bytes is deprecated; use cutlass.memory.get_smem_capacity_in_bytes instead. It will be removed in a future release.
+    _SMEM_CAPACITY_BYTES = cutlass.utils.get_smem_capacity_in_bytes("sm_100")
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_rubin.py:218
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_rubin.py:218: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95: DeprecationWarning: cutlass.utils.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/collective_store_tma.py:6
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/collective_store_tma.py:6: DeprecationWarning: cutlass.utils.tensormap_manager.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils.tensormap_manager import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55: DeprecationWarning: cutlass.utils.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils import TensorMapManager, TensorMapUpdateMode
+
+../../../usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136
+  /usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136: DeprecationWarning: Arch from arch.py is deprecated. Use Arch from enums.py instead.
+    from cutlass.base_dsl.arch import Arch
+
+tests/diffusion/attention/test_attention_config.py::TestOmniDiffusionConfigAttentionParsing::test_diffusion_attention_backend_sets_default
+tests/diffusion/attention/test_attention_config.py::TestOmniDiffusionConfigAttentionParsing::test_diffusion_attention_backend_auto_means_platform_default
+tests/diffusion/attention/test_attention_config.py::TestOmniDiffusionConfigAttentionParsing::test_diffusion_attention_backend_and_default_are_mutually_exclusive
+  /work/source/head/vllm_omni/diffusion/data.py:1972: FutureWarning: Diffusion config field 'diffusion_attention_backend' is deprecated; use 'diffusion_attention_config'.
+    config_kwargs = normalize_omni_diffusion_kwargs(raw_kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+--- Running Summary
+170 passed, 20 warnings in 38.76s
