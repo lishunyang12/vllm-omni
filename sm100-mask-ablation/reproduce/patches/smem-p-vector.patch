@@ -1,0 +1,207 @@
+--- a/techniques/sparse_backends/sol_attn/sm100/mainloop.py
++++ b/techniques/sparse_backends/sol_attn/sm100/mainloop.py
+@@ -242,6 +242,59 @@
+ 
+ 
+ @cute.jit
++def _store_pair_probability_smem(
++    probabilities: cute.Tensor,
++    score_coordinates: cute.Tensor,
++    destination: cute.Tensor,
++    owner_tidx: Int32,
++):
++    """Pack one row's adjacent eight BF16 values into each 128-bit SMEM copy.
++
++    Ld16x64b score owners separated by lane xor 2 own the same row and
++    opposite column parity. Only the even-column owner writes. All lanes
++    execute both shuffles before the writer predicate. The existing BF16x2
++    converter rounds each original FP32 probability exactly once.
++    """
++    assert cute.size(probabilities) == N_PACK_HALF // 2
++    semantic_row = (
++        score_coordinates[0][0] + Int32(SEMANTIC_ROW_OFFSET)
++    ) & Int32(M - 1)
++    lane = owner_tidx % Int32(32)
++    copy_atom = cute.make_copy_atom(
++        cute.nvgpu.CopyUniversalOp(), BFloat16, num_bits_per_copy=128
++    )
++    for chunk in cutlass.range_constexpr(N_PACK_HALF // 8):
++        packed = cute.make_rmem_tensor(cute.make_layout(4), Int32)
++        for pair in cutlass.range_constexpr(2):
++            i = chunk * 4 + pair * 2
++            own = _cvt_bf16x2_f32(
++                Float32(probabilities[i + 1]), Float32(probabilities[i])
++            )
++            peer = cute.arch.shuffle_sync_bfly(own, offset=2)
++            # even writer: own={c,c+2}, peer={c+1,c+3} in BF16 halves.
++            packed[pair * 2] = _prmt_b32(own, peer, Int32(0x5410))
++            packed[pair * 2 + 1] = _prmt_b32(own, peer, Int32(0x7632))
++        if (lane & Int32(2)) == Int32(0):
++            column = score_coordinates[chunk * 4][1]
++            offset = cute.crd2idx((semantic_row, column, 0), destination.layout)
++            # Every writer starts at column 8*chunk. The K_SW128 layout
++            # preserves this 8-element alignment; see the saved CPU audit.
++            offset = cute.assume(Int32(offset), divby=8)
++            vector_destination = cute.make_tensor(
++                destination.iterator + offset, cute.make_layout(8)
++            )
++            vector_source = cute.make_tensor(
++                cute.recast_ptr(packed.iterator, dtype=BFloat16),
++                cute.make_layout(8),
++            )
++            # Keep the swizzled destination iterator. No raw address cast,
++            # manual swizzle, or stmatrix ownership assumption is needed.
++            cute.copy(copy_atom, vector_source, vector_destination)
++    # Keep the serial variant's publication and five-warp rendezvous.
++    cute.arch.fence_view_async_shared()
++
++
++@cute.jit
+ def _load_pack_k_half(
+     tma_atom_pack_k: cute.CopyAtom,
+     tPackKgK: cute.Tensor,
+@@ -352,6 +405,7 @@
+ def _sol_attn_sm100_bf16_kernel(
+     tiled_pack_qk: cute.TiledMma,
+     tiled_pack_pv: cute.TiledMma,
++    tiled_exact_pv: cute.TiledMma,
+     tma_atom_q: cute.CopyAtom,
+     mQ_mkl: cute.Tensor,
+     tma_atom_pack_k: cute.CopyAtom,
+@@ -376,6 +430,7 @@
+     pack_k_layout: cute.ComposedLayout,
+     pack_k_gather_layout: cute.ComposedLayout,
+     pack_p_layout: cute.ComposedLayout,
++    exact_p_layout: cute.ComposedLayout,
+     pack_v_layout: cute.ComposedLayout,
+     pack_v_gather_layout: cute.ComposedLayout,
+     route_k_layout: cute.ComposedLayout,
+@@ -424,6 +479,14 @@
+         byte_alignment=128,
+         swizzle=pack_v_layout.inner,
+     )
++    # Exact P is independent of both S and the single K/V stages. The
++    # approximate route continues to use its original aliased TMEM P image.
++    sExactP = smem.allocate_tensor(
++        element_type=BFloat16,
++        layout=exact_p_layout.outer,
++        byte_alignment=128,
++        swizzle=exact_p_layout.inner,
++    )
+     # One independent physical N128 K stage and one N128 V stage.  Every
+     # runtime route/exact transaction stays in this completion domain.
+     sPackKGather = cute.make_tensor(
+@@ -551,6 +614,11 @@
+     tCrPackQ = tiled_pack_qk.make_fragment_A(sQ)
+     tCrPackK = tiled_pack_qk.make_fragment_B(sPackK)
+     tCrPackV = tiled_pack_pv.make_fragment_B(sPackV)
++    thr_exact_pv = tiled_exact_pv.get_slice(0)
++    tCrExactP = tiled_exact_pv.make_fragment_A(
++        thr_exact_pv.partition_A(sExactP[None, None, 0])
++    )
++    tCrExactV = tiled_exact_pv.make_fragment_B(sPackV)
+ 
+     tQsQ, tQgQ = cpasync.tma_partition(
+         tma_atom_q,
+@@ -1253,20 +1321,18 @@
+             pack_k_consumer.advance()
+ 
+             for pair_idx in cutlass.range(pair_count, unroll=1):
+-                # P aliases the drained upper half of S.  PV must therefore be
+-                # issued before QK(i+1) overwrites S.  Both instructions are
+-                # emitted back-to-back by warp 0, retaining the full-G128
+-                # tcgen05 dependency order without its K/V alias barriers.
++                # Layout-gate version: exact P is in SMEM, but retain the
++                # original PV(i)->QK(i+1) order. QK completion still proves
++                # preceding PV completion before O rescaling or P overwrite.
+                 pack_v_pipe.consumer_wait(pack_v_consumer)
+-                # All four owners have completed their synchronous chunked
+-                # TMEM stores and the helper's TMEM store fence before this
+-                # five-warp rendezvous releases the single MMA warp.
++                # All four owners have completed exact-P shared stores and
++                # the async shared fence before the existing P-ready join.
+                 exact_pair_p_ready_barrier.arrive_and_wait()
+                 mma_utils.gemm(
+-                    tiled_pack_pv,
++                    tiled_exact_pv,
+                     pair_tO,
+-                    pair_tP,
+-                    tCrPackV[None, None, None, pack_v_consumer.index],
++                    tCrExactP,
++                    tCrExactV[None, None, None, pack_v_consumer.index],
+                     zero_init=mma_o_initialized == Int32(0),
+                 )
+                 # QK(i+1) completion dominates PV(i) completion for every
+@@ -1406,18 +1472,13 @@
+                         owner_tidx,
+                         row_alpha,
+                     )
+-                # The one TMEM P image is free once PV(i-1) completes.  Keep
+-                # probabilities FP32 until the live-range-bounded chunked R2T.
+-                _store_pair_probability_chunked_tmemp(
+-                    pack_o_template,
+-                    probabilities,
+-                    tmem_base,
+-                    Int32(PAIR_P_OFFSET),
+-                    owner_tidx,
+-                )
+-                # The preceding helper performs tcgen05.wait::st for every
+-                # chunk and a TMEM-store fence.  Publish P to warp 0 with one
+-                # uniform generation shared by warps 0-4; warp 5 is excluded.
++                # QK(i) follows PV(i-1), so its completed score load proves
++                # the previous shared P has no live tcgen05 readers.
++                _store_pair_probability_smem(
++                    probabilities, pair_coords, sExactP, owner_tidx
++                )
++                # The helper fences shared P stores before the unchanged
++                # rendezvous of the MMA warp and all four owner warps.
+                 exact_pair_p_ready_barrier.arrive_and_wait()
+                 running_max = next_max
+                 running_sum = next_sum
+@@ -1605,6 +1666,16 @@
+         cute.nvgpu.OperandMajorMode.MN,
+     )
+     tiled_pack_pv = cute.make_tiled_mma(pack_pv_op)
++    exact_pv_op = tcgen05.MmaF16BF16Op(
++        BFloat16,
++        Float32,
++        PACK_PV_INST,
++        tcgen05.CtaGroup.ONE,
++        tcgen05.OperandSource.SMEM,
++        cute.nvgpu.OperandMajorMode.K,
++        cute.nvgpu.OperandMajorMode.MN,
++    )
++    tiled_exact_pv = cute.make_tiled_mma(exact_pv_op)
+     pack_qk_quarter_op = tcgen05.MmaF16BF16Op(
+         BFloat16,
+         Float32,
+@@ -1649,6 +1720,13 @@
+     pack_p_layout = sm100_utils.make_smem_layout_a(
+         tiled_pack_pv, PACK_PV_TILE, BFloat16, 1
+     )
++    # This helper returns a logical (M, K, stage) tensor. Partition it
++    # through the exact PV MMA in the kernel, so scalar stores and the MMA
++    # descriptor share one layout rather than guessing flattened strides.
++    exact_p_layout = sm100_utils.make_smem_layout(
++        cute.nvgpu.OperandMajorMode.K, (M, N_PACK_HALF), BFloat16, 1
++    )
++    assert cute.size_in_bytes(BFloat16, exact_p_layout) == M * N_PACK_HALF * 2
+     route_k_layout = sm100_utils.make_smem_layout_b(
+         tiled_pack_qk, PACK_QK_TILE, BFloat16, PAIR_STAGES
+     )
+@@ -1702,6 +1780,7 @@
+     _sol_attn_sm100_bf16_kernel(
+         tiled_pack_qk,
+         tiled_pack_pv,
++        tiled_exact_pv,
+         q_tma_atom,
+         q_tma_tensor,
+         pack_k_tma_atom,
+@@ -1726,6 +1805,7 @@
+         pack_k_layout,
+         pack_k_gather_layout,
+         pack_p_layout,
++        exact_p_layout,
+         pack_v_layout,
+         pack_v_gather_layout,
+         route_k_layout,

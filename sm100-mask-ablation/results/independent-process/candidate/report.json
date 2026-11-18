@@ -1,0 +1,21 @@
+{
+  "input_sha256": [
+    "0539b52f683d55e0cad641257aa7e95262e9cb56baba3b1ebff439a9d832c814",
+    "8a9525076cb9757c54914d382736e83406e0ec6d0ac15fb2e72bc4ce3df3eb67",
+    "d896683afc2ec805da997f116f701122ba846bb8f4a9ff7609d06042fbfb8c31"
+  ],
+  "output_sha256": "ec97f596a43795c2724c429671048ccfc6a2c5817907adf4f29b11824acdf1d7",
+  "repeats": 4,
+  "stable": true,
+  "input_immutable": true,
+  "source": "/work/source/candidate/techniques/sparse_backends/sol_attn/interface.py",
+  "torch": "2.16.0.dev20261009+cu134",
+  "capability": [
+    10,
+    0
+  ],
+  "compiled_sha256": {
+    "cutlass_forward_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i641_Tensorgmemoi6.sm_100a.cubin": "a9a26499c66d1302cc68d450e165cce4aed21d56e3a4f80bc92f77db6616ee40",
+    "cutlass_forward_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i641_Tensorgmemoi6.sm_100a.ptx": "dec138a5b59197c51e5d9d9d5b7fb8cc85fa12d8e4c216df58455e674a38d122"
+  }
+}

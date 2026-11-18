@@ -1,0 +1,39 @@
+diff --git a/techniques/sparse_backends/sol_attn/sm100/mainloop.py b/techniques/sparse_backends/sol_attn/sm100/mainloop.py
+index eee8200..3207cef 100644
+--- a/techniques/sparse_backends/sol_attn/sm100/mainloop.py
++++ b/techniques/sparse_backends/sol_attn/sm100/mainloop.py
+@@ -70,9 +70,9 @@ ROUTE_MASK_WORDS = 4
+ # logical-terminal-half flag
+ PACKET_WORDS = 8
+ ROUTE_INDEX_CAPACITY = LOGICAL_GROUP_SIZE
+-PAIR_P_CHUNKS = 4
++PAIR_P_CHUNKS = 2
+ PAIR_P_CHUNK_PACKED_COLUMNS = (N_PACK_HALF // 2) // PAIR_P_CHUNKS
+-PAIR_P_PACKED_REGISTERS_PER_THREAD_PER_CHUNK = 8
++PAIR_P_PACKED_REGISTERS_PER_THREAD_PER_CHUNK = 16
+ O_PACKED_STORE_VALUES_PER_WORD = 2
+ O_PACKED_STORE_ALIGNMENT_BYTES = 4
+ O_PACKED_STORE_WRITER_THREADS = 4 * 32
+@@ -166,9 +166,9 @@ def _store_pair_probability_chunked_tmemp(
+     p_offset: Int32,
+     owner_tidx: Int32,
+ ):
+-    """Store M64xN128 BF16 P as four live-range-bounded x8 chunks.
++    """Store M64xN128 BF16 P as two live-range-bounded x16 chunks.
+ 
+-    Probabilities remain FP32 until each x8 fragment is converted, and every
++    Probabilities remain FP32 until each x16 fragment is converted, and every
+     chunk waits for its St16x64b store before the fragment goes out of scope.
+     """
+ 
+@@ -180,7 +180,9 @@ def _store_pair_probability_chunked_tmemp(
+     )
+     relative_chunk = _zero_based_tmem_tensor(Float32, p_chunk_layout)
+     store_atom = cute.make_copy_atom(
+-        tcgen05.copy.St16x64bOp(tcgen05.copy.Repetition(8)),
++        tcgen05.copy.St16x64bOp(
++            tcgen05.copy.Repetition(PAIR_P_PACKED_REGISTERS_PER_THREAD_PER_CHUNK)
++        ),
+         Float32,
+     )
+     tiled_store = tcgen05.make_tmem_copy(store_atom, relative_chunk)

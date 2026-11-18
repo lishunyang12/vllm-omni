@@ -1,0 +1,67 @@
+PASSED tile-oracle/diag/63
+PASSED tile-oracle/diag/64
+PASSED tile-oracle/diag/65
+PASSED tile-oracle/diag/127
+PASSED tile-oracle/diag/128
+PASSED tile-oracle/diag/129
+PASSED tile-oracle/diag/255
+PASSED tile-oracle/diag/256
+PASSED tile-oracle/diag/257
+PASSED tile-oracle/diag/513
+PASSED hybrid-oracle/diag/63/tau=1000000.0
+PASSED hybrid-oracle/diag/257/tau=1000000.0
+PASSED hybrid-oracle/diag/513/tau=1000000.0
+PASSED hybrid-oracle/diag/513/tau=1.5
+PASSED tile-oracle/exact/63
+PASSED tile-oracle/exact/64
+PASSED tile-oracle/exact/65
+PASSED tile-oracle/exact/127
+PASSED tile-oracle/exact/128
+PASSED tile-oracle/exact/129
+PASSED tile-oracle/exact/255
+PASSED tile-oracle/exact/256
+PASSED tile-oracle/exact/257
+PASSED tile-oracle/exact/513
+PASSED hybrid-oracle/exact/63/tau=1000000.0
+PASSED hybrid-oracle/exact/257/tau=1000000.0
+PASSED hybrid-oracle/exact/513/tau=1000000.0
+PASSED hybrid-oracle/exact/513/tau=1.5
+PASSED exact-stream/4095/random
+PASSED exact-stream/4095/mixed_maxima
+PASSED exact-stream/4095/zero_q
+PASSED exact-stream/4095/zero_v
+PASSED exact-stream/4095/tiny_v
+PASSED exact-stream/4095/subnormal_v
+PASSED exact-stream/4096/random
+PASSED exact-stream/4096/mixed_maxima
+PASSED exact-stream/4096/zero_q
+PASSED exact-stream/4096/zero_v
+PASSED exact-stream/4096/tiny_v
+PASSED exact-stream/4096/subnormal_v
+PASSED exact-stream/4097/random
+PASSED exact-stream/4097/mixed_maxima
+PASSED exact-stream/4097/zero_q
+PASSED exact-stream/4097/zero_v
+PASSED exact-stream/4097/tiny_v
+PASSED exact-stream/4097/subnormal_v
+PASSED absent-zero-disjoint-sink
+PASSED unaligned-zero-all-mask
+Traceback (most recent call last):
+  File "/work/scripts/validate_design.py", line 193, in <module>
+    main()
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 158, in inference_mode
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/work/scripts/validate_design.py", line 140, in main
+    checked(*qkv, tau=1.0, exact_block_mask=mask)
+  File "/work/scripts/validate_design.py", line 93, in checked
+    assert_bytes(actual, expected)
+  File "/work/scripts/validate_design.py", line 38, in assert_bytes
+    torch.testing.assert_close(actual.contiguous().view(torch.uint8),
+  File "/usr/local/lib/python3.12/dist-packages/torch/testing/_comparison.py", line 1689, in assert_close
+    raise error_metas[0].to_error(msg)
+AssertionError: Tensor-likes are not equal!
+
+Mismatched elements: 471368 / 2097408 (22.5%)
+Greatest absolute difference: 255 at index (0, 12, 0, 152)
+Greatest relative difference: inf at index (0, 12, 0, 152)

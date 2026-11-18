@@ -1,0 +1,51 @@
+eager 0 baseline bytes 0 max_abs 0.0 repeat_bytes 0 oracle_pass True input_changes []
+eager 0 a bytes 45826 max_abs 0.001953125 repeat_bytes 0 oracle_pass True input_changes []
+eager 0 c bytes 0 max_abs 0.0 repeat_bytes 0 oracle_pass True input_changes []
+eager 1 baseline bytes 0 max_abs 0.0 repeat_bytes 0 oracle_pass True input_changes []
+eager 1 c bytes 0 max_abs 0.0 repeat_bytes 0 oracle_pass True input_changes []
+eager 1 a bytes 45826 max_abs 0.001953125 repeat_bytes 0 oracle_pass True input_changes []
+eager 2 c bytes 0 max_abs 0.0 repeat_bytes 0 oracle_pass True input_changes []
+eager 2 baseline bytes 0 max_abs 0.0 repeat_bytes 0 oracle_pass True input_changes []
+eager 2 a bytes 45826 max_abs 0.001953125 repeat_bytes 0 oracle_pass True input_changes []
+eager 3 c bytes 0 max_abs 0.0 repeat_bytes 0 oracle_pass True input_changes []
+eager 3 a bytes 45826 max_abs 0.001953125 repeat_bytes 0 oracle_pass True input_changes []
+eager 3 baseline bytes 0 max_abs 0.0 repeat_bytes 0 oracle_pass True input_changes []
+BLOCK_SUMMARY eager a_vs_baseline
+0 protected True bytes 0 max_abs 0.0 rmse 0.0
+1 protected False bytes 7999 max_abs 0.001953125 rmse 0.00020310116308298903
+2 protected False bytes 6830 max_abs 0.0009765625 rmse 0.00017951428797780214
+3 protected False bytes 7811 max_abs 0.001953125 rmse 0.00020138562287181
+4 protected True bytes 0 max_abs 0.0 rmse 0.0
+5 protected False bytes 8087 max_abs 0.001953125 rmse 0.00021439656384321447
+6 protected False bytes 7184 max_abs 0.001953125 rmse 0.00018855354360635838
+7 protected False bytes 7915 max_abs 0.001953125 rmse 0.00020273995085102962
+8 protected True bytes 0 max_abs 0.0 rmse 0.0
+BLOCK_SUMMARY eager c_vs_baseline
+0 protected True bytes 0 max_abs 0.0 rmse 0.0
+1 protected False bytes 0 max_abs 0.0 rmse 0.0
+2 protected False bytes 0 max_abs 0.0 rmse 0.0
+3 protected False bytes 0 max_abs 0.0 rmse 0.0
+4 protected True bytes 0 max_abs 0.0 rmse 0.0
+5 protected False bytes 0 max_abs 0.0 rmse 0.0
+6 protected False bytes 0 max_abs 0.0 rmse 0.0
+7 protected False bytes 0 max_abs 0.0 rmse 0.0
+8 protected True bytes 0 max_abs 0.0 rmse 0.0
+BLOCK_SUMMARY eager c_vs_a
+0 protected True bytes 0 max_abs 0.0 rmse 0.0
+1 protected False bytes 7999 max_abs 0.001953125 rmse 0.00020310116308298903
+2 protected False bytes 6830 max_abs 0.0009765625 rmse 0.00017951428797780214
+3 protected False bytes 7811 max_abs 0.001953125 rmse 0.00020138562287181
+4 protected True bytes 0 max_abs 0.0 rmse 0.0
+5 protected False bytes 8087 max_abs 0.001953125 rmse 0.00021439656384321447
+6 protected False bytes 7184 max_abs 0.001953125 rmse 0.00018855354360635838
+7 protected False bytes 7915 max_abs 0.001953125 rmse 0.00020273995085102962
+8 protected True bytes 0 max_abs 0.0 rmse 0.0
+Traceback (most recent call last):
+  File "/work/scripts/diagnose_protected_q.py", line 240, in <module>
+    main()
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 158, in inference_mode
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/work/scripts/diagnose_protected_q.py", line 235, in main
+    raise AssertionError(f"Diagnostic complete with {len(report['failures'])} failed strict gates; see {args.report}")
+AssertionError: Diagnostic complete with 4 failed strict gates; see /work/results/protected-q-diagnostic/disjoint.json

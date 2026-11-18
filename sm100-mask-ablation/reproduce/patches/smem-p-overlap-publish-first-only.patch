@@ -1,0 +1,35 @@
+--- a/techniques/sparse_backends/sol_attn/sm100/mainloop.py
++++ b/techniques/sparse_backends/sol_attn/sm100/mainloop.py
+@@ -1307,10 +1307,16 @@
+             pack_k_consumer.advance()
+ 
+             for pair_idx in cutlass.range(pair_count, unroll=1):
+-                # Exact P lives in independent SMEM, so owners releasing S(i)
+-                # after all score loads is sufficient to reuse S for QK(i+1).
+-                # K(i+1) can already be produced with one K/V stage: warp 5
+-                # posts it before blocking on V(i+1)'s still-live V(i) stage.
++                pack_v_pipe.consumer_wait(pack_v_consumer)
++                # This join publishes P(i) and O's rescale. The owner wait
++                # below uses an explicit PV completion, not the now-earlier
++                # QK(i+1) completion, to protect P/O from PV(i-1).
++                exact_pair_p_ready_barrier.arrive_and_wait()
++                # Diagnostic ordering refinement: P-ready now precedes the
++                # lookahead. All four owners have finished softmax(i), any O
++                # rescale, shared P(i) stores and their fence before QK(i+1).
++                # This removes concurrency of that QK with those owner writes
++                # without changing numerical operations or K/V stage counts.
+                 if pair_idx + Int32(1) < pair_count:
+                     pack_k_pipe.consumer_wait(pack_k_consumer)
+                     pair_score_pipe.producer_acquire(pair_score_producer)
+@@ -1328,11 +1334,6 @@
+                     pack_k_pipe.consumer_release(pack_k_consumer)
+                     pack_k_consumer.advance()
+ 
+-                pack_v_pipe.consumer_wait(pack_v_consumer)
+-                # This join publishes P(i) and O's rescale. The owner wait
+-                # below uses an explicit PV completion, not the now-earlier
+-                # QK(i+1) completion, to protect P/O from PV(i-1).
+-                exact_pair_p_ready_barrier.arrive_and_wait()
+                 exact_pv_pipe.producer_acquire(exact_pv_producer)
+                 mma_utils.gemm(
+                     tiled_exact_pv,

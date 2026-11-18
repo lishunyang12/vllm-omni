@@ -1,0 +1,62 @@
+diff --git a/techniques/sparse_backends/sol_attn/sm100/mainloop.py b/techniques/sparse_backends/sol_attn/sm100/mainloop.py
+index eee8200..8e7638e 100644
+--- a/techniques/sparse_backends/sol_attn/sm100/mainloop.py
++++ b/techniques/sparse_backends/sol_attn/sm100/mainloop.py
+@@ -672,6 +672,12 @@ def _sol_attn_sm100_bf16_kernel(
+     threshold = Float32(
+         mThreshold_bnh[batch_idx, q_block_idx, head_idx]
+     )
++    # This remains a device read on every invocation, including graph replay.
++    # A protected query forces every valid KV block exact, independent of its
++    # score, threshold, sink membership, and the other mask entries.
++    query_is_protected = False
++    if cutlass.const_expr(exact_block_mask is not None):
++        query_is_protected = exact_block_mask[q_block_idx] != 0
+ 
+     if warp_idx == Int32(5):
+         cpasync.prefetch_descriptor(tma_atom_q)
+@@ -726,8 +732,34 @@ def _sol_attn_sm100_bf16_kernel(
+         if physical_halves_this_group > Int32(ROUTE_HALVES_PER_GROUP):
+             physical_halves_this_group = Int32(ROUTE_HALVES_PER_GROUP)
+ 
++        route_halves_to_compute = physical_halves_this_group
++        if query_is_protected:
++            # The normal selector emits this same ascending exact stream for
++            # protected Q blocks and produces no approximate PV transaction.
++            # Avoid the unused KC/VC loads, route QK, and score reductions.
++            # All warps skip those pipeline cursor advances together. The
++            # existing pre-exact CTA join publishes these stores to every
++            # exact consumer, including the K/V producer in warp 5.
++            group_first_block = group_route_tile_base * Int32(ROUTE_TILE_SIZE)
++            group_exact_count = min(
++                Int32(LOGICAL_GROUP_SIZE), route_valid_total - group_first_block
++            )
++            # Keep the writer in the first owner warp. Its preceding exact-P
++            # rendezvous proves every old index reader finished; the TMA warp
++            # may already be ahead and must not overwrite the list itself.
++            if warp_idx == Int32(1):
++                protected_lane = tidx % Int32(32)
++                for slot in cutlass.range_constexpr(LOGICAL_GROUP_SIZE // 32):
++                    ordinal = protected_lane + Int32(slot * 32)
++                    if ordinal < group_exact_count:
++                        route_indices[ordinal] = group_first_block + ordinal
++                if protected_lane == Int32(0):
++                    route_packet[6] = group_exact_count
++                cute.arch.fence_view_async_shared()
++            route_halves_to_compute = Int32(0)
++
+         for half_idx in cutlass.range(
+-            physical_halves_this_group, unroll=1
++            route_halves_to_compute, unroll=1
+         ):
+             route_tile_idx = cute.arch.make_warp_uniform(
+                 group_route_tile_base + half_idx
+@@ -1433,7 +1465,7 @@ def _sol_attn_sm100_bf16_kernel(
+         # (1) warp 5 reads both indices before producing each pair's K/V, and
+         #     final-pair score completion therefore dominates its last read;
+         # (2) all owner index reads precede the final exact-P NamedBarrier;
+-        # (3) owner-warp0/lane0 is the sole next-group writer and reaches it
++        # (3) owner-warp0 is the sole next-group writer and reaches it
+         #     only after that same exact loop.  For exact_count==0 there are no
+         #     readers.  Therefore no group-tail CTA barrier is required.
+ 

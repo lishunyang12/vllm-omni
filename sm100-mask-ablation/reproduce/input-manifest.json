@@ -1,0 +1,15 @@
+{
+  "request_sha256": "5cc696c459abd73a3ff5972faf3d7c0f33b88d5c343e42f02e31b90467011942",
+  "assets": [
+    {
+      "path": "ref2va-0.mp4",
+      "source": "https://cdn.hailuoai.com/prod/hailuo_demo/testsets/h3_promo_eval_ref2va/gallery/sr_v2p26_trio_seed42_20260724/inputs/297573323635_00_%E8%A7%86%E9%A2%911_YnyRbxEwio_video_20260525_163755_1927e9d3.mp4",
+      "sha256": "d6edc20ac82aa980c9cbd0b05b371f60d12dc8d018492e571b42de0086819c41"
+    },
+    {
+      "path": "ref2va-1.mp3",
+      "source": "https://cdn.hailuoai.com/prod/hailuo_demo/testsets/h3_promo_eval_ref2va/gallery/sr_v2p26_trio_seed42_20260724/inputs/f463d523c5ce_01_%E9%9F%B3%E9%A2%911_RSLcbpzJPo_6%E6%9C%885%E6%97%A5(1).mp3",
+      "sha256": "2a48d447b343b38a2c504d5281a0c97c688db0ba87931ed9282c598bd6752454"
+    }
+  ]
+}

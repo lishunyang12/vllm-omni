@@ -1,0 +1,9 @@
+VALIDATED dense
+VALIDATED upstream_none
+VALIDATED extension_none
+VALIDATED extension_zero
+VALIDATED extension_mask
+VALIDATED extension_static
+VALIDATED optimized_mask
+eager {"dense": {"median_ms": 135.2547378540039, "cv_percent": 0.04192438379818547}, "upstream_none": {"median_ms": 115.09900665283203, "cv_percent": 0.05125147350734701}, "extension_none": {"median_ms": 115.07793426513672, "cv_percent": 0.044775831640982866}, "extension_zero": {"median_ms": 115.86563110351562, "cv_percent": 0.05953436315770807}, "extension_mask": {"median_ms": 175.9721450805664, "cv_percent": 0.1700741640593968}, "extension_static": {"median_ms": 173.9783477783203, "cv_percent": 0.12833204962487932}, "optimized_mask": {"median_ms": 161.37557983398438, "cv_percent": 0.05713419351344718}}
+graph {"dense": {"median_ms": 134.99030303955078, "cv_percent": 0.03506835509463375}, "upstream_none": {"median_ms": 114.88750457763672, "cv_percent": 0.06758215013017099}, "extension_none": {"median_ms": 114.83074951171875, "cv_percent": 0.04981067405920783}, "extension_zero": {"median_ms": 115.66100692749023, "cv_percent": 0.053060040229570615}, "extension_mask": {"median_ms": 175.93595123291016, "cv_percent": 0.21438444184134184}, "extension_static": {"median_ms": 173.78953552246094, "cv_percent": 0.1343203685561165}, "optimized_mask": {"median_ms": 161.23834991455078, "cv_percent": 0.05363821932229708}}

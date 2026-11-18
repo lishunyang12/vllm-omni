@@ -1,0 +1,7 @@
+Baseline: REG168 STACK0 static SHARED1024 LOCAL0.
+Scalar shared-P: REG168 STACK128 static SHARED1024 LOCAL0.
+These are compiler resource reports, not achieved occupancy measurements.
+Dynamic shared memory is additional and not included in static SHARED.
+The stack change alone does not quantify dynamic local-memory traffic.
+SASS disassembly could not run: the fixed image lacks nvdisasm.
+PTX and cubin are preserved privately; no runtime spill/occupancy claim is made.

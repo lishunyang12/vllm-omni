@@ -1,0 +1,23 @@
+ALL CANDIDATES BLOCKED pending independent oracle and compilation-context audit.
+See CORRECTNESS_BLOCKER.txt; historical statuses below are not acceptance.
+
+Experimental acceptance gates
+=============================
+The following names refer to isolated patches on #594 (150114b6), not code
+proposed for merging. A timing table does not imply that a patch was accepted.
+protected-q: 12 stress and real-input byte checks, but independent T513/diag
+  diagnostic FAILS byte equality (max_abs 0.001953125); not eligible.
+p-store-x16: 12 stress and real-input byte checks; full validation not run.
+protected-q-contiguous: FAILS full suite at T513/diag; do not use performance.
+smem-p-serial: 12+73 correctness checks pass, real-input bytes pass; 27-28% slower
+  than #594 on tested layers. Uses scalar SMEM stores as a layout gate. Rejected
+  for performance; this alone does not rule out all shared-P designs.
+smem-p-overlap: 12 stress pass; full suite FAILS T8193/none after 48 passed cases.
+  This input is still within one G256 group. Not performance eligible.
+smem-p-overlap-publish-first: FAILS independent T8193/none byte checks
+  (max_abs 0.0317840576171875), not performance eligible.
+smem-p-vector: serial schedule with proved vector stores; 12 stress pass, full
+  validation pending.
+C and original overlap each pass isolated repro cases that failed in the full
+  sequence; that does not invalidate the full-suite failure. Cause unresolved.
+No production code changed and no experimental kernel was pushed to #594.

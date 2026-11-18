@@ -1,0 +1,62 @@
+Experimental E: vector stores on the validated serial shared-P schedule
+=====================================================================
+Base: smem-p-serial, itself based on 150114b6f0079bcd479c6c87bd0b15174581d984.
+No A/B/C, original overlap, or publish-first scheduling change is included.
+Original/scalar/failed-overlap sources and patches remain unchanged.
+
+Artifacts
+  smem-p-vector/             isolated source tree
+  smem-p-vector.patch        complete delta from baseline 150114b6
+  smem-p-vector-only.patch   only the serial -> vector-store delta
+  build_smem_p_vector.py     reproducible CPU construction
+  audit_smem_p_vector_layout.py/.log  standalone CPU proof and actual output
+
+Only exact P's store helper and its owner_tidx argument change. The helper
+uses the existing cvt.rn.bf16x2.f32 conversion, xor2 lane exchange, and PRMT
+byte selection. Sixteen 8-BF16 chunks are written by each even-column owner.
+Each chunk uses CopyUniversalOp(num_bits_per_copy=128), retaining the existing
+swizzled iterator. No stmatrix mapping or raw pointer-to-integer cast is used.
+The four packed Int32 registers are reinterpreted as eight BF16 values; there
+is no second numerical conversion. Hardware/compiler byte validation remains
+mandatory because scalar .to(BFloat16) and the existing packed converter must
+still agree on every validated input, including tiny/subnormal stress cases.
+
+Layout proof
+  The fixed-image exports select K_SW128 for K-major (64,128) BF16. The atom
+  is (8,64):(64,1), with byte-address Swizzle(3,4,3). tile_to_shape order
+  (0,1,2) gives outer element offset:
+      64*row + column%64 + 4096*(column//64).
+  Writers start at column 8*chunk, so the outer offset is divisible by 8.
+  The allocation base is 128B aligned. The eight consecutive BF16 elements
+  therefore occupy a raw aligned 16B range, whose low four address bits
+  are untouched by the byte swizzle. They remain consecutive and aligned.
+  Enumeration covers all rows/chunks and all 8 possible 128B-aligned base
+  phases within the swizzle's 1KiB period. Each phase covers exactly 16KiB
+  once, without gaps, overlaps or accesses outside the allocation.
+
+Lane/bit proof
+  Ld16x64b.x64 destination thread bit strides are (32768,32,4096) for lane
+  shape (2,2,8); register values advance by 64 bits. Thus xor2 changes column
+  parity but preserves row, and each thread owns every other column.
+  own=(c,c+2), peer=(c+1,c+3) BF16 halves. PRMT 0x5410 yields (c,c+1),
+  and 0x7632 yields (c+2,c+3). Two such register pairs yield columns c..c+7.
+  The audit uses symbolic bytes, so this rearrangement preserves arbitrary
+  BF16 bit patterns. Exactly 64 writer threads cover all 8192 BF16 elements.
+  The implementation derives row and first column from existing score
+  coordinates; it does not replace their row permutation with a formula.
+
+Synchronization and resource scope
+  All scalar serial synchronization, route arithmetic, K/V lifetimes, MMA
+  instruction ordering, first/last pair handling and epilogue are unchanged.
+  Every lane reaches the helper's existing async-shared publication fence;
+  the unchanged five-warp P-ready join follows. Shared/TMEM allocation is
+  unchanged from serial (16KiB exact P, 256 TMEM columns). Register/stack
+  usage and generated vector-store instructions require compiler inspection.
+
+Validation status at creation
+  CPU enumeration, symbolic byte mapping, unchanged-surrounding-source audit,
+  and Python syntax compilation passed. This agent did not run CUDA or GPU.
+  Required gates: compile; existing 12 stress cases; full 73 byte/oracle/graph
+  cases; actual H3 frozen-input bytes for both layers; then paired timings.
+  No speedup is claimed. The scalar serial's reported slowdown does not by
+  itself establish whether this vector variant or the SMEM direction helps.

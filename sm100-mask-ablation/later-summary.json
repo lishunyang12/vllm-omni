@@ -1,0 +1,1010 @@
+{
+  "step-00-layer-00.json/eager/dense": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 134.72087860107422,
+    "cv_percent": 0.017225099066761423
+  },
+  "step-00-layer-00.json/eager/upstream_none": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 131.91610717773438,
+    "cv_percent": 0.07642944356099024
+  },
+  "step-00-layer-00.json/eager/extension_none": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 131.89466857910156,
+    "cv_percent": 0.07027397834923055
+  },
+  "step-00-layer-00.json/eager/extension_zero": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 132.80919647216797,
+    "cv_percent": 0.07302506679230777
+  },
+  "step-00-layer-00.json/eager/extension_mask": {
+    "samples": 16,
+    "covered_samples": 10,
+    "polls": 10,
+    "clocks": {
+      "750 MHz": 10
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 200.35918426513672,
+    "cv_percent": 0.08604341517183921
+  },
+  "step-00-layer-00.json/eager/extension_static": {
+    "samples": 16,
+    "covered_samples": 13,
+    "polls": 13,
+    "clocks": {
+      "750 MHz": 13
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 198.1112823486328,
+    "cv_percent": 0.07334355543591001
+  },
+  "step-00-layer-00.json/eager/optimized_mask": {
+    "samples": 16,
+    "covered_samples": 10,
+    "polls": 10,
+    "clocks": {
+      "750 MHz": 10
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 182.71975708007812,
+    "cv_percent": 0.08586402531293268
+  },
+  "step-00-layer-00.json/graph/dense": {
+    "samples": 16,
+    "covered_samples": 9,
+    "polls": 9,
+    "clocks": {
+      "750 MHz": 9
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 134.52362060546875,
+    "cv_percent": 0.018405493664405137
+  },
+  "step-00-layer-00.json/graph/upstream_none": {
+    "samples": 16,
+    "covered_samples": 6,
+    "polls": 6,
+    "clocks": {
+      "750 MHz": 6
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 131.60836791992188,
+    "cv_percent": 0.07001793948902833
+  },
+  "step-00-layer-00.json/graph/extension_none": {
+    "samples": 16,
+    "covered_samples": 8,
+    "polls": 8,
+    "clocks": {
+      "750 MHz": 8
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 131.64574432373047,
+    "cv_percent": 0.06699739213543562
+  },
+  "step-00-layer-00.json/graph/extension_zero": {
+    "samples": 16,
+    "covered_samples": 6,
+    "polls": 6,
+    "clocks": {
+      "750 MHz": 6
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 132.46196746826172,
+    "cv_percent": 0.06389506529580365
+  },
+  "step-00-layer-00.json/graph/extension_mask": {
+    "samples": 16,
+    "covered_samples": 13,
+    "polls": 13,
+    "clocks": {
+      "750 MHz": 13
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 200.13751983642578,
+    "cv_percent": 0.08746619556267493
+  },
+  "step-00-layer-00.json/graph/extension_static": {
+    "samples": 16,
+    "covered_samples": 10,
+    "polls": 10,
+    "clocks": {
+      "750 MHz": 10
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 197.7851333618164,
+    "cv_percent": 0.06949529545194136
+  },
+  "step-00-layer-00.json/graph/optimized_mask": {
+    "samples": 16,
+    "covered_samples": 8,
+    "polls": 8,
+    "clocks": {
+      "750 MHz": 8
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 182.36666870117188,
+    "cv_percent": 0.06323443239348246
+  },
+  "step-00-layer-25.json/eager/dense": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 135.2615966796875,
+    "cv_percent": 0.029777215216031466
+  },
+  "step-00-layer-25.json/eager/upstream_none": {
+    "samples": 16,
+    "covered_samples": 5,
+    "polls": 5,
+    "clocks": {
+      "750 MHz": 5
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 118.11569595336914,
+    "cv_percent": 0.054564716920556304
+  },
+  "step-00-layer-25.json/eager/extension_none": {
+    "samples": 16,
+    "covered_samples": 8,
+    "polls": 8,
+    "clocks": {
+      "750 MHz": 8
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 118.10432052612305,
+    "cv_percent": 0.0487972961918473
+  },
+  "step-00-layer-25.json/eager/extension_zero": {
+    "samples": 16,
+    "covered_samples": 5,
+    "polls": 5,
+    "clocks": {
+      "750 MHz": 5
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 118.88228988647461,
+    "cv_percent": 0.05921348843470099
+  },
+  "step-00-layer-25.json/eager/extension_mask": {
+    "samples": 16,
+    "covered_samples": 13,
+    "polls": 13,
+    "clocks": {
+      "750 MHz": 13
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 177.54608154296875,
+    "cv_percent": 0.13740492904941318
+  },
+  "step-00-layer-25.json/eager/extension_static": {
+    "samples": 16,
+    "covered_samples": 4,
+    "polls": 4,
+    "clocks": {
+      "750 MHz": 4
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 175.53269958496094,
+    "cv_percent": 0.1603160164616264
+  },
+  "step-00-layer-25.json/eager/optimized_mask": {
+    "samples": 16,
+    "covered_samples": 13,
+    "polls": 13,
+    "clocks": {
+      "750 MHz": 13
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 162.82300567626953,
+    "cv_percent": 0.09000367615203589
+  },
+  "step-00-layer-25.json/graph/dense": {
+    "samples": 16,
+    "covered_samples": 10,
+    "polls": 10,
+    "clocks": {
+      "750 MHz": 10
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 135.04631805419922,
+    "cv_percent": 0.06263885536181853
+  },
+  "step-00-layer-25.json/graph/upstream_none": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 117.86924743652344,
+    "cv_percent": 0.057105879993730554
+  },
+  "step-00-layer-25.json/graph/extension_none": {
+    "samples": 16,
+    "covered_samples": 5,
+    "polls": 5,
+    "clocks": {
+      "750 MHz": 5
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 117.8501091003418,
+    "cv_percent": 0.04113798232885674
+  },
+  "step-00-layer-25.json/graph/extension_zero": {
+    "samples": 16,
+    "covered_samples": 10,
+    "polls": 10,
+    "clocks": {
+      "750 MHz": 10
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 118.6315689086914,
+    "cv_percent": 0.05663548676721603
+  },
+  "step-00-layer-25.json/graph/extension_mask": {
+    "samples": 16,
+    "covered_samples": 5,
+    "polls": 5,
+    "clocks": {
+      "750 MHz": 5
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 177.28728485107422,
+    "cv_percent": 0.19042826986325653
+  },
+  "step-00-layer-25.json/graph/extension_static": {
+    "samples": 16,
+    "covered_samples": 14,
+    "polls": 14,
+    "clocks": {
+      "750 MHz": 14
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 175.22315216064453,
+    "cv_percent": 0.15753971148230542
+  },
+  "step-00-layer-25.json/graph/optimized_mask": {
+    "samples": 16,
+    "covered_samples": 4,
+    "polls": 4,
+    "clocks": {
+      "750 MHz": 4
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 162.59439849853516,
+    "cv_percent": 0.07762349946098862
+  },
+  "step-10-layer-00.json/eager/dense": {
+    "samples": 16,
+    "covered_samples": 6,
+    "polls": 6,
+    "clocks": {
+      "750 MHz": 6
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 134.70606231689453,
+    "cv_percent": 0.8156083347719462
+  },
+  "step-10-layer-00.json/eager/upstream_none": {
+    "samples": 16,
+    "covered_samples": 8,
+    "polls": 8,
+    "clocks": {
+      "750 MHz": 8
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 131.80615997314453,
+    "cv_percent": 0.21387116621083435
+  },
+  "step-10-layer-00.json/eager/extension_none": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 131.7537612915039,
+    "cv_percent": 0.7948880557415122
+  },
+  "step-10-layer-00.json/eager/extension_zero": {
+    "samples": 16,
+    "covered_samples": 9,
+    "polls": 9,
+    "clocks": {
+      "750 MHz": 9
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 132.5720977783203,
+    "cv_percent": 0.5174280611067136
+  },
+  "step-10-layer-00.json/eager/extension_mask": {
+    "samples": 16,
+    "covered_samples": 9,
+    "polls": 9,
+    "clocks": {
+      "750 MHz": 9
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 199.89892578125,
+    "cv_percent": 0.24475357084778349
+  },
+  "step-10-layer-00.json/eager/extension_static": {
+    "samples": 16,
+    "covered_samples": 10,
+    "polls": 10,
+    "clocks": {
+      "750 MHz": 10
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 197.92144012451172,
+    "cv_percent": 0.4326872226284517
+  },
+  "step-10-layer-00.json/eager/optimized_mask": {
+    "samples": 16,
+    "covered_samples": 11,
+    "polls": 11,
+    "clocks": {
+      "750 MHz": 11
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 182.47959899902344,
+    "cv_percent": 0.4569150932345268
+  },
+  "step-10-layer-00.json/graph/dense": {
+    "samples": 16,
+    "covered_samples": 8,
+    "polls": 8,
+    "clocks": {
+      "750 MHz": 8
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 134.5257568359375,
+    "cv_percent": 0.031886005594672924
+  },
+  "step-10-layer-00.json/graph/upstream_none": {
+    "samples": 16,
+    "covered_samples": 6,
+    "polls": 6,
+    "clocks": {
+      "750 MHz": 6
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 131.56172943115234,
+    "cv_percent": 0.06630148307229676
+  },
+  "step-10-layer-00.json/graph/extension_none": {
+    "samples": 16,
+    "covered_samples": 9,
+    "polls": 9,
+    "clocks": {
+      "750 MHz": 9
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 131.5045166015625,
+    "cv_percent": 0.051401625975949314
+  },
+  "step-10-layer-00.json/graph/extension_zero": {
+    "samples": 16,
+    "covered_samples": 6,
+    "polls": 6,
+    "clocks": {
+      "750 MHz": 6
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 132.42842864990234,
+    "cv_percent": 0.06310860757412416
+  },
+  "step-10-layer-00.json/graph/extension_mask": {
+    "samples": 16,
+    "covered_samples": 11,
+    "polls": 11,
+    "clocks": {
+      "750 MHz": 11
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 200.0665740966797,
+    "cv_percent": 0.07674463105080591
+  },
+  "step-10-layer-00.json/graph/extension_static": {
+    "samples": 16,
+    "covered_samples": 11,
+    "polls": 11,
+    "clocks": {
+      "750 MHz": 11
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 197.84127807617188,
+    "cv_percent": 0.08605075039125043
+  },
+  "step-10-layer-00.json/graph/optimized_mask": {
+    "samples": 16,
+    "covered_samples": 10,
+    "polls": 10,
+    "clocks": {
+      "750 MHz": 10
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 182.3043212890625,
+    "cv_percent": 0.09876866576204213
+  },
+  "step-10-layer-25.json/eager/dense": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 135.2547378540039,
+    "cv_percent": 0.04192438379818547
+  },
+  "step-10-layer-25.json/eager/upstream_none": {
+    "samples": 16,
+    "covered_samples": 5,
+    "polls": 5,
+    "clocks": {
+      "750 MHz": 5
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 115.09900665283203,
+    "cv_percent": 0.05125147350734701
+  },
+  "step-10-layer-25.json/eager/extension_none": {
+    "samples": 16,
+    "covered_samples": 5,
+    "polls": 5,
+    "clocks": {
+      "750 MHz": 5
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 115.07793426513672,
+    "cv_percent": 0.044775831640982866
+  },
+  "step-10-layer-25.json/eager/extension_zero": {
+    "samples": 16,
+    "covered_samples": 9,
+    "polls": 9,
+    "clocks": {
+      "750 MHz": 9
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 115.86563110351562,
+    "cv_percent": 0.05953436315770807
+  },
+  "step-10-layer-25.json/eager/extension_mask": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 175.9721450805664,
+    "cv_percent": 0.1700741640593968
+  },
+  "step-10-layer-25.json/eager/extension_static": {
+    "samples": 16,
+    "covered_samples": 11,
+    "polls": 11,
+    "clocks": {
+      "750 MHz": 11
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 173.9783477783203,
+    "cv_percent": 0.12833204962487932
+  },
+  "step-10-layer-25.json/eager/optimized_mask": {
+    "samples": 16,
+    "covered_samples": 10,
+    "polls": 10,
+    "clocks": {
+      "750 MHz": 10
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 161.37557983398438,
+    "cv_percent": 0.05713419351344718
+  },
+  "step-10-layer-25.json/graph/dense": {
+    "samples": 16,
+    "covered_samples": 9,
+    "polls": 9,
+    "clocks": {
+      "750 MHz": 9
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 134.99030303955078,
+    "cv_percent": 0.03506835509463375
+  },
+  "step-10-layer-25.json/graph/upstream_none": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 114.88750457763672,
+    "cv_percent": 0.06758215013017099
+  },
+  "step-10-layer-25.json/graph/extension_none": {
+    "samples": 16,
+    "covered_samples": 6,
+    "polls": 6,
+    "clocks": {
+      "750 MHz": 6
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 114.83074951171875,
+    "cv_percent": 0.04981067405920783
+  },
+  "step-10-layer-25.json/graph/extension_zero": {
+    "samples": 16,
+    "covered_samples": 5,
+    "polls": 5,
+    "clocks": {
+      "750 MHz": 5
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 115.66100692749023,
+    "cv_percent": 0.053060040229570615
+  },
+  "step-10-layer-25.json/graph/extension_mask": {
+    "samples": 16,
+    "covered_samples": 11,
+    "polls": 11,
+    "clocks": {
+      "750 MHz": 11
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 175.93595123291016,
+    "cv_percent": 0.21438444184134184
+  },
+  "step-10-layer-25.json/graph/extension_static": {
+    "samples": 16,
+    "covered_samples": 8,
+    "polls": 8,
+    "clocks": {
+      "750 MHz": 8
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 173.78953552246094,
+    "cv_percent": 0.1343203685561165
+  },
+  "step-10-layer-25.json/graph/optimized_mask": {
+    "samples": 16,
+    "covered_samples": 8,
+    "polls": 8,
+    "clocks": {
+      "750 MHz": 8
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 161.23834991455078,
+    "cv_percent": 0.05363821932229708
+  },
+  "step-25-layer-00.json/eager/dense": {
+    "samples": 16,
+    "covered_samples": 6,
+    "polls": 6,
+    "clocks": {
+      "750 MHz": 6
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 134.66632080078125,
+    "cv_percent": 0.03873085446804747
+  },
+  "step-25-layer-00.json/eager/upstream_none": {
+    "samples": 16,
+    "covered_samples": 9,
+    "polls": 9,
+    "clocks": {
+      "750 MHz": 9
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 129.86622619628906,
+    "cv_percent": 0.04842015530904679
+  },
+  "step-25-layer-00.json/eager/extension_none": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 129.8849639892578,
+    "cv_percent": 0.06254533574517641
+  },
+  "step-25-layer-00.json/eager/extension_zero": {
+    "samples": 16,
+    "covered_samples": 5,
+    "polls": 5,
+    "clocks": {
+      "750 MHz": 5
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 130.7599868774414,
+    "cv_percent": 0.08256833721954976
+  },
+  "step-25-layer-00.json/eager/extension_mask": {
+    "samples": 16,
+    "covered_samples": 10,
+    "polls": 10,
+    "clocks": {
+      "750 MHz": 10
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 198.49075317382812,
+    "cv_percent": 0.08081939305948156
+  },
+  "step-25-layer-00.json/eager/extension_static": {
+    "samples": 16,
+    "covered_samples": 13,
+    "polls": 13,
+    "clocks": {
+      "750 MHz": 13
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 196.2261962890625,
+    "cv_percent": 0.08883107433135806
+  },
+  "step-25-layer-00.json/eager/optimized_mask": {
+    "samples": 16,
+    "covered_samples": 10,
+    "polls": 10,
+    "clocks": {
+      "750 MHz": 10
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 180.54830169677734,
+    "cv_percent": 0.0742045024954967
+  },
+  "step-25-layer-00.json/graph/dense": {
+    "samples": 16,
+    "covered_samples": 9,
+    "polls": 9,
+    "clocks": {
+      "750 MHz": 9
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 134.47159576416016,
+    "cv_percent": 0.027680095160220297
+  },
+  "step-25-layer-00.json/graph/upstream_none": {
+    "samples": 16,
+    "covered_samples": 8,
+    "polls": 8,
+    "clocks": {
+      "750 MHz": 8
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 129.62639617919922,
+    "cv_percent": 0.07883440386805196
+  },
+  "step-25-layer-00.json/graph/extension_none": {
+    "samples": 16,
+    "covered_samples": 5,
+    "polls": 5,
+    "clocks": {
+      "750 MHz": 5
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 129.6402816772461,
+    "cv_percent": 0.050673572164307304
+  },
+  "step-25-layer-00.json/graph/extension_zero": {
+    "samples": 16,
+    "covered_samples": 8,
+    "polls": 8,
+    "clocks": {
+      "750 MHz": 8
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 130.4885482788086,
+    "cv_percent": 0.06779850994774313
+  },
+  "step-25-layer-00.json/graph/extension_mask": {
+    "samples": 16,
+    "covered_samples": 13,
+    "polls": 13,
+    "clocks": {
+      "750 MHz": 13
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 198.33673858642578,
+    "cv_percent": 0.08650853553390513
+  },
+  "step-25-layer-00.json/graph/extension_static": {
+    "samples": 16,
+    "covered_samples": 9,
+    "polls": 9,
+    "clocks": {
+      "750 MHz": 9
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 196.0264434814453,
+    "cv_percent": 0.06233140928210212
+  },
+  "step-25-layer-00.json/graph/optimized_mask": {
+    "samples": 16,
+    "covered_samples": 8,
+    "polls": 8,
+    "clocks": {
+      "750 MHz": 8
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 180.25089263916016,
+    "cv_percent": 0.06537077088737052
+  },
+  "step-25-layer-25.json/eager/dense": {
+    "samples": 16,
+    "covered_samples": 6,
+    "polls": 6,
+    "clocks": {
+      "750 MHz": 6
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 135.24734497070312,
+    "cv_percent": 0.043755902053248245
+  },
+  "step-25-layer-25.json/eager/upstream_none": {
+    "samples": 16,
+    "covered_samples": 6,
+    "polls": 6,
+    "clocks": {
+      "750 MHz": 6
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 113.24364852905273,
+    "cv_percent": 0.0674378485669921
+  },
+  "step-25-layer-25.json/eager/extension_none": {
+    "samples": 16,
+    "covered_samples": 6,
+    "polls": 6,
+    "clocks": {
+      "750 MHz": 6
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 113.28586959838867,
+    "cv_percent": 0.06782958263257928
+  },
+  "step-25-layer-25.json/eager/extension_zero": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 114.0659065246582,
+    "cv_percent": 0.058792261254461
+  },
+  "step-25-layer-25.json/eager/extension_mask": {
+    "samples": 16,
+    "covered_samples": 10,
+    "polls": 10,
+    "clocks": {
+      "750 MHz": 10
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 174.9280014038086,
+    "cv_percent": 0.19401661688740535
+  },
+  "step-25-layer-25.json/eager/extension_static": {
+    "samples": 16,
+    "covered_samples": 8,
+    "polls": 8,
+    "clocks": {
+      "750 MHz": 8
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 172.73596954345703,
+    "cv_percent": 0.15577939554269726
+  },
+  "step-25-layer-25.json/eager/optimized_mask": {
+    "samples": 16,
+    "covered_samples": 10,
+    "polls": 10,
+    "clocks": {
+      "750 MHz": 10
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 160.30123138427734,
+    "cv_percent": 0.0754638509875491
+  },
+  "step-25-layer-25.json/graph/dense": {
+    "samples": 16,
+    "covered_samples": 8,
+    "polls": 8,
+    "clocks": {
+      "750 MHz": 8
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 135.0211944580078,
+    "cv_percent": 0.02995940645445642
+  },
+  "step-25-layer-25.json/graph/upstream_none": {
+    "samples": 16,
+    "covered_samples": 4,
+    "polls": 4,
+    "clocks": {
+      "750 MHz": 4
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 113.05806350708008,
+    "cv_percent": 0.06406336245979005
+  },
+  "step-25-layer-25.json/graph/extension_none": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 113.06209945678711,
+    "cv_percent": 0.06141546646235691
+  },
+  "step-25-layer-25.json/graph/extension_zero": {
+    "samples": 16,
+    "covered_samples": 5,
+    "polls": 5,
+    "clocks": {
+      "750 MHz": 5
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 113.83683395385742,
+    "cv_percent": 0.052503282456026645
+  },
+  "step-25-layer-25.json/graph/extension_mask": {
+    "samples": 16,
+    "covered_samples": 11,
+    "polls": 11,
+    "clocks": {
+      "750 MHz": 11
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 174.40422821044922,
+    "cv_percent": 0.14791738576081725
+  },
+  "step-25-layer-25.json/graph/extension_static": {
+    "samples": 16,
+    "covered_samples": 10,
+    "polls": 10,
+    "clocks": {
+      "750 MHz": 10
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 172.54481506347656,
+    "cv_percent": 0.15844946626101442
+  },
+  "step-25-layer-25.json/graph/optimized_mask": {
+    "samples": 16,
+    "covered_samples": 9,
+    "polls": 9,
+    "clocks": {
+      "750 MHz": 9
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 160.13660430908203,
+    "cv_percent": 0.0902746787888909
+  }
+}

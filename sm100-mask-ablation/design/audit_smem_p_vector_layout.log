@@ -1,0 +1,11 @@
+CPU-only audit; GPU correctness and performance are not established.
+Layout: K_SW128, atom (8,64):(64,1), byte Swizzle(3,4,3).
+PASS: 8192 segments across all 8 allocation phases; each physically contiguous and 16B aligned.
+PASS: each phase covers all 16384 allocation bytes exactly once, no out-of-bounds stores.
+PASS: 128 owner threads, xor2 row/parity pairing, 64 writers cover 8192 BF16 elements exactly once.
+PASS: symbolic PRMT bytes equal the original eight BF16 bit patterns in column order.
+PASS: outside the store helper and its argument, source equals scalar serial byte-for-byte.
+SHA256 blackwell_helpers.py: 06e40feca98bbb47db4769177383b55131a85480092bdcecd55ce24ad43418ef
+SHA256 tcgen05-layout-source.py: 5a508e774bbe8adf9ac83fe8bbacd94cb3adc8786a9dc663c0e025c9736335f3
+SHA256 smem-p-serial.patch: 2d1251981d5a4775cdc65258d202f41b81f7320e241756cb1a6e966a4c1a7c20
+SHA256 smem-p-vector.patch: bcbbf17e26704a7f38fcfcf44867357effee727e84a05bd3d59ce81eb9a25b4a

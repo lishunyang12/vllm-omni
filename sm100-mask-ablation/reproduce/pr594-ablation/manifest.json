@@ -1,0 +1,77 @@
+{
+  "base_63": "63b4e65e9db1dfea45cc7d394902145c2f520821",
+  "base_150": "150114b6f0079bcd479c6c87bd0b15174581d984",
+  "status": "CPU-generated ablations only; single-source fresh-process, filecache-off, independent oracle required.",
+  "variants": {
+    "63-alpha-only": {
+      "base": "63b4e65e9db1dfea45cc7d394902145c2f520821",
+      "alpha_skip": true,
+      "wide_rescale": false,
+      "fulltile_mask": false,
+      "sha256": {
+        "mainloop.py": "dc171d8c6ed249d83bf5ebd87e918f45b08723e590d241a81d26ac83d87cc2ce",
+        "softmax.py": "7a68c1745dd55c20f8eba5036c6dd7bd8ba34ad5dc193eb7ee36cf025ada395d"
+      },
+      "patch_sha256": "007dc881c4b2aadcd9721334c51fd392811bbf544a768d44b973bc58712e366c"
+    },
+    "63-wide-only": {
+      "base": "63b4e65e9db1dfea45cc7d394902145c2f520821",
+      "alpha_skip": false,
+      "wide_rescale": true,
+      "fulltile_mask": false,
+      "sha256": {
+        "mainloop.py": "dc171d8c6ed249d83bf5ebd87e918f45b08723e590d241a81d26ac83d87cc2ce",
+        "softmax.py": "a75c61641f3b3d2a0a468033882cea0dd11f75d5afb4b45310a11b7e757ac048"
+      },
+      "patch_sha256": "677a849688f2f2f3d262ccf493aab103c0c7366a5de4e4f4133e67945a2bd6b2"
+    },
+    "63-mask-only": {
+      "base": "63b4e65e9db1dfea45cc7d394902145c2f520821",
+      "alpha_skip": false,
+      "wide_rescale": false,
+      "fulltile_mask": true,
+      "sha256": {
+        "mainloop.py": "7723e979b1cbe12825c4c8fd3fd73dfa45cf4cd41832154726afbabd2557e10e",
+        "softmax.py": "c6b88f8e5eec040f194fc2f24f7e69338548b6e33a5ba5e3720ad6d2ea6c0311"
+      },
+      "patch_sha256": "62619f81ac7139220f9e500c828bdd2a663596e8a136db2194d361506f5d9467"
+    },
+    "150-no-alpha": {
+      "base": "150114b6f0079bcd479c6c87bd0b15174581d984",
+      "alpha_skip": false,
+      "wide_rescale": true,
+      "fulltile_mask": true,
+      "sha256": {
+        "mainloop.py": "7723e979b1cbe12825c4c8fd3fd73dfa45cf4cd41832154726afbabd2557e10e",
+        "softmax.py": "a75c61641f3b3d2a0a468033882cea0dd11f75d5afb4b45310a11b7e757ac048"
+      },
+      "patch_sha256": "ee10d98d91a81a2c321e22eca2de7d7a574462af71ac28ddcdae731405aeb8cd"
+    },
+    "150-no-wide": {
+      "base": "150114b6f0079bcd479c6c87bd0b15174581d984",
+      "alpha_skip": true,
+      "wide_rescale": false,
+      "fulltile_mask": true,
+      "sha256": {
+        "mainloop.py": "7723e979b1cbe12825c4c8fd3fd73dfa45cf4cd41832154726afbabd2557e10e",
+        "softmax.py": "7a68c1745dd55c20f8eba5036c6dd7bd8ba34ad5dc193eb7ee36cf025ada395d"
+      },
+      "patch_sha256": "a8fd4e2b2f918c5ab07d0f33407e687cbe688d9e576922053053fc09075c07ab"
+    },
+    "150-no-mask": {
+      "base": "150114b6f0079bcd479c6c87bd0b15174581d984",
+      "alpha_skip": true,
+      "wide_rescale": true,
+      "fulltile_mask": false,
+      "sha256": {
+        "mainloop.py": "dc171d8c6ed249d83bf5ebd87e918f45b08723e590d241a81d26ac83d87cc2ce",
+        "softmax.py": "22a95f6db57382e95bbfdef09da3304981dab61d6fcaad8db2525fcd0f68d1de"
+      },
+      "patch_sha256": "82fa503e156c4f11a1e93b792dd2cb5b4e50c19cbe3bdb665c33f4bf25ad877b"
+    }
+  },
+  "base_package_changed_files": [
+    "techniques/sparse_backends/sol_attn/sm100/mainloop.py",
+    "techniques/sparse_backends/sol_attn/sm100/softmax.py"
+  ]
+}

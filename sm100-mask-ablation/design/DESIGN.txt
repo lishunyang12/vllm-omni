@@ -1,0 +1,129 @@
+SM100 kernel design candidates, 2026-11-18
+
+Baseline: 150114b6f0079bcd479c6c87bd0b15174581d984.
+Original source: /baseline-source (not modified).
+Each candidate is an independent full copy rooted in this directory.
+No GPU allocation, GPU execution, commit, or push was performed by this agent.
+
+1. protected-q/ and protected-q.patch
+
+The existing protection contract is (mask[Q] != 0 OR mask[KV] != 0),
+applied to every valid block, in addition to diagonal/sink/threshold selection.
+For a protected Q block, the current route always emits all valid KV indices
+in ascending order and emits no approximate PV contribution. The candidate
+reads mask[Q] once per invocation and directly constructs that same G256
+index stream. It skips the corresponding KC/VC TMA, route QK, owner score
+loads, column reductions, ballots and route-only rendezvous.
+
+All exact N128 QK/PV, online-softmax, BF16 conversion, output writes, and
+masked-tail logic remain unchanged, with identical exact-block order.
+There is no host mask-content inspection, cache key, static range, assumption
+about mask contiguity beyond the existing public validation, or reduced
+protection. None masks use the unchanged route; zero masks take the same
+route as before, plus a per-CTA predicate. Sink semantics remain KV-only.
+The mask content is still read from device memory on every graph replay.
+
+Synchronization argument:
+* Q protection is CTA-uniform; all warps omit exactly the same route
+  transactions, so producer/consumer K/V and score cursor advances match.
+* Only owner warp 0 writes the next direct index list. Its preceding exact-P
+  rendezvous proves that every owner already finished all old index reads.
+  The preceding score completion proves that the TMA producer has finished
+  those old reads too. Letting the TMA warp write the new list would require
+  a different lifetime proof and is deliberately avoided.
+* The existing pre-exact full-CTA barrier publishes the new count/list to
+  warp 5 and the exact score owners. No new shared allocation or barrier.
+* Across logical groups the next exact QK is issued after the preceding PV
+  by the same tcgen05 issuer, so its completion still dominates the prior
+  PV before O rescaling. The final exact PV retains its O completion wait.
+* PAIR_STAGES remains 1. P still occupies TMEM columns 64..127 overlapping S;
+  all score-load and probability-ready rendezvous remain present.
+
+Risk: control-flow/code-generation/register changes can affect unprotected
+CTAs too. It removes route overhead only for protected query blocks, not the
+substantial exact attention work required by the protection contract. No
+speedup is predicted quantitatively or claimed as measured here.
+
+2. p-store-x16/ and p-store-x16.patch
+
+An independent change on the same baseline changes the P transfer from
+four St16x64b.x8 operations to two St16x64b.x16 operations. The logical P tile,
+FP32-to-BF16 conversion, xor-2 lane exchange, byte permutation, and TMEM
+column order remain the same. Each store retains its wait::st and the final
+TMEM store fence; every inter-warp rendezvous remains unchanged. This halves
+the number of chunk-completion waits per P image, including exact and route
+P images. Scratch registers per thread per chunk increase from 8 to 16.
+
+Risk: the larger live scratch fragment can raise ptxas register count and
+lower occupancy or instruction scheduling efficiency. CuTe's x16 layout
+and conversion order require device validation. This is a measured-ablation
+candidate, not an assumed improvement. Do not combine it with protected-q
+until the independent correctness and timing results justify the combination.
+
+Validation runner: validate_design.py
+
+Run in the main agent's existing CUDA environment/allocation, preserving the
+scheduler-provided CUDA_VISIBLE_DEVICES. This script never requests a GPU.
+
+python validate_design.py --baseline BASELINE_ROOT \
+  --candidate CANDIDATE_ROOT --report RESULT.json --sections graph
+
+Omit --sections to run the full 73 checks; use --sections frozen with one or
+more --input frozen.pt arguments for real-input bitwise checks. Arguments
+support --heads (default 28). The default sections are:
+small,long,mask,groups,graph,frozen.
+
+The script imports separately renamed copies of the baseline and candidate,
+records Python-file SHA256 digests, and reuses the pinned baseline's existing
+independent hybrid oracle and SM100 regression cases. Every eager candidate
+call must be byte-identical to baseline. Small cases additionally compare to
+the token-level FP32 oracle. Tiny/subnormal V use the existing scaled-error
+comparison so an all-zero result cannot pass through absolute tolerance.
+Cross-group None/zero/all/disjoint/alternating masks cover 129/257/513 KV
+blocks, including odd pairs and partial final tokens. Graph tests mutate mask
+contents zero -> all -> disjoint -> zero, mutate Q/K/V, compare captured output
+to eager candidate/baseline/oracle, and assert no new candidate compile keys.
+
+Local checks actually performed by this agent:
+* Python syntax compilation for both changed mainloops and the runner.
+* git diff --check for each candidate.
+* Forward and reverse patch applicability against the pinned source/candidate.
+These are not CUDA compilation, numerical, race, or performance validation.
+GPU results must come from the main agent's separately recorded runs.
+
+3. protected-q-contiguous/ and protected-q-contiguous.patch
+
+This third candidate explicitly layers contiguous loading on candidate 1.
+protected-q-contiguous.patch is the complete patch against 150114b6;
+protected-q-contiguous-only.patch contains only its delta against protected-q.
+Candidate 2 (P store x16) is NOT included.
+
+The existing native route KC/VC path already loads a full N128 operand via
+make_tiled_tma_atom_B. The new descriptors apply the same canonical shared
+layout and partition to the true K/V tensors. They write the existing sPackK
+and sPackV allocations. For each protected Q block, every G256 group starts
+at a multiple of 256 KV blocks, and its complete exact pairs are (b, b+1)
+with b even. Thus block0//2 is the correct N128 tile coordinate. The warp-5
+producer selects this path only when query_is_protected AND has_peer.
+Each full K/V pair changes from four 64x64 copies per operand to one 128x128
+copy per operand: 8 -> 2 TMA instructions total, still 32768 bytes per K or V
+stage. The original duplicate/mask/gather path is retained for an odd final
+block and for every unprotected Q block, including adjacent selected blocks.
+
+The existing K/V producer acquire, barrier pointer, transfer-byte count, and
+advance execute exactly once per pair in either branch. The consumer, MMA,
+score owner, P/O handling, and all rendezvous are unchanged from candidate 1.
+There is no extra shared-memory stage, no TMEM allocation change, and no
+new numerical operation. Added descriptors may still change compiler resource
+usage and instruction scheduling. Device layout/bitwise validation is required.
+
+Additional CPU audit completed:
+* Exact MMA/owner/epilogue source is byte-identical to candidate 1.
+* SharedStorage, top-level constants, and pipeline/barrier construction are
+  byte-identical to candidate 1.
+* Protected-pair tile-coordinate invariants were checked for every total
+  block count 1..1293, all G256 groups and every complete/odd pair.
+* Full and incremental patches pass forward/reverse applicability checks.
+* Python syntax and whitespace checks pass.
+No GPU compilation, correctness, or speed measurement for candidate 3 was
+performed by this agent. The parent owns those independent validation runs.

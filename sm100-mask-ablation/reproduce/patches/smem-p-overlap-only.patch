@@ -1,0 +1,166 @@
+--- a/techniques/sparse_backends/sol_attn/sm100/mainloop.py
++++ b/techniques/sparse_backends/sol_attn/sm100/mainloop.py
+@@ -351,6 +351,7 @@
+     ]
+     pair_score_mbar_ptr: cute.struct.MemRange[cutlass.Int64, 2]
+     pair_o_mbar_ptr: cute.struct.MemRange[cutlass.Int64, 2]
++    exact_pv_mbar_ptr: cute.struct.MemRange[cutlass.Int64, 2]
+     final_stats: cute.struct.Align[
+         cute.struct.MemRange[Float32, M * 2], 128
+     ]
+@@ -560,6 +561,15 @@
+         barrier_storage=storage.pair_o_mbar_ptr.data_ptr(),
+     )
+ 
++    # One completion token per exact PV. Unlike the route/final O token,
++    # every generation is waited and released by all four score owners.
++    exact_pv_pipe = fa_pipeline.PipelineUmmaAsync.create(
++        num_stages=1,
++        producer_group=one_thread,
++        consumer_group=pack_owner_threads,
++        barrier_storage=storage.exact_pv_mbar_ptr.data_ptr(),
++    )
++
+     mQ_cur = mQ_mkl[None, None, head_idx, batch_idx]
+     mPackK_cur = mPackK_nkl[None, None, head_idx, batch_idx]
+     mPackV_cur = mPackV_nkl[None, None, head_idx, batch_idx]
+@@ -701,6 +711,12 @@
+         pipeline.PipelineUserType.Producer, 1
+     )
+     pair_o_consumer = fa_pipeline.make_pipeline_state(
++        pipeline.PipelineUserType.Consumer, 1
++    )
++    exact_pv_producer = fa_pipeline.make_pipeline_state(
++        pipeline.PipelineUserType.Producer, 1
++    )
++    exact_pv_consumer = fa_pipeline.make_pipeline_state(
+         pipeline.PipelineUserType.Consumer, 1
+     )
+     route_start_base = Int32(0)
+@@ -1291,32 +1307,10 @@
+             pack_k_consumer.advance()
+ 
+             for pair_idx in cutlass.range(pair_count, unroll=1):
+-                # Layout-gate version: exact P is in SMEM, but retain the
+-                # original PV(i)->QK(i+1) order. QK completion still proves
+-                # preceding PV completion before O rescaling or P overwrite.
+-                pack_v_pipe.consumer_wait(pack_v_consumer)
+-                # All four owners have completed exact-P shared stores and
+-                # the async shared fence before the existing P-ready join.
+-                exact_pair_p_ready_barrier.arrive_and_wait()
+-                mma_utils.gemm(
+-                    tiled_exact_pv,
+-                    pair_tO,
+-                    tCrExactP,
+-                    tCrExactV[None, None, None, pack_v_consumer.index],
+-                    zero_init=mma_o_initialized == Int32(0),
+-                )
+-                # QK(i+1) completion dominates PV(i) completion for every
+-                # nonterminal transaction on this tcgen05 issuer.  Commit one
+-                # explicit O-full generation only for the CTA's final PV.
+-                if (
+-                    is_final_logical_group
+-                    and pair_idx + Int32(1) == pair_count
+-                ):
+-                    pair_o_pipe.producer_commit(pair_o_producer)
+-                mma_o_initialized = Int32(1)
+-                pack_v_pipe.consumer_release(pack_v_consumer)
+-                pack_v_consumer.advance()
+-
++                # Exact P lives in independent SMEM, so owners releasing S(i)
++                # after all score loads is sufficient to reuse S for QK(i+1).
++                # K(i+1) can already be produced with one K/V stage: warp 5
++                # posts it before blocking on V(i+1)'s still-live V(i) stage.
+                 if pair_idx + Int32(1) < pair_count:
+                     pack_k_pipe.consumer_wait(pack_k_consumer)
+                     pair_score_pipe.producer_acquire(pair_score_producer)
+@@ -1333,6 +1327,25 @@
+                     pair_score_producer.advance()
+                     pack_k_pipe.consumer_release(pack_k_consumer)
+                     pack_k_consumer.advance()
++
++                pack_v_pipe.consumer_wait(pack_v_consumer)
++                # This join publishes P(i) and O's rescale. The owner wait
++                # below uses an explicit PV completion, not the now-earlier
++                # QK(i+1) completion, to protect P/O from PV(i-1).
++                exact_pair_p_ready_barrier.arrive_and_wait()
++                exact_pv_pipe.producer_acquire(exact_pv_producer)
++                mma_utils.gemm(
++                    tiled_exact_pv,
++                    pair_tO,
++                    tCrExactP,
++                    tCrExactV[None, None, None, pack_v_consumer.index],
++                    zero_init=mma_o_initialized == Int32(0),
++                )
++                exact_pv_pipe.producer_commit(exact_pv_producer)
++                exact_pv_producer.advance()
++                mma_o_initialized = Int32(1)
++                pack_v_pipe.consumer_release(pack_v_consumer)
++                pack_v_consumer.advance()
+ 
+         if is_owner and has_pair_exact:
+             exact_owner_warp = owner_tidx // Int32(32)
+@@ -1386,8 +1399,9 @@
+                     Int32(PAIR_SCORE_OFFSET),
+                     owner_tidx,
+                 )
+-                # Every owner retires the complete score load before the
+-                # packed P store aliases columns 64..127 of S.
++                # Every owner retires the complete score load before S is
++                # reused by the lookahead QK. The same join also publishes
++                # partial-pair column masks; exact P itself is disjoint SMEM.
+                 pack_score_loaded_barrier.arrive_and_wait()
+                 pair_score_pipe.consumer_release(pair_score_consumer)
+                 pair_score_consumer.advance()
+@@ -1429,10 +1443,15 @@
+                         softmax_scale,
+                     )
+                 )
+-                # For i>0, pair-score completion comes from QK(i), issued
+-                # after PV(i-1) on the same tcgen05 issuer.  The score wait and
+-                # load above therefore retire PV(i-1) before this O rescale.
+-                # Pair0 similarly follows either route QK or route PV->QK0.
++                # Softmax may overlap PV(i-1), but O rescaling and the
++                # single shared P overwrite must not. Consume exactly one
++                # completion generation before either write. Pair0 follows
++                # the unchanged route-PV->QK0 ordering; the previous logical
++                # group's final exact PV was also explicitly drained below.
++                if pair_idx > Int32(0):
++                    exact_pv_pipe.consumer_wait(exact_pv_consumer)
++                    exact_pv_pipe.consumer_release(exact_pv_consumer)
++                    exact_pv_consumer.advance()
+                 if owner_o_initialized != Int32(0):
+                     _rescale_pair_o(
+                         pack_o_template,
+@@ -1442,8 +1461,9 @@
+                         owner_tidx,
+                         row_alpha,
+                     )
+-                # QK(i) follows PV(i-1), so its completed score load proves
+-                # the previous shared P has no live tcgen05 readers.
++                # The explicit completion above makes the prior shared P
++                # image free. Its next publication still uses one P-ready
++                # generation for the MMA warp and every score owner.
+                 _store_pair_probability_smem(
+                     probabilities, pair_coords, sExactP
+                 )
+@@ -1454,11 +1474,14 @@
+                 running_sum = next_sum
+                 owner_o_initialized = Int32(1)
+ 
+-            # There is no successor QK after the CTA's final exact PV.  Keep
+-            # exactly one completion-backed wait before the epilogue; all
+-            # earlier groups flow into a successor route QK completion.
+-            if is_final_logical_group and pair_count > Int32(0):
+-                pair_o_pipe.consumer_wait(pair_o_consumer)
++            # N exact pairs produce N completion tokens: iterations 1..N-1
++            # consume the first N-1, and this group-tail drain consumes the
++            # last one (also for a one-pair group). Release/advance here keeps
++            # phases matched across empty/mixed/route-only logical groups and
++            # guarantees the final output is complete before the epilogue.
++            exact_pv_pipe.consumer_wait(exact_pv_consumer)
++            exact_pv_pipe.consumer_release(exact_pv_consumer)
++            exact_pv_consumer.advance()
+ 
+         # route_indices reuse HB proof for the next logical group:
+         # (1) warp 5 reads both indices before producing each pair's K/V, and

@@ -1,0 +1,50 @@
+[
+  {
+    "step": 0,
+    "layer": 0,
+    "without_protection_exact_percent": 28.103915826984714,
+    "protected_exact_percent": 44.580959251019166,
+    "exact_block_work_increase_percent": 58.62899506770363,
+    "padded_peer_fraction_of_selected": 0.004481306534141781
+  },
+  {
+    "step": 0,
+    "layer": 25,
+    "without_protection_exact_percent": 24.409009767884882,
+    "protected_exact_percent": 38.09196327795495,
+    "exact_block_work_increase_percent": 56.056979124457705,
+    "padded_peer_fraction_of_selected": 0.005472499460646182
+  },
+  {
+    "step": 10,
+    "layer": 0,
+    "without_protection_exact_percent": 28.088592758248932,
+    "protected_exact_percent": 44.55831323796074,
+    "exact_block_work_increase_percent": 58.63490784840069,
+    "padded_peer_fraction_of_selected": 0.00451546551493355
+  },
+  {
+    "step": 10,
+    "layer": 25,
+    "without_protection_exact_percent": 23.645225393304912,
+    "protected_exact_percent": 37.71827735980599,
+    "exact_block_work_increase_percent": 59.51752090502731,
+    "padded_peer_fraction_of_selected": 0.005512388176337973
+  },
+  {
+    "step": 25,
+    "layer": 0,
+    "without_protection_exact_percent": 27.611924197186983,
+    "protected_exact_percent": 44.10002253279367,
+    "exact_block_work_increase_percent": 59.71368825243426,
+    "padded_peer_fraction_of_selected": 0.0045714004484208055
+  },
+  {
+    "step": 25,
+    "layer": 25,
+    "without_protection_exact_percent": 23.14665208571895,
+    "protected_exact_percent": 37.41506730401063,
+    "exact_block_work_increase_percent": 61.64353775851246,
+    "padded_peer_fraction_of_selected": 0.005528284426482598
+  }
+]

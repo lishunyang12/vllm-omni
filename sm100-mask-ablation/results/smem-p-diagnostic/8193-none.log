@@ -1,0 +1,25 @@
+8193 none eager 0 baseline base_bytes 0 max_abs 0.0 rmse 0.0 repeat_bytes 0 input_changes []
+8193 none eager 0 serial base_bytes 0 max_abs 0.0 rmse 0.0 repeat_bytes 0 input_changes []
+8193 none eager 0 overlap base_bytes 0 max_abs 0.0 rmse 0.0 repeat_bytes 0 input_changes []
+8193 none eager 0 publish_first base_bytes 778767 max_abs 0.0317840576171875 rmse 0.000568591792316987 repeat_bytes 0 input_changes []
+8193 none eager 1 baseline base_bytes 0 max_abs 0.0 rmse 0.0 repeat_bytes 0 input_changes []
+8193 none eager 1 publish_first base_bytes 778767 max_abs 0.0317840576171875 rmse 0.000568591792316987 repeat_bytes 0 input_changes []
+8193 none eager 1 overlap base_bytes 0 max_abs 0.0 rmse 0.0 repeat_bytes 0 input_changes []
+8193 none eager 1 serial base_bytes 0 max_abs 0.0 rmse 0.0 repeat_bytes 0 input_changes []
+8193 none eager 2 overlap base_bytes 0 max_abs 0.0 rmse 0.0 repeat_bytes 0 input_changes []
+8193 none eager 2 publish_first base_bytes 778767 max_abs 0.0317840576171875 rmse 0.000568591792316987 repeat_bytes 0 input_changes []
+8193 none eager 2 baseline base_bytes 0 max_abs 0.0 rmse 0.0 repeat_bytes 0 input_changes []
+8193 none eager 2 serial base_bytes 0 max_abs 0.0 rmse 0.0 repeat_bytes 0 input_changes []
+8193 none eager 3 overlap base_bytes 0 max_abs 0.0 rmse 0.0 repeat_bytes 0 input_changes []
+8193 none eager 3 serial base_bytes 0 max_abs 0.0 rmse 0.0 repeat_bytes 0 input_changes []
+8193 none eager 3 baseline base_bytes 0 max_abs 0.0 rmse 0.0 repeat_bytes 0 input_changes []
+8193 none eager 3 publish_first base_bytes 778767 max_abs 0.0317840576171875 rmse 0.000568591792316987 repeat_bytes 0 input_changes []
+Traceback (most recent call last):
+  File "/work/scripts/diagnose_smem_p_overlap.py", line 168, in <module>
+    main()
+  File "/usr/local/lib/python3.12/dist-packages/torch/utils/_contextlib.py", line 158, in inference_mode
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/work/scripts/diagnose_smem_p_overlap.py", line 163, in main
+    raise AssertionError(f"Diagnostic complete: {len(report['failures'])} strict-gate failures; see {args.report}")
+AssertionError: Diagnostic complete: 4 strict-gate failures; see /work/results/smem-p-diagnostic/8193-none.json

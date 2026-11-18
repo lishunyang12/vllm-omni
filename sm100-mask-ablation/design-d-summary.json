@@ -1,0 +1,146 @@
+{
+  "smem-p-serial-layer-00.json/eager/baseline": {
+    "samples": 16,
+    "covered_samples": 11,
+    "polls": 11,
+    "clocks": {
+      "750 MHz": 11
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 182.74793243408203,
+    "cv_percent": 0.07993657425191986
+  },
+  "smem-p-serial-layer-00.json/eager/candidate": {
+    "samples": 16,
+    "covered_samples": 12,
+    "polls": 12,
+    "clocks": {
+      "750 MHz": 12
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 234.0400619506836,
+    "cv_percent": 0.07309188325120529
+  },
+  "smem-p-serial-layer-00.json/eager/dense": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 134.4919204711914,
+    "cv_percent": 0.022073736411259103
+  },
+  "smem-p-serial-layer-00.json/graph/baseline": {
+    "samples": 16,
+    "covered_samples": 11,
+    "polls": 11,
+    "clocks": {
+      "750 MHz": 11
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 182.48839569091797,
+    "cv_percent": 0.08734984311046495
+  },
+  "smem-p-serial-layer-00.json/graph/candidate": {
+    "samples": 16,
+    "covered_samples": 12,
+    "polls": 12,
+    "clocks": {
+      "750 MHz": 12
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 233.97211456298828,
+    "cv_percent": 0.05879825316085983
+  },
+  "smem-p-serial-layer-00.json/graph/dense": {
+    "samples": 16,
+    "covered_samples": 7,
+    "polls": 7,
+    "clocks": {
+      "750 MHz": 7
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 134.4226531982422,
+    "cv_percent": 0.03403124113088795
+  },
+  "smem-p-serial-layer-25.json/eager/baseline": {
+    "samples": 16,
+    "covered_samples": 9,
+    "polls": 9,
+    "clocks": {
+      "750 MHz": 9
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 162.87566375732422,
+    "cv_percent": 0.3219633615065689
+  },
+  "smem-p-serial-layer-25.json/eager/candidate": {
+    "samples": 16,
+    "covered_samples": 11,
+    "polls": 11,
+    "clocks": {
+      "750 MHz": 11
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 207.28387451171875,
+    "cv_percent": 0.4608799128845716
+  },
+  "smem-p-serial-layer-25.json/eager/dense": {
+    "samples": 16,
+    "covered_samples": 8,
+    "polls": 8,
+    "clocks": {
+      "750 MHz": 8
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 135.2142562866211,
+    "cv_percent": 0.1250395332063753
+  },
+  "smem-p-serial-layer-25.json/graph/baseline": {
+    "samples": 16,
+    "covered_samples": 9,
+    "polls": 9,
+    "clocks": {
+      "750 MHz": 9
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 162.53400421142578,
+    "cv_percent": 0.0692836712264679
+  },
+  "smem-p-serial-layer-25.json/graph/candidate": {
+    "samples": 16,
+    "covered_samples": 11,
+    "polls": 11,
+    "clocks": {
+      "750 MHz": 11
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 206.97225189208984,
+    "cv_percent": 0.09271363963614072
+  },
+  "smem-p-serial-layer-25.json/graph/dense": {
+    "samples": 16,
+    "covered_samples": 8,
+    "polls": 8,
+    "clocks": {
+      "750 MHz": 8
+    },
+    "power_cap_flags": 0,
+    "thermal_flags": 0,
+    "median_ms": 135.04557037353516,
+    "cv_percent": 0.020618517884530382
+  }
+}

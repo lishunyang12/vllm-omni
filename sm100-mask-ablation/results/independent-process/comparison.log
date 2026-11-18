@@ -1,0 +1,34 @@
+{
+  "candidate": {
+    "byte_mismatch_to_candidate": 0,
+    "max_abs_to_candidate": 0.0,
+    "rmse_to_candidate": 0.0,
+    "max_abs_to_oracle": 0.03185121715068817,
+    "rmse_to_oracle": 0.0005655391723848879,
+    "oracle_pass": false
+  },
+  "extension": {
+    "byte_mismatch_to_candidate": 471368,
+    "max_abs_to_candidate": 0.0318603515625,
+    "rmse_to_candidate": 0.0005655311979353428,
+    "max_abs_to_oracle": 0.0002526789903640747,
+    "rmse_to_oracle": 3.024325087608304e-05,
+    "oracle_pass": true
+  },
+  "smem-p-serial": {
+    "byte_mismatch_to_candidate": 778767,
+    "max_abs_to_candidate": 0.0317840576171875,
+    "rmse_to_candidate": 0.0005685917567461729,
+    "max_abs_to_oracle": 0.0002757161855697632,
+    "rmse_to_oracle": 6.414809467969462e-05,
+    "oracle_pass": true
+  },
+  "smem-p-vector": {
+    "byte_mismatch_to_candidate": 471368,
+    "max_abs_to_candidate": 0.0318603515625,
+    "rmse_to_candidate": 0.0005655311979353428,
+    "max_abs_to_oracle": 0.0002526789903640747,
+    "rmse_to_oracle": 3.024325087608304e-05,
+    "oracle_pass": true
+  }
+}

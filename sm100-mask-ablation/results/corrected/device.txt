@@ -1,0 +1,1 @@
+GPU_MAPPING 1,2 _CudaDeviceProperties(name='NVIDIA Graphics Device', major=10, minor=0, total_memory=182624MB, multi_processor_count=148, uuid=[GPU_UUID], pci_bus_id=65, pci_device_id=0, pci_domain_id=0, L2_cache_size=126MB)

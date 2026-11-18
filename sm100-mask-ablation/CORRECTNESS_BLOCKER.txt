@@ -1,0 +1,28 @@
+CORRECTNESS BLOCKER — do not use the timing tables as a promotion recommendation
+2026-11-18, fresh-process follow-up after the initial timing experiments
+
+#594 (150114b6) FAILS the independent hybrid oracle on:
+BF16 [1,8193,1,128], CUDA generator seed71, tau1, diag, exact_block_mask=None.
+Each source is imported as the sole sol_attn package in a fresh process with
+CUTE_DSL_DISABLE_FILE_CACHING=1. Inputs have identical hashes; four calls per
+variant are stable and immutable. #593 (63b4e65) passes the same oracle.
+
+#594: max_abs_to_oracle 0.03185121715; RMSE 0.00056553917; tolerance gate fails.
+#593: max_abs_to_oracle 0.00025267899; RMSE 0.00003024325; tolerance gate passes.
+The oracle gate is the existing atol=0.02, rtol=0.02; it was not relaxed.
+The vector-store experiment matches #593 bytes on this case, so earlier byte
+failures against #594 do not establish that #594 was the correct reference.
+The scalar shared-P experiment differs from #593 but passes the tolerance oracle;
+its earlier 73-pass run is an observation, not a sufficient acceptance gate.
+
+The same-process baseline output also changes between cache-enabled and cache-
+disabled diagnostics. Exact cause (cache/context vs kernel implementation) is
+under investigation. Prior timings and byte checks remain archived as historical
+observations, but must not be treated as validated optimization evidence until
+kernel identity and independent correctness are re-established.
+
+No new experimental production code has been pushed. Existing #594 remains draft.
+See results/independent-process/comparison.json and per-variant report.json;
+results/no-cache-diagnostic/8193-none.json; reproduce/independent_process_probe.py,
+compare_independent.py, run_independent_process.sh and run_extension_probe.sh.
+Raw tensor and compiled binary archives remain private.

@@ -1,0 +1,1 @@
+INVALID: runner overwrote SLURM CUDA_VISIBLE_DEVICES with 0, bypassing allocated GPU mapping. Stopped owned step 3278338.8. Do not cite timing from initial/. Corrected runner retains scheduler mapping; fresh result labels required.

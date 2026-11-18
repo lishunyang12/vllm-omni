@@ -1,0 +1,140 @@
+CORRECTNESS BLOCKER — do not use the timing tables as a promotion recommendation
+2026-11-18, fresh-process follow-up after the initial timing experiments
+
+#594 (150114b6) FAILS the independent hybrid oracle on:
+BF16 [1,8193,1,128], CUDA generator seed71, tau1, diag, exact_block_mask=None.
+Each source is imported as the sole sol_attn package in a fresh process with
+CUTE_DSL_DISABLE_FILE_CACHING=1. Inputs have identical hashes; four calls per
+variant are stable and immutable. #593 (63b4e65) passes the same oracle.
+
+#594: max_abs_to_oracle 0.03185121715; RMSE 0.00056553917; tolerance gate fails.
+#593: max_abs_to_oracle 0.00025267899; RMSE 0.00003024325; tolerance gate passes.
+The oracle gate is the existing atol=0.02, rtol=0.02; it was not relaxed.
+The vector-store experiment matches #593 bytes on this case, so earlier byte
+failures against #594 do not establish that #594 was the correct reference.
+The scalar shared-P experiment differs from #593 but passes the tolerance oracle;
+its earlier 73-pass run is an observation, not a sufficient acceptance gate.
+
+The same-process baseline output also changes between cache-enabled and cache-
+disabled diagnostics. Exact cause (cache/context vs kernel implementation) is
+under investigation. Prior timings and byte checks remain archived as historical
+observations, but must not be treated as validated optimization evidence until
+kernel identity and independent correctness are re-established.
+
+No new experimental production code has been pushed. Existing #594 remains draft.
+See results/independent-process/comparison.json and per-variant report.json;
+results/no-cache-diagnostic/8193-none.json; reproduce/independent_process_probe.py,
+compare_independent.py, run_independent_process.sh and run_extension_probe.sh.
+Raw tensor and compiled binary archives remain private.
+
+
+HISTORICAL OBSERVATIONS (subject to blocker above)
+
+H3 Ref2VA: SM100 protected-route ablation and kernel-design follow-up
+======================================================================
+2026-11-18. See manifest.json, raw logs/JSON, ablation.csv and REPRODUCE.txt.
+
+Hardware and protocol
+---------------------
+2 x SM100 engineering GPUs, cluster label B100, driver NVIDIA Graphics Device;
+CC 10.0, 148 SMs, 183359 MiB each. Not a production B200 validation.
+Fixed image and source/model revisions are recorded in manifest.json.
+Frozen attention: BF16 [1,82747,28,128], tau=1, diag; 5 warmups + 16 paired
+rotating/reversed rounds in both eager and CUDA graph, 750 MHz.
+New inputs come from a single Dense SP2 trajectory at steps 0,10,25, layers0,25.
+Dense is torch SDPA forced to CUDNN_ATTENTION. No SOL default backend fallback.
+All repeated calls use unchanged input hashes. Exact byte checks compare
+equivalent mask/API variants, not Dense vs approximate SOL.
+
+Graph median milliseconds, same newly captured SP2 inputs
+--------------------------------------------------------
+step layer Dense upstream(no protection) #593(None) #593(zero) #593(protected) #593(static protection) #594(protected)
+   0     0 134.524 131.608 131.646 132.462 200.138 197.785 182.367
+   0    25 135.046 117.869 117.850 118.632 177.287 175.223 162.594
+  10     0 134.526 131.562 131.505 132.428 200.067 197.841 182.304
+  10    25 134.990 114.888 114.831 115.661 175.936 173.790 161.238
+  25     0 134.472 129.626 129.640 130.489 198.337 196.026 180.251
+  25    25 135.021 113.058 113.062 113.837 174.404 172.545 160.137
+
+Interpretation: no-mask upstream and extended API agree byte-for-byte with
+negligible latency change. Reading a zero mask costs roughly 0.7%. Encoding
+exactly the real protected ranges as constants saves only about 1.1-1.2% versus
+dynamic protected-mask evaluation. The main protection-associated cost is the
+additional exact-path work and its execution overhead, not Boolean mask reads.
+The real protected mask has 129/1293 blocks: [0,115), [697,711). Its union of
+protected Q rows and KV columns forces at least 18.958% of block pairs exact.
+None/zero masks are diagnostic controls that REMOVE H3 text/audio protection;
+their faster timings are not valid quality-preserving integration results.
+Later steps show the same direction; this is not just a first-step artifact.
+Untimed route instrumentation is byte-identical to the original kernel on all
+six captures. Actual exact-block fractions rise from 23.15-28.10% without
+protection to 37.42-44.58% with protection (56.06-61.64% more selected exact
+blocks). Protected pairs missing: zero. Extra paired-peer padding is only
+0.448-0.553% of selected blocks. See route-summary.json and raw route reports.
+All covered later-750 polls stayed at 750 MHz, no observed power/thermal flags.
+Polling is partial for sub-second kernels; see later-summary.json coverage.
+
+Full single-forward validation at denoising step 10
+-------------------------------------------------
+2 GPUs, TP1/Ulysses2, 50 SOL layers forced for diagnostic comparison, BF16 eager,
+cache_backend=none, no CPU offload, 450 MHz. 3 warmups + 9 paired rounds;
+latency is max wall time across ranks. No VAE or client/end-to-end timing.
+Dense: P50=21.741223 s, CV=0.0623%
+#593: P50=25.008123 s, CV=0.1258%
+#594: P50=23.827988 s, CV=0.1552%
+#594 lowers SOL latency by 4.719%, but is 9.598% slower than Dense.
+Both ranks: first/last #593/#594 outputs byte-identical and finite, input hashes
+unchanged; Dense trajectory output matches the independently captured Dense
+result. All 18 rank/sample windows per variant have clock polls at 450 MHz,
+with no observed power-cap or thermal flags. Original clock settings restored.
+No new image/video quality or SSIM/PSNR/LPIPS result is claimed in this run.
+
+Kernel-design candidates
+------------------------
+ALL CANDIDATES BLOCKED pending independent oracle and compilation-context audit.
+See CORRECTNESS_BLOCKER.txt; historical statuses below are not acceptance.
+
+Experimental acceptance gates
+=============================
+The following names refer to isolated patches on #594 (150114b6), not code
+proposed for merging. A timing table does not imply that a patch was accepted.
+protected-q: 12 stress and real-input byte checks, but independent T513/diag
+  diagnostic FAILS byte equality (max_abs 0.001953125); not eligible.
+p-store-x16: 12 stress and real-input byte checks; full validation not run.
+protected-q-contiguous: FAILS full suite at T513/diag; do not use performance.
+smem-p-serial: 12+73 correctness checks pass, real-input bytes pass; 27-28% slower
+  than #594 on tested layers. Uses scalar SMEM stores as a layout gate. Rejected
+  for performance; this alone does not rule out all shared-P designs.
+smem-p-overlap: 12 stress pass; full suite FAILS T8193/none after 48 passed cases.
+  This input is still within one G256 group. Not performance eligible.
+smem-p-overlap-publish-first: FAILS independent T8193/none byte checks
+  (max_abs 0.0317840576171875), not performance eligible.
+smem-p-vector: serial schedule with proved vector stores; 12 stress pass, full
+  validation pending.
+C and original overlap each pass isolated repro cases that failed in the full
+  sequence; that does not invalidate the full-suite failure. Cause unresolved.
+No production code changed and no experimental kernel was pushed to #594.
+
+Protected-Q route-skip and wider TMEM stores initially measured only about
+0.1-0.4% on two real inputs, with incomplete full correctness gates; these
+preliminary timing observations are not a promotion recommendation.
+SMEM-P scalar serial is 27-28% slower on two real inputs despite passing
+12 stress + 73 full checks and real-input eager/graph byte checks. Scalar
+stores were a layout gate. This rejects that implementation, not the entire
+shared-memory design space. Other experiments must meet correctness and
+real-input performance gates before any production PR change.
+
+Provenance and limits
+---------------------
+upstream=cf67a3a; #593=63b4e65; #594=150114b6 (implementation fe6be477).
+Old corrected/design-first/design-d captures were SP1 sliced to 28 heads;
+new later-750 captures are true SP2. Do not mix their input identities.
+An initial launch accidentally overrode scheduler visibility, was stopped
+and discarded; none of its timings appear in this report or comparison CSV.
+All code experiments are isolated patches. Failed branches remain diagnostic
+artifacts; no experimental kernel was pushed to the production PR.
+Private QKV/output tensor archives are retained locally and not published.
+The public sequence harness regenerates captures with pinned input hashes.
+Paper context: https://arxiv.org/html/2607.24027v1#S6 explicitly lists incomplete
+B200 utilization as a limitation. Its task/sparsity/warmup settings differ from
+our forced-all-layer Ref2VA diagnostic; neither result invalidates the other.

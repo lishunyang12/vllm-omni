@@ -1,0 +1,38 @@
+{
+  "150-no-alpha": {
+    "bitwise_equal_to_593": false,
+    "max_abs_to_593": 0.000244140625,
+    "rmse_to_593": 6.432535155909136e-05,
+    "output_sha256": "37b603bb1b901fcaa29cf617e72a1a1a48b442e242077694bca46705f63f331f"
+  },
+  "150-no-mask": {
+    "bitwise_equal_to_593": false,
+    "max_abs_to_593": 0.000244140625,
+    "rmse_to_593": 6.432535155909136e-05,
+    "output_sha256": "37b603bb1b901fcaa29cf617e72a1a1a48b442e242077694bca46705f63f331f"
+  },
+  "150-no-wide": {
+    "bitwise_equal_to_593": true,
+    "max_abs_to_593": 0.0,
+    "rmse_to_593": 0.0,
+    "output_sha256": "5b21c4ec0967384ec591f7209dd634959ee57ec5dd55205624032d4d9085db56"
+  },
+  "63-alpha-only": {
+    "bitwise_equal_to_593": true,
+    "max_abs_to_593": 0.0,
+    "rmse_to_593": 0.0,
+    "output_sha256": "5b21c4ec0967384ec591f7209dd634959ee57ec5dd55205624032d4d9085db56"
+  },
+  "63-mask-only": {
+    "bitwise_equal_to_593": false,
+    "max_abs_to_593": 0.031982421875,
+    "rmse_to_593": 0.0005686762160621583,
+    "output_sha256": "ff05c366f122ce0ce6e39d19affd18a5efca18e846dc7fdd09e4ae72a67e567c"
+  },
+  "63-wide-only": {
+    "bitwise_equal_to_593": false,
+    "max_abs_to_593": 0.0318603515625,
+    "rmse_to_593": 0.0005655311397276819,
+    "output_sha256": "ec97f596a43795c2724c429671048ccfc6a2c5817907adf4f29b11824acdf1d7"
+  }
+}

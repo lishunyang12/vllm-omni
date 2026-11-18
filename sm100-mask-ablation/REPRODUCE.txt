@@ -1,0 +1,91 @@
+CURRENT CORRECTNESS BLOCKER: read CORRECTNESS_BLOCKER.txt first.
+The historical timing scripts do not establish acceptance. For any new run,
+set CUTE_DSL_DISABLE_FILE_CACHING=1 and verify each source in a fresh process.
+
+Reproduce H3 Ref2VA SM100 mask ablation and rejected kernel experiments
+=====================================================================
+All timings are measurements, not estimates. The experimental patches are not
+production recommendations. See REPORT.txt for acceptance/failure status.
+
+Hardware used: 2 allocated SM100 engineering GPUs, cluster label B100,
+NVIDIA Graphics Device, CC 10.0, 148 SMs, 183359 MiB each. This does not establish
+production B200 performance. Do not override scheduler CUDA_VISIBLE_DEVICES.
+Image: vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
+
+Copy the contents of reproduce/ to an empty WORK/scripts directory and mount
+WORK at /work in the pinned image. Keep HF credentials outside published logs.
+The commands below run inside that container. They require model download access
+and sufficient local disk/RAM. Input media hashes are enforced by the harness.
+
+  python3 /work/scripts/fetch_sources.py /work
+  bash /work/scripts/prepare_forward.sh /work
+  HF_HOME=/work/hf-cache python3 /work/scripts/download_models.py /work
+
+Generate private real-QKV captures at steps 0, 10, 25 of the same Dense trajectory,
+and measure step-10 full forward (Dense / #593 / #594), 3 warmups + 9 paired rounds:
+
+  H3_GPU_COUNT=2 H3_CPU_OFFLOAD=0 H3_RUN_ID=sequence-450 \
+    H3_GPU_FREQ_REQUEST_MHZ=450 bash /work/scripts/run_sequence.sh /work
+
+IMPORTANT: H3_GPU_FREQ_REQUEST_MHZ records the intended condition only. It does
+not set clocks. The published run used control_sequence.sh outside the container
+to lock only allocated GPUs to 450 MHz, collect telemetry and restore clocks in
+an EXIT trap. Its cluster-specific invocation is:
+
+  bash scripts/control_sequence.sh WORK CONTAINER 2 sequence-450 \
+    ALLOCATED_PHYSICAL_GPU_INDICES 450 WORK:/work 0 12
+
+For another scheduler/container runtime, reproduce that wrapper's operations:
+verify GPU ownership, lock allocated GPUs, start gpu_telemetry.py, execute the
+container command above, then always restore clocks. Do not alter power limits.
+This diagnostic intentionally stops after step-25 QKV capture, before VAE decode;
+check summary.json capture_complete=true and both rank reports. It does not
+produce video quality metrics or an end-to-end generation latency.
+
+Frozen-input attention ablation, 5 warmups + 16 interleaved/reversed rounds,
+eager and CUDA graph. Set the allocated GPUs to 750 MHz and record telemetry:
+
+  bash /work/scripts/run_later_ablation.sh later-750
+
+Cluster wrapper (sets/restores clocks):
+  bash scripts/control_later_ablation.sh WORK CONTAINER \
+    ALLOCATED_PHYSICAL_GPU_INDICES 750 later-750
+
+For one input or a custom captured tensor:
+  python3 /work/scripts/ablation.py \
+    --input /work/results/ref2va-native-sequence-450/qkv-step-10-layer-25-rank-0.pt \
+    --output /work/results/one-case.json
+
+Mask None/zero controls REMOVE H3 text/audio protection. They diagnose costs and
+are not valid quality-preserving substitutes. Static protection encodes exactly
+the same protected block ranges as the actual mask. Mandatory exact-byte groups:
+upstream_none == extension_none == extension_zero;
+extension_mask == extension_static == optimized_mask.
+Dense vs sparse is intentionally not claimed to be bit-identical.
+
+Count exact routes outside timing (instrumented output must match original):
+  bash /work/scripts/run_routes.sh
+
+Correctness gates for a design patch (ROOT names are fetch_sources.py outputs):
+  PYTHONPATH=/work/source/smem-p-serial/techniques/sparse_backends \
+    python3 /work/source/smem-p-serial/techniques/sparse_backends/benchmarks/benchmark_sm100.py \
+    --baseline-root /work/source/candidate/techniques/sparse_backends \
+    --stress-only --output /work/results/serial-stress.json
+  python3 /work/scripts/validate_design.py \
+    --baseline /work/source/candidate --candidate /work/source/smem-p-serial \
+    --report /work/results/serial-full.json
+
+Do not run/advertise performance for a design that fails correctness. The
+benchmark does exact-byte checks on real QKV before and after eager/graph timing.
+For qualified designs use benchmark_sm100.py --input CAPTURE --output RESULT
+with --baseline-root as above. Old design-first/design-d results used first 28
+heads of an earlier SP1 frozen capture; later-750 uses freshly captured SP2 QKV.
+Do not treat those input sets as interchangeable. Current sequence scripts
+regenerate the latter. Private tensor archives are deliberately not published.
+
+Telemetry audit:
+  python3 /work/scripts/audit_timing_telemetry.py RESULTS_DIR TELEMETRY.csv \
+    --gpu-index ALLOCATED_PHYSICAL_GPU_INDEX --output /work/telemetry-summary.json
+Short attention calls have partial polling coverage; summary counts report it.
+A zero flag count means none observed, not proof that every instant was covered.
+Full-forward times are max wall time across ranks; attention times are CUDA events.

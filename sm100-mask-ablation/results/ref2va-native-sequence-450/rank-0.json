@@ -1,0 +1,11 @@
+{
+  "rank": 0,
+  "capture_complete": true,
+  "finite": true,
+  "captured_steps": [
+    0,
+    10,
+    25
+  ],
+  "step10_dense_bytes_match": true
+}

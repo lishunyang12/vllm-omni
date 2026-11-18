@@ -1,0 +1,73 @@
+--- a/techniques/sparse_backends/sol_attn/sm100/mainloop.py
++++ b/techniques/sparse_backends/sol_attn/sm100/mainloop.py
+@@ -246,21 +246,51 @@
+     probabilities: cute.Tensor,
+     score_coordinates: cute.Tensor,
+     destination: cute.Tensor,
++    owner_tidx: Int32,
+ ):
+-    """Store exact P in a logical M64xN128x1 BF16 shared-memory tensor.
+-
+-    Use the same semantic-row mapping already used for score validity and
+-    final statistics. The layout itself supplies the hardware SMEM swizzle;
+-    no assumptions about its physical row strides enter the scatter.
++    """Pack one row's adjacent eight BF16 values into each 128-bit SMEM copy.
++
++    Ld16x64b score owners separated by lane xor 2 own the same row and
++    opposite column parity. Only the even-column owner writes. All lanes
++    execute both shuffles before the writer predicate. The existing BF16x2
++    converter rounds each original FP32 probability exactly once.
+     """
++    assert cute.size(probabilities) == N_PACK_HALF // 2
+     semantic_row = (
+         score_coordinates[0][0] + Int32(SEMANTIC_ROW_OFFSET)
+     ) & Int32(M - 1)
+-    for i in cutlass.range(cute.size(probabilities), unroll_full=True):
+-        column = score_coordinates[i][1]
+-        destination[semantic_row, column, 0] = Float32(probabilities[i]).to(BFloat16)
+-    # Publish generic shared stores to the asynchronous tcgen05 consumer.
+-    # The caller's existing five-warp P-ready rendezvous follows this fence.
++    lane = owner_tidx % Int32(32)
++    copy_atom = cute.make_copy_atom(
++        cute.nvgpu.CopyUniversalOp(), BFloat16, num_bits_per_copy=128
++    )
++    for chunk in cutlass.range_constexpr(N_PACK_HALF // 8):
++        packed = cute.make_rmem_tensor(cute.make_layout(4), Int32)
++        for pair in cutlass.range_constexpr(2):
++            i = chunk * 4 + pair * 2
++            own = _cvt_bf16x2_f32(
++                Float32(probabilities[i + 1]), Float32(probabilities[i])
++            )
++            peer = cute.arch.shuffle_sync_bfly(own, offset=2)
++            # even writer: own={c,c+2}, peer={c+1,c+3} in BF16 halves.
++            packed[pair * 2] = _prmt_b32(own, peer, Int32(0x5410))
++            packed[pair * 2 + 1] = _prmt_b32(own, peer, Int32(0x7632))
++        if (lane & Int32(2)) == Int32(0):
++            column = score_coordinates[chunk * 4][1]
++            offset = cute.crd2idx((semantic_row, column, 0), destination.layout)
++            # Every writer starts at column 8*chunk. The K_SW128 layout
++            # preserves this 8-element alignment; see the saved CPU audit.
++            offset = cute.assume(Int32(offset), divby=8)
++            vector_destination = cute.make_tensor(
++                destination.iterator + offset, cute.make_layout(8)
++            )
++            vector_source = cute.make_tensor(
++                cute.recast_ptr(packed.iterator, dtype=BFloat16),
++                cute.make_layout(8),
++            )
++            # Keep the swizzled destination iterator. No raw address cast,
++            # manual swizzle, or stmatrix ownership assumption is needed.
++            cute.copy(copy_atom, vector_source, vector_destination)
++    # Keep the serial variant's publication and five-warp rendezvous.
+     cute.arch.fence_view_async_shared()
+ 
+ 
+@@ -1445,7 +1475,7 @@
+                 # QK(i) follows PV(i-1), so its completed score load proves
+                 # the previous shared P has no live tcgen05 readers.
+                 _store_pair_probability_smem(
+-                    probabilities, pair_coords, sExactP
++                    probabilities, pair_coords, sExactP, owner_tidx
+                 )
+                 # The helper fences shared P stores before the unchanged
+                 # rendezvous of the MMA warp and all four owner warps.

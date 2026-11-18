@@ -1,0 +1,34 @@
+{
+  "upstream": {
+    "python_files_match": 61,
+    "mainloop_sha256": "707d565bccc7fb8c60e130c91d6d65549d8762c562a227ef2c0a231697a1cf2d"
+  },
+  "extension": {
+    "python_files_match": 63,
+    "mainloop_sha256": "dc171d8c6ed249d83bf5ebd87e918f45b08723e590d241a81d26ac83d87cc2ce"
+  },
+  "candidate": {
+    "python_files_match": 65,
+    "mainloop_sha256": "7723e979b1cbe12825c4c8fd3fd73dfa45cf4cd41832154726afbabd2557e10e"
+  },
+  "protected-q": {
+    "python_files_match": 65,
+    "mainloop_sha256": "4a69c2e6f452260a18bf3f31b99dc655bbed2d1fcb83fce1ee2a131b7d0f9212"
+  },
+  "p-store-x16": {
+    "python_files_match": 65,
+    "mainloop_sha256": "613d4478d275e7a12136060bcfab2861f24c988a08d6d9546a520d88ce387949"
+  },
+  "protected-q-contiguous": {
+    "python_files_match": 65,
+    "mainloop_sha256": "affac2a4f7eb6561c1564ea3a3abb850db606eb60d4bd8e882236f9753917a0d"
+  },
+  "smem-p-serial": {
+    "python_files_equal": 65,
+    "patch_sha256": "2d1251981d5a4775cdc65258d202f41b81f7320e241756cb1a6e966a4c1a7c20"
+  },
+  "smem-p-overlap": {
+    "python_files_equal": 65,
+    "patch_sha256": "0bd8429fd6291115b5d439dd9237ae2bd772f1c8a0801ced50174fc818873ea6"
+  }
+}

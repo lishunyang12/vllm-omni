@@ -1,0 +1,146 @@
+Experimental D: single-S with independent shared-memory exact P
+Baseline: 150114b6f0079bcd479c6c87bd0b15174581d984
+No A/B/C changes are included. No original/PR source was modified.
+
+Artifacts
+---------
+smem-p-serial/           Stage 1: shared-P layout gate, original instruction order.
+smem-p-serial.patch      Complete stage-1 patch against the pinned baseline.
+smem-p-overlap/          Stage 2: shared P plus QK lookahead and explicit PV completion.
+smem-p-overlap.patch     Complete stage-2 patch against the pinned baseline.
+smem-p-overlap-only.patch  Stage-1 -> stage-2 scheduling delta.
+
+Validation order is mandatory for interpreting results: stage 1 must first
+compile and pass byte/oracle validation. Only then validate stage 2. A stage-1
+failure is a layout/conversion problem, not evidence about the new scheduling.
+Neither stage has been CUDA-compiled or GPU-tested by this design agent.
+
+Layout and arithmetic
+---------------------
+Only exact P moves to SMEM. Approximate route probabilities retain the original
+TMEM storage at columns 64..127, aliased with S. S remains columns 0..127 and O
+remains 128..255; allocation remains 256 TMEM columns, PAIR_STAGES remains 1.
+
+The fixed container's blackwell_helpers.py was inspected. make_smem_layout(K,
+(64,128), BF16, 1) creates a logical (M,K,stage) swizzled layout. The exact-P MMA
+fragment is constructed by partition_A on that same tensor; no flattened stride
+or swizzle constants are guessed. The allocation is 64*128*2 = 16384 bytes.
+The producer converts each FP32 probability to BF16 and scatters to the existing
+score ownership's semantic row (score_coordinate_row + 16) mod 64 and original
+score column. Each owner writes its own distinct probabilities. The same row
+mapping already governs the baseline's row validity and online-softmax statistics.
+The mapping, shared descriptor, and conversion equivalence still require the
+stage-1 GPU byte gate. Scalar stores prioritize a simple layout gate; their cost
+is not assumed smaller than the old chunked TMEM transfers.
+
+Exact PV uses an otherwise identical MmaF16BF16Op with SMEM rather than TMEM A.
+The QK/PV tile sizes, K reduction loops, BF16 P rounding target, FP32 online state,
+PV accumulation order, score masks, route decisions, output normalization and
+epilogue are unchanged. Exact V uses the same physical allocation/layout through
+the new MMA's B fragment. This is a proposed bit-preserving change, not a claim
+that hardware equivalence has already been established.
+
+Stage 1 synchronization
+-----------------------
+The only execution-path changes are the location of exact P and the PV A source.
+PV(i) still precedes QK(i+1) on warp 0's tcgen05 issuer. Therefore QK(i) completion
+continues to prove PV(i-1) completion before O rescaling and shared P overwrite.
+All existing joins, pipe transitions, and final output completion remain.
+The P helper fences generic shared stores to the asynchronous shared view before
+the unchanged five-warp P-ready join. Route P and its TMEM fences are unchanged.
+
+Stage 2 dependency schedule
+---------------------------
+Warp 0, for each nonempty exact group:
+  QK(0) prologue;
+  for i = 0..N-1:
+    if i+1 < N:
+      wait K(i+1); acquire the single S slot after all owners release S(i);
+      issue/commit QK(i+1); completion-backed release of K(i+1);
+    wait V(i); join P-ready(i); acquire exact-PV completion token slot;
+    issue PV(i); commit exact-PV completion; advance its producer phase;
+    completion-backed release of V(i).
+
+Owners:
+  for i = 0..N-1:
+    wait QK(i), load the complete S(i), retain the existing four-warp join;
+    release S(i), allowing QK(i+1) while softmax(i) runs from registers;
+    compute the same online-softmax values;
+    if i > 0: wait PV(i-1), release/advance that completion token;
+    rescale O if needed, write exact P to SMEM, async-shared fence;
+    join P-ready(i), update the register-resident online state;
+  wait/release/advance the final PV(N-1) token before leaving the group.
+
+Lifetime proof
+--------------
+S: The existing TMEM-load wait/fence and four-owner join precede every owner's
+   score-slot release. The next QK acquires that slot. Thus no next QK overwrites
+   a live S load. During exact work P is no longer inside S, and O is disjoint.
+P: Exact P(i) stores and async-shared fence precede the five-warp P-ready join,
+   which warp 0 passes before PV(i). Before any P(i+1) store, each owner waits
+   for explicit tcgen05 completion of PV(i). No pending PV reads are overwritten.
+O: The same explicit completion precedes O rescale(i+1); the next P-ready join
+   proves all owner O updates finished before PV(i+1). QK lookahead cannot supply
+   this proof, because it now precedes the corresponding PV; the old implication
+   was deliberately replaced instead of being reused.
+K: Each next K load is gated by the original PipelineTmaUmma empty token, released
+   only with the prior QK's tcgen05 completion. No K stage or token was added.
+V: Each next V load similarly waits for the prior PV's completion-backed release.
+   No V is overwritten while an exact or route PV reads it.
+
+Why one K/V stage makes progress
+-------------------------------
+The unchanged loader posts K(i), then V(i), then moves to K(i+1), then V(i+1).
+Once QK(i) finishes, K(i+1) can be loaded even while V(i) is still in use. The
+loader then blocks at V(i+1). Warp 0 can therefore issue lookahead QK(i+1) and
+then PV(i); PV(i)'s V release unblocks V(i+1) and the subsequent K(i+2). The
+lookahead does not require V(i+1), so these waits do not form a cycle.
+
+First, final and empty groups
+-----------------------------
+Pair 0: There is no prior exact-PV token within the group. The unchanged preceding
+route-PV -> QK(0) order proves any approximate O update is complete. The previous
+logical group's last exact PV was also drained at its group tail. With no prior
+O contribution, the original zero_init/owner_o_initialized behavior is retained.
+
+Pair N-1: No nonexistent next QK is issued. It still commits an explicit PV token;
+the owner group-tail wait consumes it before the epilogue or next group. The old
+exact-only final pair_o commit/wait is replaced by this token. Approximate-route
+final O completion is untouched.
+
+N=1: No lookahead and no in-loop previous-PV wait; the group-tail wait consumes
+the one producer token. N=0: neither exact producer nor owners advance the exact
+PV pipe. In every group, N pairs produce and consume exactly N generations.
+Phases are persistent across groups rather than reset; interspersed empty/route-
+only groups leave them unchanged. The pipe's empty slot is released only after
+all consumers waited for that generation, preventing completion token overwrite.
+
+Cross-group routes: No lookahead crosses the logical-group boundary. Route QK/PV
+and routing/index compaction remain the original code. The final exact PV may be
+followed by the next route QK on the issuer; owners explicitly drain that final
+PV before entering the next route. The existing exact-index reader/writer proof
+is retained, with a stronger owner-side tail completion. Arbitrary protection,
+sinks, partial Q/KV blocks and odd duplicate peers still use their original logic.
+
+Audit performed locally (CPU only)
+----------------------------------
+* Python syntax compilation and git diff --check for both variants.
+* Full and incremental patches pass applicability checks against their bases.
+* Source comparison confirms the approximate route body, exact K/V producer,
+  and original TMEM route-P helper are unchanged.
+* A dependency graph separates TMA issue/completion, tcgen05 issue/completion,
+  owner score release, softmax, P-ready and PV acknowledgement. For 1..129 pairs
+  it is acyclic and preserves S/P/O/K/V reuse ordering. This audits the intended
+  schedule; it does not prove CuTe lowering or GPU synchronization behavior.
+* The original repository remains clean.
+
+GPU gates owned by the main agent
+--------------------------------
+1. Stage 1 compile, small oracle/byte checks, 73-case suite, real frozen QKV bytes.
+2. Stage 2 same suite, especially one-pair/odd/partial cases, mixed and zero exact
+   counts across G256, long protected streams and graph mask mutation.
+3. Appropriate sanitizer checks and repeated graph stress before promotion.
+4. Compare serial vs baseline and overlap vs serial/baseline separately. Capture
+   actual registers, spills, dynamic SMEM, resident CTAs and relevant wait PCs;
+   do not presume that the extra 16 KiB and phase state preserve occupancy.
+5. Stable real-input timing must show benefit before considering integration.

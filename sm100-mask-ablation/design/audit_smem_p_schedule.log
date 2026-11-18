@@ -1,0 +1,1 @@
+CPU audit passed: approximate route and exact K/V producer unchanged; event graph acyclic for 1..129 pairs, with S/P/O/K/V lifetime ordering.
