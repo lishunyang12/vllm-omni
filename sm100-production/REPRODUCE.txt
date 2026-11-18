@@ -1,0 +1,103 @@
+Reproduce production SOL rescale/mask optimization
+
+Candidate: fe6be477faa270d75fd3e4dd26305b3631de9247
+Baseline:  63b4e65e9db1dfea45cc7d394902145c2f520821
+Image: vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
+
+All commands below run in that image on an allocated SM100/SM103 GPU, with
+a writable directory mounted at /work. Copy reproduce/ to /work/reproduce
+and also to /work/scripts for the optional Slurm control wrappers.
+Keep model caches; source setup refuses to overwrite existing checkouts.
+
+1. Obtain the exact candidate and unchanged baseline:
+
+   bash /work/reproduce/fetch_sources.sh /work
+   export PYTHONPATH=/work/source/candidate/techniques/sparse_backends
+   export XDG_CACHE_HOME=/work/xdg-cache TRITON_CACHE_DIR=/work/triton-cache
+   export OMP_NUM_THREADS=4
+
+2. Run correctness and baseline stress checks:
+
+   bash /work/reproduce/final_validation.sh
+
+   This runs the complete sparse_backends test directory, including the 41
+   new boundary/numerical/graph tests, then 12 bitwise baseline comparisons.
+   Required Python dependencies are supplied by the image; exact environment
+   snapshots and commands are under each GPU's validation directory.
+
+3. Run paired synthetic benchmarks through the real public API:
+
+   python3 /work/source/candidate/techniques/sparse_backends/benchmarks/benchmark_sm100.py \
+     --baseline-root /work/source/baseline/techniques/sparse_backends \
+     --warmup 5 --repeats 16 --modes eager,graph \
+     --output /work/results/matrix.json
+
+   Original SOL, candidate SOL and cuDNN Dense run in rotating/reversing order.
+   Keep all samples and report medians, paired ratios and CVs. Do not interpret
+   noisy microsecond-scale eager changes as a demonstrated improvement.
+
+4. Reproduce H3 attention replay:
+
+   Generate frozen Q/K/V using ../kernel-study/REPRODUCE.txt steps 1-2,
+   which pin H3 weights, the request, reference assets and the dense capture
+   trajectory. Move the four resulting .pt files into /work/captures.
+   The raw tensors and weights are not part of this evidence repository.
+
+   bash /work/reproduce/run_benchmarks.sh manual
+
+   This runs the synthetic matrix, layers 0/12/25/49, then a fresh-process
+   layer-0 repeat. Each capture's tensor hashes are verified before use.
+   Shape is [1,82747,28,128], BF16, tau=1, diagonal threshold, original mask.
+
+5. Reproduce a real H3 Ref2VA single forward on two SM100 GPUs:
+
+   bash /work/reproduce/prepare_forward.sh /work
+   HF_HOME=/work/hf-cache python3 /work/reproduce/download_models.py /work
+   H3_GPU_COUNT=2 H3_CPU_OFFLOAD=0 H3_RUN_ID=manual \
+     bash /work/reproduce/run.sh /work
+
+   Use enough memory for the resident model; this run used two 183359 MiB
+   GPUs. Reference assets are downloaded from the manifest and hash-checked.
+   If the GPU node cannot reach their CDN, fetch those exact files on a host
+   with access and place them in /work/assets before running.
+
+   The hook benchmarks the same first conditional denoising-step inputs
+   through all 50 DiT layers, TP1/Ulysses2, BF16 eager. There are 3 warmup
+   rounds and 9 measured rounds in rotating/reversing Dense/original/patched
+   order. Report maximum-rank synchronized wall latency. First and last
+   original/patched outputs must match bitwise on both ranks; input hashes
+   must remain unchanged. The intentional completion exception stops before
+   sampler advancement and VAE decoding. This is not generation latency.
+
+6. Controlled clocks and profiling:
+
+   The direct commands above use the current GPU policy. To reproduce the
+   reported operating points with site-authorized clock controls, use the
+   control_benchmarks.sh or control_forward.sh wrappers in an existing
+   Slurm/Pyxis allocation. Example for two allocated physical GPUs 1,2:
+
+   srun --jobid=JOB_ID --overlap --ntasks=1 --cpus-per-task=1 --cpu-bind=none \
+     bash HOST_WORK/scripts/control_forward.sh HOST_WORK CONTAINER \
+     2 sm100-750 1,2 750 HOST_WORK:/work 0 16
+
+   Substitute actual allocation IDs, paths and indices. Wrappers verify
+   allocated GPU indices, leave power limits unchanged, record telemetry
+   and restore clocks on exit. Inspect measured clocks/flags, not just the
+   requested frequency. SM100 driver power.draw was unavailable in this run.
+
+   Nsight Compute 2026.4.0.10 x86_64 was installed from NVIDIA's official
+   redistributable into /work/tools. Profiles run separately from timings.
+   Original baseline replay stalled with the full section set in both
+   kernel and application replay; the retained logs distinguish that tool
+   limitation from correctness-test or unprofiled performance failures.
+
+   Static compiler-resource fallback:
+   bash /work/reproduce/export_resources.sh
+
+   This exports fresh cubin/PTX artifacts and queries register/shared/local
+   allocation with cuobjdump. It does not measure achieved occupancy or
+   runtime spill traffic. The reduced Nsight attempt is also retained.
+
+Keep engineering-device results separate from production B200/GB200/GB300
+results. None of these single-forward checks establish decoded-video SSIM,
+PSNR or LPIPS, or validate FP8/MXFP8 quantization.

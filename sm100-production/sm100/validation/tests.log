@@ -1,0 +1,27 @@
+/usr/local/lib/python3.12/dist-packages/pytest_asyncio/plugin.py:290: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session". Set it to "fixture-scope" to keep the current behavior.
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+sss.........................................ss............ssssss........ [ 63%]
+.................................ssssssss                                [100%]
+=============================== warnings summary ===============================
+tests/test_exact_block_mask.py: 4 warnings
+tests/test_sm100_rescale_mask.py: 14 warnings
+  /work/source/candidate/techniques/sparse_backends/sol_attn/sm100/mainloop.py:392: DeprecationWarning: cutlass.utils.smem_allocator.SmemAllocator is deprecated; use cutlass.memory.SmemAllocator instead. It will be removed in a future release.
+    smem = utils.SmemAllocator()
+
+tests/test_exact_block_mask.py: 4 warnings
+tests/test_sm100_rescale_mask.py: 14 warnings
+  /work/source/candidate/techniques/sparse_backends/sol_attn/sm100/mainloop.py:469: DeprecationWarning: cutlass.utils.tmem_allocator.TmemAllocator is deprecated; use cutlass.memory.TmemAllocator instead. It will be removed in a future release.
+    tmem = utils.TmemAllocator(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [3] techniques/sparse_backends/tests/test_autocast.py:13: requires SM80 to exercise the Triton pointer backend
+SKIPPED [2] techniques/sparse_backends/tests/test_exact_block_mask.py:142: KV splitting requires SM90
+SKIPPED [2] techniques/sparse_backends/tests/test_mps_backend.py:175: requires MPS compile_shader
+SKIPPED [2] techniques/sparse_backends/tests/test_mps_backend.py:198: requires MPS compile_shader
+SKIPPED [1] techniques/sparse_backends/tests/test_mps_backend.py:226: requires MPS compile_shader
+SKIPPED [1] techniques/sparse_backends/tests/test_mps_backend.py:243: requires MPS compile_shader
+SKIPPED [8] techniques/sparse_backends/tests/test_triton_backend.py:15: requires SM80 to exercise the Triton pointer backend
+94 passed, 19 skipped, 36 warnings in 72.27s (0:01:12)

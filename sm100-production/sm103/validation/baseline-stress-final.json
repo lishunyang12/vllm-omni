@@ -1,0 +1,83 @@
+{
+  "gpu": "NVIDIA Graphics Device",
+  "capability": [
+    10,
+    3
+  ],
+  "torch": "2.16.0.dev20261009+cu134",
+  "cuda": "13.4",
+  "warmup": 5,
+  "repeats": 16,
+  "baseline_sha256": {
+    "interface.py": "2d7cd74f7528f883cb41c23b3ac6a1f6b7a2ae82eafdef10c198f335af66c378",
+    "sm100/softmax.py": "c6b88f8e5eec040f194fc2f24f7e69338548b6e33a5ba5e3720ad6d2ea6c0311",
+    "sm100/mainloop.py": "dc171d8c6ed249d83bf5ebd87e918f45b08723e590d241a81d26ac83d87cc2ce"
+  },
+  "candidate_sha256": {
+    "interface.py": "2d7cd74f7528f883cb41c23b3ac6a1f6b7a2ae82eafdef10c198f335af66c378",
+    "sm100/softmax.py": "22a95f6db57382e95bbfdef09da3304981dab61d6fcaad8db2525fcd0f68d1de",
+    "sm100/mainloop.py": "7723e979b1cbe12825c4c8fd3fd73dfa45cf4cd41832154726afbabd2557e10e"
+  },
+  "cases": [
+    {
+      "tokens": 257,
+      "kind": "random",
+      "bitwise_equal": true
+    },
+    {
+      "tokens": 257,
+      "kind": "mixed_maxima",
+      "bitwise_equal": true
+    },
+    {
+      "tokens": 257,
+      "kind": "zero_q",
+      "bitwise_equal": true
+    },
+    {
+      "tokens": 257,
+      "kind": "zero_v",
+      "bitwise_equal": true
+    },
+    {
+      "tokens": 257,
+      "kind": "tiny_v",
+      "bitwise_equal": true
+    },
+    {
+      "tokens": 257,
+      "kind": "subnormal_v",
+      "bitwise_equal": true
+    },
+    {
+      "tokens": 4097,
+      "kind": "random",
+      "bitwise_equal": true
+    },
+    {
+      "tokens": 4097,
+      "kind": "mixed_maxima",
+      "bitwise_equal": true
+    },
+    {
+      "tokens": 4097,
+      "kind": "zero_q",
+      "bitwise_equal": true
+    },
+    {
+      "tokens": 4097,
+      "kind": "zero_v",
+      "bitwise_equal": true
+    },
+    {
+      "tokens": 4097,
+      "kind": "tiny_v",
+      "bitwise_equal": true
+    },
+    {
+      "tokens": 4097,
+      "kind": "subnormal_v",
+      "bitwise_equal": true
+    }
+  ]
+}

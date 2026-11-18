@@ -1,0 +1,8 @@
+FILE cutlass_forward_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i641_Tensorgmemoi6.sm_103a.cubin
+
+Resource usage:
+ Common:
+  GLOBAL:0
+ Function kernel_cutlass__sol_attn_sm100_bf16_kernel_TiledMMA_ThrLayoutVMNK11110000_PermutationMNK____MMAAtom_ThrID10_ShapeMNK6412816_TVLayoutA1641664164_TVLayoutB1128161281128_TVLayoutC16412864164_0:
+  REG:168 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:2040 TEXTURE:0 SURFACE:0 SAMPLER:0
+

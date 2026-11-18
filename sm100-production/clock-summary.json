@@ -1,0 +1,636 @@
+{
+  "sm100": [
+    {
+      "file": "layer-00-repeat.json",
+      "case": "h3-layer-0",
+      "mode": "eager",
+      "covered_samples": 29,
+      "total_samples": 48,
+      "overlapping_polls": 29,
+      "clocks_mhz": [
+        750
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-00-repeat.json",
+      "case": "h3-layer-0",
+      "mode": "graph",
+      "covered_samples": 29,
+      "total_samples": 48,
+      "overlapping_polls": 29,
+      "clocks_mhz": [
+        750
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-00.json",
+      "case": "h3-layer-0",
+      "mode": "eager",
+      "covered_samples": 28,
+      "total_samples": 48,
+      "overlapping_polls": 28,
+      "clocks_mhz": [
+        750
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-00.json",
+      "case": "h3-layer-0",
+      "mode": "graph",
+      "covered_samples": 28,
+      "total_samples": 48,
+      "overlapping_polls": 28,
+      "clocks_mhz": [
+        750
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-12.json",
+      "case": "h3-layer-12",
+      "mode": "eager",
+      "covered_samples": 26,
+      "total_samples": 48,
+      "overlapping_polls": 26,
+      "clocks_mhz": [
+        750
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-12.json",
+      "case": "h3-layer-12",
+      "mode": "graph",
+      "covered_samples": 25,
+      "total_samples": 48,
+      "overlapping_polls": 25,
+      "clocks_mhz": [
+        750
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-25.json",
+      "case": "h3-layer-25",
+      "mode": "eager",
+      "covered_samples": 26,
+      "total_samples": 48,
+      "overlapping_polls": 26,
+      "clocks_mhz": [
+        750
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-25.json",
+      "case": "h3-layer-25",
+      "mode": "graph",
+      "covered_samples": 26,
+      "total_samples": 48,
+      "overlapping_polls": 26,
+      "clocks_mhz": [
+        750
+      ],
+      "power_cap_flag_polls": 1,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-49.json",
+      "case": "h3-layer-49",
+      "mode": "eager",
+      "covered_samples": 25,
+      "total_samples": 48,
+      "overlapping_polls": 25,
+      "clocks_mhz": [
+        750
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-49.json",
+      "case": "h3-layer-49",
+      "mode": "graph",
+      "covered_samples": 26,
+      "total_samples": 48,
+      "overlapping_polls": 26,
+      "clocks_mhz": [
+        750
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 257, 2, 'empty', 1.0)",
+      "mode": "eager",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 257, 2, 'empty', 1.0)",
+      "mode": "graph",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(2, 1024, 3, 'all', 1.0)",
+      "mode": "eager",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(2, 1024, 3, 'all', 1.0)",
+      "mode": "graph",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 4096, 2, 'all', 1.0)",
+      "mode": "eager",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 4096, 2, 'all', 1.0)",
+      "mode": "graph",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(2, 4097, 3, 'ends', 1.0)",
+      "mode": "eager",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(2, 4097, 3, 'ends', 1.0)",
+      "mode": "graph",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 16384, 8, 'empty', 1.5)",
+      "mode": "eager",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 16384, 8, 'empty', 1.5)",
+      "mode": "graph",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 16384, 8, 'empty', 1000000.0)",
+      "mode": "eager",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 16384, 8, 'empty', 1000000.0)",
+      "mode": "graph",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 32768, 8, 'ends', 1.0)",
+      "mode": "eager",
+      "covered_samples": 1,
+      "total_samples": 48,
+      "overlapping_polls": 1,
+      "clocks_mhz": [
+        750
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 32768, 8, 'ends', 1.0)",
+      "mode": "graph",
+      "covered_samples": 1,
+      "total_samples": 48,
+      "overlapping_polls": 1,
+      "clocks_mhz": [
+        750
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 32768, 28, 'ends', 1.0)",
+      "mode": "eager",
+      "covered_samples": 3,
+      "total_samples": 48,
+      "overlapping_polls": 3,
+      "clocks_mhz": [
+        750
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 32768, 28, 'ends', 1.0)",
+      "mode": "graph",
+      "covered_samples": 2,
+      "total_samples": 48,
+      "overlapping_polls": 2,
+      "clocks_mhz": [
+        750
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    }
+  ],
+  "sm103": [
+    {
+      "file": "layer-00-repeat.json",
+      "case": "h3-layer-0",
+      "mode": "eager",
+      "covered_samples": 48,
+      "total_samples": 48,
+      "overlapping_polls": 75,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-00-repeat.json",
+      "case": "h3-layer-0",
+      "mode": "graph",
+      "covered_samples": 48,
+      "total_samples": 48,
+      "overlapping_polls": 74,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-00.json",
+      "case": "h3-layer-0",
+      "mode": "eager",
+      "covered_samples": 48,
+      "total_samples": 48,
+      "overlapping_polls": 75,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-00.json",
+      "case": "h3-layer-0",
+      "mode": "graph",
+      "covered_samples": 48,
+      "total_samples": 48,
+      "overlapping_polls": 75,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-12.json",
+      "case": "h3-layer-12",
+      "mode": "eager",
+      "covered_samples": 48,
+      "total_samples": 48,
+      "overlapping_polls": 68,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-12.json",
+      "case": "h3-layer-12",
+      "mode": "graph",
+      "covered_samples": 48,
+      "total_samples": 48,
+      "overlapping_polls": 68,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-25.json",
+      "case": "h3-layer-25",
+      "mode": "eager",
+      "covered_samples": 48,
+      "total_samples": 48,
+      "overlapping_polls": 68,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-25.json",
+      "case": "h3-layer-25",
+      "mode": "graph",
+      "covered_samples": 48,
+      "total_samples": 48,
+      "overlapping_polls": 68,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-49.json",
+      "case": "h3-layer-49",
+      "mode": "eager",
+      "covered_samples": 48,
+      "total_samples": 48,
+      "overlapping_polls": 66,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "layer-49.json",
+      "case": "h3-layer-49",
+      "mode": "graph",
+      "covered_samples": 48,
+      "total_samples": 48,
+      "overlapping_polls": 66,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 257, 2, 'empty', 1.0)",
+      "mode": "eager",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 257, 2, 'empty', 1.0)",
+      "mode": "graph",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(2, 1024, 3, 'all', 1.0)",
+      "mode": "eager",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(2, 1024, 3, 'all', 1.0)",
+      "mode": "graph",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 4096, 2, 'all', 1.0)",
+      "mode": "eager",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 4096, 2, 'all', 1.0)",
+      "mode": "graph",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(2, 4097, 3, 'ends', 1.0)",
+      "mode": "eager",
+      "covered_samples": 1,
+      "total_samples": 48,
+      "overlapping_polls": 1,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(2, 4097, 3, 'ends', 1.0)",
+      "mode": "graph",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 16384, 8, 'empty', 1.5)",
+      "mode": "eager",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 16384, 8, 'empty', 1.5)",
+      "mode": "graph",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 16384, 8, 'empty', 1000000.0)",
+      "mode": "eager",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 16384, 8, 'empty', 1000000.0)",
+      "mode": "graph",
+      "covered_samples": 0,
+      "total_samples": 48,
+      "overlapping_polls": 0,
+      "clocks_mhz": [],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 32768, 8, 'ends', 1.0)",
+      "mode": "eager",
+      "covered_samples": 2,
+      "total_samples": 48,
+      "overlapping_polls": 2,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 32768, 8, 'ends', 1.0)",
+      "mode": "graph",
+      "covered_samples": 2,
+      "total_samples": 48,
+      "overlapping_polls": 2,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 32768, 28, 'ends', 1.0)",
+      "mode": "eager",
+      "covered_samples": 7,
+      "total_samples": 48,
+      "overlapping_polls": 7,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    },
+    {
+      "file": "matrix.json",
+      "case": "(1, 32768, 28, 'ends', 1.0)",
+      "mode": "graph",
+      "covered_samples": 7,
+      "total_samples": 48,
+      "overlapping_polls": 7,
+      "clocks_mhz": [
+        600
+      ],
+      "power_cap_flag_polls": 0,
+      "thermal_flag_polls": 0
+    }
+  ]
+}

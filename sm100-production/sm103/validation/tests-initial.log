@@ -1,0 +1,177 @@
+sss.........................................ss............ssssss........ [ 63%]
+...........................FFF..Fssssssss                                [100%]
+=================================== FAILURES ===================================
+____________ test_long_exact_stream_matches_dense[subnormal_v-4095] ____________
+
+tokens = 4095, kind = 'subnormal_v'
+
+    @pytest.mark.parametrize("tokens", [4095, 4096, 4097])
+    @pytest.mark.parametrize("kind", ["random", "mixed_maxima", "zero_q", "zero_v", "tiny_v", "subnormal_v"])
+    @torch.inference_mode()
+    def test_long_exact_stream_matches_dense(tokens, kind):
+        q, k, v = inputs(tokens, seed=153)
+        if kind == "mixed_maxima":
+            # Different Q rows see different sequences of maxima and identity scales.
+            q[:, ::2].mul_(3)
+            q[:, 1::4].zero_()
+            k[:, 64::128].mul_(3)
+        elif kind == "zero_q":
+            q.zero_()
+        elif kind == "zero_v":
+            v.zero_()
+        elif kind == "tiny_v":
+            v.mul_(2.0**-120)
+        elif kind == "subnormal_v":
+            v.mul_(2.0**-130)
+        mask = torch.ones((tokens + 63) // 64, device="cuda", dtype=torch.bool)
+        actual = sol_attn(q, k, v, exact_block_mask=mask)
+        expected = torch.nn.functional.scaled_dot_product_attention(
+            q.float().transpose(1, 2), k.float().transpose(1, 2),
+            v.float().transpose(1, 2),
+        ).transpose(1, 2)
+        assert torch.isfinite(actual).all()
+        if kind in ("tiny_v", "subnormal_v"):
+            # Scale the comparison, not the input to the kernel: a normal absolute
+            # tolerance would accept an accidentally all-zero tiny result.
+            scale = 2.0**(120 if kind == "tiny_v" else 130)
+>           torch.testing.assert_close(actual.double() * scale,
+                                       expected.double() * scale, atol=0.02, rtol=0.02)
+E           AssertionError: Tensor-likes are not close!
+E           
+E           Mismatched elements: 445481 / 1048320 (42.5%)
+E           Greatest absolute difference: 0.06259727478027344 at index (0, 69, 0, 91) (up to 0.02 allowed)
+E           Greatest relative difference: 1.002627960275019 at index (0, 1483, 0, 52) (up to 0.02 allowed)
+
+techniques/sparse_backends/tests/test_sm100_rescale_mask.py:74: AssertionError
+____________ test_long_exact_stream_matches_dense[subnormal_v-4096] ____________
+
+tokens = 4096, kind = 'subnormal_v'
+
+    @pytest.mark.parametrize("tokens", [4095, 4096, 4097])
+    @pytest.mark.parametrize("kind", ["random", "mixed_maxima", "zero_q", "zero_v", "tiny_v", "subnormal_v"])
+    @torch.inference_mode()
+    def test_long_exact_stream_matches_dense(tokens, kind):
+        q, k, v = inputs(tokens, seed=153)
+        if kind == "mixed_maxima":
+            # Different Q rows see different sequences of maxima and identity scales.
+            q[:, ::2].mul_(3)
+            q[:, 1::4].zero_()
+            k[:, 64::128].mul_(3)
+        elif kind == "zero_q":
+            q.zero_()
+        elif kind == "zero_v":
+            v.zero_()
+        elif kind == "tiny_v":
+            v.mul_(2.0**-120)
+        elif kind == "subnormal_v":
+            v.mul_(2.0**-130)
+        mask = torch.ones((tokens + 63) // 64, device="cuda", dtype=torch.bool)
+        actual = sol_attn(q, k, v, exact_block_mask=mask)
+        expected = torch.nn.functional.scaled_dot_product_attention(
+            q.float().transpose(1, 2), k.float().transpose(1, 2),
+            v.float().transpose(1, 2),
+        ).transpose(1, 2)
+        assert torch.isfinite(actual).all()
+        if kind in ("tiny_v", "subnormal_v"):
+            # Scale the comparison, not the input to the kernel: a normal absolute
+            # tolerance would accept an accidentally all-zero tiny result.
+            scale = 2.0**(120 if kind == "tiny_v" else 130)
+>           torch.testing.assert_close(actual.double() * scale,
+                                       expected.double() * scale, atol=0.02, rtol=0.02)
+E           AssertionError: Tensor-likes are not close!
+E           
+E           Mismatched elements: 445224 / 1048576 (42.5%)
+E           Greatest absolute difference: 0.06258201599121094 at index (0, 2504, 1, 99) (up to 0.02 allowed)
+E           Greatest relative difference: 1.002627960275019 at index (0, 2504, 1, 99) (up to 0.02 allowed)
+
+techniques/sparse_backends/tests/test_sm100_rescale_mask.py:74: AssertionError
+____________ test_long_exact_stream_matches_dense[subnormal_v-4097] ____________
+
+tokens = 4097, kind = 'subnormal_v'
+
+    @pytest.mark.parametrize("tokens", [4095, 4096, 4097])
+    @pytest.mark.parametrize("kind", ["random", "mixed_maxima", "zero_q", "zero_v", "tiny_v", "subnormal_v"])
+    @torch.inference_mode()
+    def test_long_exact_stream_matches_dense(tokens, kind):
+        q, k, v = inputs(tokens, seed=153)
+        if kind == "mixed_maxima":
+            # Different Q rows see different sequences of maxima and identity scales.
+            q[:, ::2].mul_(3)
+            q[:, 1::4].zero_()
+            k[:, 64::128].mul_(3)
+        elif kind == "zero_q":
+            q.zero_()
+        elif kind == "zero_v":
+            v.zero_()
+        elif kind == "tiny_v":
+            v.mul_(2.0**-120)
+        elif kind == "subnormal_v":
+            v.mul_(2.0**-130)
+        mask = torch.ones((tokens + 63) // 64, device="cuda", dtype=torch.bool)
+        actual = sol_attn(q, k, v, exact_block_mask=mask)
+        expected = torch.nn.functional.scaled_dot_product_attention(
+            q.float().transpose(1, 2), k.float().transpose(1, 2),
+            v.float().transpose(1, 2),
+        ).transpose(1, 2)
+        assert torch.isfinite(actual).all()
+        if kind in ("tiny_v", "subnormal_v"):
+            # Scale the comparison, not the input to the kernel: a normal absolute
+            # tolerance would accept an accidentally all-zero tiny result.
+            scale = 2.0**(120 if kind == "tiny_v" else 130)
+>           torch.testing.assert_close(actual.double() * scale,
+                                       expected.double() * scale, atol=0.02, rtol=0.02)
+E           AssertionError: Tensor-likes are not close!
+E           
+E           Mismatched elements: 444972 / 1048832 (42.4%)
+E           Greatest absolute difference: 0.06259346008300781 at index (0, 69, 0, 91) (up to 0.02 allowed)
+E           Greatest relative difference: 1.002627960275019 at index (0, 105, 1, 121) (up to 0.02 allowed)
+
+techniques/sparse_backends/tests/test_sm100_rescale_mask.py:74: AssertionError
+__________ test_absent_empty_and_updated_mask_preserve_sink_contract ___________
+
+    @torch.inference_mode()
+    def test_absent_empty_and_updated_mask_preserve_sink_contract():
+        q, k, v = inputs(513, batch=2, heads=1)
+        mask = torch.zeros(9, device="cuda", dtype=torch.bool)
+        options = dict(tau=1e6, sink_start=128, sink_tokens=64)
+        absent = sol_attn(q, k, v, **options)
+        empty = sol_attn(q, k, v, **options, exact_block_mask=mask)
+        torch.testing.assert_close(absent, empty, atol=0, rtol=0)
+        mask[4] = mask[8] = True
+        actual = sol_attn(q, k, v, **options, exact_block_mask=mask)
+        combined = mask.clone()
+        combined[2] = True
+        expected = hybrid_oracle(q, k, v, combined, 1e6, "diag")
+>       torch.testing.assert_close(actual.float(), expected, atol=0.02, rtol=0.02)
+E       AssertionError: Tensor-likes are not close!
+E       
+E       Mismatched elements: 9969 / 131328 (7.6%)
+E       Greatest absolute difference: 0.24011865258216858 at index (1, 138, 0, 49) (up to 0.02 allowed)
+E       Greatest relative difference: 4181.2841796875 at index (0, 171, 0, 64) (up to 0.02 allowed)
+
+techniques/sparse_backends/tests/test_sm100_rescale_mask.py:125: AssertionError
+=============================== warnings summary ===============================
+tests/test_exact_block_mask.py: 4 warnings
+tests/test_sm100_rescale_mask.py: 14 warnings
+  /work/source/candidate/techniques/sparse_backends/sol_attn/sm100/mainloop.py:392: DeprecationWarning: cutlass.utils.smem_allocator.SmemAllocator is deprecated; use cutlass.memory.SmemAllocator instead. It will be removed in a future release.
+    smem = utils.SmemAllocator()
+
+tests/test_exact_block_mask.py: 4 warnings
+tests/test_sm100_rescale_mask.py: 14 warnings
+  /work/source/candidate/techniques/sparse_backends/sol_attn/sm100/mainloop.py:469: DeprecationWarning: cutlass.utils.tmem_allocator.TmemAllocator is deprecated; use cutlass.memory.TmemAllocator instead. It will be removed in a future release.
+    tmem = utils.TmemAllocator(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [3] techniques/sparse_backends/tests/test_autocast.py:13: requires SM80 to exercise the Triton pointer backend
+SKIPPED [2] techniques/sparse_backends/tests/test_exact_block_mask.py:141: KV splitting requires SM90
+SKIPPED [2] techniques/sparse_backends/tests/test_mps_backend.py:175: requires MPS compile_shader
+SKIPPED [2] techniques/sparse_backends/tests/test_mps_backend.py:198: requires MPS compile_shader
+SKIPPED [1] techniques/sparse_backends/tests/test_mps_backend.py:226: requires MPS compile_shader
+SKIPPED [1] techniques/sparse_backends/tests/test_mps_backend.py:243: requires MPS compile_shader
+SKIPPED [8] techniques/sparse_backends/tests/test_triton_backend.py:15: requires SM80 to exercise the Triton pointer backend
+FAILED techniques/sparse_backends/tests/test_sm100_rescale_mask.py::test_long_exact_stream_matches_dense[subnormal_v-4095]
+FAILED techniques/sparse_backends/tests/test_sm100_rescale_mask.py::test_long_exact_stream_matches_dense[subnormal_v-4096]
+FAILED techniques/sparse_backends/tests/test_sm100_rescale_mask.py::test_long_exact_stream_matches_dense[subnormal_v-4097]
+FAILED techniques/sparse_backends/tests/test_sm100_rescale_mask.py::test_absent_empty_and_updated_mask_preserve_sink_contract
+4 failed, 90 passed, 19 skipped, 36 warnings in 148.55s (0:02:28)

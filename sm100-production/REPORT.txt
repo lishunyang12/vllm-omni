@@ -1,0 +1,78 @@
+Production SM100 SOL rescale/mask performance candidate
+
+Candidate fe6be477faa270d75fd3e4dd26305b3631de9247; baseline 63b4e65e9db1dfea45cc7d394902145c2f520821.
+This is an incremental upstream kernel optimization, dependent on Sana PR #593.
+Thresholds, protection, routing, precision and Omni provider dispatch are unchanged.
+
+Captured H3 attention, CUDA graph replay medians (ms):
+GPU/clock      Layer  Original SOL   Candidate SOL   cuDNN Dense   Reduction
+sm100/750  layer-00-repeat.json   200.171       182.441       134.603      8.86%
+sm100/750  layer-00.json          200.179       182.451       134.465      8.86%
+sm100/750  layer-12.json          176.162       161.718       135.123      8.20%
+sm100/750  layer-25.json          177.417       162.534       135.105      8.39%
+sm100/750  layer-49.json          171.300       155.430       134.694      9.26%
+sm103/600  layer-00-repeat.json   513.230       465.197       292.299      9.36%
+sm103/600  layer-00.json          513.309       465.488       292.362      9.32%
+sm103/600  layer-12.json          449.918       410.305       293.649      8.80%
+sm103/600  layer-25.json          452.084       412.126       294.049      8.84%
+sm103/600  layer-49.json          436.700       396.191       293.142      9.28%
+
+The complete 52-row eager/graph matrix, including noisy or unfavorable cells,
+is in comparison.csv. Each case uses 5 warmups and 16 paired rounds; all raw
+CUDA events and synchronized wall samples are retained. Short eager cases
+have high relative variation and do not support small-win claims.
+
+Hardware qualification:
+- SM100: cluster-labelled B100, NVIDIA Graphics Device, CC10.0, 183359 MiB.
+- SM103: cluster-labelled B300A engineering, NVIDIA Graphics Device, CC10.3, 142103 MiB.
+- These are not production GB200/GB300 measurements. Immutable image and
+  complete per-device Python environments are recorded.
+- Microbenchmark clocks overlap measured H3 samples at the requested 750/600 MHz.
+  One original-SOL layer-25 graph sample on SM100 has a power-cap flag at 750 MHz.
+  Other clock drops during warmup/setup remain visible in full telemetry.
+  SM100 power.draw was unavailable. Clock polling cannot exclude shorter events.
+
+Actual H3 Ref2VA full single forward on 2 x SM100:
+50 layers, first conditional step 0, TP1/Ulysses2, BF16 eager, official 768p/5s
+request, 3 warmup rounds and 9 rotating/reversing measured rounds. Maximum-rank
+synchronized wall medians: Dense 14.727 s; original SOL 16.503 s; candidate
+15.764 s. Original/candidate = 1.0469x, 4.48% lower latency. Every paired round
+improved (1.0420x-1.0488x); original/candidate CVs 0.463%/0.504%.
+The full run requested 750 MHz but observed clock drops and power-cap flags
+on both GPUs. This is a paired same-policy result, not constant-clock evidence.
+A lower-clock follow-up is being collected; the 750 MHz run remains published.
+Candidate remains 7.04% slower than Dense in this operating condition.
+First and last original/candidate outputs match bitwise on both ranks.
+Input hashes did not change. No sampler advancement or VAE decode is timed.
+
+Correctness:
+- 94 passed, 19 hardware-specific skips on each GPU; 41 new regression tests.
+- 12 further baseline bitwise stress comparisons per GPU, including zero, tiny
+  and subnormal V and changing maxima.
+- CUDA graph replay with updated Q/K/V/masks, nondefault stream, and no new
+  compilation; independent hybrid oracle, exact mask/sink and partial tiles.
+- The first suite exposed four reference-test errors on each GPU. All four
+  also reproduced on unmodified upstream: KV-only sink semantics and BF16
+  subnormal output rounding. The independent oracle/tolerance was corrected
+  with explicit rounding accounting and nonzero tiny-output checks; no kernel
+  behavior was changed to make those tests pass. Initial and corrected logs
+  plus the upstream reproduction are retained.
+- Skips: 11 SM80-only, 2 SM90 split-KV, 6 MPS. No fresh SM90/SM120 hardware
+  run of this commit; their dispatch/kernels are unchanged.
+
+Profiler status:
+Nsight Compute 2026.4.0.10 stalled while profiling the unchanged baseline
+on this SM103 engineering GPU in kernel replay, application replay, and a
+reduced-section collection. Each diagnostic was stopped and clocks restored.
+These are profiling failures, not unprofiled execution or correctness failures.
+No new occupancy, tensor-core utilization, barrier-stall or runtime spill
+claims are made from incomplete profiler runs.
+A separate fresh-compile cuobjdump check succeeded: both SM103 binaries use
+168 registers/thread, STACK=0, LOCAL=0, static SHARED=1024 bytes. This does
+not include dynamic shared memory or measure achieved occupancy/spill traffic.
+The bundled disassembler failed to decode SASS; its error is retained.
+
+Reproduction commands and scripts: REPRODUCE.txt and reproduce/.
+Weights, private Q/K/V, generated-output tensors and binary profiler reports
+are excluded from this public evidence. These checks do not establish decoded
+video SSIM/PSNR/LPIPS or FP8/MXFP8 support.

@@ -1,0 +1,629 @@
+{
+  "rank": 1,
+  "world_size": 2,
+  "gpu": "NVIDIA Graphics Device",
+  "capability": [
+    10,
+    0
+  ],
+  "memory_bytes": 191495471104,
+  "warmup": 3,
+  "repeats": 9,
+  "denoise_step": 0,
+  "sol_backend": "cute_sm100",
+  "dense_backend": "CUDNN_ATTN",
+  "baseline_kernel_sha256": {
+    "interface.py": "2d7cd74f7528f883cb41c23b3ac6a1f6b7a2ae82eafdef10c198f335af66c378",
+    "sm100/softmax.py": "c6b88f8e5eec040f194fc2f24f7e69338548b6e33a5ba5e3720ad6d2ea6c0311",
+    "sm100/mainloop.py": "dc171d8c6ed249d83bf5ebd87e918f45b08723e590d241a81d26ac83d87cc2ce"
+  },
+  "candidate_bitwise_equal": true,
+  "input": {
+    "img_position_ids": {
+      "shape": [
+        1,
+        82752,
+        3
+      ],
+      "dtype": "torch.float64",
+      "sha256": "be4ff113c96a015043afb440d08452070af29de3b82ef566bea6d189140d3a1a"
+    },
+    "update_mask": {
+      "shape": [
+        74592
+      ],
+      "dtype": "torch.bool",
+      "sha256": "ffcc10ae4e9c52ed9854cfbb295e07f1c4df1dd21585b78653ec249260ab17ee"
+    },
+    "token_tags": {
+      "shape": [
+        82752
+      ],
+      "dtype": "torch.int64",
+      "sha256": "0af80f1d91cc354e92a58b1a67d7168be4ed3d1dba67eb4fde556786aa475cb5"
+    },
+    "skip_mask_out_condition": false,
+    "prompt_embeds": {
+      "shape": [
+        6913,
+        5120
+      ],
+      "dtype": "torch.bfloat16",
+      "sha256": "8b9cffe94ad34c7d979c90474e142e2b2071431e87b42386abcf45fe332c94f1"
+    },
+    "img_pos_info": {
+      "position_ids": {
+        "shape": [
+          74592
+        ],
+        "dtype": "torch.int64",
+        "sha256": "442767e2c3f319d95bdd21edd2512598ebe9689a78084786d22315d8164ab35e"
+      }
+    },
+    "audio_pos_info": {
+      "position_ids": {
+        "shape": [
+          1242
+        ],
+        "dtype": "torch.int64",
+        "sha256": "8b36a149d21abb7b64986221d3e01fb2d0d07ecf680b3561b4c136fa4a329c88"
+      }
+    },
+    "text_pos_info": {
+      "position_ids": {
+        "shape": [
+          6913
+        ],
+        "dtype": "torch.int64",
+        "sha256": "cacd22af59c37c70a077783a2f9f36a292173606f2e73dc53a14ecb9c7d5ecd1"
+      }
+    },
+    "img_pos_for_infer_output_info": {
+      "position_ids": {
+        "shape": [
+          74592
+        ],
+        "dtype": "torch.int64",
+        "sha256": "442767e2c3f319d95bdd21edd2512598ebe9689a78084786d22315d8164ab35e"
+      }
+    },
+    "packed_seq_params": {
+      "cu_seqlens_q": {
+        "shape": [
+          3
+        ],
+        "dtype": "torch.int32",
+        "sha256": "60ce0c9da2c0b26030f78de8da26323c802b21dc217bb8fd44ad5187fb5b50ef"
+      },
+      "max_seqlen_q": 82747,
+      "num_requests": 1,
+      "text_audio_block_mask": {
+        "used_len": 82747,
+        "block_size": 64,
+        "blocks": {
+          "shape": [
+            1293
+          ],
+          "dtype": "torch.bool",
+          "sha256": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+        }
+      },
+      "vsa_prefix_segments": [
+        6913,
+        414,
+        37296,
+        414,
+        414
+      ]
+    },
+    "refiner_packed_seq_params": {
+      "cu_seqlens_q": {
+        "shape": [
+          3
+        ],
+        "dtype": "torch.int32",
+        "sha256": "2cd0fef89f05b7f85411f5529b7629f8af902a606f1cd3647f33377b6dcee781"
+      },
+      "max_seqlen_q": 6913
+    },
+    "video_token_layout": {
+      "prefix_len": null,
+      "latent_grid": null,
+      "used_len": 82747,
+      "video_spans": [
+        {
+          "start": 7327,
+          "latent_grid": [
+            37,
+            24,
+            42
+          ],
+          "role": "reference"
+        },
+        {
+          "start": 45451,
+          "latent_grid": [
+            37,
+            24,
+            42
+          ],
+          "role": "target"
+        }
+      ]
+    },
+    "x": {
+      "shape": [
+        1,
+        82752,
+        96
+      ],
+      "dtype": "torch.float32",
+      "sha256": "de67f14b060c9d225c2fc67bec6879228afaa86cf4be4064ca9134cf2664770f"
+    },
+    "audio_x": {
+      "shape": [
+        1,
+        82752,
+        32
+      ],
+      "dtype": "torch.float32",
+      "sha256": "49a6112edae17c58ef475e1e1b22fee909290a09a4e6b5c0bc24a8e4dd461939"
+    },
+    "unique_timesteps": {
+      "shape": [
+        3
+      ],
+      "dtype": "torch.float32",
+      "sha256": "9c25351ec2de8dca69226a69515d4d33777695c1db0efb7cf1eddb2b2e862a9c"
+    },
+    "inverse_indices": {
+      "shape": [
+        82752
+      ],
+      "dtype": "torch.int64",
+      "sha256": "862094f185d8cf41998ff2f3e732bb9491f458bcac342538335f95e8cfe6c2bc"
+    }
+  },
+  "backends": {
+    "token_refiner.blocks.0.attn.attention": {
+      "backend": "SDPA",
+      "impl": "SDPAImpl"
+    },
+    "token_refiner.blocks.1.attn.attention": {
+      "backend": "SDPA",
+      "impl": "SDPAImpl"
+    },
+    "blocks.0.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.1.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.2.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.3.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.4.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.5.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.6.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.7.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.8.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.9.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.10.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.11.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.12.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.13.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.14.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.15.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.16.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.17.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.18.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.19.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.20.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.21.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.22.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.23.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.24.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.25.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.26.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.27.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.28.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.29.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.30.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.31.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.32.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.33.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.34.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.35.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.36.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.37.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.38.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.39.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.40.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.41.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.42.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.43.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.44.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.45.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.46.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.47.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.48.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    },
+    "blocks.49.attn.attention": {
+      "backend": "SOL_ATTN",
+      "impl": "SolAttnImpl"
+    }
+  },
+  "samples": [
+    {
+      "index": 0,
+      "variant": "candidate",
+      "wall_s": 15.839122545090504,
+      "cuda_event_s": 15.83916796875,
+      "start_unix_s": 1795027771.5489492
+    },
+    {
+      "index": 0,
+      "variant": "baseline",
+      "wall_s": 16.50438658799976,
+      "cuda_event_s": 16.5044375,
+      "start_unix_s": 1795027787.4009793
+    },
+    {
+      "index": 0,
+      "variant": "dense",
+      "wall_s": 14.42986405803822,
+      "cuda_event_s": 14.42989453125,
+      "start_unix_s": 1795027803.9238288
+    },
+    {
+      "index": 1,
+      "variant": "baseline",
+      "wall_s": 16.427093816921115,
+      "cuda_event_s": 16.42714453125,
+      "start_unix_s": 1795027818.3748016
+    },
+    {
+      "index": 1,
+      "variant": "candidate",
+      "wall_s": 15.682965697022155,
+      "cuda_event_s": 15.6830166015625,
+      "start_unix_s": 1795027834.8024118
+    },
+    {
+      "index": 1,
+      "variant": "dense",
+      "wall_s": 14.49602288310416,
+      "cuda_event_s": 14.496060546875,
+      "start_unix_s": 1795027850.4859803
+    },
+    {
+      "index": 2,
+      "variant": "baseline",
+      "wall_s": 16.283990452066064,
+      "cuda_event_s": 16.284041015625,
+      "start_unix_s": 1795027864.9825027
+    },
+    {
+      "index": 2,
+      "variant": "dense",
+      "wall_s": 14.37469428696204,
+      "cuda_event_s": 14.3747294921875,
+      "start_unix_s": 1795027881.2671394
+    },
+    {
+      "index": 2,
+      "variant": "candidate",
+      "wall_s": 15.569713708944619,
+      "cuda_event_s": 15.5697587890625,
+      "start_unix_s": 1795027895.642336
+    },
+    {
+      "index": 3,
+      "variant": "dense",
+      "wall_s": 14.726935502956621,
+      "cuda_event_s": 14.72697265625,
+      "start_unix_s": 1795027911.212704
+    },
+    {
+      "index": 3,
+      "variant": "baseline",
+      "wall_s": 16.440556337009184,
+      "cuda_event_s": 16.440607421875,
+      "start_unix_s": 1795027925.9401565
+    },
+    {
+      "index": 3,
+      "variant": "candidate",
+      "wall_s": 15.687794741010293,
+      "cuda_event_s": 15.6878447265625,
+      "start_unix_s": 1795027942.381233
+    },
+    {
+      "index": 4,
+      "variant": "dense",
+      "wall_s": 14.788377139950171,
+      "cuda_event_s": 14.788421875,
+      "start_unix_s": 1795027958.0696192
+    },
+    {
+      "index": 4,
+      "variant": "candidate",
+      "wall_s": 15.775014736922458,
+      "cuda_event_s": 15.7750673828125,
+      "start_unix_s": 1795027972.858502
+    },
+    {
+      "index": 4,
+      "variant": "baseline",
+      "wall_s": 16.502869553049095,
+      "cuda_event_s": 16.502923828125,
+      "start_unix_s": 1795027988.6339746
+    },
+    {
+      "index": 5,
+      "variant": "candidate",
+      "wall_s": 15.755809299065731,
+      "cuda_event_s": 15.7558564453125,
+      "start_unix_s": 1795028005.1373043
+    },
+    {
+      "index": 5,
+      "variant": "dense",
+      "wall_s": 14.747282778960653,
+      "cuda_event_s": 14.7473271484375,
+      "start_unix_s": 1795028020.8936975
+    },
+    {
+      "index": 5,
+      "variant": "baseline",
+      "wall_s": 16.52488882606849,
+      "cuda_event_s": 16.52494921875,
+      "start_unix_s": 1795028035.641613
+    },
+    {
+      "index": 6,
+      "variant": "candidate",
+      "wall_s": 15.770777950063348,
+      "cuda_event_s": 15.7708271484375,
+      "start_unix_s": 1795028052.1669524
+    },
+    {
+      "index": 6,
+      "variant": "baseline",
+      "wall_s": 16.483548318967223,
+      "cuda_event_s": 16.48359765625,
+      "start_unix_s": 1795028067.9381962
+    },
+    {
+      "index": 6,
+      "variant": "dense",
+      "wall_s": 14.594125506002456,
+      "cuda_event_s": 14.5941640625,
+      "start_unix_s": 1795028084.4223697
+    },
+    {
+      "index": 7,
+      "variant": "baseline",
+      "wall_s": 16.511086696991697,
+      "cuda_event_s": 16.511142578125,
+      "start_unix_s": 1795028099.0171163
+    },
+    {
+      "index": 7,
+      "variant": "candidate",
+      "wall_s": 15.763587577966973,
+      "cuda_event_s": 15.763638671875,
+      "start_unix_s": 1795028115.5286608
+    },
+    {
+      "index": 7,
+      "variant": "dense",
+      "wall_s": 14.84260723402258,
+      "cuda_event_s": 14.8426513671875,
+      "start_unix_s": 1795028131.2928352
+    },
+    {
+      "index": 8,
+      "variant": "baseline",
+      "wall_s": 16.517395269009285,
+      "cuda_event_s": 16.517453125,
+      "start_unix_s": 1795028146.1359491
+    },
+    {
+      "index": 8,
+      "variant": "dense",
+      "wall_s": 15.226416682009585,
+      "cuda_event_s": 15.2264619140625,
+      "start_unix_s": 1795028162.6539183
+    },
+    {
+      "index": 8,
+      "variant": "candidate",
+      "wall_s": 15.791816394077614,
+      "cuda_event_s": 15.791869140625,
+      "start_unix_s": 1795028177.880982
+    }
+  ],
+  "output": [
+    {
+      "shape": [
+        74592,
+        96
+      ],
+      "dtype": "torch.float32",
+      "sha256": "226d2d3532b1735513eaff8e806052df6ad20a83cfbe412c35e4ff51078a7564"
+    },
+    {
+      "shape": [
+        1242,
+        32
+      ],
+      "dtype": "torch.float32",
+      "sha256": "b3784bb7d31412e9eadcbae4b9fff8928aff50c3dc353afd768a68b949227d77"
+    }
+  ],
+  "finite": true,
+  "peak_allocated_bytes": 107850757120,
+  "parallel_config": {
+    "pipeline_parallel_size": 1,
+    "data_parallel_size": 1,
+    "tensor_parallel_size": 1,
+    "enable_expert_parallel": false,
+    "sequence_parallel_size": 2,
+    "ulysses_degree": 2,
+    "ring_degree": 1,
+    "allgather_degree": 1,
+    "ulysses_mode": "strict",
+    "ulysses_a2a_permute": false,
+    "cfg_parallel_size": 1,
+    "vae_patch_parallel_size": 2,
+    "text_encoder_tp_size": 2,
+    "vae_parallel_mode": "tile",
+    "use_hsdp": false,
+    "mask_sp_padding": false,
+    "hsdp_shard_size": -1,
+    "hsdp_replicate_size": 1
+  },
+  "intentional_abort": true
+}

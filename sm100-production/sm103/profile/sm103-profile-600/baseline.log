@@ -1,0 +1,7 @@
+==WARNING== Note: Running with unmodified GPU clocks. If not controlled otherwise, profiling results may be inconsistent.
+==PROF== Connected to process 1751882 (/usr/bin/python3.12)
+==PROF== Profiling "kernel_cutlass__sol_attn_sm100_bf16_kernel_TiledMMA_ThrLayoutVMNK11110000_PermutationMNK____MMAAtom_ThrID10_ShapeMNK6412816_TVLayoutA1641664164_TVLayoutB1128161281128_TVLayoutC16412864164_0": 0%.
+==WARNING== Launching the workload is taking more time than expected. If this continues to hang, terminate the profile and re-try by profiling the range of all related launches using '--replay-mode range'. See https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#replay for more details.
+...50%....100% - 22 passes
+==PROF== Disconnected from process 1751882
+==PROF== Report: /work/results/sm103-profile-600/baseline.ncu-repz
