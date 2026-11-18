@@ -1,0 +1,5 @@
+{
+  "vllm_omni/diffusion/attention/ops/sol_attn.py": "b70ed2668efc878cec734de028b2f2d2fb04dc04e169a29d7d0b1830d0a390a5",
+  "vllm_omni/diffusion/attention/ops/sol_residual.py": "d9eb2307c62206b9e5c14885942f44186b97d243341d29df662df25f8af4c085",
+  "tests/diffusion/attention/test_sol_residual_cuda.py": "3c6e710bb3710d7ca3069babe522608884459295a798dcd2e6ea5de1f2a0bc92"
+}

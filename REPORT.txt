@@ -1,0 +1,98 @@
+MiniMax-H3 Ref2VA: SOL residual optimization, 2026-11-18
+
+Implementation: 09ebe994ff7cb11c16cddba1fff8d91f4f70c739
+Baseline: 731ea29270e2d9f30e68f94d43a31021b4727eef
+PR: https://github.com/vllm-project/vllm-omni/pull/10513
+
+Scope and result
+One complete 50-layer DiT forward at the first conditional denoising step.
+2x GH200 96GB (SM90), BF16, TP1/Ulysses2, eager; official 768p/5s Ref2VA,
+seed0, 50-step schedule, guidance1, flow_shift12/audio_flow_shift3.
+CPU offload enabled equally for capacity; DiT weights resident during timing.
+Three warmups + nine identical-input replays, synchronized max-rank wall median.
+No profiler during latency measurements. Every input hash matches.
+
+Variant                     Median ms    CV percent   Peak allocated GiB/GPU
+Dense contemporary repeat   10713.939       0.0883       70.014
+Original SOL                13621.032       0.0790       70.793
+Published grouped SOL       10172.542       0.1309       71.754
+
+Published SOL is 1.339x faster than original SOL (25.32% lower latency), and
+1.053x faster than the contemporary Dense control (5.05% lower latency).
+The earlier independent Dense run was 10722.711 ms, CV 0.0679%.
+Peak allocated memory rises by 0.961 GiB/GPU vs original SOL.
+
+Fresh-process alternating-order A/B (three warmup pairs + nine measured pairs):
+Published SOL median 10131.152 ms, CV 0.1760%; original SOL median 13890.906 ms,
+CV 6.2661%. All nine paired comparisons favor the published implementation.
+The original implementation varies substantially in this paired run. All samples
+are retained; the headline uses the stable standalone baseline rather than the
+slower, more variable paired control. Candidate medians differ by 0.41% between
+the two fresh processes. CV is the sample standard deviation divided by mean.
+
+Change and reason
+The prior profile attributed 7107 ms to the eager SOL residual. Four Triton
+pointwise kernels replace eager pointwise stages. Eight original 256-row GEMMs
+are grouped per outer launch, preserving the original row shapes and ragged tail,
+FP32 matrix arithmetic, PyTorch sum reduction tree, and separate LSE/logaddexp
+rounding. Routing, sparse selections, protected sinks, block multiplicity, and
+BF16 output are unchanged. No new CLI option or dependency.
+The captured single-layer residual trace drops from 8104 to 463 GPU kernels.
+In micro-profile-grouped/counts.json the key "fused" denotes this grouped
+candidate; it is distinct from the rejected full-forward directory ref2va-fused.
+
+Numerical validation
+The complete forward's two outputs (video [74592,96], audio [1242,32], float32)
+are byte-for-byte equal to original SOL for both ranks, first/last outputs,
+standalone and fresh paired process. Comparison uses contiguous uint8 views,
+including signed zeros; maximum absolute error and relative L2 are both zero.
+This is equality to original SOL on this workload, NOT equality to Dense or a
+claim about all inputs/devices/denoising steps. SOL remains an approximation.
+No complete sampling/VAE decoding or SSIM/PSNR/LPIPS measurement was performed.
+The intentional H3_FORWARD_BENCHMARK_COMPLETE exception ends each successful
+capture before the sampler advances; it is not a benchmark failure.
+
+Validation on the measured source
+84 CUDA tests passed, 52 deselected (60 independent FP64/strict eager-rounding
+cases and 24 existing cuDNN hybrid-oracle cases, including compilation).
+331 CPU contract tests passed, including selector override precedence and Wan
+no-recompile coverage. Pre-commit passed (mypy, SPDX, import and test markers).
+The 60 new cases collect under existing L4/cards_1 CI selection, but their actual
+execution here was on GH200. No four-GPU suite or other SKU execution is claimed.
+Commands are in REPRODUCE.txt; logs/JUnit are in sm90/evidence/*grouped*.
+
+Frozen software
+Image: vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
+Python 3.12.3, torch 2.16.0.dev20261009+cu134
+vLLM 0.33.0rc1.dev992+g1648fefab.d20261107.cu134
+Triton 3.8.0+git3f6e4113; cuDNN 9.26.0.51/frontend 1.31.0; CuTe DSL 4.8.0
+Driver 580.196.07, aarch64
+Sana/SOL f4035e0a976d828ed41c7b0b799e9712b47cd60d; sol-attn 0.5.0
+H3 snapshot 0919fb684102ef115126612f3fbb84d1027e7317
+Per-run protocol.json records all engine settings, asset/request/source hashes.
+
+Rejected/intermediate experiments (retained for audit, not headline results)
+ref2va-fused: 9161.605 ms (repeat 9176.373), but changed full-forward output;
+video relative L2 1.3344%, audio 8.4499%. Regrouped normalization/chunk2048 rejected.
+ref2va-precise: 9848.283 ms; video relative L2 1.1919%, audio 8.2462%.
+Preserving normalization alone was insufficient with 2048-row GEMMs.
+A shadow diagnostic isolated single-BF16-element changes in six layers when
+changing GEMM row shape; the original 256-row shape matched all 50 layers.
+ref2va-final/final-repeat: correct unbatched 256-row fusion, 11473.803/10732.645 ms,
+CV 4.61/2.52%; paired result also retained. Superseded by grouped implementation.
+GC probing did not establish GC as the cause of latency variability; no production
+GC policy change. No claim of an established power/contention cause.
+
+Remaining limits
+SM100 cuDNN BSA hangs before the residual path; this patch does not fix that issue.
+SM103 allocation did not start and was canceled; no result. This is not evidence
+of H100/H200/B200/SM103 speedup, full-generation latency, or decoded output quality.
+The user's separate SM120 table in the PR is not independently reproduced here.
+
+Artifact contents
+sm90/results: samples, protocols, rank metadata, logs (no tensors).
+sm90/evidence: environment, test logs/JUnit, hardware and telemetry (redacted).
+sm90/micro-profile-grouped: actual captured-layer residual traces/counts.
+analysis: numerical metrics, source hashes, rejected experiments, pre-commit log.
+reproduce: pinned bootstrap, official requests, benchmark/analyzers, diagnostic scripts.
+Captured model/activation/output tensors are retained locally but not published.

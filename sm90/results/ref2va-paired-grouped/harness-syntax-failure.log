@@ -1,0 +1,4 @@
+  File "/work/paired_grouped/benchmark_case.py", line 76
+    groupedly:
+              ^
+SyntaxError: invalid syntax

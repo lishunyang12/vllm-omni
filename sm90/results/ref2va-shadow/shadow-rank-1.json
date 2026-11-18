@@ -1,0 +1,1152 @@
+[
+  {
+    "layer": 0,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": false,
+      "max_abs": 0.0078125,
+      "relative_l2": 4.746717650050414e-07,
+      "different_fraction": 3.3719391723252556e-09
+    }
+  },
+  {
+    "layer": 1,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 2,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 3,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 4,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": false,
+      "max_abs": 0.00390625,
+      "relative_l2": 1.2657403658522526e-07,
+      "different_fraction": 3.3719391723252556e-09
+    }
+  },
+  {
+    "layer": 5,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 6,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 7,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 8,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": false,
+      "max_abs": 0.001953125,
+      "relative_l2": 4.899579053585512e-08,
+      "different_fraction": 3.3719391723252556e-09
+    }
+  },
+  {
+    "layer": 9,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 10,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 11,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 12,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 13,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": false,
+      "max_abs": 0.03125,
+      "relative_l2": 6.715116569466772e-07,
+      "different_fraction": 3.3719391723252556e-09
+    }
+  },
+  {
+    "layer": 14,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 15,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 16,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": false,
+      "max_abs": 0.0078125,
+      "relative_l2": 1.4059578745673207e-07,
+      "different_fraction": 6.743878344650511e-09
+    }
+  },
+  {
+    "layer": 17,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 18,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 19,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 20,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 21,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 22,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 23,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 24,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 25,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 26,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 27,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 28,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 29,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": false,
+      "max_abs": 0.03125,
+      "relative_l2": 1.2853050179728598e-07,
+      "different_fraction": 3.3719391723252556e-09
+    }
+  },
+  {
+    "layer": 30,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": false,
+      "max_abs": 0.0078125,
+      "relative_l2": 3.3370881169503264e-08,
+      "different_fraction": 3.3719391723252556e-09
+    }
+  },
+  {
+    "layer": 31,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 32,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 33,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": false,
+      "max_abs": 0.03125,
+      "relative_l2": 8.097201487089478e-08,
+      "different_fraction": 3.3719391723252556e-09
+    }
+  },
+  {
+    "layer": 34,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 35,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 36,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 37,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 38,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 39,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 40,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 41,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 42,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 43,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 44,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 45,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 46,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 47,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 48,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  },
+  {
+    "layer": 49,
+    "allow_tf32": false,
+    "input_shape": [
+      1,
+      82747,
+      28,
+      128
+    ],
+    "input_dtype": "torch.bfloat16",
+    "256": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    },
+    "2048": {
+      "bitwise_equal": true,
+      "max_abs": 0.0,
+      "relative_l2": 0.0,
+      "different_fraction": 0.0
+    }
+  }
+]

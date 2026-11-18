@@ -1,0 +1,19 @@
+{
+  "task": "ref2va",
+  "backend": "SOL_ATTN",
+  "gpu": "NVIDIA GH200 96GB HBM3",
+  "warmup": 0,
+  "repeats": 3,
+  "max_rank_wall_samples_s": [
+    28.816259947023354,
+    15.062220431980677,
+    13.59843210899271
+  ],
+  "median_s": 15.062220431980677,
+  "median_first3_s": 15.062220431980677,
+  "min_s": 13.59843210899271,
+  "max_s": 28.816259947023354,
+  "cv_percent": 43.81979116798683,
+  "terminal_exception": "RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode",
+  "quality_checked": false
+}

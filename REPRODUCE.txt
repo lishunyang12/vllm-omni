@@ -1,0 +1,97 @@
+H3 Ref2VA SOL residual optimization: reproducible validation
+
+Scope: first conditional denoising step, full 50-layer DiT forward. This is
+not HTTP request latency, full denoising, VAE decoding, or video/audio quality.
+
+Image (unchanged for every comparison):
+  vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
+Baseline source:
+  731ea29270e2d9f30e68f94d43a31021b4727eef
+Candidate source: see REPORT.txt and analysis/source-hashes.json.
+H3 checkpoint revision:
+  0919fb684102ef115126612f3fbb84d1027e7317
+Sana/SOL dependency:
+  f4035e0a976d828ed41c7b0b799e9712b47cd60d
+
+Use two NVLink-connected GPUs, sufficient host RAM for model CPU offload,
+and at least 350 GiB of cache space. The validated hardware is 2x GH20096GB.
+The same script enables model-level CPU offload below 110 GiB GPU memory;
+all DiT weights are resident during measured calls. BF16, TP1/Ulysses2,
+text encoder TP2, VAE PP2/tiling, eager, seed0, official 768p/5s Ref2VA input.
+
+Prepare a fresh work mount on the GPU host:
+  mkdir -p work
+  cp -a reproduce/bundle work/bundle
+  cp -a reproduce/fused work/fused
+  cp -a reproduce/profile work/profile
+  cp -a reproduce/shadow work/shadow
+  cp -a reproduce/paired work/paired
+  cp -a reproduce/paired_grouped work/paired_grouped
+
+Inside the exact image, with two visible GPUs, host IPC and work mounted as /work:
+  export SOL_CANDIDATE_COMMIT=09ebe994ff7cb11c16cddba1fff8d91f4f70c739
+  bash /work/fused/bootstrap.sh /work
+  for variant in reference grouped dense; do
+    H3_VARIANT=$variant bash /work/fused/run_forward.sh /work
+  done
+  H3_VARIANT=reference H3_RUN_ID=ref2va-paired-grouped bash /work/paired_grouped/run_paired.sh /work
+  python3 /work/fused/analyze_grouped_stability.py
+  python3 /work/fused/analyze_outputs.py --root /work/fused/results
+
+Each case starts a fresh model process. Three warmups and nine timed identical-
+input replays are synchronized across ranks; latency is the median of the
+maximum per-rank wall time. First/last outputs and input hashes are recorded
+outside timing. H3_FORWARD_BENCHMARK_COMPLETE intentionally stops the sampler
+before advancement and VAE decoding. Existing result directories are rejected.
+
+The discarded candidates are retained for auditing numerical drift:
+  H3_VARIANT=fused bash /work/fused/run_forward.sh /work
+  H3_VARIANT=precise bash /work/fused/run_forward.sh /work
+  python3 /work/fused/analyze_outputs.py --root /work/fused/results
+
+"fused" = regrouped normalization, chunk2048 (rejected).
+"precise" = preserved normalization, chunk2048 (rejected).
+"final" = earlier unbatched 256-row fusion (correct outputs, variable latency).
+"grouped" = published candidate: batch original 256-row GEMMs, preserve rounding.
+The analyzer includes rejected candidates when their results are present.
+Its output is forward-tensor equality/error, not SSIM, PSNR or LPIPS.
+
+Run focused tests in the candidate checkout:
+  cd /work/source/grouped
+  export PYTHONPATH=/work/source/grouped OMP_NUM_THREADS=4
+  python3 -m pytest -q tests/diffusion/attention/test_sol_residual_cuda.py \
+    tests/diffusion/attention/test_sol_attn_cuda.py \
+    -k 'fused_residual or (bsa_matches_hybrid_oracle and cudnn)' --run-level=core_model
+  python3 -m pytest -q tests/diffusion/attention/test_sol_attn_backend.py \
+    tests/diffusion/attention/test_impl_overrides.py \
+    tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py \
+    tests/diffusion/attention/test_attention_config.py --run-level=core_model
+
+Optional diagnostic capture and component replay (run after timed processes exit):
+  H3_PROFILE_MODE=capture H3_PROFILE_BACKEND=SOL_ATTN bash /work/profile/run_profile.sh /work
+  PYTHONPATH=/work/source/grouped python3 /work/fused/compare_grouped_canonical.py
+  PYTHONPATH=/work/source/grouped python3 /work/fused/profile_grouped.py
+
+The capture uses the baseline source and writes actual layer49 inputs locally.
+Captured activations and model tensors are excluded from public evidence.
+Component latency uses separate unprofiled calls. Profiler traces only establish
+kernel counts; decompress the .json.gz trace before opening it in Perfetto.
+
+To reproduce the diagnostic identifying chunk-size rounding differences:
+  H3_VARIANT=reference H3_RUN_ID=ref2va-shadow bash /work/shadow/run_shadow.sh /work
+This returns reference outputs while comparing both candidate chunk sizes on
+each layer's identical inputs. Its timings contain diagnostic overhead and must
+not be used as performance results.
+
+All published logs redact hostnames, private IPs, GPU UUIDs and home paths.
+SM100 SOL BSA hangs documented in the earlier PR follow-up remain unresolved.
+SM103 and complete video/audio SSIM/PSNR/LPIPS were not validated by this work.
+
+Earlier unbatched candidate diagnostic (not the published grouped implementation):
+First run H3_VARIANT=final with run_forward.sh, then optionally:
+  H3_VARIANT=reference H3_RUN_ID=ref2va-paired bash /work/paired/run_paired.sh /work
+  H3_VARIANT=dense H3_RUN_ID=ref2va-dense-late bash /work/fused/run_forward.sh /work
+  python3 /work/fused/analyze_stability.py
+This uses three warmup pairs and nine measured pairs. Read per-variant samples
+and paired speedup ratios in ref2va-paired/summary.json, not an aggregate mixing
+the two implementations. Preserve the observed CV and ranges in any report.

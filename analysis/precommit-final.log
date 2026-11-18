@@ -1,0 +1,25 @@
+check yaml.........................................................(no files to check)Skipped
+debug statements (python)..............................................................Passed
+fix end of files.......................................................................Passed
+mixed line ending......................................................................Passed
+trim trailing whitespace...............................................................Passed
+ruff check.............................................................................Passed
+ruff format............................................................................Passed
+typos..................................................................................Passed
+Lint GitHub Actions workflow files.................................(no files to check)Skipped
+markdownlint-cli2..................................................(no files to check)Skipped
+Run mypy for Python 3.10...............................................................Passed
+Ensure test files have CI marks (no direct SKU or bare platform).......................Passed
+Ratchet TTS per-model branches out of serving_speech.py............(no files to check)Skipped
+- hook id: check-tts-adapter-migration
+Lint shell scripts.................................................(no files to check)Skipped
+Check SPDX headers.....................................................................Passed
+Check forbidden imports................................................................Passed
+Prevent new torch.cuda API calls.......................................................Passed
+Validate Buildkite Pipelines.......................................(no files to check)Skipped
+Suggestion.............................................................................Passed
+- hook id: suggestion
+- duration: 0s
+
+To bypass all the pre-commit hooks, add --no-verify to git commit. To skip a specific hook, prefix the commit command with SKIP=<hook-id>.
+
