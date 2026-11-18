@@ -1,0 +1,168 @@
+{
+  "hardware": "SM100 engineering GPU, cluster label B100; not production B200",
+  "common_pooling": "Explicit FP32 accumulation; BF16 output; forced4warps/1stage in both SOL variants",
+  "reference": "63b4e65 plus common pool-fp32.patch",
+  "candidate": "150114b plus common pool-fp32.patch",
+  "quality_scope": "Same repaired-pooling SOL outputs; no generated-video quality metrics",
+  "full_forward": {
+    "summary": {
+      "protocol": "rotating/reversing Dense/original/candidate rounds in one model process",
+      "warmup_pairs": 3,
+      "measured_pairs": 9,
+      "runs": {
+        "dense": {
+          "samples_ms": [
+            21677.67648701556,
+            21678.716094000265,
+            21752.451861975715,
+            21873.030754970387,
+            21882.008692016825,
+            21865.173356956802,
+            21875.00165309757,
+            21874.900744995102,
+            21790.357892983593
+          ],
+          "median_ms": 21865.173356956802,
+          "min_ms": 21677.67648701556,
+          "max_ms": 21882.008692016825,
+          "cv_percent": 0.39391126538623483
+        },
+        "baseline": {
+          "samples_ms": [
+            24971.150317927822,
+            24973.184884060174,
+            24971.68077796232,
+            25241.326836054213,
+            25242.97508201562,
+            25241.341870976612,
+            25244.573262054473,
+            25237.289465032518,
+            25242.80909996014
+          ],
+          "median_ms": 25241.326836054213,
+          "min_ms": 24971.150317927822,
+          "max_ms": 25244.573262054473,
+          "cv_percent": 0.5362328447863594
+        },
+        "candidate": {
+          "samples_ms": [
+            23758.134822011925,
+            23757.064200006425,
+            24015.10118402075,
+            24013.498084968887,
+            24013.476827996783,
+            24006.45349500701,
+            24013.933070003986,
+            24011.25670003239,
+            23810.691397986375
+          ],
+          "median_ms": 24011.25670003239,
+          "min_ms": 23757.064200006425,
+          "max_ms": 24015.10118402075,
+          "cv_percent": 0.4993364918962649
+        }
+      },
+      "terminal_exception": "RuntimeError: H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode",
+      "original_over_candidate_speedups": [
+        1.0510568487384808,
+        1.0511898555232013,
+        1.039832419884954,
+        1.051130774314546,
+        1.0512003431583632,
+        1.0514398503813336,
+        1.0512469235448854,
+        1.051060749560787,
+        1.0601459940006142
+      ],
+      "candidate_bitwise_equal": true,
+      "paired_speedups": [
+        0.9124317480903922,
+        0.9125166271173524,
+        0.9057822282443446,
+        0.9108639931414942,
+        0.9112386702164292,
+        0.9108039786678378,
+        0.9109295669863353,
+        0.9110268995194072,
+        0.9151501537173491
+      ],
+      "median_paired_speedup": 0.9110268995194072
+    },
+    "telemetry": {
+      "rank0/dense": {
+        "samples": 9,
+        "covered_samples": 9,
+        "polls": 652,
+        "clocks": {
+          "450 MHz": 652
+        },
+        "power_cap_flags": 0,
+        "thermal_flags": 0,
+        "power_draw_available": false
+      },
+      "rank0/baseline": {
+        "samples": 9,
+        "covered_samples": 9,
+        "polls": 756,
+        "clocks": {
+          "450 MHz": 756
+        },
+        "power_cap_flags": 0,
+        "thermal_flags": 0,
+        "power_draw_available": false
+      },
+      "rank0/candidate": {
+        "samples": 9,
+        "covered_samples": 9,
+        "polls": 718,
+        "clocks": {
+          "450 MHz": 718
+        },
+        "power_cap_flags": 0,
+        "thermal_flags": 0,
+        "power_draw_available": false
+      },
+      "rank1/dense": {
+        "samples": 9,
+        "covered_samples": 9,
+        "polls": 652,
+        "clocks": {
+          "450 MHz": 652
+        },
+        "power_cap_flags": 0,
+        "thermal_flags": 0,
+        "power_draw_available": false
+      },
+      "rank1/baseline": {
+        "samples": 9,
+        "covered_samples": 9,
+        "polls": 756,
+        "clocks": {
+          "450 MHz": 756
+        },
+        "power_cap_flags": 0,
+        "thermal_flags": 0,
+        "power_draw_available": false
+      },
+      "rank1/candidate": {
+        "samples": 9,
+        "covered_samples": 9,
+        "polls": 718,
+        "clocks": {
+          "450 MHz": 718
+        },
+        "power_cap_flags": 0,
+        "thermal_flags": 0,
+        "power_draw_available": false
+      }
+    },
+    "sol_reduction_percent": 4.873238811934466,
+    "candidate_slower_than_dense_percent": 9.815075819615092,
+    "paired_sol_speedup": {
+      "median": 1.0511898555232013,
+      "minimum": 1.039832419884954,
+      "maximum": 1.0601459940006142
+    }
+  },
+  "attention": {}
+}

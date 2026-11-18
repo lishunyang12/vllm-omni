@@ -1,3 +1,11 @@
+Standalone synthetic regression reproduction (no weights needed):
+Use the pinned CUDA environment, then run:
+  bash reproduce/reproduce_pool_fp32.sh --workdir /tmp/empty-pool-check
+This downloads SHA-pinned public sources, verifies the exact fix-only diff, and
+requires old numerical-test failure plus all12fixed tests passing. See
+reproduce/REPRODUCE_POOL_FP32.txt. Source downloads have been checked locally;
+the full wrapper is pending GPU execution. Core12tests already passed on GPU.
+
 CORRECTION: the earlier #594 attention-kernel attribution was confounded
 2026-11-18, controlled pooling follow-up
 

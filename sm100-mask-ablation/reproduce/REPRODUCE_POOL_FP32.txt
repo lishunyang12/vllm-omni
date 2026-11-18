@@ -1,0 +1,40 @@
+Synthetic pooling regression reproduction
+========================================
+Use an already pinned CUDA/Triton/PyTorch/pytest environment and an existing
+allocation with a TMA-capable NVIDIA GPU (SM90 or later):
+
+  PYTHON=/path/to/pinned/python bash reproduce_pool_fp32.sh --workdir /tmp/empty-pool-check
+
+The workdir must be nonexistent or empty. The wrapper downloads GitHub source
+archives pinned to cf67a3acad7511acb85053e56a05e5dd24c82ba0 and
+0f0d973354fa9dc003de51e38b530e73f42df003. It verifies every archived file/link
+entry and requires the only differences to be the exact four FP32 casts plus
+the regression test with a pinned SHA256. It extracts only sol_attn and the
+test, rejecting unsafe paths and selected symlinks, with download/expanded-size
+limits. It never extracts other repository links or model assets.
+
+The exact same new test runs against old and fixed original-name sol_attn in
+separate Python processes. report.json includes source manifests, archive and
+script hashes, CUDA visibility/Slurm metadata, runtime versions/GPU identity,
+JUnit counts and classification; old.log/fixed.log retain test output.
+Success requires exactly12 tests each, no collection/runtime errors or skips,
+old numeric assertion failures against Float64 and fixed all-pass. An old pass,
+missing CUDA/package, skipped test or other error is not classified as a
+successful reproduction. Exit0 means the expected old-fail/new-pass was observed.
+
+No installs by default. --install-pytest explicitly permits installation of
+pytest==8.3.5 only; it does not modify CUDA/PyTorch/Triton. No weights, GPU
+allocation, clock commands or CUDA_VISIBLE_DEVICES override occur. Test child
+processes inherit the caller's visibility unchanged. Timeout/exception/SIGTERM
+cleanup kills and waits the active process group.
+
+Delivery validation: bash -n, Python py_compile and isolated Ruff
+E/W/F/I/N/UP (120 columns, py310) passed. No source download, environment probe,
+pytest or GPU execution was performed by this design agent.
+
+Root process_benchmark.py review: the added configs=[4warps,1stage] and
+cache.clear() run before the first native prepare call. Pinned autotuner.run
+with a single config directly uses configs[0], records best_config and forwards
+its launch kwargs. Both workers therefore use4/1 for native KC/VC in eager and
+captured execution. No serious issue found in that change. Results describe
+the common FP32 repair with a controlled4/1 config, not default autotuning.

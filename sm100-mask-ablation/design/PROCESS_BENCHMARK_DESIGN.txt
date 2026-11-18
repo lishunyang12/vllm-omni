@@ -108,3 +108,10 @@ CPU checks performed
   missing cast using CPU-only synthetic source fixtures.
   The check imports no Torch and executes no GPU work. Results are in
   process_benchmark_cpu_check.log. Actual CUDA capture/timing awaits root testing.
+
+Root controlled-run addition: scripts/process_benchmark.py forces native KC and
+VC pooling to num_warps=4,num_stages=1 before the first call in both SOL workers.
+This isolates the attention change with matched pooling launch work. Reported
+performance is for that controlled configuration, not default autotuning. The
+autotuner's best_config is recorded; actual prepared/output hash gates remain.
+The launch script requires matching complete12+73and29case correctness evidence.

@@ -1,3 +1,30 @@
+CURRENT VERIFIED FP32-POOLING PERFORMANCE (2026-11-18)
+=====================================================
+H3 Ref2VA first conditional single DiT forward, 50 layers forced SOL,2GPUs,
+TP1/Ulysses2,BF16 eager,cache_backend=none,450MHz. Both SOL sources use the
+same explicit FP32 pooling fix, BF16 outputs and forced4warps/1stage.3warmup
+rounds +9rotating/reversed measured rounds; max-rank synchronized wall median.
+
+Dense cuDNN:21.865173s (CV0.3939%).
+Original SOL#593+shared fix:25.241327s (CV0.5362%).
+Optimized SOL#594+shared fix:24.011257s (CV0.4993%).
+SOL latency reduction4.8732%; median paired speedup1.05119x (range1.03983–1.06015x).
+Optimized SOL remains9.8151% slower than Dense. All samples, including outliers,
+are retained. Current PR594 head e3f60d5 matches all55 GPU-tested runtime hashes.
+
+Both ranks' first/last original/candidate outputs match raw bytes; outputs finite
+and inputs unchanged. All54 rank/sample windows have telemetry coverage: every
+overlapping poll450MHz,zero observed power-cap or thermal flags. power.draw=N/A.
+Sampling does not prove absence of sub-poll events; this is a controlled low-clock
+diagnostic point, not a production-throughput claim. Hardware remains SM100
+engineering (cluster B100 label), not production B200. No decoded-video quality
+metrics and no sampler advancement/VAE decode are included.
+
+Raw results:results/ref2va-native-fp32-450/{summary,rank-0,rank-1,protocol}.json;
+telemetry:environment/fp32-450-control; joined audit:corrected-fp32-summary.json.
+Sources and script hashes are in manifest and protocol. Independent-process
+attention timing and one new contiguous-load candidate are being checked.
+
 CORRECTION: the earlier #594 attention-kernel attribution was confounded
 2026-11-18, controlled pooling follow-up
 

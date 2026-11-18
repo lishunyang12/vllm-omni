@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import sys
 
-raise RuntimeError('Performance promotion is blocked by the independent #594 oracle failure; see CORRECTNESS_BLOCKER.txt')
+raise RuntimeError('Legacy timing gate disabled: historical candidate checks used uncontrolled BF16 pooling. Revalidate sources with the FP32 pooling repair; see CORRECTNESS_BLOCKER.txt')
 
 work = Path(sys.argv[1])
 variant = sys.argv[2]

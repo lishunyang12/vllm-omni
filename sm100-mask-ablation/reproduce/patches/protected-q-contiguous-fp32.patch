@@ -1,0 +1,249 @@
+--- a/techniques/sparse_backends/sol_attn/sm100/mainloop.py
++++ b/techniques/sparse_backends/sol_attn/sm100/mainloop.py
+@@ -358,6 +358,10 @@
+     mPackK_nkl: cute.Tensor,
+     tma_atom_pack_v: cute.CopyAtom,
+     mPackV_nkl: cute.Tensor,
++    tma_atom_contiguous_k: cute.CopyAtom,
++    mContiguousK_nkl: cute.Tensor,
++    tma_atom_contiguous_v: cute.CopyAtom,
++    mContiguousV_nkl: cute.Tensor,
+     tma_atom_kc: cute.CopyAtom,
+     mKC_nkl: cute.Tensor,
+     tma_atom_vc: cute.CopyAtom,
+@@ -530,6 +534,8 @@
+     mQ_cur = mQ_mkl[None, None, head_idx, batch_idx]
+     mPackK_cur = mPackK_nkl[None, None, head_idx, batch_idx]
+     mPackV_cur = mPackV_nkl[None, None, head_idx, batch_idx]
++    mContiguousK_cur = mContiguousK_nkl[None, None, head_idx, batch_idx]
++    mContiguousV_cur = mContiguousV_nkl[None, None, head_idx, batch_idx]
+     mKC_cur = mKC_nkl[None, None, head_idx, batch_idx]
+     mVC_cur = mVC_nkl[None, None, head_idx, batch_idx]
+     gQ = cute.local_tile(mQ_cur, (M, D), (None, 0))
+@@ -538,6 +544,12 @@
+     )
+     gPackV = cute.local_tile(
+         mPackV_cur, (64, N_MEMBER), (None, None)
++    )
++    gContiguousK = cute.local_tile(
++        mContiguousK_cur, (N_PACK_HALF, D), (None, 0)
++    )
++    gContiguousV = cute.local_tile(
++        mContiguousV_cur, (DV, N_PACK_HALF), (0, None)
+     )
+     gKC = cute.local_tile(mKC_cur, (N_PACK_HALF, D), (None, 0))
+     gVC = cute.local_tile(mVC_cur, (DV, N_PACK_HALF), (0, None))
+@@ -546,6 +558,8 @@
+     tCgQ = thr_pack_qk.partition_A(gQ)
+     tCgKC = thr_pack_qk.partition_B(gKC)
+     tCgVC = thr_pack_pv.partition_B(gVC)
++    tCgContiguousK = thr_pack_qk.partition_B(gContiguousK)
++    tCgContiguousV = thr_pack_pv.partition_B(gContiguousV)
+     tCrKC = tiled_pack_qk.make_fragment_B(sKC)
+     tCrVC = tiled_pack_pv.make_fragment_B(sVC)
+     tCrPackQ = tiled_pack_qk.make_fragment_A(sQ)
+@@ -572,6 +586,23 @@
+         cute.make_layout(1),
+         cute.group_modes(sPackVGather, 0, 3),
+         cute.group_modes(gPackV, 0, 2),
++    )
++    # The canonical N128 shared layouts are the same layouts already used
++    # by route KC/VC. These descriptors change only the global K/V source;
++    # they add no stage or shared allocation and use the same byte counts.
++    tContiguousKsK, tContiguousKgK = cpasync.tma_partition(
++        tma_atom_contiguous_k,
++        0,
++        cute.make_layout(1),
++        cute.group_modes(sPackK, 0, 3),
++        cute.group_modes(tCgContiguousK, 0, 3),
++    )
++    tContiguousVsV, tContiguousVgV = cpasync.tma_partition(
++        tma_atom_contiguous_v,
++        0,
++        cute.make_layout(1),
++        cute.group_modes(sPackV, 0, 3),
++        cute.group_modes(tCgContiguousV, 0, 3),
+     )
+     tKCsKC, tKCgKC = cpasync.tma_partition(
+         tma_atom_kc,
+@@ -672,11 +703,19 @@
+     threshold = Float32(
+         mThreshold_bnh[batch_idx, q_block_idx, head_idx]
+     )
++    # This remains a device read on every invocation, including graph replay.
++    # A protected query forces every valid KV block exact, independent of its
++    # score, threshold, sink membership, and the other mask entries.
++    query_is_protected = False
++    if cutlass.const_expr(exact_block_mask is not None):
++        query_is_protected = exact_block_mask[q_block_idx] != 0
+ 
+     if warp_idx == Int32(5):
+         cpasync.prefetch_descriptor(tma_atom_q)
+         cpasync.prefetch_descriptor(tma_atom_pack_k)
+         cpasync.prefetch_descriptor(tma_atom_pack_v)
++        cpasync.prefetch_descriptor(tma_atom_contiguous_k)
++        cpasync.prefetch_descriptor(tma_atom_contiguous_v)
+         cpasync.prefetch_descriptor(tma_atom_kc)
+         cpasync.prefetch_descriptor(tma_atom_vc)
+ 
+@@ -726,8 +765,34 @@
+         if physical_halves_this_group > Int32(ROUTE_HALVES_PER_GROUP):
+             physical_halves_this_group = Int32(ROUTE_HALVES_PER_GROUP)
+ 
++        route_halves_to_compute = physical_halves_this_group
++        if query_is_protected:
++            # The normal selector emits this same ascending exact stream for
++            # protected Q blocks and produces no approximate PV transaction.
++            # Avoid the unused KC/VC loads, route QK, and score reductions.
++            # All warps skip those pipeline cursor advances together. The
++            # existing pre-exact CTA join publishes these stores to every
++            # exact consumer, including the K/V producer in warp 5.
++            group_first_block = group_route_tile_base * Int32(ROUTE_TILE_SIZE)
++            group_exact_count = min(
++                Int32(LOGICAL_GROUP_SIZE), route_valid_total - group_first_block
++            )
++            # Keep the writer in the first owner warp. Its preceding exact-P
++            # rendezvous proves every old index reader finished; the TMA warp
++            # may already be ahead and must not overwrite the list itself.
++            if warp_idx == Int32(1):
++                protected_lane = tidx % Int32(32)
++                for slot in cutlass.range_constexpr(LOGICAL_GROUP_SIZE // 32):
++                    ordinal = protected_lane + Int32(slot * 32)
++                    if ordinal < group_exact_count:
++                        route_indices[ordinal] = group_first_block + ordinal
++                if protected_lane == Int32(0):
++                    route_packet[6] = group_exact_count
++                cute.arch.fence_view_async_shared()
++            route_halves_to_compute = Int32(0)
++
+         for half_idx in cutlass.range(
+-            physical_halves_this_group, unroll=1
++            route_halves_to_compute, unroll=1
+         ):
+             route_tile_idx = cute.arch.make_warp_uniform(
+                 group_route_tile_base + half_idx
+@@ -1201,37 +1266,60 @@
+                 ordinal0 = pair_idx * Int32(2)
+                 block0 = Int32(route_indices[ordinal0])
+                 block1 = block0
+-                if ordinal0 + Int32(1) < exact_block_count:
++                has_peer = ordinal0 + Int32(1) < exact_block_count
++                if has_peer:
+                     block1 = Int32(route_indices[ordinal0 + Int32(1)])
++                # Protected Q groups emit every KV index in ascending order.
++                # Each G256 starts at an even block, so complete pairs start
++                # on an N128 boundary and may use one full-tile TMA per K/V.
++                # The odd final block retains the original duplicate/mask
++                # path, and every unprotected Q retains arbitrary gathers.
++                use_contiguous_pair = query_is_protected and has_peer
+ 
+                 pack_k_pipe.producer_acquire(pack_k_producer)
+                 pair_k_barrier = pack_k_pipe.producer_get_barrier(
+                     pack_k_producer
+                 )
+-                _load_pack_k_half(
+-                    tma_atom_pack_k,
+-                    tPackKgK,
+-                    tPackKsK,
+-                    block0,
+-                    block1,
+-                    pack_k_producer.index * Int32(4),
+-                    pair_k_barrier,
+-                )
++                if use_contiguous_pair:
++                    cute.copy(
++                        tma_atom_contiguous_k,
++                        tContiguousKgK[(None, block0 // Int32(2))],
++                        tContiguousKsK[(None, pack_k_producer.index)],
++                        tma_bar_ptr=pair_k_barrier,
++                    )
++                else:
++                    _load_pack_k_half(
++                        tma_atom_pack_k,
++                        tPackKgK,
++                        tPackKsK,
++                        block0,
++                        block1,
++                        pack_k_producer.index * Int32(4),
++                        pair_k_barrier,
++                    )
+                 pack_k_producer.advance()
+ 
+                 pack_v_pipe.producer_acquire(pack_v_producer)
+                 pair_v_barrier = pack_v_pipe.producer_get_barrier(
+                     pack_v_producer
+                 )
+-                _load_pack_v_half(
+-                    tma_atom_pack_v,
+-                    tPackVgV,
+-                    tPackVsV,
+-                    block0,
+-                    block1,
+-                    pack_v_producer.index * Int32(4),
+-                    pair_v_barrier,
+-                )
++                if use_contiguous_pair:
++                    cute.copy(
++                        tma_atom_contiguous_v,
++                        tContiguousVgV[(None, block0 // Int32(2))],
++                        tContiguousVsV[(None, pack_v_producer.index)],
++                        tma_bar_ptr=pair_v_barrier,
++                    )
++                else:
++                    _load_pack_v_half(
++                        tma_atom_pack_v,
++                        tPackVgV,
++                        tPackVsV,
++                        block0,
++                        block1,
++                        pack_v_producer.index * Int32(4),
++                        pair_v_barrier,
++                    )
+                 pack_v_producer.advance()
+ 
+         if warp_idx == Int32(0) and has_pair_exact:
+@@ -1433,7 +1521,7 @@
+         # (1) warp 5 reads both indices before producing each pair's K/V, and
+         #     final-pair score completion therefore dominates its last read;
+         # (2) all owner index reads precede the final exact-P NamedBarrier;
+-        # (3) owner-warp0/lane0 is the sole next-group writer and reaches it
++        # (3) owner-warp0 is the sole next-group writer and reaches it
+         #     only after that same exact loop.  For exact_count==0 there are no
+         #     readers.  Therefore no group-tail CTA barrier is required.
+ 
+@@ -1685,6 +1773,24 @@
+         pack_v_tma_layout,
+         (64, 64),
+     )
++    contiguous_k_tma_atom, contiguous_k_tma_tensor = (
++        cute.nvgpu.make_tiled_tma_atom_B(
++            copy_op,
++            k_nkl,
++            cute.select(pack_k_layout, mode=[0, 1, 2]),
++            PACK_QK_TILE,
++            tiled_pack_qk,
++        )
++    )
++    contiguous_v_tma_atom, contiguous_v_tma_tensor = (
++        cute.nvgpu.make_tiled_tma_atom_B(
++            copy_op,
++            v_nkl,
++            cute.select(pack_v_layout, mode=[0, 1, 2]),
++            PACK_PV_TILE,
++            tiled_pack_pv,
++        )
++    )
+     kc_tma_atom, kc_tma_tensor = cute.nvgpu.make_tiled_tma_atom_B(
+         copy_op,
+         kc_nkl,
+@@ -1708,6 +1814,10 @@
+         pack_k_tma_tensor,
+         pack_v_tma_atom,
+         pack_v_tma_tensor,
++        contiguous_k_tma_atom,
++        contiguous_k_tma_tensor,
++        contiguous_v_tma_atom,
++        contiguous_v_tma_tensor,
+         kc_tma_atom,
+         kc_tma_tensor,
+         vc_tma_atom,
