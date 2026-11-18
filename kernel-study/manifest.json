@@ -1,0 +1,27 @@
+{
+  "scope": "Single attention operator on frozen real H3 Q/K/V, not full DiT or video generation",
+  "image": "vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb",
+  "omni_capture_commit": "3da353c45224f5863808da320d694be045c16ef8",
+  "sol_commit": "088897e0c6a9cb970f00b43ab2177c3be7336b36",
+  "checkpoint_commit": "0919fb684102ef115126612f3fbb84d1027e7317",
+  "trajectory": "First conditional step 0; dense reference trajectory; SP1 capture, first 28 of 56 heads replayed",
+  "thresholds_changed": false,
+  "protection_changed": false,
+  "production_dispatch_changed": false,
+  "profiler": "Nsight Compute 2026.4.0.0",
+  "profiler_reports": "Binary .ncu-repz and raw CSV retained privately; selected metrics and readable reports included",
+  "raw_tensor_archives": "Captured Q/K/V retained privately; regenerate using reproduce/run_capture.sh",
+  "scripts_sha256": {
+    "capture_probe.py": "4ef70da3742052d0b25568f5a5c481dcea8ec6720a9cc4f4811bd8f6aaf2ae1f",
+    "make_capture_case.py": "ea477ce5f596b1ca0ec2c37e59f8e5f339c5c09af8b4433b403e0791a6e77b19",
+    "run_capture.sh": "57b7b2bad35483db84baafeb76cf7c8c131010e44d5d70e53238d55513779212",
+    "replay.py": "c35c891562993d0b133b470aa883a4eb85b2afdf318fccb83839ff44bf8a0783",
+    "replay_sm120.py": "77f85598037d1efb9bc74bc24dc5c7e20a6b5ec3c8f96c882b5d48b765e2981c",
+    "run_replays.sh": "a4a165ab93a11e9c77345ea266d36c324043ba76fe142814dd4e113d80872514",
+    "run_sm120_replays.sh": "c89cf1a3f717c5298ebb564045fbe8d1a601bcaa91261c851c63fa28b5512421",
+    "run_controlled.sh": "c248311092baf88445479e173c2a64f1778c68291184c05d361bb10dfc16cdaa",
+    "bootstrap_replay.sh": "79ff18181413fd9edec364700c72c988090ddf1161c5c7f6b72c4b4b76d7d8d4",
+    "run_profile.sh": "3819dd0a070a182f197049c28c40cf0bbf0dddb0cac94a7c625f978e3a168cd3",
+    "run_profiles.sh": "a639b31dca40db5c6b10d8257a5c237e5b4b2953bdcb6317ba94f2ffa56784b5"
+  }
+}

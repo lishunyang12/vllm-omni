@@ -1,0 +1,13 @@
+{
+  "capture_complete": true,
+  "timing_samples": 0,
+  "trajectory": "dense",
+  "denoise_step": 0,
+  "terminal_exception": "RuntimeError: H3_QKV_CAPTURE_COMPLETE: intentional stop before sampler and VAE decode",
+  "saved_layers": [
+    0,
+    12,
+    25,
+    49
+  ]
+}

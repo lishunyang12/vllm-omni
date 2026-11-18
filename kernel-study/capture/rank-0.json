@@ -1,0 +1,582 @@
+{
+  "rank": 0,
+  "world_size": 1,
+  "finite": true,
+  "capture_complete": true,
+  "saved_layers": [
+    0,
+    12,
+    25,
+    49
+  ],
+  "layers": [
+    {
+      "layer": 0,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747,
+      "file": "qkv-layer-00-rank-0.pt",
+      "tensor_sha256": {
+        "q": "36a4aad803cfd198725c07af83b2cdfac7830743fd0a747abd5e870a44110533",
+        "k": "bdc90d4ca0508ffeb9d76ca71cd6e1589fc56c8fe496ff95e30c6587d6c2a6ab",
+        "v": "b71de04b10432c82c946f2b50c60ad4b647ae41420e23e7e2b7c0214c32a62c6",
+        "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+      },
+      "options": {
+        "scale": 0.08838834764831845,
+        "tau": 1.0,
+        "thresh_type": "diag",
+        "sink_start": 0,
+        "sink_tokens": 0,
+        "kv_splits": 1
+      }
+    },
+    {
+      "layer": 1,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 2,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 3,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 4,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 5,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 6,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 7,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 8,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 9,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 10,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 11,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 12,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747,
+      "file": "qkv-layer-12-rank-0.pt",
+      "tensor_sha256": {
+        "q": "14c3ebe6a9e413d1f00b6e6129f987a97764f419d8665529ac075185e13282f6",
+        "k": "d0b838d3e7c170657d4d42bd03e4b6d3948e461eb83a97204892726a5af506bd",
+        "v": "485e9ff8c2f5403b5b083757cc9cc2d4444f308fb5e6ca468fd674bee67cdf1e",
+        "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+      },
+      "options": {
+        "scale": 0.08838834764831845,
+        "tau": 1.0,
+        "thresh_type": "diag",
+        "sink_start": 0,
+        "sink_tokens": 0,
+        "kv_splits": 1
+      }
+    },
+    {
+      "layer": 13,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 14,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 15,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 16,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 17,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 18,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 19,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 20,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 21,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 22,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 23,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 24,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 25,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747,
+      "file": "qkv-layer-25-rank-0.pt",
+      "tensor_sha256": {
+        "q": "7d8acdb9c0ce02aa6fc1381699954754de6ab0edebfabcf98432b79e05bbdf4c",
+        "k": "d35f001fe743c1558507b8fa2d8e8ca5fbbeb4ab9477e75b44520a143587170f",
+        "v": "35f32e332ad7fcc7210e3ed5d3df3c7b838c9035056707ff7c90b48778bee76a",
+        "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+      },
+      "options": {
+        "scale": 0.08838834764831845,
+        "tau": 1.0,
+        "thresh_type": "diag",
+        "sink_start": 0,
+        "sink_tokens": 0,
+        "kv_splits": 1
+      }
+    },
+    {
+      "layer": 26,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 27,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 28,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 29,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 30,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 31,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 32,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 33,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 34,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 35,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 36,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 37,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 38,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 39,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 40,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 41,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 42,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 43,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 44,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 45,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 46,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 47,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 48,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747
+    },
+    {
+      "layer": 49,
+      "shape": [
+        1,
+        82747,
+        56,
+        128
+      ],
+      "used": 82747,
+      "file": "qkv-layer-49-rank-0.pt",
+      "tensor_sha256": {
+        "q": "2be671f5063c5f959db707ea5f32d65ba5308c08fe25439444ae1248c27ad673",
+        "k": "ba19c6e4d4b4b7b8c30629c8cd132b3dc2e6d900197d3647aa93bea78dd793bb",
+        "v": "5ef2e27bee9211af0262564d425bbc38bb91285556e32f4201192d487c6b4a54",
+        "exact_block_mask": "425f7137783422f9ada1d3aad550688c80fe3e971847b2108d06ae45c40e4539"
+      },
+      "options": {
+        "scale": 0.08838834764831845,
+        "tau": 1.0,
+        "thresh_type": "diag",
+        "sink_start": 0,
+        "sink_tokens": 0,
+        "kv_splits": 1
+      }
+    }
+  ],
+  "gpu": "NVIDIA GB200",
+  "capability": [
+    10,
+    0
+  ],
+  "trajectory": "dense",
+  "denoise_step": 0,
+  "timing_samples": 0
+}

@@ -1,0 +1,131 @@
+Same-input H3 attention replay and hardware-counter collection
+
+Use the immutable image and pins recorded in manifest.json. Do not compare
+these single-attention numbers directly with the parent report's full DiT
+forward numbers. This experiment uses BF16; it does not test quantization.
+
+1. Prepare a writable /work in the fixed image on an allocated GPU.
+
+   Copy ../power-followup/reproduce/ to /work/native/ and this directory's
+   reproduce/ to /work/study/. Reuse weights/caches without evicting them.
+   At least 350 GiB of disk is advised for model setup plus raw Q/K/V.
+
+   bash /work/native/bootstrap.sh /work
+
+   That bootstrap preserves the image's Torch/vLLM/CUDA libraries and pins
+   H3 weights and assets. It was executed from an empty cache on this GB200.
+   For capture, this study allocated one GB200, 160 GiB host RAM, 12 CPUs;
+   CPU offload was enabled for capacity. Offload is outside replay timing.
+
+2. Capture real inputs from the first full dense conditional forward.
+
+   H3_GPU_COUNT=1 H3_CPU_OFFLOAD=1 H3_RUN_ID=sm100-dense \
+     bash /work/study/run_capture.sh /work
+
+   Expected: results/qkv-sm100-dense/summary.json says capture_complete=true,
+   timing_samples=0, saved_layers=[0,12,25,49]. The intentional exception ends
+   generation before sampler progression and VAE decode. Four private .pt
+   files contain Q/K/V, options, exact mask and per-tensor hashes. Do not
+   upload weights or raw tensors into the evidence repository.
+
+3. Validate and replay on SM100, without a profiler attached.
+
+   export PYTHONPATH=/work/source/sana/techniques/sparse_backends:/work/study
+   export XDG_CACHE_HOME=/work/xdg-cache TRITON_CACHE_DIR=/work/triton-cache
+   export OMP_NUM_THREADS=4
+
+   python3 /work/study/replay.py --validate \
+     --output /work/study/compatibility-trace.json
+
+   python3 /work/study/replay.py \
+     --input /work/results/qkv-sm100-dense/qkv-layer-00-rank-0.pt \
+     --heads 28 --warmup 5 --repeats 15 --trace \
+     --output /work/study/results/manual/layer-00.json
+
+   The --trace diagnostic records actual in-kernel route ballots only after
+   timed samples. Its output must agree with the uninstrumented kernel.
+   On SM100 this is a generated private copy of the upstream mainloop that
+   replaces unused LSE output with route ballots; the production source is
+   unchanged. SM120 already has a debug_route_trace recipe.
+
+   Native uses real device dispatch. Experimental warp selects the SM120
+   recipe through the private _sol_attn_cute entry, compiled for the actual
+   CUDA device. It is a benchmark experiment, not a provider/native flag or
+   a proposed production dispatch change. It proved slower on SM100.
+
+   run_replays.sh runs all four layers and repeats layer 0 in a fresh Python
+   process. It includes the independent oracle and trace checks first.
+
+4. Match clocks with the provided host wrapper, if your site permits it.
+
+   In an existing Slurm allocation and named Pyxis container, copy the
+   scripts under HOST_WORK/study and telemetry under HOST_WORK/native.
+   Replace JOB_ID, HOST_WORK, CONTAINER and GPU_ID with your allocation.
+
+   srun --jobid=JOB_ID --overlap --ntasks=1 --cpus-per-task=1 --cpu-bind=none \
+     bash HOST_WORK/study/run_controlled.sh \
+     HOST_WORK CONTAINER GPU_ID 750 750mhz run_replays.sh
+
+   Only a single physical GPU index matching SLURM_STEP_GPUS is accepted.
+   The wrapper uses this site's explicitly delegated sudo nvidia-smi,
+   leaves power limits unchanged, logs telemetry and restores clocks on
+   exit/signals. It remounts HOST_WORK:/work for nested container steps.
+   Requested MHz is not proof of actual frequency: inspect telemetry.
+   If clock control is unavailable, report the default-policy condition
+   explicitly instead of labeling it a matched-clock experiment.
+
+5. Cross-architecture replay without regenerating inputs.
+
+   On an allocated SM120 GPU, use the same image. Copy reproduce/ to
+   /work/study and gpu_telemetry.py from the parent harness to /work/native.
+   Copy the exact layer-00 and layer-25 .pt files from step 2 into
+   /work/results/qkv-sm100-dense/. This node does not need model weights.
+
+   bash /work/study/bootstrap_replay.sh /work
+
+   Run the host wrapper with clock request 1500, label 1500mhz, and entry
+   run_sm120_replays.sh. On the measured RTX 6000D the actual clock rounded
+   to 1492 MHz throughout covered samples. The wrapper accepts the entry
+   name as its sixth argument. Alternatively, use the direct replay:
+
+   PYTHONPATH=/work/source/sana/techniques/sparse_backends:/work/study \
+     python3 /work/study/replay_sm120.py \
+     --input /work/results/qkv-sm100-dense/qkv-layer-00-rank-0.pt \
+     --heads 28 --trace --output /work/study/results/manual/layer-00.json
+
+   On SM120 native and explicit warp are identical implementations; their
+   separate samples are a control. Compare Dense to native. Hash checks
+   reject altered captures; manifest/capture hashes must match both GPUs.
+
+6. Hardware counters on SM100, separately from latency sampling.
+
+   NVIDIA's official redistributable used here:
+   https://developer.download.nvidia.com/compute/cuda/redist/nsight_compute/linux-sbsa/nsight_compute-linux-sbsa-2026.4.0.10-archive.tar.xz
+
+   Unpack under /work/study/tools/. Driver profiling access was enabled
+   (RmProfilingAdminOnly=0). No driver restriction was changed.
+
+   Use run_controlled.sh with 750 MHz and entry run_profiles.sh, or invoke
+   bash /work/study/run_profile.sh /work native 00
+   bash /work/study/run_profile.sh /work dense 00
+   bash /work/study/run_profile.sh /work warp 00
+
+   run_profile.sh selects one main kernel in the H3_SOL_PROFILE NVTX range.
+   It collects SpeedOfLight, ComputeWorkloadAnalysis, MemoryWorkloadAnalysis,
+   LaunchStats, Occupancy, SchedulerStats and WarpStateStats. SOL summaries
+   are precomputed outside this range to isolate the main kernel. The
+   unprofiled timing path continues to include normal preprocessing.
+   Nsight --clock-control none preserves the external clock lock. Generic
+   warnings about clocks are retained; measured counters and telemetry
+   must independently establish the operating point. Both .ncu-rep and
+   the newer compressed .ncu-repz suffix are handled by the final script.
+
+   The first native report succeeded, but its initial reader expected the
+   old suffix. The reader was corrected and the existing report exported;
+   Dense and warp were then collected. No native profile was discarded or
+   replaced. Raw profiler binaries/CSV are retained privately; readable
+   reports and selected metric values are in ncu/.
+
+Quality metrics in this study compare attention tensors. They cannot
+establish acceptable decoded-video SSIM, PSNR or LPIPS. No automatic
+threshold change, provider flag or production kernel replacement is made.

@@ -1,0 +1,21 @@
+REPLAY_ITERATION 0
+REPLAY_ITERATION 1
+REPLAY_ITERATION 2
+REPLAY_ITERATION 3
+REPLAY_ITERATION 4
+REPLAY_ITERATION 5
+REPLAY_ITERATION 6
+REPLAY_ITERATION 7
+REPLAY_ITERATION 8
+REPLAY_ITERATION 9
+REPLAY_ITERATION 10
+REPLAY_ITERATION 11
+REPLAY_ITERATION 12
+REPLAY_ITERATION 13
+REPLAY_ITERATION 14
+REPLAY_ITERATION 15
+REPLAY_ITERATION 16
+REPLAY_ITERATION 17
+REPLAY_ITERATION 18
+REPLAY_ITERATION 19
+{"runs": {"dense": {"median_ms": 705.21435546875, "min_ms": 705.1761474609375, "max_ms": 705.2484130859375, "cv_percent": 0.0025282127770579733}, "native": {"median_ms": 332.9237060546875, "min_ms": 332.6511535644531, "max_ms": 333.0692138671875, "cv_percent": 0.03403621621230632}, "warp": {"median_ms": 332.9929504394531, "min_ms": 332.8348388671875, "max_ms": 333.3669128417969, "cv_percent": 0.05366007019666854}}, "quality": {"native_vs_dense": {"finite": true, "bitwise_equal": false, "max_abs": 2.515625, "rmse": 0.09800029863420284, "relative_l2": 0.0902292745992714}, "warp_vs_dense": {"finite": true, "bitwise_equal": false, "max_abs": 2.515625, "rmse": 0.09800029863420284, "relative_l2": 0.0902292745992714}, "warp_vs_native": {"finite": true, "bitwise_equal": true, "max_abs": 0.0, "rmse": 0.0, "relative_l2": 0.0}}}

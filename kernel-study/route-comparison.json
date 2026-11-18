@@ -1,0 +1,22 @@
+[
+  {
+    "layer": 0,
+    "total_block_pairs": 46811772,
+    "sm100_native_vs_sm100_warp_different_pairs": 2,
+    "sm100_native_density": 0.44580719994961954,
+    "sm100_warp_density": 0.4458071572253236,
+    "sm120_native_density": 0.4458071572253236,
+    "input_hashes_equal": true,
+    "sm100_warp_vs_sm120_native_route_words_bitwise_equal": true
+  },
+  {
+    "layer": 25,
+    "total_block_pairs": 46811772,
+    "sm100_native_vs_sm100_warp_different_pairs": 0,
+    "sm100_native_density": 0.3809365302385904,
+    "sm100_warp_density": 0.3809365302385904,
+    "sm120_native_density": 0.3809365302385904,
+    "input_hashes_equal": true,
+    "sm100_warp_vs_sm120_native_route_words_bitwise_equal": true
+  }
+]

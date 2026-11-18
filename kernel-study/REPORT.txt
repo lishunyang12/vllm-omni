@@ -1,0 +1,125 @@
+H3 Ref2VA: why SM120 benefits while SM100 does not
+
+Scope: one attention operator on frozen, real H3 Q/K/V. These are NOT new
+full-DiT-forward or end-to-end video-generation latency results.
+
+Inputs were captured from the first conditional step of a complete dense H3
+forward on GB200. Layers 0, 12, 25 and 49 were saved before attention. Replays
+use the first 28 of 56 heads, shape [1, 82747, 28, 128], BF16. This matches
+the previous SP2 per-rank head count but is a separate single-GPU experiment.
+Layers 0 and 25 were transferred unchanged to RTX 6000D. Q/K/V and exact-mask
+SHA256 values are verified before every replay and match across both GPUs.
+The same tau=1, diag threshold and text/audio protection are retained.
+
+Fixed image: vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
+Omni capture: 3da353c45224f5863808da320d694be045c16ef8
+SOL: 088897e0c6a9cb970f00b43ab2177c3be7336b36
+SM100/SM120 dispatch is unchanged in the later d9ef632 release.
+
+5 warmups and 15 measured calls per variant, with rotating/reversing order.
+P50 below is CUDA-event latency in ms; synchronized wall samples are retained.
+Real SOL preprocessing is included. Route instrumentation and Nsight capture
+run separately after unprofiled sampling. No other GPU workload was launched
+by this study during timed sampling.
+
+GPU / actual clock     Layer  Exact blocks   Dense ms   SOL ms  Dense/SOL
+GB200 / 750 MHz            0        44.58%    129.206  192.752     0.670x
+GB200 / 750 MHz           12        37.91%    129.807  169.910     0.764x
+GB200 / 750 MHz           25        38.09%    129.775  171.213     0.758x
+GB200 / 750 MHz           49        36.50%    129.363  165.403     0.782x
+RTX 6000D / 1492 MHz       0        44.58%    705.215  332.897     2.118x
+RTX 6000D / 1492 MHz      25        38.09%    705.208  286.846     2.458x
+
+Layer 0 independent-process repeats:
+  GB200: Dense 129.217 ms, SOL 192.653 ms, ratio 0.671x.
+  RTX 6000D: Dense 705.214 ms, SOL 332.924 ms, ratio 2.118x.
+All measured per-process CVs are below 0.17%, including the experimental path.
+Stability applies to these frozen inputs and controlled operating points.
+
+What the experiment establishes:
+
+1. Different sparsity does not explain the cross-architecture result.
+   The two implementations select practically identical block pairs on the
+   same inputs. Layer 0 differs by 2 decisions out of 46,811,772 block pairs; layer 25 matches.
+   Both preserve all required Q rows and KV columns. The protected mask has
+   129 of 1293 blocks, forcing at least 18.958% of block pairs to be exact.
+   Actual density is 36.50%-44.58% in the sampled layers, not 18.958%.
+
+2. Simply using the SM120 warp-MMA recipe on SM100 is slower.
+   It compiles for the actual GB200, passes 12 independent hybrid-oracle
+   checks, and retains virtually identical routing. But layer 0 takes
+   309.341 ms versus current native SOL's 192.752 ms (60.5% slower).
+   The independent repeat is 309.332 ms. Other sampled layers also regress.
+   This was an isolated experimental recipe selection; production dispatch
+   and the PR implementation were not changed to use it.
+   On SM120, native and explicit warp select the same kernel and their
+   outputs are bitwise identical. Duplicate timing entries are controls,
+   not distinct optimization candidates.
+
+3. SM100 Dense uses the hardware more effectively than current SOL.
+   Nsight Compute 2026.4.0, layer 0, measured SM clock 750 MHz:
+
+   Metric                                    Dense      Native SOL
+   Main-kernel duration                     129.125 ms   191.973 ms
+   TC pipeline active, elapsed cycles        84.017%      51.546%
+   Tensor pipeline active, elapsed cycles    81.662%      50.724%
+   Achieved active-warp occupancy            24.973%      18.282%
+   Eligible warps per scheduler/cycle         0.690        0.491
+   Barrier stall cycles / issue-active cycle  0.161        0.995
+   Registers per thread                         128          168
+
+   Native SOL is limited to two resident CTAs by both registers and shared
+   memory, with about 86.27 KB dynamic shared memory per CTA. Its HBM
+   bandwidth utilization is only 0.18%, so HBM bandwidth saturation is not
+   the explanation. Its lower matrix-pipeline activity and heavier barrier
+   overhead support improving execution scheduling and resource usage.
+
+   Dense also has substantial long-scoreboard stalls (4.176 cycles versus
+   SOL 2.705). Therefore long-scoreboard stalls alone do NOT establish the
+   cause of the regression. Counter percentages are not useful-FLOP
+   efficiency. No PC/source-level attribution or measured optimization
+   speedup is claimed from these counters.
+
+   Dense's observed kernel uses a two-CTA cluster; native SOL uses a
+   single-CTA M64/N128 recipe. Testing a better-pipelined SM100 recipe and
+   alternative tile/CTA layouts is more justified than selecting warp-MMA
+   by default. Any layout experiment must retain independent block64
+   routing, exact-mask protection, and output correctness.
+
+4. Pair-padding is too small to explain the gap.
+   In layer 0 the SM100 N128 pairing duplicates a masked peer for only
+   0.448% as many blocks as the selected-block count. Routing selection,
+   packing, synchronization and their execution efficiency still matter,
+   but that padding quantity is not a 49% compute expansion.
+
+Clock and profiler qualifications:
+  GB200 requested/observed clock: 750/750 MHz. RTX requested/observed clock:
+  1500/1492 MHz; the latter is hardware rounding, not a claimed 1500 MHz
+  measurement. Each GPU compares Dense/SOL at its own matched clock.
+  Power limits stayed at 1200 W and 600 W. Covered timing polls have no
+  software power-cap or thermal flags. RTX has 45/45 sample-window coverage
+  per process; GB200 has 29-32/45 because calls can be shorter than the
+  sampling interval. Missing windows are explicit in clock-summary.json.
+  Both clock locks were restored after runs.
+  Nsight --clock-control none emits a generic warning because Nsight did
+  not set the clocks itself. The host wrapper and measured SM-frequency
+  counters establish the actual 750 MHz operating point. These profiled
+  durations are diagnostic and are not mixed into unprofiled samples.
+  Nsight warns that Dense uses Cluster Launch Control, so launch-count-
+  dependent metrics require care. The selected table avoids such counts.
+  No SM120 hardware-counter profile was collected in this follow-up.
+
+Correctness and quality scope:
+  Independent oracle checks: 12 passed on SM100, covering both threshold
+  modes, short/partial blocks and disjoint protected blocks. Route-tracing
+  probes preserve outputs bitwise in all captured real-input checks.
+  Experimental warp-vs-native relative L2 is 0.027%-0.053% on SM100.
+  SOL-vs-Dense single-attention relative L2 is recorded per layer; this is
+  approximation error, not decoded-video SSIM, PSNR or LPIPS. No decoded
+  quality acceptance or new generated-video result is claimed here.
+
+The experimental replacement was rejected on measured performance. The
+remaining work is upstream SM100 kernel optimization, not an Omni provider
+flag or a different quality/sparsity threshold. REPRODUCE.txt contains the
+scripts; comparison.csv, route-comparison.json, clock-summary.json and
+ncu/ contain the numerical evidence.

@@ -1,0 +1,198 @@
+{
+  "passed": 12,
+  "cases": [
+    {
+      "tokens": 63,
+      "tau": 1000000.0,
+      "threshold": "diag",
+      "variant": "native",
+      "finite": true,
+      "bitwise_equal": false,
+      "max_abs": 0.002460777759552002,
+      "rmse": 0.0004298359333513154,
+      "relative_l2": 0.002094534723893538
+    },
+    {
+      "tokens": 63,
+      "tau": 1000000.0,
+      "threshold": "diag",
+      "variant": "warp",
+      "finite": true,
+      "bitwise_equal": false,
+      "max_abs": 0.002460777759552002,
+      "rmse": 0.0004298359333513154,
+      "relative_l2": 0.002094534723893538
+    },
+    {
+      "tokens": 63,
+      "tau": 1000000.0,
+      "threshold": "exact",
+      "variant": "native",
+      "finite": true,
+      "bitwise_equal": false,
+      "max_abs": 0.002460777759552002,
+      "rmse": 0.0004298359333513154,
+      "relative_l2": 0.002094534723893538
+    },
+    {
+      "tokens": 63,
+      "tau": 1000000.0,
+      "threshold": "exact",
+      "variant": "warp",
+      "finite": true,
+      "bitwise_equal": false,
+      "max_abs": 0.002460777759552002,
+      "rmse": 0.0004298359333513154,
+      "relative_l2": 0.002094534723893538
+    },
+    {
+      "tokens": 257,
+      "tau": 1000000.0,
+      "threshold": "diag",
+      "variant": "native",
+      "finite": true,
+      "bitwise_equal": false,
+      "max_abs": 0.0020005106925964355,
+      "rmse": 0.00022003398411405632,
+      "relative_l2": 0.002142224486499273
+    },
+    {
+      "tokens": 257,
+      "tau": 1000000.0,
+      "threshold": "diag",
+      "variant": "warp",
+      "finite": true,
+      "bitwise_equal": false,
+      "max_abs": 0.0019057393074035645,
+      "rmse": 0.00021814554054121538,
+      "relative_l2": 0.002123838826305005
+    },
+    {
+      "tokens": 257,
+      "tau": 1000000.0,
+      "threshold": "exact",
+      "variant": "native",
+      "finite": true,
+      "bitwise_equal": false,
+      "max_abs": 0.0020005106925964355,
+      "rmse": 0.00022003398411405632,
+      "relative_l2": 0.002142224486499273
+    },
+    {
+      "tokens": 257,
+      "tau": 1000000.0,
+      "threshold": "exact",
+      "variant": "warp",
+      "finite": true,
+      "bitwise_equal": false,
+      "max_abs": 0.0019057393074035645,
+      "rmse": 0.00021814554054121538,
+      "relative_l2": 0.002123838826305005
+    },
+    {
+      "tokens": 513,
+      "tau": 1.5,
+      "threshold": "diag",
+      "variant": "native",
+      "finite": true,
+      "bitwise_equal": false,
+      "max_abs": 0.0010861754417419434,
+      "rmse": 0.00014896464952224333,
+      "relative_l2": 0.002150638523216103
+    },
+    {
+      "tokens": 513,
+      "tau": 1.5,
+      "threshold": "diag",
+      "variant": "warp",
+      "finite": true,
+      "bitwise_equal": false,
+      "max_abs": 0.0010861754417419434,
+      "rmse": 0.0001479101507204165,
+      "relative_l2": 0.0021354144700386052
+    },
+    {
+      "tokens": 513,
+      "tau": 1.5,
+      "threshold": "exact",
+      "variant": "native",
+      "finite": true,
+      "bitwise_equal": false,
+      "max_abs": 0.0010861754417419434,
+      "rmse": 0.0001498970808887109,
+      "relative_l2": 0.0021537055818829265
+    },
+    {
+      "tokens": 513,
+      "tau": 1.5,
+      "threshold": "exact",
+      "variant": "warp",
+      "finite": true,
+      "bitwise_equal": false,
+      "max_abs": 0.0010934770107269287,
+      "rmse": 0.00014870749435443067,
+      "relative_l2": 0.002136613726966057
+    }
+  ],
+  "trace_checks": {
+    "native": {
+      "output": {
+        "finite": true,
+        "bitwise_equal": true,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "relative_l2": 0.0
+      },
+      "routing": {
+        "exact_block_fraction": 0.6419753086419753,
+        "protected_blocks": 2,
+        "protected_pair_lower_bound": 0.3950617283950617,
+        "protected_pairs_missing": 0,
+        "per_head_fraction": [
+          0.6419753086419753,
+          0.6419753086419753
+        ],
+        "per_query_exact_count_percentiles": [
+          4.0,
+          4.0,
+          5.0,
+          9.0,
+          9.0
+        ],
+        "sm100_padded_peer_blocks": 14,
+        "sm100_padding_fraction_of_selected": 0.1346153846153846,
+        "unprotected_query_exact_fraction": 0.5396825396825397
+      }
+    },
+    "warp": {
+      "output": {
+        "finite": true,
+        "bitwise_equal": true,
+        "max_abs": 0.0,
+        "rmse": 0.0,
+        "relative_l2": 0.0
+      },
+      "routing": {
+        "exact_block_fraction": 0.6419753086419753,
+        "protected_blocks": 2,
+        "protected_pair_lower_bound": 0.3950617283950617,
+        "protected_pairs_missing": 0,
+        "per_head_fraction": [
+          0.6419753086419753,
+          0.6419753086419753
+        ],
+        "per_query_exact_count_percentiles": [
+          4.0,
+          4.0,
+          5.0,
+          9.0,
+          9.0
+        ],
+        "sm100_padded_peer_blocks": 14,
+        "sm100_padding_fraction_of_selected": 0.1346153846153846,
+        "unprotected_query_exact_fraction": 0.5396825396825397
+      }
+    }
+  },
+  "trace_different_decision_fraction": 0.0
+}

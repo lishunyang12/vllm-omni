@@ -1,0 +1,286 @@
+{
+  "sm100": [
+    {
+      "file": "layer-00-repeat.json",
+      "variants": {
+        "dense": {
+          "covered_samples": 7,
+          "total_samples": 15,
+          "matching_polls": 7,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "native": {
+          "covered_samples": 10,
+          "total_samples": 15,
+          "matching_polls": 10,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "warp": {
+          "covered_samples": 15,
+          "total_samples": 15,
+          "matching_polls": 15,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        }
+      }
+    },
+    {
+      "file": "layer-00.json",
+      "variants": {
+        "dense": {
+          "covered_samples": 7,
+          "total_samples": 15,
+          "matching_polls": 7,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "native": {
+          "covered_samples": 9,
+          "total_samples": 15,
+          "matching_polls": 9,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "warp": {
+          "covered_samples": 15,
+          "total_samples": 15,
+          "matching_polls": 16,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        }
+      }
+    },
+    {
+      "file": "layer-12.json",
+      "variants": {
+        "dense": {
+          "covered_samples": 7,
+          "total_samples": 15,
+          "matching_polls": 7,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "native": {
+          "covered_samples": 9,
+          "total_samples": 15,
+          "matching_polls": 9,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "warp": {
+          "covered_samples": 13,
+          "total_samples": 15,
+          "matching_polls": 13,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        }
+      }
+    },
+    {
+      "file": "layer-25.json",
+      "variants": {
+        "dense": {
+          "covered_samples": 7,
+          "total_samples": 15,
+          "matching_polls": 7,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "native": {
+          "covered_samples": 7,
+          "total_samples": 15,
+          "matching_polls": 7,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "warp": {
+          "covered_samples": 15,
+          "total_samples": 15,
+          "matching_polls": 15,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        }
+      }
+    },
+    {
+      "file": "layer-49.json",
+      "variants": {
+        "dense": {
+          "covered_samples": 6,
+          "total_samples": 15,
+          "matching_polls": 6,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "native": {
+          "covered_samples": 8,
+          "total_samples": 15,
+          "matching_polls": 8,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "warp": {
+          "covered_samples": 15,
+          "total_samples": 15,
+          "matching_polls": 15,
+          "actual_mhz": [
+            750
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        }
+      }
+    }
+  ],
+  "sm120": [
+    {
+      "file": "layer-00-repeat.json",
+      "variants": {
+        "dense": {
+          "covered_samples": 15,
+          "total_samples": 15,
+          "matching_polls": 38,
+          "actual_mhz": [
+            1492
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "native": {
+          "covered_samples": 15,
+          "total_samples": 15,
+          "matching_polls": 18,
+          "actual_mhz": [
+            1492
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "warp": {
+          "covered_samples": 15,
+          "total_samples": 15,
+          "matching_polls": 19,
+          "actual_mhz": [
+            1492
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        }
+      }
+    },
+    {
+      "file": "layer-00.json",
+      "variants": {
+        "dense": {
+          "covered_samples": 15,
+          "total_samples": 15,
+          "matching_polls": 39,
+          "actual_mhz": [
+            1492
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "native": {
+          "covered_samples": 15,
+          "total_samples": 15,
+          "matching_polls": 20,
+          "actual_mhz": [
+            1492
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "warp": {
+          "covered_samples": 15,
+          "total_samples": 15,
+          "matching_polls": 17,
+          "actual_mhz": [
+            1492
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        }
+      }
+    },
+    {
+      "file": "layer-25.json",
+      "variants": {
+        "dense": {
+          "covered_samples": 15,
+          "total_samples": 15,
+          "matching_polls": 39,
+          "actual_mhz": [
+            1492
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "native": {
+          "covered_samples": 15,
+          "total_samples": 15,
+          "matching_polls": 15,
+          "actual_mhz": [
+            1492
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        },
+        "warp": {
+          "covered_samples": 15,
+          "total_samples": 15,
+          "matching_polls": 17,
+          "actual_mhz": [
+            1492
+          ],
+          "power_cap_flags": 0,
+          "thermal_flags": 0
+        }
+      }
+    }
+  ]
+}

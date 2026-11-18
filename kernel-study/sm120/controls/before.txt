@@ -1,0 +1,70 @@
+
+==============NVSMI LOG==============
+
+Timestamp                                              : Wed Nov 18 17:18:26 2026
+Driver Version                                         : 595.84.01
+CUDA Version                                           : 13.2
+
+Attached GPUs                                          : 1
+GPU 00000000:C1:00.0
+    GPU Power Readings
+        Average Power Draw                             : 30.31 W
+        Instantaneous Power Draw                       : 30.50 W
+        Current Power Limit                            : 600.00 W
+        Requested Power Limit                          : 600.00 W
+        Default Power Limit                            : 600.00 W
+        Min Power Limit                                : 200.00 W
+        Max Power Limit                                : 600.00 W
+    Power Samples
+        Duration                                       : 118.00 sec
+        Number of Samples                              : 119
+        Max                                            : 30.60 W
+        Min                                            : 29.03 W
+        Avg                                            : 29.39 W
+    GPU Memory Power Readings
+        Average Power Draw                             : N/A
+        Instantaneous Power Draw                       : N/A
+    Module Power Readings
+        Average Power Draw                             : N/A
+        Instantaneous Power Draw                       : N/A
+        Current Power Limit                            : N/A
+        Requested Power Limit                          : N/A
+        Default Power Limit                            : N/A
+        Min Power Limit                                : N/A
+        Max Power Limit                                : N/A
+    EDPp Multiplier                                    : N/A
+    Clocks
+        Graphics                                       : 180 MHz
+        SM                                             : 180 MHz
+        Memory                                         : 405 MHz
+        Video                                          : 600 MHz
+    Applications Clocks
+        Graphics                                       : Requested functionality has been deprecated
+        Memory                                         : Requested functionality has been deprecated
+    Default Applications Clocks
+        Graphics                                       : Requested functionality has been deprecated
+        Memory                                         : Requested functionality has been deprecated
+    Deferred Clocks
+        Memory                                         : N/A
+    Max Clocks
+        Graphics                                       : 2430 MHz
+        SM                                             : 2430 MHz
+        Memory                                         : 12481 MHz
+        Video                                          : 2107 MHz
+    Max Customer Boost Clocks
+        Graphics                                       : 2430 MHz
+    SM Clock Samples
+        Duration                                       : N/A
+        Number of Samples                              : N/A
+        Max                                            : N/A
+        Min                                            : N/A
+        Avg                                            : N/A
+    Memory Clock Samples
+        Duration                                       : N/A
+        Number of Samples                              : N/A
+        Max                                            : N/A
+        Min                                            : N/A
+        Avg                                            : N/A
+    Clock Policy
+        Auto Boost                                     : N/A
+        Auto Boost Default                             : N/A

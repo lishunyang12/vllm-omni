@@ -1,3 +1,7 @@
+Same-input kernel study (2026-11-18): see kernel-study/REPORT.txt for frozen
+H3 Q/K/V replay on SM100/SM120, routing density and Nsight counters. These
+are single-attention measurements, separate from the full-DiT results below.
+
 Follow-up (2026-11-18): see power-followup/REPORT.txt for controlled SM100 clocks
 and B300A/GB300 SM103 measurements. Matched-clock SOL is slower than Dense;
 the old equal-clock availability limitation below has been resolved.
