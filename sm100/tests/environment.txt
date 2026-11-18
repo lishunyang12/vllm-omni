@@ -237,7 +237,7 @@ sentencepiece==0.2.3
 sentry-sdk==2.74.0
 setproctitle==1.3.8
 setuptools==80.10.2
-setuptools-scm==[IP]
+setuptools-scm==10.3.4
 shellingham==1.5.4
 six==1.17.0
 sniffio==1.3.1
