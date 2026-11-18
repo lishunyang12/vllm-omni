@@ -1,0 +1,9 @@
+{
+  "rank": 1,
+  "mode": "capture",
+  "wall_s": 16.546042511006817,
+  "attention_calls": 50,
+  "events": [],
+  "routing": [],
+  "timing_note": "Nested CUDA event intervals; do not sum parent and child spans. Instrumented run, not baseline latency."
+}

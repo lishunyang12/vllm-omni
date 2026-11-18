@@ -1,0 +1,19 @@
+Process 963074: python3 /work/microbench.py --kind bsa --input /work/bsa-input-rank0.pt --output /work/results/bsa-default
+Python v3.12.3 (/usr/bin/python3.12)
+
+Thread 963074 (active): "MainThread"
+    synchronize (torch/cuda/__init__.py:1371)
+        Arguments:
+            device: None
+    bench (microbench.py:78)
+        Arguments:
+            name: "eager"
+            fn: <function at [ADDRESS]>
+        Locals:
+            samples: []
+            i: 0
+            start: <Event at [ADDRESS]>
+            stop: <Event at [ADDRESS]>
+            begin: 7312443.399119865
+            output: <Tensor at [ADDRESS]>
+    <module> (microbench.py:95)

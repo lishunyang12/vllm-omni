@@ -1,0 +1,7 @@
+Using CPython 3.12.3 interpreter at: /usr/bin/python3
+Resolved 1 package in 110ms
+Downloading py-spy (2.8MiB)
+ Downloaded py-spy
+Prepared 1 package in 19ms
+Installed 1 package in 2ms
+ + py-spy==0.4.3

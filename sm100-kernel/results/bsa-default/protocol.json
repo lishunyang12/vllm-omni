@@ -1,0 +1,49 @@
+{
+  "gpu": "NVIDIA DRIVE P2021",
+  "capability": [
+    10,
+    0
+  ],
+  "torch": "2.16.0.dev20261009+cu134",
+  "input_file": "bsa-input-rank0.pt",
+  "shapes": [
+    [
+      1,
+      82752,
+      28,
+      128
+    ],
+    [
+      1,
+      82752,
+      28,
+      128
+    ],
+    [
+      1,
+      82752,
+      28,
+      128
+    ],
+    [
+      1,
+      28,
+      1293,
+      1293
+    ]
+  ],
+  "initial_allow_tf32": false,
+  "initial_float32_precision": "highest",
+  "runs": {},
+  "disable_clc": false,
+  "metadata_checks": {
+    "counts_min": 132,
+    "counts_max": 1293,
+    "index_min": -1,
+    "index_max": 1292,
+    "capacity": 1293,
+    "counts_match_valid_indices": true,
+    "last_block_size": 59,
+    "qkv_finite": true
+  }
+}

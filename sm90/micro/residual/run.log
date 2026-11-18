@@ -1,0 +1,73 @@
+MICRO_ENTER mode=eager iteration=0
+MICRO_EXIT mode=eager iteration=0 wall_ms=241.779715 cuda_ms=241.714981
+MICRO_ENTER mode=eager iteration=1
+MICRO_EXIT mode=eager iteration=1 wall_ms=138.267343 cuda_ms=138.239655
+MICRO_ENTER mode=eager iteration=2
+MICRO_EXIT mode=eager iteration=2 wall_ms=137.490738 cuda_ms=137.465149
+MICRO_ENTER mode=eager iteration=3
+MICRO_EXIT mode=eager iteration=3 wall_ms=137.505298 cuda_ms=137.481796
+MICRO_ENTER mode=eager iteration=4
+MICRO_EXIT mode=eager iteration=4 wall_ms=137.693329 cuda_ms=137.666336
+MICRO_ENTER mode=eager iteration=5
+MICRO_EXIT mode=eager iteration=5 wall_ms=137.651666 cuda_ms=137.626236
+MICRO_ENTER mode=eager iteration=6
+MICRO_EXIT mode=eager iteration=6 wall_ms=137.631314 cuda_ms=137.605637
+MICRO_ENTER mode=eager iteration=7
+MICRO_EXIT mode=eager iteration=7 wall_ms=137.654737 cuda_ms=137.629822
+MICRO_ENTER mode=eager iteration=8
+MICRO_EXIT mode=eager iteration=8 wall_ms=137.619377 cuda_ms=137.595078
+MICRO_ENTER mode=eager iteration=9
+MICRO_EXIT mode=eager iteration=9 wall_ms=137.554641 cuda_ms=137.529404
+MICRO_ENTER mode=eager iteration=10
+MICRO_EXIT mode=eager iteration=10 wall_ms=137.642449 cuda_ms=137.617599
+MICRO_ENTER mode=eager iteration=11
+MICRO_EXIT mode=eager iteration=11 wall_ms=137.626737 cuda_ms=137.602692
+MICRO_ENTER mode=cuda_graph_same_math iteration=0
+MICRO_EXIT mode=cuda_graph_same_math iteration=0 wall_ms=130.509159 cuda_ms=130.461731
+MICRO_ENTER mode=cuda_graph_same_math iteration=1
+MICRO_EXIT mode=cuda_graph_same_math iteration=1 wall_ms=129.596553 cuda_ms=129.566238
+MICRO_ENTER mode=cuda_graph_same_math iteration=2
+MICRO_EXIT mode=cuda_graph_same_math iteration=2 wall_ms=129.356489 cuda_ms=129.329117
+MICRO_ENTER mode=cuda_graph_same_math iteration=3
+MICRO_EXIT mode=cuda_graph_same_math iteration=3 wall_ms=129.353385 cuda_ms=129.323517
+MICRO_ENTER mode=cuda_graph_same_math iteration=4
+MICRO_EXIT mode=cuda_graph_same_math iteration=4 wall_ms=129.122506 cuda_ms=129.095810
+MICRO_ENTER mode=cuda_graph_same_math iteration=5
+MICRO_EXIT mode=cuda_graph_same_math iteration=5 wall_ms=129.419081 cuda_ms=129.392899
+MICRO_ENTER mode=cuda_graph_same_math iteration=6
+MICRO_EXIT mode=cuda_graph_same_math iteration=6 wall_ms=129.313417 cuda_ms=129.284668
+MICRO_ENTER mode=cuda_graph_same_math iteration=7
+MICRO_EXIT mode=cuda_graph_same_math iteration=7 wall_ms=129.302729 cuda_ms=129.279068
+MICRO_ENTER mode=cuda_graph_same_math iteration=8
+MICRO_EXIT mode=cuda_graph_same_math iteration=8 wall_ms=129.133578 cuda_ms=129.111130
+MICRO_ENTER mode=cuda_graph_same_math iteration=9
+MICRO_EXIT mode=cuda_graph_same_math iteration=9 wall_ms=129.273738 cuda_ms=129.248474
+MICRO_ENTER mode=cuda_graph_same_math iteration=10
+MICRO_EXIT mode=cuda_graph_same_math iteration=10 wall_ms=129.278666 cuda_ms=129.253601
+MICRO_ENTER mode=cuda_graph_same_math iteration=11
+MICRO_EXIT mode=cuda_graph_same_math iteration=11 wall_ms=129.349225 cuda_ms=129.322845
+MICRO_ENTER mode=tf32_diagnostic_only iteration=0
+MICRO_EXIT mode=tf32_diagnostic_only iteration=0 wall_ms=118.990280 cuda_ms=118.964195
+MICRO_ENTER mode=tf32_diagnostic_only iteration=1
+MICRO_EXIT mode=tf32_diagnostic_only iteration=1 wall_ms=118.208649 cuda_ms=118.181564
+MICRO_ENTER mode=tf32_diagnostic_only iteration=2
+MICRO_EXIT mode=tf32_diagnostic_only iteration=2 wall_ms=117.769067 cuda_ms=117.744766
+MICRO_ENTER mode=tf32_diagnostic_only iteration=3
+MICRO_EXIT mode=tf32_diagnostic_only iteration=3 wall_ms=117.676363 cuda_ms=117.652061
+MICRO_ENTER mode=tf32_diagnostic_only iteration=4
+MICRO_EXIT mode=tf32_diagnostic_only iteration=4 wall_ms=117.726859 cuda_ms=117.701668
+MICRO_ENTER mode=tf32_diagnostic_only iteration=5
+MICRO_EXIT mode=tf32_diagnostic_only iteration=5 wall_ms=117.757163 cuda_ms=117.731613
+MICRO_ENTER mode=tf32_diagnostic_only iteration=6
+MICRO_EXIT mode=tf32_diagnostic_only iteration=6 wall_ms=117.727211 cuda_ms=117.701218
+MICRO_ENTER mode=tf32_diagnostic_only iteration=7
+MICRO_EXIT mode=tf32_diagnostic_only iteration=7 wall_ms=117.714379 cuda_ms=117.689667
+MICRO_ENTER mode=tf32_diagnostic_only iteration=8
+MICRO_EXIT mode=tf32_diagnostic_only iteration=8 wall_ms=117.758315 cuda_ms=117.733955
+MICRO_ENTER mode=tf32_diagnostic_only iteration=9
+MICRO_EXIT mode=tf32_diagnostic_only iteration=9 wall_ms=117.613228 cuda_ms=117.588036
+MICRO_ENTER mode=tf32_diagnostic_only iteration=10
+MICRO_EXIT mode=tf32_diagnostic_only iteration=10 wall_ms=117.757547 cuda_ms=117.733437
+MICRO_ENTER mode=tf32_diagnostic_only iteration=11
+MICRO_EXIT mode=tf32_diagnostic_only iteration=11 wall_ms=117.724363 cuda_ms=117.700867
+MICRO_COMPLETE {"eager": {"samples": [{"wall_ms": 137.50529801473022, "cuda_ms": 137.48179626464844}, {"wall_ms": 137.6933288993314, "cuda_ms": 137.6663360595703}, {"wall_ms": 137.65166595112532, "cuda_ms": 137.62623596191406}, {"wall_ms": 137.6313139917329, "cuda_ms": 137.6056365966797}, {"wall_ms": 137.65473698731512, "cuda_ms": 137.62982177734375}, {"wall_ms": 137.6193769974634, "cuda_ms": 137.59507751464844}, {"wall_ms": 137.55464099813253, "cuda_ms": 137.52940368652344}, {"wall_ms": 137.64244900085032, "cuda_ms": 137.6175994873047}, {"wall_ms": 137.62673700693995, "cuda_ms": 137.60269165039062}], "median_wall_ms": 137.6313139917329, "median_cuda_ms": 137.6056365966797, "finite": true}, "cuda_graph_same_math": {"samples": [{"wall_ms": 129.3533849529922, "cuda_ms": 129.32351684570312}, {"wall_ms": 129.12250601220876, "cuda_ms": 129.09580993652344}, {"wall_ms": 129.4190810294822, "cuda_ms": 129.3928985595703}, {"wall_ms": 129.31341701187193, "cuda_ms": 129.28466796875}, {"wall_ms": 129.30272903759032, "cuda_ms": 129.27906799316406}, {"wall_ms": 129.13357804063708, "cuda_ms": 129.1111297607422}, {"wall_ms": 129.27373801358044, "cuda_ms": 129.24847412109375}, {"wall_ms": 129.2786659905687, "cuda_ms": 129.25360107421875}, {"wall_ms": 129.34922496788204, "cuda_ms": 129.32284545898438}], "median_wall_ms": 129.30272903759032, "median_cuda_ms": 129.27906799316406, "finite": true, "bitwise_equal_to_eager": true}, "tf32_diagnostic_only": {"samples": [{"wall_ms": 117.67636297736317, "cuda_ms": 117.65206146240234}, {"wall_ms": 117.72685893811285, "cuda_ms": 117.70166778564453}, {"wall_ms": 117.75716301053762, "cuda_ms": 117.73161315917969}, {"wall_ms": 117.72721097804606, "cuda_ms": 117.70121765136719}, {"wall_ms": 117.71437898278236, "cuda_ms": 117.68966674804688}, {"wall_ms": 117.7583149401471, "cuda_ms": 117.73395538330078}, {"wall_ms": 117.61322792153805, "cuda_ms": 117.5880355834961}, {"wall_ms": 117.75754694826901, "cuda_ms": 117.73343658447266}, {"wall_ms": 117.72436299361289, "cuda_ms": 117.70086669921875}], "median_wall_ms": 117.72685893811285, "median_cuda_ms": 117.70121765136719, "finite": true, "max_abs_diff": 0.5, "mean_abs_diff": 4.650393748306669e-06, "relative_l2": 1.848393731052056e-05, "bitwise_equal_to_eager": false, "note": "Changes arithmetic precision; no generated-video quality validation or production change."}}

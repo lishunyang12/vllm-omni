@@ -1,0 +1,2 @@
+index, name, compute_cap, memory.total [MiB], driver_version
+0, NVIDIA DRIVE P2021, 10.0, 48895 MiB, 595.84.01

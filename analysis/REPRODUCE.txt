@@ -1,0 +1,49 @@
+Reproduce the H3 profile using the pinned image in REPORT.txt.
+
+Preparation in a fresh work mount:
+  cp -a reproduce/bundle /path/to/work/bundle
+  cp -a reproduce/profile /path/to/work/profile
+Expose exactly two NVLink GPUs and host IPC, mount work as /work, and allow
+300+ GiB checkpoint cache plus space for traces and optional captured tensors.
+Inside the image:
+  bash /work/profile/bootstrap.sh /work
+  H3_PROFILE_MODE=both H3_PROFILE_BACKEND=SOL_ATTN bash /work/profile/run_profile.sh /work
+  H3_PROFILE_MODE=both H3_PROFILE_BACKEND=CUDNN_ATTN bash /work/profile/run_profile.sh /work
+
+The script uses model CPU offload below 110GiB GPU memory, matching GH20096GB.
+All DiT weights are resident during measured replays. It records 3 warmups + 3
+baseline repeats, a separate per-stage CUDA-event forward, and a separate forward
+with a PyTorch CPU+CUDA trace of rank0 DiT layer0. The token refiner is labeled
+separately. Output: /work/profile/results/ref2va-<backend>-both/.
+The original completion exception deliberately stops before sampler/VAE decoding.
+Use fresh result directories; existing rank reports cause the harness to refuse.
+
+Capture the actual layer49 inputs for standalone diagnostics:
+  H3_PROFILE_MODE=capture H3_PROFILE_BACKEND=SOL_ATTN bash /work/profile/run_profile.sh /work
+This run synchronizes BSA calls and writes two local .pt files (about 3.2GB total)
+under /work/profile/results/ref2va-SOL_ATTN-capture/. It is diagnostic, not a timing
+run. Captured tensors are not included in the public evidence branch.
+
+Residual ablation on one GH200, after the model process has exited:
+  python3 /work/profile/microbench.py --kind residual \
+    --input /work/profile/results/ref2va-SOL_ATTN-capture/residual-input-rank0.pt \
+    --source /work/source/head/vllm_omni/diffusion/attention/ops/sol_attn.py \
+    --output /work/profile/micro/residual
+This runs eager, identical-math CUDA Graph, and a separately labeled TF32
+experiment, checking tensor differences outside timing. It changes no PR code.
+
+Isolated SM100 replay in the same image (frontend1.31.0, CuTe DSL4.8.0):
+Transfer the generated bsa-input-rank0.pt and microbench.py; no model is needed.
+  timeout --kill-after=15s 240s python3 microbench.py --kind bsa \
+    --input bsa-input-rank0.pt --output results/bsa-default
+Separate diagnostic variants use a 90s timeout and fresh output directories:
+  add --disable-clc
+  add --full-block-sizes
+The latter changes the tail-block semantics and is only a fault-localization test.
+The tested SM100 was DRIVE P2021; do not present its outcome as a GB200 latency.
+
+Published traces are gzip-compressed Chrome JSON. Decompress and open the JSON in
+Perfetto or chrome://tracing. The trace has profiler overhead; use stage-times.csv
+and the separate baseline samples for latency analysis. Avoid double-counting
+nested stages. Run `python3 analyze.py` at the evidence root to regenerate the
+aggregate CSV/JSON files and check both-rank A/B input hashes.

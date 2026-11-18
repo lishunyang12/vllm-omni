@@ -1,0 +1,25 @@
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg    # of Calls  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                     H3/attention.Dense         0.00%       0.000us         0.00%       0.000us       0.000us     160.298ms       100.02%     160.298ms     160.298ms             1  
+                         aten::_cudnn_attention_forward         0.03%      56.095us         0.21%     339.295us     339.295us     160.272ms       100.00%     160.272ms     160.272ms             1  
+cudnn_generated_fort_native_sdpa_sm90_flash_fprop_wg...         0.00%       0.000us         0.00%       0.000us       0.000us     160.271ms       100.00%     160.271ms     160.271ms             1  
+                                        Memset (Device)         0.00%       0.000us         0.00%       0.000us       0.000us       1.120us         0.00%       1.120us       1.120us             1  
+                                     H3/attention.Dense         0.09%     136.927us         0.32%     517.214us     517.214us       0.000us         0.00%     160.272ms     160.272ms             1  
+                                            aten::slice         0.00%       6.656us         0.01%       9.440us       4.720us       0.000us         0.00%       0.000us       0.000us             2  
+                                       aten::as_strided         0.00%       5.632us         0.00%       5.632us       0.939us       0.000us         0.00%       0.000us       0.000us             6  
+                                          aten::permute         0.00%       5.888us         0.01%       8.736us       2.184us       0.000us         0.00%       0.000us       0.000us             4  
+                     aten::scaled_dot_product_attention         0.01%      17.216us         0.23%     362.111us     362.111us       0.000us         0.00%     160.272ms     160.272ms             1  
+              aten::_scaled_dot_product_cudnn_attention         0.00%       5.600us         0.21%     344.895us     344.895us       0.000us         0.00%     160.272ms     160.272ms             1  
+                                            aten::empty         0.01%      18.752us         0.01%      18.752us       9.376us       0.000us         0.00%       0.000us       0.000us             2  
+                                Activity Buffer Request         0.13%     206.816us         0.13%     206.816us     206.816us       0.000us         0.00%       0.000us       0.000us             1  
+                                  cudaStreamIsCapturing         0.00%       4.032us         0.00%       4.032us       4.032us       0.000us         0.00%       0.000us       0.000us             1  
+                                       aten::empty_like         0.00%       2.720us         0.01%      16.672us      16.672us       0.000us         0.00%       0.000us       0.000us             1  
+                                    aten::empty_strided         0.01%      13.952us         0.01%      13.952us      13.952us       0.000us         0.00%       0.000us       0.000us             1  
+                                        cudaMemsetAsync         0.01%      14.496us         0.01%      14.496us      14.496us       0.000us         0.00%       0.000us       0.000us             1  
+                                     cudaGetErrorString         0.00%       0.544us         0.00%       0.544us       0.272us       0.000us         0.00%       0.000us       0.000us             2  
+                                       cuLaunchKernelEx         0.01%      21.888us         0.01%      21.888us      21.888us       0.000us         0.00%       0.000us       0.000us             1  
+                                  cudaDeviceSynchronize        99.68%     160.198ms        99.68%     160.198ms      80.099ms       0.000us         0.00%       0.000us       0.000us             2  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+Self CPU time total: 160.716ms
+Self CUDA time total: 160.272ms

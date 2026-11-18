@@ -1,0 +1,20 @@
+Process 963074: python3 /work/microbench.py --kind bsa --input /work/bsa-input-rank0.pt --output /work/results/bsa-default
+Python v3.12.3 (/usr/bin/python3.12)
+
+Thread 963074 (active): "MainThread"
+    clock_gettime (libc.so.6)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    [ADDRESS] (libcuda.so.615.71.09)
+    cuCtxSynchronize_v2 (libcuda.so.615.71.09)
+    [ADDRESS] (libcudart.so.13)
+    cudaDeviceSynchronize (libcudart.so.13)
+    c10::cuda::device_synchronize (libc10_cuda.so)
+    THCPModule_cudaSynchronize (libtorch_python.so)
+    synchronize (torch/cuda/__init__.py:1371)
+    bench (microbench.py:78)
+    <module> (microbench.py:95)
+    [ADDRESS] (libc.so.6)

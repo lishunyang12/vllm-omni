@@ -1,0 +1,102 @@
+H3 Ref2VA: why SOL is slower on GH200, and the isolated SM100 stall
+2026-11-18 UTC — PR #10513; production source 6f5a99768f66, unchanged by test-only fix 731ea29270e2.
+
+Finding: the default SOL residual merge costs more than sparse attention saves.
+On 2x GH200 96GB (TP1/Ulysses2), DiT attention costs 8.173s with Dense.
+The cuDNN sparse kernel costs 3.798s, saving approximately 4.375s, but SOL's
+additional residual merge costs 7.107s. Routing, index conversion and wrapper
+work add further cost. This explains the observed full-forward slowdown.
+
+Rank 0 CUDA-event phase totals over all 50 DiT layers (seconds):
+                                     Dense       SOL
+DiT attention, inclusive              8.173     11.230
+  SOL prepare                          N/A      0.028
+  SOL routing                          N/A      0.058
+  SOL exact sparse path, inclusive     N/A      3.928
+    map-to-indices                     N/A      0.124
+    cuDNN BSA kernel                   N/A      3.798
+  SOL residual merge                   N/A      7.107
+Ulysses all-to-all wrappers            0.317      0.314
+Instrumented full-forward wall        10.726     13.640
+
+These are nested intervals: do not add inclusive parents to their children.
+Rank 1 independently corroborates the residual bottleneck: 7.062s residual,
+3.730s sparse kernel, 11.115s DiT attention and 0.401s communication.
+The SOL residual is about 52.1% of full-forward wall time and 63.3% of SOL
+attention time. Communication is small and similar across backends.
+
+The separate, unprofiled replay medians in this session were 10.716s Dense and
+13.615s SOL (3 warmups + 3 measured replays). The previously published 9-sample
+medians remain 10.744s and 13.634s. Both ranks' input hashes match across Dense,
+SOL and the earlier measurement session. No end-to-end video timing is claimed.
+
+Kernel evidence:
+- The representative DiT layer-0 attention trace contains 8,144 GPU kernels for SOL versus
+  one cuDNN kernel for Dense. 8,104 kernels lie within the residual interval.
+- SOL has 649 aten::bmm calls in this layer: two per 256-query residual chunk,
+  plus one routing matmul. There are 324 residual chunks for 82,747 valid tokens.
+- Trace kernel names include FP32 ffma GEMMs. TF32 is disabled (precision highest).
+  Residual Q/K/V conversion, masked score materialization, logsumexp, exponentials,
+  reduction, weighted accumulation and output copies are issued separately.
+- The mean selected block fraction is 37.35% on rank 0 (37.20% on rank 1), so
+  sparse routing skips about 63% of blocks; residual computation remains additional.
+- Trace instrumentation changes timings. Kernel counts/operator names come from
+  the trace; the stage totals above come from a separate lightweight CUDA-event
+  replay. The trace's durations and nested annotations must not be used as the
+  production latency or summed as exclusive GPU time.
+
+Controlled residual-only replay of actual layer-49 tensors on GH200:
+                               Median wall ms       Validation
+Original eager residual              137.631        finite
+CUDA Graph, identical math           129.303        bitwise equal to eager
+TF32 diagnostic                      117.727        changed output
+Each uses 3 warmups + 9 measured replays. CUDA Graph reduces time by only 6.1%,
+so removing Python submission alone leaves most GPU compute/memory cost.
+TF32 reduces this isolated residual by 14.5%, but max absolute output difference
+is 0.5, mean absolute difference 4.65e-6, and relative L2 error 1.85e-5. These are
+one-layer tensor errors, not SSIM/PSNR/LPIPS or video-quality acceptance criteria.
+TF32 was not enabled in production and no model-level speedup is inferred.
+
+SM100 isolation:
+The previous 2x GB200 node was unavailable (scheduler estimated a next-day start),
+so a separate NVIDIA DRIVE P2021, compute capability 10.0, x86_64, was used for
+kernel isolation. It is not a replacement GB200 latency measurement.
+The exact captured layer-49 Q/K/V and routing metadata were replayed in the same
+pinned image, without a model, distributed communication, offload or residual merge.
+Q/K/V shape: [1,82752,28,128], BF16; indices [1,28,1293,1293]. Active counts range
+132..1293, indices -1..1292; counts agree with valid indices, Q/K/V are finite,
+and the last valid KV block has 59 tokens. Input SHA256 matches across machines.
+- Default cuDNN block64 BSA: first warmup never completed; 240s timeout, exit 124.
+- use_clc=False: first warmup never completed; 90s timeout, exit 124.
+- All block_sizes changed to 64 (diagnostic only, changes semantics): first warmup
+  never completed; 90s timeout, exit 124.
+Native stack is waiting in cuCtxSynchronize/cudaDeviceSynchronize after launching
+BSA; GPU was 100% utilized with about 6GiB allocated. Zero forward samples exist.
+This narrows the failure to the cuDNN block64 kernel/runtime path. It does not
+establish the underlying kernel or driver/compatibility root cause. Removing
+CLC and the partial last block did not resolve it. The original GB200 result
+remains failed; no timeout is reported as latency.
+
+Environment:
+Image: vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
+H3 snapshot: 0919fb684102ef115126612f3fbb84d1027e7317
+Sana/SOL: f4035e0a976d828ed41c7b0b799e9712b47cd60d / sol-attn 0.5.0
+Python 3.12.3, torch 2.16.0.dev20261009+cu134, cuDNN 9.26.0.51 / frontend 1.31.0,
+CuTe DSL 4.8.0. GH200 uses aarch64 and driver 580.196.07; isolated SM100 uses
+x86_64 and driver 595.84.01. Its loaded compatibility libcuda is 615.71.09;
+this observation does not prove causation. Full manifests are archived.
+
+Optimization priority supported by these measurements:
+1. Fuse the residual's scoring, masking, normalization, weighted accumulation and
+   exact/residual merge, reducing FP32 intermediate tensors and kernel launches.
+   Preserve arbitrary text/audio sink masks, partial block sizes, natural-log LSE
+   and the normalization-weighted residual; simply dropping residual work changes
+   the algorithm and is not a valid optimization of the measured implementation.
+2. Treat lower-precision residual matmul as a separate numerical-quality experiment.
+   The TF32 microbenchmark alone is insufficient to approve a model-quality change.
+3. Resolve the SM100 cuDNN block64 execution failure independently of Hopper tuning.
+
+Scope: Ref2VA full forward was profiled; T2VA/FL2VA were not independently profiled
+in this follow-up. No production code was modified. No generated videos/audio,
+SSIM, PSNR, LPIPS, HTTP serving, or end-to-end quality/speedup was measured.
+All task-owned GPU allocations were released after evidence was archived.

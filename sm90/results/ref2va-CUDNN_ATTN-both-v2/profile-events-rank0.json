@@ -1,0 +1,1522 @@
+{
+  "rank": 0,
+  "mode": "events",
+  "wall_s": 10.726497120107524,
+  "attention_calls": 52,
+  "events": [
+    {
+      "name": "attention.refiner.Dense",
+      "attention_index": -1,
+      "cuda_ms": 2.598400115966797,
+      "cpu_enqueue_ms": 0.19859196618199348
+    },
+    {
+      "name": "attention.refiner.Dense",
+      "attention_index": -1,
+      "cuda_ms": 2.511136054992676,
+      "cpu_enqueue_ms": 0.13587204739451408
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": -1,
+      "cuda_ms": 5.275167942047119,
+      "cpu_enqueue_ms": 0.27955195400863886
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": -1,
+      "cuda_ms": 1.2719999551773071,
+      "cpu_enqueue_ms": 0.1716159749776125
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": -1,
+      "cuda_ms": 1.3042559623718262,
+      "cpu_enqueue_ms": 0.15072000678628683
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 0,
+      "cuda_ms": 160.16905212402344,
+      "cpu_enqueue_ms": 0.1284480094909668
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 0,
+      "cuda_ms": 1.61571204662323,
+      "cpu_enqueue_ms": 0.18112000543624163
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 0,
+      "cuda_ms": 1.7357759475708008,
+      "cpu_enqueue_ms": 0.17904001288115978
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 0,
+      "cuda_ms": 1.2845439910888672,
+      "cpu_enqueue_ms": 0.15529501251876354
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 0,
+      "cuda_ms": 1.3023359775543213,
+      "cpu_enqueue_ms": 0.15417602844536304
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 1,
+      "cuda_ms": 161.48956298828125,
+      "cpu_enqueue_ms": 0.12655998580157757
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 1,
+      "cuda_ms": 3.442528009414673,
+      "cpu_enqueue_ms": 0.1818239688873291
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 1,
+      "cuda_ms": 1.6790720224380493,
+      "cpu_enqueue_ms": 0.16265502199530602
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 1,
+      "cuda_ms": 1.2779200077056885,
+      "cpu_enqueue_ms": 0.1587520819157362
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 1,
+      "cuda_ms": 1.305888056755066,
+      "cpu_enqueue_ms": 0.1461440697312355
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 2,
+      "cuda_ms": 161.51190185546875,
+      "cpu_enqueue_ms": 0.12015993706882
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 2,
+      "cuda_ms": 1.5925439596176147,
+      "cpu_enqueue_ms": 0.17616001423448324
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 2,
+      "cuda_ms": 1.515679955482483,
+      "cpu_enqueue_ms": 0.16105500981211662
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 2,
+      "cuda_ms": 1.2932159900665283,
+      "cpu_enqueue_ms": 0.15014398377388716
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 2,
+      "cuda_ms": 1.3019520044326782,
+      "cpu_enqueue_ms": 0.1465589739382267
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 3,
+      "cuda_ms": 161.6650848388672,
+      "cpu_enqueue_ms": 0.1412479905411601
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 3,
+      "cuda_ms": 1.7679040431976318,
+      "cpu_enqueue_ms": 0.182974967174232
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 3,
+      "cuda_ms": 1.300063967704773,
+      "cpu_enqueue_ms": 0.15945592895150185
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 3,
+      "cuda_ms": 1.313439965248108,
+      "cpu_enqueue_ms": 0.13958301860839128
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 3,
+      "cuda_ms": 1.291200041770935,
+      "cpu_enqueue_ms": 0.14079990796744823
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 4,
+      "cuda_ms": 162.35337829589844,
+      "cpu_enqueue_ms": 0.11798308696597815
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 4,
+      "cuda_ms": 2.542623996734619,
+      "cpu_enqueue_ms": 0.1783040352165699
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 4,
+      "cuda_ms": 2.1344640254974365,
+      "cpu_enqueue_ms": 0.15571096446365118
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 4,
+      "cuda_ms": 1.286687970161438,
+      "cpu_enqueue_ms": 0.1463040243834257
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 4,
+      "cuda_ms": 1.3012479543685913,
+      "cpu_enqueue_ms": 0.14409597497433424
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 5,
+      "cuda_ms": 163.54010009765625,
+      "cpu_enqueue_ms": 0.1215360825881362
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 5,
+      "cuda_ms": 1.6230720281600952,
+      "cpu_enqueue_ms": 0.17820799257606268
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 5,
+      "cuda_ms": 1.2926080226898193,
+      "cpu_enqueue_ms": 0.15721493400633335
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 5,
+      "cuda_ms": 1.2969919443130493,
+      "cpu_enqueue_ms": 0.1503999810665846
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 5,
+      "cuda_ms": 1.3005119562149048,
+      "cpu_enqueue_ms": 0.14339096378535032
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 6,
+      "cuda_ms": 162.96266174316406,
+      "cpu_enqueue_ms": 0.11910393368452787
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 6,
+      "cuda_ms": 1.7167680263519287,
+      "cpu_enqueue_ms": 0.16895902808755636
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 6,
+      "cuda_ms": 1.6648319959640503,
+      "cpu_enqueue_ms": 0.15417602844536304
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 6,
+      "cuda_ms": 1.2854080200195312,
+      "cpu_enqueue_ms": 0.14934292994439602
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 6,
+      "cuda_ms": 1.314527988433838,
+      "cpu_enqueue_ms": 0.14924793504178524
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 7,
+      "cuda_ms": 163.7073974609375,
+      "cpu_enqueue_ms": 0.12163096107542515
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 7,
+      "cuda_ms": 1.5863679647445679,
+      "cpu_enqueue_ms": 0.17964805010706186
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 7,
+      "cuda_ms": 1.3558080196380615,
+      "cpu_enqueue_ms": 0.15443202573806047
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 7,
+      "cuda_ms": 1.2874879837036133,
+      "cpu_enqueue_ms": 0.14636805281043053
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 7,
+      "cuda_ms": 1.3041280508041382,
+      "cpu_enqueue_ms": 0.16028794925659895
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 8,
+      "cuda_ms": 162.7019500732422,
+      "cpu_enqueue_ms": 0.12396706733852625
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 8,
+      "cuda_ms": 2.403359889984131,
+      "cpu_enqueue_ms": 0.18041604198515415
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 8,
+      "cuda_ms": 1.2778240442276,
+      "cpu_enqueue_ms": 0.1541429664939642
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 8,
+      "cuda_ms": 1.3151999711990356,
+      "cpu_enqueue_ms": 0.15097600407898426
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 8,
+      "cuda_ms": 1.2963839769363403,
+      "cpu_enqueue_ms": 0.14988798648118973
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 9,
+      "cuda_ms": 162.9571533203125,
+      "cpu_enqueue_ms": 0.27766404673457146
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 9,
+      "cuda_ms": 1.6984000205993652,
+      "cpu_enqueue_ms": 0.17657491844147444
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 9,
+      "cuda_ms": 1.4375040531158447,
+      "cpu_enqueue_ms": 0.1528960419818759
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 9,
+      "cuda_ms": 1.2992639541625977,
+      "cpu_enqueue_ms": 0.15641504433006048
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 9,
+      "cuda_ms": 1.302847981452942,
+      "cpu_enqueue_ms": 0.15775999054312706
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 10,
+      "cuda_ms": 163.75628662109375,
+      "cpu_enqueue_ms": 0.1201919512823224
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 10,
+      "cuda_ms": 1.8120319843292236,
+      "cpu_enqueue_ms": 0.1633909996598959
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 10,
+      "cuda_ms": 1.2957119941711426,
+      "cpu_enqueue_ms": 0.14598399866372347
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 10,
+      "cuda_ms": 1.3230719566345215,
+      "cpu_enqueue_ms": 0.14511891640722752
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 10,
+      "cuda_ms": 1.3036479949951172,
+      "cpu_enqueue_ms": 0.1496319891884923
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 11,
+      "cuda_ms": 162.90121459960938,
+      "cpu_enqueue_ms": 0.11990300845354795
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 11,
+      "cuda_ms": 5.582816123962402,
+      "cpu_enqueue_ms": 0.1741440501064062
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 11,
+      "cuda_ms": 2.042464017868042,
+      "cpu_enqueue_ms": 0.1543029211461544
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 11,
+      "cuda_ms": 1.3010560274124146,
+      "cpu_enqueue_ms": 0.14243193436414003
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 11,
+      "cuda_ms": 1.313920021057129,
+      "cpu_enqueue_ms": 0.15756802167743444
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 12,
+      "cuda_ms": 163.0921630859375,
+      "cpu_enqueue_ms": 0.11801603250205517
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 12,
+      "cuda_ms": 5.269631862640381,
+      "cpu_enqueue_ms": 0.1759040169417858
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 12,
+      "cuda_ms": 1.9082880020141602,
+      "cpu_enqueue_ms": 0.1803509658202529
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 12,
+      "cuda_ms": 1.2933759689331055,
+      "cpu_enqueue_ms": 0.14992000069469213
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 12,
+      "cuda_ms": 1.297984004020691,
+      "cpu_enqueue_ms": 0.15343900304287672
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 13,
+      "cuda_ms": 163.61331176757812,
+      "cpu_enqueue_ms": 0.11878402438014746
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 13,
+      "cuda_ms": 1.606592059135437,
+      "cpu_enqueue_ms": 0.17609493806958199
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 13,
+      "cuda_ms": 1.3144320249557495,
+      "cpu_enqueue_ms": 0.15715195331722498
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 13,
+      "cuda_ms": 1.319648027420044,
+      "cpu_enqueue_ms": 0.14787097461521626
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 13,
+      "cuda_ms": 1.2970240116119385,
+      "cpu_enqueue_ms": 0.1495040487498045
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 14,
+      "cuda_ms": 163.28041076660156,
+      "cpu_enqueue_ms": 0.11769495904445648
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 14,
+      "cuda_ms": 1.6184959411621094,
+      "cpu_enqueue_ms": 0.174048007465899
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 14,
+      "cuda_ms": 1.6192320585250854,
+      "cpu_enqueue_ms": 0.15615904703736305
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 14,
+      "cuda_ms": 1.2952320575714111,
+      "cpu_enqueue_ms": 0.1488639973104
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 14,
+      "cuda_ms": 1.2953599691390991,
+      "cpu_enqueue_ms": 0.14800007920712233
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 15,
+      "cuda_ms": 163.32569885253906,
+      "cpu_enqueue_ms": 0.11788797564804554
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 15,
+      "cuda_ms": 1.6269760131835938,
+      "cpu_enqueue_ms": 0.1885439269244671
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 15,
+      "cuda_ms": 1.5066879987716675,
+      "cpu_enqueue_ms": 0.15775894280523062
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 15,
+      "cuda_ms": 1.2889280319213867,
+      "cpu_enqueue_ms": 0.1412800047546625
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 15,
+      "cuda_ms": 1.3097280263900757,
+      "cpu_enqueue_ms": 0.14540704432874918
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 16,
+      "cuda_ms": 163.28326416015625,
+      "cpu_enqueue_ms": 0.1174720237031579
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 16,
+      "cuda_ms": 1.614240050315857,
+      "cpu_enqueue_ms": 0.17241504974663258
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 16,
+      "cuda_ms": 1.481119990348816,
+      "cpu_enqueue_ms": 0.15452795196324587
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 16,
+      "cuda_ms": 1.2983360290527344,
+      "cpu_enqueue_ms": 0.14089501928538084
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 16,
+      "cuda_ms": 1.299839973449707,
+      "cpu_enqueue_ms": 0.14511996414512396
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 17,
+      "cuda_ms": 166.78994750976562,
+      "cpu_enqueue_ms": 0.12092792894691229
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 17,
+      "cuda_ms": 1.5869760513305664,
+      "cpu_enqueue_ms": 0.1709430944174528
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 17,
+      "cuda_ms": 1.2878079414367676,
+      "cpu_enqueue_ms": 0.1520320074632764
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 17,
+      "cuda_ms": 1.3065600395202637,
+      "cpu_enqueue_ms": 0.15251105651259422
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 17,
+      "cuda_ms": 1.2884479761123657,
+      "cpu_enqueue_ms": 0.14777597971260548
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 18,
+      "cuda_ms": 164.2467803955078,
+      "cpu_enqueue_ms": 0.11606293264776468
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 18,
+      "cuda_ms": 1.5854719877243042,
+      "cpu_enqueue_ms": 0.17446395941078663
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 18,
+      "cuda_ms": 1.8982399702072144,
+      "cpu_enqueue_ms": 0.15267101116478443
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 18,
+      "cuda_ms": 1.297984004020691,
+      "cpu_enqueue_ms": 0.1506239641457796
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 18,
+      "cuda_ms": 1.298624038696289,
+      "cpu_enqueue_ms": 0.1496630720794201
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 19,
+      "cuda_ms": 163.58883666992188,
+      "cpu_enqueue_ms": 0.11856004130095243
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 19,
+      "cuda_ms": 2.239423990249634,
+      "cpu_enqueue_ms": 0.18041604198515415
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 19,
+      "cuda_ms": 1.3118720054626465,
+      "cpu_enqueue_ms": 0.15532691031694412
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 19,
+      "cuda_ms": 1.3109439611434937,
+      "cpu_enqueue_ms": 0.1546239946037531
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 19,
+      "cuda_ms": 1.3001600503921509,
+      "cpu_enqueue_ms": 0.14828704297542572
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 20,
+      "cuda_ms": 163.67018127441406,
+      "cpu_enqueue_ms": 0.1354239648208022
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 20,
+      "cuda_ms": 1.6063679456710815,
+      "cpu_enqueue_ms": 0.17174298409372568
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 20,
+      "cuda_ms": 1.7526079416275024,
+      "cpu_enqueue_ms": 0.15875196550041437
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 20,
+      "cuda_ms": 1.2899199724197388,
+      "cpu_enqueue_ms": 0.15532702673226595
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 20,
+      "cuda_ms": 1.2994240522384644,
+      "cpu_enqueue_ms": 0.15087996143847704
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 21,
+      "cuda_ms": 164.74742126464844,
+      "cpu_enqueue_ms": 0.11580809950828552
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 21,
+      "cuda_ms": 1.5857599973678589,
+      "cpu_enqueue_ms": 0.16527902334928513
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 21,
+      "cuda_ms": 1.3143999576568604,
+      "cpu_enqueue_ms": 0.16252801287919283
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 21,
+      "cuda_ms": 1.3201279640197754,
+      "cpu_enqueue_ms": 0.147135928273201
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 21,
+      "cuda_ms": 1.3006080389022827,
+      "cpu_enqueue_ms": 0.14422403182834387
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 22,
+      "cuda_ms": 163.52857971191406,
+      "cpu_enqueue_ms": 0.1208640169352293
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 22,
+      "cuda_ms": 1.6031359434127808,
+      "cpu_enqueue_ms": 0.17379096243530512
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 22,
+      "cuda_ms": 1.7609280347824097,
+      "cpu_enqueue_ms": 0.15011208597570658
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 22,
+      "cuda_ms": 1.292191982269287,
+      "cpu_enqueue_ms": 0.14963105786591768
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 22,
+      "cuda_ms": 1.3019839525222778,
+      "cpu_enqueue_ms": 0.1515519106760621
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 23,
+      "cuda_ms": 163.6104278564453,
+      "cpu_enqueue_ms": 0.11884793639183044
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 23,
+      "cuda_ms": 1.5921920537948608,
+      "cpu_enqueue_ms": 0.17795106396079063
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 23,
+      "cuda_ms": 1.7016639709472656,
+      "cpu_enqueue_ms": 0.15523203182965517
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 23,
+      "cuda_ms": 1.2888319492340088,
+      "cpu_enqueue_ms": 0.14700694009661674
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 23,
+      "cuda_ms": 1.3191360235214233,
+      "cpu_enqueue_ms": 0.14915200881659985
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 24,
+      "cuda_ms": 164.43209838867188,
+      "cpu_enqueue_ms": 0.11471903417259455
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 24,
+      "cuda_ms": 1.6202880144119263,
+      "cpu_enqueue_ms": 0.1700479770079255
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 24,
+      "cuda_ms": 1.3029760122299194,
+      "cpu_enqueue_ms": 0.14847994316369295
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 24,
+      "cuda_ms": 1.3128960132598877,
+      "cpu_enqueue_ms": 0.14310295227915049
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 24,
+      "cuda_ms": 1.2960000038146973,
+      "cpu_enqueue_ms": 0.14419201761484146
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 25,
+      "cuda_ms": 163.87673950195312,
+      "cpu_enqueue_ms": 0.12678292114287615
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 25,
+      "cuda_ms": 1.6056640148162842,
+      "cpu_enqueue_ms": 0.16672001220285892
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 25,
+      "cuda_ms": 1.3030719757080078,
+      "cpu_enqueue_ms": 0.15724694821983576
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 25,
+      "cuda_ms": 1.3103359937667847,
+      "cpu_enqueue_ms": 0.15027204062789679
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 25,
+      "cuda_ms": 1.299072027206421,
+      "cpu_enqueue_ms": 0.14979206025600433
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 26,
+      "cuda_ms": 162.5182647705078,
+      "cpu_enqueue_ms": 0.11772802099585533
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 26,
+      "cuda_ms": 4.621503829956055,
+      "cpu_enqueue_ms": 0.1731200609356165
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 26,
+      "cuda_ms": 1.4229439496994019,
+      "cpu_enqueue_ms": 0.14799903146922588
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 26,
+      "cuda_ms": 1.2969919443130493,
+      "cpu_enqueue_ms": 0.14118407852947712
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 26,
+      "cuda_ms": 1.3048640489578247,
+      "cpu_enqueue_ms": 0.1438390463590622
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 27,
+      "cuda_ms": 163.33261108398438,
+      "cpu_enqueue_ms": 0.11689600069075823
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 27,
+      "cuda_ms": 2.5540480613708496,
+      "cpu_enqueue_ms": 0.16355200204998255
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 27,
+      "cuda_ms": 1.3977279663085938,
+      "cpu_enqueue_ms": 0.15017506666481495
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 27,
+      "cuda_ms": 1.290719985961914,
+      "cpu_enqueue_ms": 0.14851195737719536
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 27,
+      "cuda_ms": 1.3036160469055176,
+      "cpu_enqueue_ms": 0.14924700371921062
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 28,
+      "cuda_ms": 163.372802734375,
+      "cpu_enqueue_ms": 0.11852802708745003
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 28,
+      "cuda_ms": 1.6959680318832397,
+      "cpu_enqueue_ms": 0.16796705313026905
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 28,
+      "cuda_ms": 1.3110400438308716,
+      "cpu_enqueue_ms": 0.15395204536616802
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 28,
+      "cuda_ms": 1.312000036239624,
+      "cpu_enqueue_ms": 0.1471999567002058
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 28,
+      "cuda_ms": 1.3064639568328857,
+      "cpu_enqueue_ms": 0.14963094145059586
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 29,
+      "cuda_ms": 162.44989013671875,
+      "cpu_enqueue_ms": 0.12105610221624374
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 29,
+      "cuda_ms": 3.3425281047821045,
+      "cpu_enqueue_ms": 0.17715105786919594
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 29,
+      "cuda_ms": 1.2937599420547485,
+      "cpu_enqueue_ms": 0.6816620007157326
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 29,
+      "cuda_ms": 1.3093119859695435,
+      "cpu_enqueue_ms": 1.2693090829998255
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 29,
+      "cuda_ms": 1.3053760528564453,
+      "cpu_enqueue_ms": 1.5463000163435936
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 30,
+      "cuda_ms": 162.9813690185547,
+      "cpu_enqueue_ms": 1.010653912089765
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 30,
+      "cuda_ms": 1.760416030883789,
+      "cpu_enqueue_ms": 1.144316978752613
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 30,
+      "cuda_ms": 1.2888319492340088,
+      "cpu_enqueue_ms": 0.6813750369474292
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 30,
+      "cuda_ms": 1.331712007522583,
+      "cpu_enqueue_ms": 1.2348450254648924
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 30,
+      "cuda_ms": 1.3104000091552734,
+      "cpu_enqueue_ms": 1.4870039885863662
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 31,
+      "cuda_ms": 163.9971466064453,
+      "cpu_enqueue_ms": 1.002396922558546
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 31,
+      "cuda_ms": 1.5899200439453125,
+      "cpu_enqueue_ms": 1.1317409807816148
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 31,
+      "cuda_ms": 2.871551990509033,
+      "cpu_enqueue_ms": 0.6788460304960608
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 31,
+      "cuda_ms": 1.302880048751831,
+      "cpu_enqueue_ms": 1.285883947275579
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 31,
+      "cuda_ms": 1.302240014076233,
+      "cpu_enqueue_ms": 1.3282520230859518
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 32,
+      "cuda_ms": 165.8248291015625,
+      "cpu_enqueue_ms": 1.0157409124076366
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 32,
+      "cuda_ms": 1.588703989982605,
+      "cpu_enqueue_ms": 1.142748980782926
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 32,
+      "cuda_ms": 1.3100160360336304,
+      "cpu_enqueue_ms": 0.687069958075881
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 32,
+      "cuda_ms": 1.3232640027999878,
+      "cpu_enqueue_ms": 1.2520600575953722
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 32,
+      "cuda_ms": 1.3035520315170288,
+      "cpu_enqueue_ms": 1.078172936104238
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 33,
+      "cuda_ms": 162.7836151123047,
+      "cpu_enqueue_ms": 1.0431009577587247
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 33,
+      "cuda_ms": 2.6568639278411865,
+      "cpu_enqueue_ms": 1.1117730755358934
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 33,
+      "cuda_ms": 1.3050559759140015,
+      "cpu_enqueue_ms": 0.6781099364161491
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 33,
+      "cuda_ms": 1.3273600339889526,
+      "cpu_enqueue_ms": 1.2506209313869476
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 33,
+      "cuda_ms": 1.307360053062439,
+      "cpu_enqueue_ms": 1.9472269341349602
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 34,
+      "cuda_ms": 165.96038818359375,
+      "cpu_enqueue_ms": 1.0122529929503798
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 34,
+      "cuda_ms": 1.583583950996399,
+      "cpu_enqueue_ms": 1.142524997703731
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 34,
+      "cuda_ms": 1.4968960285186768,
+      "cpu_enqueue_ms": 0.6951659452170134
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 34,
+      "cuda_ms": 1.284608006477356,
+      "cpu_enqueue_ms": 1.2768610613420606
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 34,
+      "cuda_ms": 1.3058240413665771,
+      "cpu_enqueue_ms": 1.1055649956688285
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 35,
+      "cuda_ms": 164.17587280273438,
+      "cpu_enqueue_ms": 1.0279979323968291
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 35,
+      "cuda_ms": 1.5814399719238281,
+      "cpu_enqueue_ms": 1.1310370173305273
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 35,
+      "cuda_ms": 1.315168023109436,
+      "cpu_enqueue_ms": 0.6875500548630953
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 35,
+      "cuda_ms": 1.326591968536377,
+      "cpu_enqueue_ms": 1.2718370417132974
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 35,
+      "cuda_ms": 1.306175947189331,
+      "cpu_enqueue_ms": 1.4759639743715525
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 36,
+      "cuda_ms": 163.1050567626953,
+      "cpu_enqueue_ms": 1.0107820853590965
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 36,
+      "cuda_ms": 1.6192320585250854,
+      "cpu_enqueue_ms": 1.1442849645391107
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 36,
+      "cuda_ms": 1.3230079412460327,
+      "cpu_enqueue_ms": 0.6807659519836307
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 36,
+      "cuda_ms": 1.3155839443206787,
+      "cpu_enqueue_ms": 1.2633890146389604
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 36,
+      "cuda_ms": 1.3078399896621704,
+      "cpu_enqueue_ms": 1.1718689929693937
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 37,
+      "cuda_ms": 163.05638122558594,
+      "cpu_enqueue_ms": 1.0116130579262972
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 37,
+      "cuda_ms": 1.75382399559021,
+      "cpu_enqueue_ms": 1.1395810870453715
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 37,
+      "cuda_ms": 1.4290560483932495,
+      "cpu_enqueue_ms": 0.6793590728193521
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 37,
+      "cuda_ms": 1.2957119941711426,
+      "cpu_enqueue_ms": 1.284284982830286
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 37,
+      "cuda_ms": 1.3130240440368652,
+      "cpu_enqueue_ms": 1.0819490998983383
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 38,
+      "cuda_ms": 163.9054718017578,
+      "cpu_enqueue_ms": 1.0500130010768771
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 38,
+      "cuda_ms": 1.5813119411468506,
+      "cpu_enqueue_ms": 1.1389090213924646
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 38,
+      "cuda_ms": 1.8852479457855225,
+      "cpu_enqueue_ms": 0.6817580433562398
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 38,
+      "cuda_ms": 1.302016019821167,
+      "cpu_enqueue_ms": 1.2816610978916287
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 38,
+      "cuda_ms": 1.3052799701690674,
+      "cpu_enqueue_ms": 1.2455970281735063
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 39,
+      "cuda_ms": 164.0971221923828,
+      "cpu_enqueue_ms": 1.0295649990439415
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 39,
+      "cuda_ms": 1.5874240398406982,
+      "cpu_enqueue_ms": 1.1428450234234333
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 39,
+      "cuda_ms": 1.3375680446624756,
+      "cpu_enqueue_ms": 0.6810859777033329
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 39,
+      "cuda_ms": 1.3036799430847168,
+      "cpu_enqueue_ms": 1.2665890390053391
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 39,
+      "cuda_ms": 1.3041280508041382,
+      "cpu_enqueue_ms": 1.0742369340732694
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 40,
+      "cuda_ms": 163.91488647460938,
+      "cpu_enqueue_ms": 1.0555810295045376
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 40,
+      "cuda_ms": 2.087775945663452,
+      "cpu_enqueue_ms": 1.1272290721535683
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 40,
+      "cuda_ms": 1.4032319784164429,
+      "cpu_enqueue_ms": 0.6774700013920665
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 40,
+      "cuda_ms": 1.2978559732437134,
+      "cpu_enqueue_ms": 1.2760610552504659
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 40,
+      "cuda_ms": 1.3125760555267334,
+      "cpu_enqueue_ms": 1.8513869727030396
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 41,
+      "cuda_ms": 163.38409423828125,
+      "cpu_enqueue_ms": 1.0233570355921984
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 41,
+      "cuda_ms": 1.6036479473114014,
+      "cpu_enqueue_ms": 1.1462050024420023
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 41,
+      "cuda_ms": 1.3064320087432861,
+      "cpu_enqueue_ms": 0.6799669936299324
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 41,
+      "cuda_ms": 1.3120319843292236,
+      "cpu_enqueue_ms": 1.2729240115731955
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 41,
+      "cuda_ms": 1.2993600368499756,
+      "cpu_enqueue_ms": 1.7162830336019397
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 42,
+      "cuda_ms": 164.3436737060547,
+      "cpu_enqueue_ms": 1.0167650179937482
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 42,
+      "cuda_ms": 1.5886080265045166,
+      "cpu_enqueue_ms": 1.1288289679214358
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 42,
+      "cuda_ms": 1.3072960376739502,
+      "cpu_enqueue_ms": 0.68191799800843
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 42,
+      "cuda_ms": 1.3243520259857178,
+      "cpu_enqueue_ms": 1.2842530850321054
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 42,
+      "cuda_ms": 1.3071999549865723,
+      "cpu_enqueue_ms": 1.089148921892047
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 43,
+      "cuda_ms": 163.12130737304688,
+      "cpu_enqueue_ms": 1.0505890240892768
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 43,
+      "cuda_ms": 3.5567679405212402,
+      "cpu_enqueue_ms": 1.1236770078539848
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 43,
+      "cuda_ms": 1.2872960567474365,
+      "cpu_enqueue_ms": 0.676990021020174
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 43,
+      "cuda_ms": 1.3192960023880005,
+      "cpu_enqueue_ms": 1.266523962840438
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 43,
+      "cuda_ms": 1.3019839525222778,
+      "cpu_enqueue_ms": 1.4226200291886926
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 44,
+      "cuda_ms": 162.72352600097656,
+      "cpu_enqueue_ms": 1.0221420088782907
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 44,
+      "cuda_ms": 1.588320016860962,
+      "cpu_enqueue_ms": 1.1350689455866814
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 44,
+      "cuda_ms": 1.317471981048584,
+      "cpu_enqueue_ms": 0.6800300907343626
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 44,
+      "cuda_ms": 1.323199987411499,
+      "cpu_enqueue_ms": 1.2867809273302555
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 44,
+      "cuda_ms": 1.3169920444488525,
+      "cpu_enqueue_ms": 1.3136289780959487
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 45,
+      "cuda_ms": 163.84783935546875,
+      "cpu_enqueue_ms": 1.0107170091941953
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 45,
+      "cuda_ms": 1.590399980545044,
+      "cpu_enqueue_ms": 1.1381730437278748
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 45,
+      "cuda_ms": 1.965343952178955,
+      "cpu_enqueue_ms": 0.6823019357398152
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 45,
+      "cuda_ms": 1.311903953552246,
+      "cpu_enqueue_ms": 1.2655650498345494
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 45,
+      "cuda_ms": 1.3090879917144775,
+      "cpu_enqueue_ms": 1.3004450593143702
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 46,
+      "cuda_ms": 163.99615478515625,
+      "cpu_enqueue_ms": 1.0254059452563524
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 46,
+      "cuda_ms": 3.6021759510040283,
+      "cpu_enqueue_ms": 1.125628943555057
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 46,
+      "cuda_ms": 2.3600640296936035,
+      "cpu_enqueue_ms": 0.6829100893810391
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 46,
+      "cuda_ms": 1.304927945137024,
+      "cpu_enqueue_ms": 1.2557399459183216
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 46,
+      "cuda_ms": 1.3046079874038696,
+      "cpu_enqueue_ms": 1.0838051093742251
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 47,
+      "cuda_ms": 162.938232421875,
+      "cpu_enqueue_ms": 1.033373991958797
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 47,
+      "cuda_ms": 2.035327911376953,
+      "cpu_enqueue_ms": 1.1116130044683814
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 47,
+      "cuda_ms": 1.2929600477218628,
+      "cpu_enqueue_ms": 0.6786540616303682
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 47,
+      "cuda_ms": 1.3250880241394043,
+      "cpu_enqueue_ms": 1.2817559763789177
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 47,
+      "cuda_ms": 1.310752034187317,
+      "cpu_enqueue_ms": 1.7067469889298081
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 48,
+      "cuda_ms": 163.30201721191406,
+      "cpu_enqueue_ms": 1.0212130146101117
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 48,
+      "cuda_ms": 1.6081600189208984,
+      "cpu_enqueue_ms": 1.1210211087018251
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 48,
+      "cuda_ms": 3.0139200687408447,
+      "cpu_enqueue_ms": 0.6869100034236908
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 48,
+      "cuda_ms": 1.2681599855422974,
+      "cpu_enqueue_ms": 1.2812450295314193
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 48,
+      "cuda_ms": 1.2935680150985718,
+      "cpu_enqueue_ms": 1.086172997020185
+    },
+    {
+      "name": "attention.Dense",
+      "attention_index": 49,
+      "cuda_ms": 164.8791046142578,
+      "cpu_enqueue_ms": 1.0463650105521083
+    },
+    {
+      "name": "comm.all_to_all_4D",
+      "attention_index": 49,
+      "cuda_ms": 1.5755200386047363,
+      "cpu_enqueue_ms": 1.120988978073001
+    }
+  ],
+  "routing": [],
+  "timing_note": "Nested CUDA event intervals; do not sum parent and child spans. Instrumented run, not baseline latency."
+}
