@@ -1,0 +1,51 @@
+SM100 accumulator-rescaling experiment
+
+Baseline: upstream SOL 088897e0c6a9cb970f00b43ab2177c3be7336b36,
+fixed image and saved H3 tensors from the preceding same-input study.
+The rescale helper is byte-identical in release d9ef632 and upstream PR
+head 63b4e65 at the start of this experiment.
+
+Candidate 1: skip_identity
+The online softmax rescales the previous output accumulator by alpha.
+When alpha is exactly 1 for every lane of an owner warp, the existing
+read/multiply/write cycle leaves that warp's output elements unchanged.
+Use a full-warp ballot before branching. A per-lane branch is invalid:
+tcgen05 load/store/wait .sync.aligned instructions require uniform warp
+participation. The caller's producer-completion waits, score-load join,
+probability publication and final accumulation completion stay intact.
+No routing decision, threshold, block mask or update order is changed.
+
+Candidate 2: wide32
+Keep the same output-element multiplication and physical TMEM layout,
+but process 32 columns per transfer instead of 16, with repetition 16
+instead of 8. This halves the number of transfer/wait groups. It may
+increase register pressure, so performance must be measured.
+
+Candidate 3: skip_identity_wide32
+Combine the two changes to test whether they help together.
+
+Gates:
+- Independent hybrid-attention oracle on both threshold modes and partial
+  blocks, plus bitwise comparison against the unmodified native kernel.
+- Long streams of random values, all-exact protection, zero Q, zero V,
+  tiny V and subnormal V. These test the identity case and changing maxima.
+- Bitwise equality on real frozen H3 inputs before and after timing.
+- Alternating/rotating order, 5 warmups + 15 measured calls per variant,
+  matched actual clock, separate telemetry, independent-process repeat.
+
+Source edits are private generated modules with isolated compilation caches.
+Production source files and backend selection are unchanged during screening.
+Retain a candidate only if correctness and a reproducible benefit are observed.
+Kernel latency is not an end-to-end or decoded-video quality result.
+
+PTX contract reference:
+https://docs.nvidia.com/cuda/parallel-thread-execution/index.html
+Sections tcgen05.ld/st/wait and vote.sync document warp alignment and ballot
+semantics. A ballot skips no arithmetic when any participating lane needs a
+non-identity scale; all existing TMEM synchronization remains in that path.
+
+Additional candidates: fullpair and skip_identity_wide32_fullpair.
+Bypass zero-mask construction/application only when q_len=64 and both KV
+blocks have 64 valid tokens. Preserve masking for partial/odd pairs and the
+unconditional score-load join. The combined candidate also retains the
+warp-uniform identity-rescale guard and wider accumulator transfers.

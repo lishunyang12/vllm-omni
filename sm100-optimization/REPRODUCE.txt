@@ -1,0 +1,68 @@
+Reproduce isolated SM100 optimization experiments
+
+Use image:
+  vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
+
+1. Obtain exactly the frozen inputs from ../kernel-study/REPRODUCE.txt.
+   That workflow captures layer 0/25 from a pinned H3 dense forward. Keep
+   the private tensors locally; they are not distributed in this repository.
+   Each replay verifies stored SHA256 values before transferring to CUDA.
+
+2. On an allocated SM100 GPU, mount a writable directory at /work. Copy
+   reproduce/ into /work/study/. Keep the .pt files at:
+     /work/results/qkv-sm100-dense/qkv-layer-00-rank-0.pt
+     /work/results/qkv-sm100-dense/qkv-layer-25-rank-0.pt
+
+   bash /work/study/bootstrap_replay.sh /work
+
+   This pins SOL to 088897e0c6a9cb970f00b43ab2177c3be7336b36 and preserves
+   image Torch/CUDA dependencies. Environment used:
+     torch 2.16.0.dev20261009+cu134
+     nvidia-cutlass-dsl 4.8.0
+     nvidia-cudnn-cu13 9.26.0.51; cudnn-frontend 1.32.2
+     numpy 2.2.6
+
+3. Run correctness and the alternating ablations directly:
+
+   bash /work/study/run_experiments.sh /work rescale-manual
+   bash /work/study/run_mask_experiments.sh /work mask-manual
+
+   These direct commands use the current GPU clock policy. To reproduce the
+   reported 750 MHz operating point on a site permitting GPU clock control,
+   use run_controlled.sh as described below and inspect actual telemetry.
+
+   The scripts create private modules with separate JIT caches. They do not
+   overwrite upstream source or alter production backend dispatch. Results
+   include baseline/candidate hashes, all samples, quality checks and CVs.
+   Each phase validates first, then measures layer 0, layer 25 and layer 0
+   again in separate Python processes. A failed check stops the entire phase.
+
+4. Matched-clock run in an existing Slurm/Pyxis allocation:
+   Copy ../power-followup/reproduce/gpu_telemetry.py to HOST_WORK/native/.
+   Copy this reproduce/ to HOST_WORK/study/. Substitute your own values:
+
+   srun --jobid=JOB_ID --overlap --ntasks=1 --cpus-per-task=1 --cpu-bind=none \
+     bash HOST_WORK/study/run_controlled.sh \
+     HOST_WORK CONTAINER GPU_ID 750 rescale-750 run_experiments.sh
+
+   srun --jobid=JOB_ID --overlap --ntasks=1 --cpus-per-task=1 --cpu-bind=none \
+     bash HOST_WORK/study/run_controlled.sh \
+     HOST_WORK CONTAINER GPU_ID 750 mask-750 run_mask_experiments.sh
+
+   Run sequentially. GPU_ID must match the allocated SLURM_STEP_GPUS.
+   This wrapper requires site-delegated nvidia-smi clock control, leaves
+   power limits unchanged, records telemetry and restores clocks on exit.
+   Record default-policy results explicitly if clock control is unavailable.
+
+5. The combined experimental source change is in candidate.patch:
+
+   git -C /path/to/Sana apply --check /path/to/candidate.patch
+
+   It applies to the measured source and upstream PR head 63b4e65. For the
+   ablation commands above, keep baseline sources unmodified: candidates.py
+   generates the experimental copies itself. Applying the patch first would
+   invalidate the baseline and the source-anchor checks.
+
+Single-attention latency must not be labeled full-forward or generation
+latency. This experiment does not change quantization, routing thresholds,
+protected blocks, or the Omni provider contract.

@@ -1,0 +1,84 @@
+H3 Ref2VA: measured upstream SM100 optimization opportunities
+
+Conclusion: the current upstream SM100 implementation has removable overhead
+on this workload. The combined experimental candidate reduces SOL latency
+by 8.3%-8.9% on two real H3 layers, with bit-identical output in all measured
+checks. It still loses to cuDNN Dense. These results do not establish an
+algorithmic flaw across SOL backends or workloads, or a correctness bug.
+
+Scope and setup
+  One attention operator, not full DiT forward or video generation.
+  Frozen real H3 Q/K/V from the prior kernel-study/, first conditional step
+  of a dense trajectory, first 28 heads, BF16 [1, 82747, 28, 128].
+  Same input SHA256 values, tau=1, diag threshold and exact-block mask.
+  GB200 SM100, 750 MHz matched clock; unchanged 1200 W power limit.
+  Fixed image and source/checkpoint pins are in manifest.json.
+  5 warmups + 15 CUDA-event samples per variant; rotating/reversing order.
+  Each layer is a fresh process; layer 0 also has an independent repeat.
+  SOL preprocessing is included. No profiler is attached during timing.
+
+Combined-candidate P50, milliseconds (mask-750 phase)
+
+  Input                 Dense     Upstream SOL   Candidate   SOL reduction
+  H3 layer 0            129.382       192.892      175.767         8.88%
+  H3 layer 25           129.919       171.257      156.981         8.34%
+  H3 layer 0 repeat     129.365       192.803      175.719         8.86%
+
+The candidate remains 35.85% slower than Dense on layer 0 and 20.83% slower
+on layer 25. This is progress within SOL, not a Dense-beating result.
+
+What changed in the isolated candidates
+
+1. skip_identity: online softmax currently reads, multiplies and rewrites
+   the accumulator even when its rescaling factor is one. A full-warp ballot
+   skips that work only when every participating lane has alpha == 1.
+   The decision must be warp-uniform because tcgen05 operations are aligned.
+   Existing producer-completion waits and publication barriers remain.
+
+2. wide32: use 32-column transfers rather than 16-column transfers in the
+   rescale helper. This halves its transfer/wait groups without changing
+   the order of the elementwise multiplication or accumulator layout.
+
+3. fullpair: skip building/applying zero masks when both exact KV blocks
+   and all query rows are fully valid. Partial blocks, missing peers and
+   partial query rows retain their masking. The score-load barrier remains
+   unconditional because it also protects score/probability aliasing.
+
+Ablation P50, layer 0, milliseconds
+  rescale-750: native 192.949; skip_identity 182.802; wide32 189.222;
+               skip_identity_wide32 180.914.
+  mask-750:    native 192.892; fullpair 184.516;
+               skip_identity_wide32 180.890;
+               skip_identity_wide32_fullpair 175.767.
+Benefits are not assumed to add independently. Both phases retain all raw
+samples, per-variant CVs and independent-process layer-0 repeats.
+
+Correctness and stability
+  60 candidate checks passed: 36 rescale cases + 24 mask cases. All 60
+  compare bitwise with unmodified upstream SOL; 30 also compare with an
+  independent hybrid-attention oracle at atol=rtol=0.02.
+  Cases cover both threshold modes, partial blocks and protected first/last
+  blocks, long random streams, all-exact masks, zero Q/V, tiny V and
+  subnormal V. Real H3 candidate outputs match upstream bitwise both before
+  and after timing. These checks are not a proof for every possible input.
+  Maximum CV across all 30 variant/process timing summaries is 0.177%.
+  All covered sample-window telemetry polls show 750 MHz and no power-cap
+  or thermal flags. Polling is coarser than some calls: clock-summary.json
+  explicitly records uncovered windows; continuous coverage is not claimed.
+  Both wrappers exit zero and restore the GPU clock lock. Allocation released.
+
+Interpretation and limits
+  The slowdown and the improvements reproduce outside vLLM-Omni. This places
+  the measured overhead in upstream SOL's SM100 execution, not the Omni
+  wrapper. The earlier Nsight report showed lower matrix-pipeline activity
+  and higher barrier overhead than Dense; these changes remove some work
+  but do not identify or fix every source of the remaining gap.
+  The previous same-input SM120 results remain 2.12x/2.46x faster than Dense
+  for layers 0/25. Those use a different native implementation and operating
+  point. This follow-up does not change or remeasure SM90/SM120 kernels.
+  No decoded videos or new SSIM/PSNR/LPIPS are produced here. Bitwise equality
+  is scoped to tested attention outputs; it is not video-quality acceptance.
+  These changes are isolated prototypes. Production code, provider selection
+  and the Omni dependency pin are unchanged. candidate.patch applies cleanly
+  to upstream PR head 63b4e65; wider workload and SM103 validation remain
+  before proposing production enablement. REPRODUCE.txt gives the commands.

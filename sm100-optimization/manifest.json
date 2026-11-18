@@ -1,0 +1,34 @@
+{
+  "scope": "Isolated SM100 optimization candidates on frozen real H3 attention tensors; not full forward or video generation",
+  "image": "vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb",
+  "omni_capture_commit": "3da353c45224f5863808da320d694be045c16ef8",
+  "sol_commit": "088897e0c6a9cb970f00b43ab2177c3be7336b36",
+  "checkpoint_commit": "0919fb684102ef115126612f3fbb84d1027e7317",
+  "trajectory": "First conditional step 0; dense reference trajectory; SP1 capture, first 28 of 56 heads replayed",
+  "thresholds_changed": false,
+  "protection_changed": false,
+  "production_dispatch_changed": false,
+  "raw_tensor_archives": "Captured Q/K/V retained privately; regenerate using reproduce/run_capture.sh",
+  "scripts_sha256": {
+    "bootstrap_replay.sh": "79ff18181413fd9edec364700c72c988090ddf1161c5c7f6b72c4b4b76d7d8d4",
+    "candidates.py": "d5a107bf92756654d1aeb9bfc563ea881b155c9158e6e5a238736403ae179b4a",
+    "experiment.py": "b11a2df659e75c0e370623ff3c8251ca381d8d13a12d86fef5ca220c9b651fee",
+    "replay.py": "c35c891562993d0b133b470aa883a4eb85b2afdf318fccb83839ff44bf8a0783",
+    "run_controlled.sh": "c248311092baf88445479e173c2a64f1778c68291184c05d361bb10dfc16cdaa",
+    "run_experiments.sh": "c42a0015a90663218f77f173dba2c36766df8af1b8c00316cee109ce28e90bfa",
+    "run_mask_experiments.sh": "1af008b5a710210475458663afd40fba03a9fdbb73d70795fb0f3eb89bcac4e7"
+  },
+  "actual_clock_mhz": 750,
+  "power_limit_watts": 1200,
+  "production_kernel_changed": false,
+  "candidates": [
+    "skip_identity",
+    "wide32",
+    "skip_identity_wide32",
+    "fullpair",
+    "skip_identity_wide32_fullpair"
+  ],
+  "correctness_cases": 60,
+  "independent_oracle_cases": 30,
+  "bitwise_baseline_checks": 60
+}

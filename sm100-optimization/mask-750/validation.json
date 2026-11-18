@@ -1,0 +1,173 @@
+{
+  "cases": [
+    {
+      "name": "fullpair",
+      "tokens": 63,
+      "tau": 1000000.0,
+      "threshold": "diag",
+      "bitwise_equal": true,
+      "oracle_passed": true
+    },
+    {
+      "name": "skip_identity_wide32_fullpair",
+      "tokens": 63,
+      "tau": 1000000.0,
+      "threshold": "diag",
+      "bitwise_equal": true,
+      "oracle_passed": true
+    },
+    {
+      "name": "fullpair",
+      "tokens": 63,
+      "tau": 1000000.0,
+      "threshold": "exact",
+      "bitwise_equal": true,
+      "oracle_passed": true
+    },
+    {
+      "name": "skip_identity_wide32_fullpair",
+      "tokens": 63,
+      "tau": 1000000.0,
+      "threshold": "exact",
+      "bitwise_equal": true,
+      "oracle_passed": true
+    },
+    {
+      "name": "fullpair",
+      "tokens": 257,
+      "tau": 1000000.0,
+      "threshold": "diag",
+      "bitwise_equal": true,
+      "oracle_passed": true
+    },
+    {
+      "name": "skip_identity_wide32_fullpair",
+      "tokens": 257,
+      "tau": 1000000.0,
+      "threshold": "diag",
+      "bitwise_equal": true,
+      "oracle_passed": true
+    },
+    {
+      "name": "fullpair",
+      "tokens": 257,
+      "tau": 1000000.0,
+      "threshold": "exact",
+      "bitwise_equal": true,
+      "oracle_passed": true
+    },
+    {
+      "name": "skip_identity_wide32_fullpair",
+      "tokens": 257,
+      "tau": 1000000.0,
+      "threshold": "exact",
+      "bitwise_equal": true,
+      "oracle_passed": true
+    },
+    {
+      "name": "fullpair",
+      "tokens": 513,
+      "tau": 1.5,
+      "threshold": "diag",
+      "bitwise_equal": true,
+      "oracle_passed": true
+    },
+    {
+      "name": "skip_identity_wide32_fullpair",
+      "tokens": 513,
+      "tau": 1.5,
+      "threshold": "diag",
+      "bitwise_equal": true,
+      "oracle_passed": true
+    },
+    {
+      "name": "fullpair",
+      "tokens": 513,
+      "tau": 1.5,
+      "threshold": "exact",
+      "bitwise_equal": true,
+      "oracle_passed": true
+    },
+    {
+      "name": "skip_identity_wide32_fullpair",
+      "tokens": 513,
+      "tau": 1.5,
+      "threshold": "exact",
+      "bitwise_equal": true,
+      "oracle_passed": true
+    },
+    {
+      "name": "fullpair",
+      "tokens": 4097,
+      "kind": "random",
+      "bitwise_equal": true
+    },
+    {
+      "name": "skip_identity_wide32_fullpair",
+      "tokens": 4097,
+      "kind": "random",
+      "bitwise_equal": true
+    },
+    {
+      "name": "fullpair",
+      "tokens": 4097,
+      "kind": "all_exact",
+      "bitwise_equal": true
+    },
+    {
+      "name": "skip_identity_wide32_fullpair",
+      "tokens": 4097,
+      "kind": "all_exact",
+      "bitwise_equal": true
+    },
+    {
+      "name": "fullpair",
+      "tokens": 4097,
+      "kind": "zero_q",
+      "bitwise_equal": true
+    },
+    {
+      "name": "skip_identity_wide32_fullpair",
+      "tokens": 4097,
+      "kind": "zero_q",
+      "bitwise_equal": true
+    },
+    {
+      "name": "fullpair",
+      "tokens": 4097,
+      "kind": "zero_v",
+      "bitwise_equal": true
+    },
+    {
+      "name": "skip_identity_wide32_fullpair",
+      "tokens": 4097,
+      "kind": "zero_v",
+      "bitwise_equal": true
+    },
+    {
+      "name": "fullpair",
+      "tokens": 4097,
+      "kind": "tiny_v",
+      "bitwise_equal": true
+    },
+    {
+      "name": "skip_identity_wide32_fullpair",
+      "tokens": 4097,
+      "kind": "tiny_v",
+      "bitwise_equal": true
+    },
+    {
+      "name": "fullpair",
+      "tokens": 4097,
+      "kind": "subnormal_v",
+      "bitwise_equal": true
+    },
+    {
+      "name": "skip_identity_wide32_fullpair",
+      "tokens": 4097,
+      "kind": "subnormal_v",
+      "bitwise_equal": true
+    }
+  ],
+  "passed": 24
+}
