@@ -1,6 +1,7 @@
 Reproduce production SOL rescale/mask optimization
 
-Candidate: fe6be477faa270d75fd3e4dd26305b3631de9247
+Candidate: 150114b6f0079bcd479c6c87bd0b15174581d984
+Kernel implementation: fe6be477faa270d75fd3e4dd26305b3631de9247
 Baseline:  63b4e65e9db1dfea45cc7d394902145c2f520821
 Image: vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
 
@@ -14,7 +15,11 @@ Keep model caches; source setup refuses to overwrite existing checkouts.
    bash /work/reproduce/fetch_sources.sh /work
    export PYTHONPATH=/work/source/candidate/techniques/sparse_backends
    export XDG_CACHE_HOME=/work/xdg-cache TRITON_CACHE_DIR=/work/triton-cache
-   export OMP_NUM_THREADS=4
+   export OMP_NUM_THREADS=4 UV_CACHE_DIR=/work/uv-cache
+   mkdir -p /work/results
+   uv pip install --system --no-deps /work/source/candidate/techniques/sparse_backends \
+     numpy==2.2.6 pytest==9.2.0
+   uv pip freeze > /work/results/environment.txt
 
 2. Run correctness and baseline stress checks:
 
@@ -22,8 +27,15 @@ Keep model caches; source setup refuses to overwrite existing checkouts.
 
    This runs the complete sparse_backends test directory, including the 41
    new boundary/numerical/graph tests, then 12 bitwise baseline comparisons.
-   Required Python dependencies are supplied by the image; exact environment
-   snapshots and commands are under each GPU's validation directory.
+   The benchmark now compares uint8 views as well as zero-tolerance values,
+   so signed-zero differences are rejected. For the untimed validation of
+   the eight synthetic cases plus four H3 captures, run
+   bash /work/reproduce/run_strict_bytes.sh
+   after placing captures as described in step 4.
+
+   Step 1 installs the same test dependencies used for validation while
+   preserving the image CUDA/Torch libraries. Complete environment snapshots
+   and commands are under each GPU's validation directory.
 
 3. Run paired synthetic benchmarks through the real public API:
 

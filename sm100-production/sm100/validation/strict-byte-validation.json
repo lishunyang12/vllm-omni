@@ -1,0 +1,146 @@
+{
+  "gpu": "NVIDIA Graphics Device",
+  "capability": [
+    10,
+    0
+  ],
+  "cases": [
+    {
+      "case": "(1, 257, 2, 'empty', 1.0)",
+      "shape": [
+        1,
+        257,
+        2,
+        128
+      ],
+      "eager_byte_equal": true,
+      "graph_byte_equal": true
+    },
+    {
+      "case": "(2, 1024, 3, 'all', 1.0)",
+      "shape": [
+        2,
+        1024,
+        3,
+        128
+      ],
+      "eager_byte_equal": true,
+      "graph_byte_equal": true
+    },
+    {
+      "case": "(1, 4096, 2, 'all', 1.0)",
+      "shape": [
+        1,
+        4096,
+        2,
+        128
+      ],
+      "eager_byte_equal": true,
+      "graph_byte_equal": true
+    },
+    {
+      "case": "(2, 4097, 3, 'ends', 1.0)",
+      "shape": [
+        2,
+        4097,
+        3,
+        128
+      ],
+      "eager_byte_equal": true,
+      "graph_byte_equal": true
+    },
+    {
+      "case": "(1, 16384, 8, 'empty', 1.5)",
+      "shape": [
+        1,
+        16384,
+        8,
+        128
+      ],
+      "eager_byte_equal": true,
+      "graph_byte_equal": true
+    },
+    {
+      "case": "(1, 16384, 8, 'empty', 1000000.0)",
+      "shape": [
+        1,
+        16384,
+        8,
+        128
+      ],
+      "eager_byte_equal": true,
+      "graph_byte_equal": true
+    },
+    {
+      "case": "(1, 32768, 8, 'ends', 1.0)",
+      "shape": [
+        1,
+        32768,
+        8,
+        128
+      ],
+      "eager_byte_equal": true,
+      "graph_byte_equal": true
+    },
+    {
+      "case": "(1, 32768, 28, 'ends', 1.0)",
+      "shape": [
+        1,
+        32768,
+        28,
+        128
+      ],
+      "eager_byte_equal": true,
+      "graph_byte_equal": true
+    },
+    {
+      "case": "h3-layer-00",
+      "shape": [
+        1,
+        82747,
+        28,
+        128
+      ],
+      "eager_byte_equal": true,
+      "graph_byte_equal": true
+    },
+    {
+      "case": "h3-layer-12",
+      "shape": [
+        1,
+        82747,
+        28,
+        128
+      ],
+      "eager_byte_equal": true,
+      "graph_byte_equal": true
+    },
+    {
+      "case": "h3-layer-25",
+      "shape": [
+        1,
+        82747,
+        28,
+        128
+      ],
+      "eager_byte_equal": true,
+      "graph_byte_equal": true
+    },
+    {
+      "case": "h3-layer-49",
+      "shape": [
+        1,
+        82747,
+        28,
+        128
+      ],
+      "eager_byte_equal": true,
+      "graph_byte_equal": true
+    }
+  ],
+  "baseline_sha256": {
+    "interface.py": "2d7cd74f7528f883cb41c23b3ac6a1f6b7a2ae82eafdef10c198f335af66c378",
+    "sm100/softmax.py": "c6b88f8e5eec040f194fc2f24f7e69338548b6e33a5ba5e3720ad6d2ea6c0311",
+    "sm100/mainloop.py": "dc171d8c6ed249d83bf5ebd87e918f45b08723e590d241a81d26ac83d87cc2ce"
+  }
+}

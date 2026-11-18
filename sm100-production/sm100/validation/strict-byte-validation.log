@@ -1,0 +1,13 @@
+BYTE_EQUAL (1, 257, 2, 'empty', 1.0)
+BYTE_EQUAL (2, 1024, 3, 'all', 1.0)
+BYTE_EQUAL (1, 4096, 2, 'all', 1.0)
+BYTE_EQUAL (2, 4097, 3, 'ends', 1.0)
+BYTE_EQUAL (1, 16384, 8, 'empty', 1.5)
+BYTE_EQUAL (1, 16384, 8, 'empty', 1000000.0)
+BYTE_EQUAL (1, 32768, 8, 'ends', 1.0)
+BYTE_EQUAL (1, 32768, 28, 'ends', 1.0)
+BYTE_EQUAL h3-layer-00
+BYTE_EQUAL h3-layer-12
+BYTE_EQUAL h3-layer-25
+BYTE_EQUAL h3-layer-49
+STRICT_BYTE_VALIDATION_PASSED 12

@@ -1,0 +1,20 @@
+[
+  {
+    "mode": "eager",
+    "clocks_mhz": [
+      750
+    ],
+    "power_cap_active_polls": 0,
+    "thermal_active_polls": 0,
+    "polls": 26
+  },
+  {
+    "mode": "graph",
+    "clocks_mhz": [
+      750
+    ],
+    "power_cap_active_polls": 0,
+    "thermal_active_polls": 0,
+    "polls": 25
+  }
+]

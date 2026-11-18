@@ -1,7 +1,7 @@
 #!/bin/bash
 set -Eeuo pipefail
 work=${1:-/work}
-for item in baseline:63b4e65e9db1dfea45cc7d394902145c2f520821 candidate:fe6be477faa270d75fd3e4dd26305b3631de9247; do
+for item in baseline:63b4e65e9db1dfea45cc7d394902145c2f520821 candidate:150114b6f0079bcd479c6c87bd0b15174581d984; do
   name=${item%%:*} commit=${item#*:}
   target="$work/source/$name"
   mkdir -p "$target"

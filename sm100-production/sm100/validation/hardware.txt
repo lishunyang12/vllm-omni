@@ -23,9 +23,9 @@ GPU 00000000:01:00.0
     Driver Model
         Current                                        : N/A
         Pending                                        : N/A
-    Serial Number                                      : 1332724100059
+    Serial Number                                      : [REDACTED]
     GPU UUID                                           : [GPU_UUID]
-    GPU PDI                                            : 0x25cc8e54db32e956
+    GPU PDI                                            : [REDACTED]
     Minor Number                                       : 2
     VBIOS Version                                      : 97.00.F0.00.00
     MultiGPU Board                                     : No
@@ -34,13 +34,12 @@ GPU 00000000:01:00.0
     GPU Part Number                                    : 2924-882-A1
     FRU Part Number                                    : N/A
     Platform Info
-        Chassis Serial Number                          : 
-        Slot Number                                    : 0
+        Chassis Serial Number                          : [REDACTED]
         Tray Index                                     : 0
         Host ID                                        : 1
         Peer Type                                      : Direct Connected
         Module Id                                      : 1
-        GPU Fabric GUID                                : 0x0000000000000000
+        GPU Fabric GUID                                : [REDACTED]
     Inforom Version
         Image Version                                  : 2020.0200.00.03
         OEM Object                                     : 2.1
@@ -273,9 +272,9 @@ GPU 00000000:41:00.0
     Driver Model
         Current                                        : N/A
         Pending                                        : N/A
-    Serial Number                                      : 1332724100004
+    Serial Number                                      : [REDACTED]
     GPU UUID                                           : [GPU_UUID]
-    GPU PDI                                            : 0x2134de1836988f93
+    GPU PDI                                            : [REDACTED]
     Minor Number                                       : 3
     VBIOS Version                                      : 97.00.F0.00.00
     MultiGPU Board                                     : No
@@ -284,13 +283,12 @@ GPU 00000000:41:00.0
     GPU Part Number                                    : 2924-882-A1
     FRU Part Number                                    : N/A
     Platform Info
-        Chassis Serial Number                          : 
-        Slot Number                                    : 0
+        Chassis Serial Number                          : [REDACTED]
         Tray Index                                     : 0
         Host ID                                        : 1
         Peer Type                                      : Direct Connected
         Module Id                                      : 1
-        GPU Fabric GUID                                : 0x0000000000000000
+        GPU Fabric GUID                                : [REDACTED]
     Inforom Version
         Image Version                                  : 2020.0200.00.03
         OEM Object                                     : 2.1
@@ -523,9 +521,9 @@ GPU 00000000:81:00.0
     Driver Model
         Current                                        : N/A
         Pending                                        : N/A
-    Serial Number                                      : 1332724100078
+    Serial Number                                      : [REDACTED]
     GPU UUID                                           : [GPU_UUID]
-    GPU PDI                                            : 0x139f5e047fb3712
+    GPU PDI                                            : [REDACTED]
     Minor Number                                       : 1
     VBIOS Version                                      : 97.00.F0.00.00
     MultiGPU Board                                     : No
@@ -534,13 +532,12 @@ GPU 00000000:81:00.0
     GPU Part Number                                    : 2924-882-A1
     FRU Part Number                                    : N/A
     Platform Info
-        Chassis Serial Number                          : 
-        Slot Number                                    : 0
+        Chassis Serial Number                          : [REDACTED]
         Tray Index                                     : 0
         Host ID                                        : 1
         Peer Type                                      : Direct Connected
         Module Id                                      : 1
-        GPU Fabric GUID                                : 0x0000000000000000
+        GPU Fabric GUID                                : [REDACTED]
     Inforom Version
         Image Version                                  : 2020.0200.00.03
         OEM Object                                     : 2.1
@@ -773,9 +770,9 @@ GPU 00000000:C1:00.0
     Driver Model
         Current                                        : N/A
         Pending                                        : N/A
-    Serial Number                                      : 1332724100086
+    Serial Number                                      : [REDACTED]
     GPU UUID                                           : [GPU_UUID]
-    GPU PDI                                            : 0xaf1f995faa9f2cd2
+    GPU PDI                                            : [REDACTED]
     Minor Number                                       : 0
     VBIOS Version                                      : 97.00.F0.00.00
     MultiGPU Board                                     : No
@@ -784,13 +781,12 @@ GPU 00000000:C1:00.0
     GPU Part Number                                    : 2924-882-A1
     FRU Part Number                                    : N/A
     Platform Info
-        Chassis Serial Number                          : 
-        Slot Number                                    : 0
+        Chassis Serial Number                          : [REDACTED]
         Tray Index                                     : 0
         Host ID                                        : 1
         Peer Type                                      : Direct Connected
         Module Id                                      : 1
-        GPU Fabric GUID                                : 0x0000000000000000
+        GPU Fabric GUID                                : [REDACTED]
     Inforom Version
         Image Version                                  : 2020.0200.00.03
         OEM Object                                     : 2.1

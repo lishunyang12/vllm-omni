@@ -68,7 +68,7 @@ def install():
         import tempfile
         import sol_attn as sol_package
         sys.path.insert(0, "/work/source/candidate/techniques/sparse_backends/benchmarks")
-        from benchmark_sm100 import baseline
+        from benchmark_sm100 import assert_bitwise_equal, baseline
         baseline_files = tempfile.TemporaryDirectory(prefix="sol-forward-baseline-")
         old_sol, baseline_hashes = baseline(
             Path("/work/source/baseline/techniques/sparse_backends"), Path(baseline_files.name))
@@ -112,7 +112,7 @@ def install():
         for outputs in (first_outputs, last_outputs):
             assert len(outputs['baseline']) == len(outputs['candidate'])
             for old, new in zip(outputs['baseline'], outputs['candidate']):
-                torch.testing.assert_close(new, old, atol=0, rtol=0)
+                assert_bitwise_equal(new, old)
         finite = all(bool(torch.isfinite(t).all().item()) for tensors in last_outputs.values() for t in tensors)
         if not finite:
             raise RuntimeError('Non-finite DiT output')

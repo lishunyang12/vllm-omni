@@ -1,6 +1,6 @@
 Production SM100 SOL rescale/mask performance candidate
 
-Candidate fe6be477faa270d75fd3e4dd26305b3631de9247; baseline 63b4e65e9db1dfea45cc7d394902145c2f520821.
+PR head 150114b6f0079bcd479c6c87bd0b15174581d984; kernel implementation fe6be477faa270d75fd3e4dd26305b3631de9247; baseline 63b4e65e9db1dfea45cc7d394902145c2f520821.
 This is an incremental upstream kernel optimization, dependent on Sana PR #593.
 Thresholds, protection, routing, precision and Omni provider dispatch are unchanged.
 
@@ -17,7 +17,7 @@ sm103/600  layer-12.json          449.918       410.305       293.649      8.80%
 sm103/600  layer-25.json          452.084       412.126       294.049      8.84%
 sm103/600  layer-49.json          436.700       396.191       293.142      9.28%
 
-The complete 52-row eager/graph matrix, including noisy or unfavorable cells,
+The complete 54-row eager/graph matrix, including noisy or unfavorable cells,
 is in comparison.csv. Each case uses 5 warmups and 16 paired rounds; all raw
 CUDA events and synchronized wall samples are retained. Short eager cases
 have high relative variation and do not support small-win claims.
@@ -40,7 +40,10 @@ synchronized wall medians: Dense 14.727 s; original SOL 16.503 s; candidate
 improved (1.0420x-1.0488x); original/candidate CVs 0.463%/0.504%.
 The full run requested 750 MHz but observed clock drops and power-cap flags
 on both GPUs. This is a paired same-policy result, not constant-clock evidence.
-A lower-clock follow-up is being collected; the 750 MHz run remains published.
+The 600 MHz attempt hit the framework's 600-second request timeout near the
+last measured rounds. It lacks final rank reports/output checks and is not
+accepted as a performance result. Its logs are retained. A 450 MHz follow-up
+is running with 1800-second wave/output deadlines. The 750 MHz run is retained.
 Candidate remains 7.04% slower than Dense in this operating condition.
 First and last original/candidate outputs match bitwise on both ranks.
 Input hashes did not change. No sampler advancement or VAE decode is timed.
@@ -67,7 +70,8 @@ reduced-section collection. Each diagnostic was stopped and clocks restored.
 These are profiling failures, not unprofiled execution or correctness failures.
 No new occupancy, tensor-core utilization, barrier-stall or runtime spill
 claims are made from incomplete profiler runs.
-A separate fresh-compile cuobjdump check succeeded: both SM103 binaries use
+Separate fresh-compile cuobjdump checks succeeded on SM100 and SM103: both
+original/candidate binaries on each device use
 168 registers/thread, STACK=0, LOCAL=0, static SHARED=1024 bytes. This does
 not include dynamic shared memory or measure achieved occupancy/spill traffic.
 The bundled disassembler failed to decode SASS; its error is retained.
@@ -76,3 +80,17 @@ Reproduction commands and scripts: REPRODUCE.txt and reproduce/.
 Weights, private Q/K/V, generated-output tensors and binary profiler reports
 are excluded from this public evidence. These checks do not establish decoded
 video SSIM/PSNR/LPIPS or FP8/MXFP8 support.
+
+Byte-level follow-up and targeted repeat:
+The earlier zero-tolerance numerical comparisons were strengthened by checking
+uint8 views, including signed zero, in head 150114b. On each GPU, all 8 synthetic
+cases and 4 captured H3 layers pass both eager and graph byte comparisons;
+all 12 stress cases also pass. Kernel source files are unchanged from fe6be47.
+The 94-test suite predates this benchmark-only assertion refinement; tested
+kernel/test files are identical to the final head. Source manifests retain
+both the original validation file hashes and final-head file hashes.
+
+A fresh layer-25 SM100 repeat at 750 MHz measured 177.386 -> 162.502 ms in
+graph replay (8.39% reduction), with unchanged output bytes and no power-cap
+or thermal flags in overlapping telemetry polls. Original flagged-run data
+remains in the comparison table.

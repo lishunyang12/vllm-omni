@@ -23,9 +23,9 @@ GPU 00000000:C1:00.0
     Driver Model
         Current                                        : N/A
         Pending                                        : N/A
-    Serial Number                                      : 1332625060215
+    Serial Number                                      : [REDACTED]
     GPU UUID                                           : [GPU_UUID]
-    GPU PDI                                            : 0x2056c78b579e764c
+    GPU PDI                                            : [REDACTED]
     Minor Number                                       : 0
     VBIOS Version                                      : 97.10.51.00.01
     MultiGPU Board                                     : No
@@ -34,13 +34,12 @@ GPU 00000000:C1:00.0
     GPU Part Number                                    : 3203-883-A1
     FRU Part Number                                    : N/A
     Platform Info
-        Chassis Serial Number                          : 
-        Slot Number                                    : N/A
+        Chassis Serial Number                          : [REDACTED]
         Tray Index                                     : N/A
         Host ID                                        : 1
         Peer Type                                      : Direct Connected
         Module Id                                      : 4
-        GPU Fabric GUID                                : 0x2056c78b579e764c
+        GPU Fabric GUID                                : [REDACTED]
     Inforom Version
         Image Version                                  : G004.0000.97.01
         OEM Object                                     : 2.1
