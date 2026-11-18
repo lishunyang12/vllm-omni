@@ -1,0 +1,55 @@
+SM100 diagnostic: modest full-forward benefit with clock/power dependence
+
+The primary two fresh-process runs measured 1.0678x and 1.0644x speedup on
+2x GB200 at the node's default settings. All 18 pairs were faster. The separate
+profile and clock-observer processes retain their own 3+9-pair reports and are
+not pooled into the primary result.
+
+One full-forward CUDA profile per variant, collected after warmup and the
+timing samples, found these kernel activity sums (seconds):
+
+                         rank 0 Dense / SOL       rank 1 Dense / SOL
+  50 DiT attention calls     5.517 / 5.448             4.401 / 5.358
+  two main GEMM kernels     1.470 / 1.136             1.195 / 1.136
+  NCCL SendRecv             0.275 / 0.274             1.714 / 0.364
+
+The CuTe SM100 fused SOL kernel accounts for about 76% of SOL GPU activity
+on rank 0. Its operator total is 5.466s, including the fused kernel's 5.448s;
+the small difference does not indicate a large Omni residual/merge overhead.
+The trace contains 50 native SOL calls. There is no Omni-side BSA composition.
+Use kernel-summary.json rather than summing nested rows in the operator
+tables, which would double-count CUDA time. Diagnostic profile durations are
+separate from the synchronized wall latency used in the benchmark tables.
+
+Timestamp-correlated telemetry in a separate fresh process explains why a
+kernel-only speedup attribution is unresolved:
+  rank 0 Dense: median SM clock 892 MHz, median power 1165.11 W;
+                SW power-cap flag Active in 199/199 sampled polls.
+  rank 0 SOL:   median SM clock 1200 MHz, median power 988.91 W;
+                SW power-cap flag Active in 30/185 sampled polls.
+  rank 1 Dense: median SM clock 1087 MHz; power-cap Active in 140/199 polls.
+  rank 1 SOL:   median SM clock 1200 MHz; power-cap Active in 16/185 polls.
+  No sampled hardware thermal-slowdown flag was active.
+
+These are sampled observations inside measured intervals, excluding 0.5s at
+each boundary. The node reports default/application clocks of 1200 MHz and a
+1200 W GPU power limit. The observed two-rank Dense imbalance also appears as
+extra NCCL waiting on rank 1. Independent process repeats establish the result
+on this machine; they do not eliminate this frequency/power dependence.
+
+A separate diagnostic requested 750 MHz through Slurm --gpu-freq. The cluster
+returned GpuFreq=control_disabled. The preflight correctly stopped before
+model loading or measurement because application clocks remained 1200 MHz.
+No fixed-frequency result is claimed. Read-only verification before releasing
+the allocation confirmed both GPUs retained their original 1200 MHz/default
+application clocks and 1200 W power limits. No restriction was bypassed.
+
+Further SM100 optimization should investigate the upstream fused kernel,
+with clock/power controls available and workload-specific hardware counters.
+This evidence supports a modest full-forward gain at the measured node's
+default settings, not a universal or clock-normalized SM100 kernel speedup.
+
+Sources: per-rank kernel-summary.json, clock-summary.json, the raw timestamped
+telemetry and frequency-control logs in ../validation-20261118, and the paired
+rank reports in ../ref2va-native-sm100-{1,2,profile,clockdiag}.
+Slurm frequency option documentation: https://slurm.schedmd.com/srun.html#OPT_gpu-freq

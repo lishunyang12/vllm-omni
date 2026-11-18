@@ -29,7 +29,8 @@
     },
     "pinned_upstream_sm100": {
       "passed": 33,
-      "skipped": 2
+      "skipped": 2,
+      "fresh_bootstrap_revalidated": true
     },
     "current_upstream_sm90": {
       "passed": 47,
@@ -38,12 +39,108 @@
     "current_upstream_sm100": {
       "passed": 45,
       "skipped": 19
+    },
+    "omni_cuda_sm100": {
+      "passed": 37,
+      "skipped": 1,
+      "skip": "SP4 requires four GPUs",
+      "source": "3da353c45224f5863808da320d694be045c16ef8"
+    },
+    "pinned_upstream_sm120": {
+      "passed": 33,
+      "skipped": 2,
+      "skip": "SM90-only KV splits",
+      "backend": "cute_sm120"
+    },
+    "current_upstream_sm120": {
+      "passed": 45,
+      "skipped": 19,
+      "source": "1c522ed3e1e5d43f24258f6cc27bb7b7e189d508",
+      "skip_counts": {
+        "SM80": 11,
+        "MPS": 6,
+        "SM90 KV splits": 2
+      }
     }
   },
   "limits": [
-    "SP4 not rerun",
-    "SM80/SM89/SM120/MPS hardware not tested",
-    "Full-model native SM100/SM103/SM120 latency not measured",
-    "No decoded quality or end-to-end generation results"
+    "SP4 untested",
+    "SM80/SM89/MPS hardware untested",
+    "SM103 full-model latency untested",
+    "No decoded quality or end-to-end generation results",
+    "Different GPU counts and encoder-generated tensors across architectures",
+    "SM100 default-node result depends on power/clock behavior; equal-clock diagnostic unavailable"
+  ],
+  "measurements": [
+    {
+      "path": "sm90/ref2va-final",
+      "gpu": "NVIDIA GH200 96GB HBM3",
+      "gpu_count": 2,
+      "capability": [
+        9,
+        0
+      ],
+      "sol_backend": "cute_sm90",
+      "warmup_pairs": 3,
+      "measured_pairs": 9,
+      "ratio_of_medians": 1.6401367999106222,
+      "latency_reduction_percent": 39.029476074526585,
+      "all_pairs_faster": true,
+      "peak_allocated_GiB": 70.65449666976929,
+      "request_sha256": "5cc696c459abd73a3ff5972faf3d7c0f33b88d5c343e42f02e31b90467011942",
+      "omni_source": "3da353c45224f5863808da320d694be045c16ef8",
+      "sol_source": "088897e0c6a9cb970f00b43ab2177c3be7336b36",
+      "architecture": "SM90",
+      "hardware": "2x GH200 96GB"
+    },
+    {
+      "path": "sm100/ref2va-native-sm100-2",
+      "gpu": "NVIDIA GB200",
+      "gpu_count": 2,
+      "capability": [
+        10,
+        0
+      ],
+      "sol_backend": "cute_sm100",
+      "warmup_pairs": 3,
+      "measured_pairs": 9,
+      "ratio_of_medians": 1.0643843264178239,
+      "latency_reduction_percent": 6.0489735539895335,
+      "all_pairs_faster": true,
+      "peak_allocated_GiB": 100.41702032089233,
+      "request_sha256": "5cc696c459abd73a3ff5972faf3d7c0f33b88d5c343e42f02e31b90467011942",
+      "omni_source": "3da353c45224f5863808da320d694be045c16ef8",
+      "sol_source": "088897e0c6a9cb970f00b43ab2177c3be7336b36",
+      "architecture": "SM100",
+      "hardware": "2x GB200"
+    },
+    {
+      "path": "sm120/ref2va-native-sm120-2",
+      "gpu": "NVIDIA RTX 6000D",
+      "gpu_count": 1,
+      "capability": [
+        12,
+        0
+      ],
+      "sol_backend": "cute_sm120",
+      "warmup_pairs": 3,
+      "measured_pairs": 9,
+      "ratio_of_medians": 1.818159071485048,
+      "latency_reduction_percent": 44.99931190381415,
+      "all_pairs_faster": true,
+      "peak_allocated_GiB": 73.50342273712158,
+      "request_sha256": "5cc696c459abd73a3ff5972faf3d7c0f33b88d5c343e42f02e31b90467011942",
+      "omni_source": "3da353c45224f5863808da320d694be045c16ef8",
+      "sol_source": "088897e0c6a9cb970f00b43ab2177c3be7336b36",
+      "architecture": "SM120",
+      "hardware": "1x RTX 6000D"
+    }
+  ],
+  "reproduction_updates": [
+    "Generalized GPU count for SM120=1",
+    "Restored setuptools-scm==10.3.4 after an overbroad old redaction",
+    "Input SHA256 preflight",
+    "Optional post-measurement profiling",
+    "Timestamp-correlated read-only GPU telemetry"
   ]
 }

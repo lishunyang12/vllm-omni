@@ -1,0 +1,1 @@
+{"gpu": "NVIDIA RTX 6000D", "capability": [12, 0], "backend": "cute_sm120", "torch": "2.16.0.dev20261009+cu134", "memory_GiB": 83.0489501953125}

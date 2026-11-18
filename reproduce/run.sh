@@ -9,6 +9,7 @@ export TOKENIZERS_PARALLELISM=false VLLM_WORKER_MULTIPROC_METHOD=spawn VLLM_OMNI
 export PYTHONPATH="$artifact:$work/source/sana/techniques/sparse_backends:$work/source/native"
 export H3_SOURCE_COMMIT=3da353c45224f5863808da320d694be045c16ef8
 export H3_UPSTREAM_COMMIT=088897e0c6a9cb970f00b43ab2177c3be7336b36
+export H3_GPU_COUNT=${H3_GPU_COUNT:-2}
 export H3_VARIANT=native H3_FORWARD_WARMUP=3 H3_FORWARD_REPEATS=9
 export H3_FORWARD_RESULT="$work/results/ref2va-native-${H3_RUN_ID:-1}"
 mkdir -p "$H3_FORWARD_RESULT"

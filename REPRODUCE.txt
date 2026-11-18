@@ -1,67 +1,134 @@
-H3 Ref2VA: direct upstream SOL versus Dense cuDNN
+H3 Ref2VA: full forward Dense cuDNN versus direct upstream SOL
 
-Scope: first conditional denoising step, full 50-layer DiT forward, then an
-intentional stop before sampler advancement/VAE decode. No SSIM/PSNR/LPIPS
-or end-to-end generation quality claim is made.
+This measures the first conditional denoising step, all 50 DiT layers, then
+intentionally stops before sampler advancement and VAE decode. It does not
+measure HTTP latency, complete video generation, SSIM, PSNR or LPIPS.
 
-Exact image:
+Image:
   vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
-Measured Omni source: 3da353c45224f5863808da320d694be045c16ef8
+Omni measured source: 3da353c45224f5863808da320d694be045c16ef8
 SOL dependency: 088897e0c6a9cb970f00b43ab2177c3be7336b36
-H3 checkpoint: MiniMaxAI/MiniMax-H3 at 0919fb684102ef115126612f3fbb84d1027e7317
+Checkpoint: MiniMaxAI/MiniMax-H3@0919fb684102ef115126612f3fbb84d1027e7317
+Request: the included official Ref2VA request, seed 0, 768 short edge, 5s/24fps.
+Request and reference asset SHA256 values are in reproduce/input-manifest.json.
+The harness rejects changed assets or a changed request.
 
-Validated full-model hardware: 2x GH200 96GB with NVLink, 512GB host RAM.
-Provide sufficient checkpoint/cache space (350 GiB recommended). Downloads use
-immutable revisions and standard HF cache reuse; scripts never evict caches.
+Hardware configurations:
+  SM90:  2x GH200 96GB, TP1/Ulysses2, model CPU offload for capacity.
+  SM100: 2x GB200, TP1/Ulysses2, no model CPU offload.
+  SM120: 1x RTX 6000D (83.05 GiB visible), TP1/Ulysses1, model CPU offload.
+Provide enough host memory (at least 224 GiB for the single-GPU configuration)
+and checkpoint/cache space (350 GiB recommended). The scripts reuse the HF cache
+and never evict it. Check platform compatibility with the selected image.
 
-Copy this artifact's reproduce directory to WORK/native, then mount WORK as
-/work in the exact image, with two visible GPUs and host IPC:
+Example with Docker; keep the same container for bootstrap and measurement:
 
-  bash /work/native/bootstrap.sh /work
-  H3_RUN_ID=1 bash /work/native/run.sh /work
-  H3_RUN_ID=2 bash /work/native/run.sh /work
+  export H3_WORK=/absolute/path/to/h3-sol-test
+  mkdir -p "$H3_WORK/native"
+  cp -R reproduce/. "$H3_WORK/native/"
+  docker run -d --name h3-sol-native --gpus '"device=0,1"' --ipc=host \
+    --mount type=bind,source="$H3_WORK",target=/work --entrypoint bash \
+    vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb \
+    -c 'sleep infinity'
+  docker exec h3-sol-native bash /work/native/bootstrap.sh /work
+  docker exec -e H3_GPU_COUNT=2 -e H3_RUN_ID=1 h3-sol-native \
+    bash /work/native/run.sh /work
+  docker exec -e H3_GPU_COUNT=2 -e H3_RUN_ID=2 h3-sol-native \
+    bash /work/native/run.sh /work
 
-Bootstrap installs the exact sources and dependency constraints and downloads
-Ref2VA only. Runtime constraints preserve the image's PyTorch/vLLM/CUDA stack.
-This bootstrap assembles the validated environment; provisioning itself was
-not rerun from an empty checkpoint cache. Full installed environments and
-actual model-run protocols are retained in the evidence directories.
+For single-GPU SM120, expose device=0 and set H3_GPU_COUNT=1 in both run commands.
+Allow at least 60 minutes per SM120 run, including initialization and warmup;
+do not reduce the workload or sample count to fit a short launcher timeout.
+Use a new H3_RUN_ID each time. Existing rank reports are rejected to prevent
+mixing fresh measurements with stale results.
 
-The run script starts a fresh process for each invocation, loads the same
-weights once, and alternates Dense/SOL order. Three warmup pairs precede nine
-measured pairs. Each sample is a synchronized full DiT forward; the reported
-latency is the median of the maximum wall time across ranks. Dense uses
-CuDNNAttentionImpl as the dense guard on the same attention objects; SOL uses
-the unmodified production sparse path. All 50 DiT blocks are checked. Model
-CPU offload is enabled equally on GH200 for capacity; weights are resident
-inside the measured forward. First/last output tensors and input hashes are
-saved outside timing. Existing result directories are rejected.
+Bootstrap installs immutable source archives, preserves the image's
+PyTorch/vLLM/CUDA stack, installs validated Python constraints and downloads
+only Ref2VA. Empty-cache provisioning was executed successfully on the SM100
+and SM120 machines. Installed environments are included with the evidence.
 
-The harness patches only the measurement boundary and switches the two
-attention paths outside timed calls. Production serving needs only:
-  --diffusion-attention-backend SOL_ATTN
-No provider/native flag is accepted.
+Each run starts a fresh model process. Three warmup pairs precede nine measured
+pairs, with Dense/SOL order alternating. The report uses synchronized maximum
+wall latency across ranks for each complete 50-layer forward, then its median.
+Dense uses CuDNNAttentionImpl through the same SOL objects' dense guard; SOL
+uses the production upstream sparse path. Both use BF16 and eager execution.
+CPU offload is enabled equally for Dense/SOL where capacity requires it; model
+weights are resident inside the measured boundary. Output tensor copies, hash
+checks, and optional profiling occur outside the timed samples.
 
-Tests (inside the validated environment):
+Within each machine, Dense and SOL replay the identical DiT input tensors.
+Across architectures, the request, assets, seed, shapes and checkpoint match,
+but encoder-produced tensor values can differ numerically. Compare each
+machine's own Dense-to-SOL ratio. Different GPU counts and products make the
+absolute latency columns unsuitable for architecture ranking.
+
+Recompute statistics directly from per-rank reports (no Torch required):
+
+  python3 /work/native/summarize.py /work/results/ref2va-native-1 \
+    /work/results/ref2va-native-2 --output /work/results/recomputed.json
+
+Check forward tensor error and repeated-process equality with FP64 analysis:
+
+  docker exec -e OMP_NUM_THREADS=2 h3-sol-native python3 \
+    /work/native/compare_outputs.py /work/results/ref2va-native-1 \
+    /work/results/ref2va-native-2 --cross-process \
+    --output /work/results/output-comparison.json
+
+Optional profiling in a separate fresh process:
+
+  docker exec -e H3_GPU_COUNT=2 -e H3_RUN_ID=profile -e H3_PROFILE_AFTER=1 \
+    h3-sol-native bash /work/native/run.sh /work
+
+Profiling runs one Dense and one SOL full forward AFTER all 3+9 paired calls
+and output captures. It produces per-rank Chrome traces and operator tables.
+Profile timings have instrumentation overhead; use the unprofiled summary for
+speedup. Check that profile-complete-rank-N exists for every rank. This optional
+path was executed on SM100, not on SM90/SM120.
+
+Production serving only needs --diffusion-attention-backend SOL_ATTN; no
+provider/native flag is accepted. The benchmark patch is only instrumentation
+and dense/sparse switching; it is not a production model implementation.
+
+GPU correctness commands, inside the validated container:
+
   cd /work/source/native
-  python3 -m pytest -q tests/diffusion/attention/test_sol_attn_backend.py \
-    tests/diffusion/attention/test_impl_overrides.py \
-    tests/diffusion/models/wan2_2/test_wan22_scheduled_attention_compile.py \
-    tests/diffusion/attention/test_attention_config.py \
-    tests/diffusion/models/minimax_h3/test_minimax_h3_contract.py --run-level=core_model
-  python3 -m pytest -q tests/diffusion/attention/test_sol_attn_cuda.py --run-level=core_model
+  python3 -m pytest -q tests/diffusion/attention/test_sol_attn_cuda.py \
+    --run-level=core_model
   cd /work/source/sana
   python3 -m pytest -q techniques/sparse_backends/tests/test_exact_block_mask.py
 
-The single-GPU Omni suite plus two-GPU Ulysses cases were executed on GH200;
-SP4 was not run. The pinned upstream suite was also executed on GB200. This
-does not establish full H3 forward latency on GB200, SM103 or SM120.
+The exact pinned upstream suite was tested on all three requested GPU
+architectures. SP4 and native SM103 hardware remain untested. See manifest.json
+for separate provenance of the newer upstream PR and this release-pinned fork.
 
-The upstream PR follows newer sol-engine history separately from the pinned
-backport. Its current full sparse-backend suite was tested on GH200/GB200;
-see manifest.json for distinct source commits and the logs for skipped cases.
+The current upstream PR commit was additionally tested on SM120 (45 passed,
+19 skipped: 11 SM80-only, 6 MPS-only, 2 SM90-only split cases). Its source was
+staged separately; the measured dependency was not replaced:
 
-All public logs redact hostnames, IPs, GPU UUIDs and home paths. Private tensor
-captures and model weights are not included. compare_outputs.py can derive
-forward-tensor error and repeatability from locally saved captures; those
-metrics are not decoded-video quality measurements.
+  mkdir -p /work/source/sana-current
+  curl -fL https://codeload.github.com/lishunyang12/Sana/tar.gz/1c522ed3e1e5d43f24258f6cc27bb7b7e189d508 \
+    | tar xz --strip-components=1 -C /work/source/sana-current
+  cd /work/source/sana-current
+  PYTHONPATH=/work/source/sana-current/techniques/sparse_backends \
+    python3 -m pytest -q techniques/sparse_backends/tests
+
+Read-only clock diagnostics, run in a separate observer process alongside a
+fresh benchmark on the allocated GPU indices:
+
+  python3 /work/native/gpu_telemetry.py --indices 0,1 \
+    --stop-file /work/results/ref2va-native-clocks/summary.json \
+    --output /work/results/telemetry.csv --seconds 900
+  # In the benchmark process: H3_RUN_ID=clocks bash /work/native/run.sh /work
+  python3 /work/native/summarize_clocks.py /work/results/ref2va-native-clocks \
+    /work/results/telemetry.csv --output /work/results/clock-summary.json
+
+The SM100 cluster disabled Slurm GPU-frequency control; no fixed-clock test
+was measured. Settings were verified unchanged before allocation release.
+Each new architecture evidence directory retains measured-harness copies of
+the original timing scripts. The current reproduction scripts additionally
+validate input hashes, record timestamps and support optional profiling after
+measurement; the full-forward timing boundary is unchanged.
+
+Public evidence omits weights, raw tensor captures and private machine details.
+Package versions are preserved verbatim. The corrected setuptools-scm version
+is 10.3.4; the older d4352f4 artifact incorrectly redacted that version.

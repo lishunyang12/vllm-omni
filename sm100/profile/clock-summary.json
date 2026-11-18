@@ -1,0 +1,137 @@
+{
+  "scope": "Read-only samples within measured forward windows; excludes 0.5s at each boundary. GPU indices equal ranks in this run.",
+  "results": [
+    {
+      "rank": 0,
+      "variant": "dense",
+      "telemetry_samples": 199,
+      "stats": {
+        "clocks.sm": {
+          "min": 637.0,
+          "median": 892.0,
+          "max": 1057.0
+        },
+        "power.draw": {
+          "min": 1077.88,
+          "median": 1165.11,
+          "max": 1201.45
+        },
+        "temperature.gpu": {
+          "min": 71.0,
+          "median": 75.0,
+          "max": 76.0
+        },
+        "utilization.gpu": {
+          "min": 100.0,
+          "median": 100.0,
+          "max": 100.0
+        },
+        "clocks_event_reasons.sw_power_cap": {
+          "active_fraction": 1.0
+        },
+        "clocks_event_reasons.hw_thermal_slowdown": {
+          "active_fraction": 0.0
+        }
+      }
+    },
+    {
+      "rank": 0,
+      "variant": "sol",
+      "telemetry_samples": 185,
+      "stats": {
+        "clocks.sm": {
+          "min": 817.0,
+          "median": 1200.0,
+          "max": 1200.0
+        },
+        "power.draw": {
+          "min": 966.09,
+          "median": 988.91,
+          "max": 1080.33
+        },
+        "temperature.gpu": {
+          "min": 67.0,
+          "median": 68.0,
+          "max": 73.0
+        },
+        "utilization.gpu": {
+          "min": 100.0,
+          "median": 100.0,
+          "max": 100.0
+        },
+        "clocks_event_reasons.sw_power_cap": {
+          "active_fraction": 0.16216216216216217
+        },
+        "clocks_event_reasons.hw_thermal_slowdown": {
+          "active_fraction": 0.0
+        }
+      }
+    },
+    {
+      "rank": 1,
+      "variant": "dense",
+      "telemetry_samples": 199,
+      "stats": {
+        "clocks.sm": {
+          "min": 900.0,
+          "median": 1087.0,
+          "max": 1200.0
+        },
+        "power.draw": {
+          "min": 1028.33,
+          "median": 1104.48,
+          "max": 1134.5
+        },
+        "temperature.gpu": {
+          "min": 67.0,
+          "median": 75.0,
+          "max": 78.0
+        },
+        "utilization.gpu": {
+          "min": 100.0,
+          "median": 100.0,
+          "max": 100.0
+        },
+        "clocks_event_reasons.sw_power_cap": {
+          "active_fraction": 0.7035175879396985
+        },
+        "clocks_event_reasons.hw_thermal_slowdown": {
+          "active_fraction": 0.0
+        }
+      }
+    },
+    {
+      "rank": 1,
+      "variant": "sol",
+      "telemetry_samples": 185,
+      "stats": {
+        "clocks.sm": {
+          "min": 870.0,
+          "median": 1200.0,
+          "max": 1200.0
+        },
+        "power.draw": {
+          "min": 896.35,
+          "median": 946.95,
+          "max": 1010.87
+        },
+        "temperature.gpu": {
+          "min": 66.0,
+          "median": 68.0,
+          "max": 73.0
+        },
+        "utilization.gpu": {
+          "min": 100.0,
+          "median": 100.0,
+          "max": 100.0
+        },
+        "clocks_event_reasons.sw_power_cap": {
+          "active_fraction": 0.08648648648648649
+        },
+        "clocks_event_reasons.hw_thermal_slowdown": {
+          "active_fraction": 0.0
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+index, name, compute_cap, memory.total [MiB], driver_version
+0, NVIDIA RTX 6000D, 12.0, 85651 MiB, 595.84.01

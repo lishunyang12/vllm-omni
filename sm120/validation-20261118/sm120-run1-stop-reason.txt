@@ -1,0 +1,1 @@
+Interrupted before completion to raise launch timeout: the measured warmup implies a full 3+9-pair run exceeds the original 30-minute launcher timeout. No completed performance result is claimed for run 1. Restart under a 60-minute launcher budget using a fresh output directory.

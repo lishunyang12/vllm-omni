@@ -1,0 +1,43 @@
+/usr/local/lib/python3.12/dist-packages/pytest_asyncio/plugin.py:290: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session". Set it to "fixture-scope" to keep the current behavior.
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+sss.................................ss............ssssssssssssss         [100%]
+=============================== warnings summary ===============================
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-257-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-513-1000000.0]
+tests/test_exact_block_mask.py::test_empty_mask_preserves_legacy_output_and_mutated_mask_uses_current_values[native]
+  /work/source/sana-current/techniques/sparse_backends/sol_attn/sm120/mainloop.py:726: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    self.Q_layout = utils.LayoutEnum.from_tensor(q_mkl)
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-257-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-513-1000000.0]
+tests/test_exact_block_mask.py::test_empty_mask_preserves_legacy_output_and_mutated_mask_uses_current_values[native]
+  /work/source/sana-current/techniques/sparse_backends/sol_attn/sm120/mainloop.py:727: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    self.K_layout = utils.LayoutEnum.from_tensor(k_nkl)
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-257-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-513-1000000.0]
+tests/test_exact_block_mask.py::test_empty_mask_preserves_legacy_output_and_mutated_mask_uses_current_values[native]
+  /work/source/sana-current/techniques/sparse_backends/sol_attn/sm120/mainloop.py:728: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    self.V_layout = utils.LayoutEnum.from_tensor(v_nkl)
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-257-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-513-1000000.0]
+tests/test_exact_block_mask.py::test_empty_mask_preserves_legacy_output_and_mutated_mask_uses_current_values[native]
+  /work/source/sana-current/techniques/sparse_backends/sol_attn/sm120/mainloop.py:729: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    self.O_layout = utils.LayoutEnum.from_tensor(o_mkl)
+
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-63-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-257-1000000.0]
+tests/test_exact_block_mask.py::test_disjoint_exact_rows_and_columns_match_hybrid_oracle[native-diag-513-1000000.0]
+tests/test_exact_block_mask.py::test_empty_mask_preserves_legacy_output_and_mutated_mask_uses_current_values[native]
+  /work/source/sana-current/techniques/sparse_backends/sol_attn/sm120/mainloop.py:106: DeprecationWarning: cutlass.utils.smem_allocator.SmemAllocator is deprecated; use cutlass.memory.SmemAllocator instead. It will be removed in a future release.
+    storage = cutlass.utils.SmemAllocator().allocate(self.shared_storage_t)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+45 passed, 19 skipped, 20 warnings in 19.79s

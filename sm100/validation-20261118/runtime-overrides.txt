@@ -1,0 +1,2 @@
+triton==3.8.0+git3f6e4113
+nvidia-nccl-cu13==2.32.3

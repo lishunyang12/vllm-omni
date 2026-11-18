@@ -41,15 +41,16 @@ def install():
         if not is_forward_context_available() or get_forward_context().denoise_step_idx != 0:
             raise RuntimeError('Benchmark expected first conditional denoising step 0')
         rank, world = dist.get_rank(), dist.get_world_size()
-        if world != 2 or len(self.blocks) != 50:
-            raise RuntimeError(f'Expected full 50-layer DiT and SP2, got {len(self.blocks)}, world {world}')
+        expected_world = int(os.environ.get("H3_GPU_COUNT", "2"))
+        if world != expected_world or len(self.blocks) != 50:
+            raise RuntimeError(f'Expected full 50-layer DiT and SP{expected_world}, got {len(self.blocks)}, world {world}')
         if args:
             raise RuntimeError('Unexpected positional forward arguments')
         meta = describe(kwargs)
         config = get_forward_context().omni_diffusion_config
         parallel = config.parallel_config
-        if parallel.ulysses_degree != 2 or parallel.tensor_parallel_size != 1:
-            raise RuntimeError(f'Benchmark requires TP1 + Ulysses2, got {parallel}')
+        if parallel.ulysses_degree != expected_world or parallel.tensor_parallel_size != 1:
+            raise RuntimeError(f'Benchmark requires TP1 + Ulysses{expected_world}, got {parallel}')
         backends = {}
         for name, module in self.named_modules():
             if hasattr(module, 'attn_backend'):
@@ -74,6 +75,7 @@ def install():
                 dist.barrier()
                 torch.cuda.synchronize()
                 start, stop = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+                start_unix_s = time.time()
                 wall = time.perf_counter()
                 start.record()
                 result = original(self, **kwargs)
@@ -82,7 +84,8 @@ def install():
                 elapsed = time.perf_counter() - wall
                 event_s = start.elapsed_time(stop) / 1000
                 if i >= warmup:
-                    samples.append({'index': i - warmup, 'variant': variant, 'wall_s': elapsed, 'cuda_event_s': event_s})
+                    samples.append({'index': i - warmup, 'variant': variant, 'wall_s': elapsed,
+                                    'cuda_event_s': event_s, 'start_unix_s': start_unix_s})
                 if i == warmup:
                     torch.save([x.detach().cpu() for x in result], root / f'output-{variant}-first-rank-{rank}.pt')
                 last_outputs[variant] = result
@@ -106,6 +109,30 @@ def install():
         temp.write_text(json.dumps(report, indent=2, default=str) + '\n')
         temp.replace(root / f'rank-{rank}.json')
         dist.barrier()
+        # Optional diagnostics run only after all latency samples and captures.
+        # Profiler timings are never mixed into the benchmark samples above.
+        if os.environ.get('H3_PROFILE_AFTER') == '1':
+            for variant in ('dense', 'sol'):
+                for impl in sparse_impls:
+                    impl.dense_layers = set(range(50)) if variant == 'dense' else set()
+                dist.barrier()
+                torch.cuda.synchronize()
+                with torch.profiler.profile(
+                    activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+                    record_shapes=False,
+                    profile_memory=False,
+                    with_stack=False,
+                ) as prof:
+                    with torch.profiler.record_function(f'H3_DIAGNOSTIC_{variant}'):
+                        original(self, **kwargs)
+                        torch.cuda.synchronize()
+                prof.export_chrome_trace(str(root / f'profile-{variant}-rank-{rank}.json'))
+                (root / f'profile-{variant}-rank-{rank}.txt').write_text(
+                    prof.key_averages().table(sort_by='self_cuda_time_total', row_limit=50)
+                )
+                print(f'H3_PROFILE_COMPLETE rank={rank} variant={variant}', flush=True)
+            (root / f'profile-complete-rank-{rank}').write_text('Diagnostic traces complete.\n')
+            dist.barrier()
         raise RuntimeError('H3_FORWARD_BENCHMARK_COMPLETE: intentional stop before sampler advancement and VAE decode')
 
     measured._h3_benchmark_probe = True

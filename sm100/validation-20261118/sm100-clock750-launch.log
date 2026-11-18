@@ -1,0 +1,7 @@
+GpuFreq=control_disabled
+0, 1200 MHz, 120 MHz, 1200.00 W
+1, 1200 MHz, 180 MHz, 1200.00 W
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+AssertionError: [['0', ' 1200 MHz', ' 120 MHz', ' 1200.00 W'], ['1', ' 1200 MHz', ' 180 MHz', ' 1200.00 W']]
+srun: error: [HOST]: task 0: Exited with exit code 1

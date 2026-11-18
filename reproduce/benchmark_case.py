@@ -22,6 +22,10 @@ def main():
     a = p.parse_args()
     request_path = a.work / 'bundle' / f'{a.task}-request.json'
     request = json.loads(request_path.read_text())
+    expected = json.loads((Path(__file__).parent / 'input-manifest.json').read_text())
+    request_sha256 = hashlib.sha256(request_path.read_bytes()).hexdigest()
+    if request_sha256 != expected['request_sha256']:
+        raise RuntimeError('Request differs from the published benchmark input')
     model_info = json.loads((a.work / 'evidence/models.json').read_text())
     model = model_info['paths']['Ref2VA' if a.task == 'ref2va' else 'FL2VA']
     out = Path(os.environ['H3_FORWARD_RESULT'])
@@ -37,6 +41,8 @@ def main():
             urllib.request.urlretrieve(item['uri'], target)
         assets.append({'path': target.name, 'source': item['uri'], 'sha256': hashlib.sha256(target.read_bytes()).hexdigest()})
         multi_modal.setdefault(item['type'], []).append(str(target))
+    if assets != expected['assets']:
+        raise RuntimeError('Reference asset content differs from the published benchmark input')
     from vllm_omni.entrypoints.omni import Omni
     from vllm_omni.inputs.data import OmniDiffusionSamplingParams
     source_root = Path(sys.modules['vllm_omni'].__file__).resolve().parent.parent
@@ -46,20 +52,22 @@ def main():
         path = source_root / name
         if path.exists():
             source_hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-    settings = dict(model=model, dtype='bfloat16', trust_remote_code=True, num_gpus=2,
-                    tensor_parallel_size=1, ulysses_degree=2, ring_degree=1,
-                    text_encoder_tp_size=2, vae_patch_parallel_size=2,
+    gpu_count = int(os.environ.get("H3_GPU_COUNT", "2"))
+    settings = dict(model=model, dtype='bfloat16', trust_remote_code=True, num_gpus=gpu_count,
+                    tensor_parallel_size=1, ulysses_degree=gpu_count, ring_degree=1,
+                    text_encoder_tp_size=gpu_count, vae_patch_parallel_size=gpu_count,
                     vae_use_tiling=True, enforce_eager=True,
                     diffusion_attention_backend=a.backend,
                     task_type='ref2va' if a.task == 'ref2va' else 'fl2va',
                     enable_cpu_offload=a.cpu_offload,
                     init_timeout=1800, stage_init_timeout=1800)
-    protocol = dict(request=request, request_sha256=hashlib.sha256(request_path.read_bytes()).hexdigest(),
+    protocol = dict(request=request, request_sha256=request_sha256,
                     assets=assets, model=model_info, engine=settings,
                     runtime_commit=os.environ['H3_SOURCE_COMMIT'],
                     upstream_commit=os.environ["H3_UPSTREAM_COMMIT"],
                     source_hashes=source_hashes,
                     variant=os.environ['H3_VARIANT'],
+                    gpu_freq_request_mhz=os.environ.get('H3_GPU_FREQ_REQUEST_MHZ'),
                     test_fix_commit='731ea29270e2d9f30e68f94d43a31021b4727eef',
                     measurement='Paired same-process Dense cuDNN vs upstream SOL; alternating order; 3 warmup pairs + 9 measured pairs; max rank wall latency')
     (out / 'protocol.json').write_text(json.dumps(protocol, indent=2) + '\n')
@@ -76,10 +84,10 @@ def main():
         print('TERMINAL_EXCEPTION', terminal_exception, flush=True)
     finally:
         engine.close()
-    reports = [json.loads((out / f'rank-{r}.json').read_text()) for r in range(2)]
+    reports = [json.loads((out / f'rank-{r}.json').read_text()) for r in range(gpu_count)]
     assert all(r['finite'] and r['intentional_abort'] for r in reports)
     n = reports[0]['repeats']
-    assert n == reports[1]['repeats'] and n == 9
+    assert all(n == r['repeats'] for r in reports) and n == 9
     summary = {'protocol': 'alternating-order pairs in one model process', 'warmup_pairs': 3,
                'measured_pairs': n, 'runs': {}, 'terminal_exception': terminal_exception}
     for variant in ['dense', 'sol']:
