@@ -1,0 +1,371 @@
+{
+  "scope": "Full measured windows; physical GPU mapping from protocol; no boundary trimming",
+  "results": [
+    {
+      "rank": 0,
+      "index": "1",
+      "variant": "dense",
+      "polls": 653,
+      "coverage": [
+        {
+          "index": 0,
+          "polls": 73,
+          "max_gap_s": 0.3007180690765381
+        },
+        {
+          "index": 1,
+          "polls": 73,
+          "max_gap_s": 0.3009207248687744
+        },
+        {
+          "index": 2,
+          "polls": 72,
+          "max_gap_s": 0.30435824394226074
+        },
+        {
+          "index": 3,
+          "polls": 73,
+          "max_gap_s": 0.30132079124450684
+        },
+        {
+          "index": 4,
+          "polls": 73,
+          "max_gap_s": 0.30231404304504395
+        },
+        {
+          "index": 5,
+          "polls": 72,
+          "max_gap_s": 0.301241397857666
+        },
+        {
+          "index": 6,
+          "polls": 72,
+          "max_gap_s": 0.30124402046203613
+        },
+        {
+          "index": 7,
+          "polls": 72,
+          "max_gap_s": 0.30074167251586914
+        },
+        {
+          "index": 8,
+          "polls": 73,
+          "max_gap_s": 0.3006703853607178
+        }
+      ],
+      "clocks_mhz": [
+        450.0
+      ],
+      "clock_median_mhz": 450.0,
+      "power_cap_active_polls": 0,
+      "thermal_active_polls": 0,
+      "power_draw_available": false,
+      "max_temperature_c": 72
+    },
+    {
+      "rank": 0,
+      "index": "1",
+      "variant": "baseline",
+      "polls": 754,
+      "coverage": [
+        {
+          "index": 0,
+          "polls": 83,
+          "max_gap_s": 0.3009309768676758
+        },
+        {
+          "index": 1,
+          "polls": 84,
+          "max_gap_s": 0.3007328510284424
+        },
+        {
+          "index": 2,
+          "polls": 84,
+          "max_gap_s": 0.3010849952697754
+        },
+        {
+          "index": 3,
+          "polls": 83,
+          "max_gap_s": 0.3012557029724121
+        },
+        {
+          "index": 4,
+          "polls": 84,
+          "max_gap_s": 0.30111074447631836
+        },
+        {
+          "index": 5,
+          "polls": 84,
+          "max_gap_s": 0.30346179008483887
+        },
+        {
+          "index": 6,
+          "polls": 84,
+          "max_gap_s": 0.3083627223968506
+        },
+        {
+          "index": 7,
+          "polls": 84,
+          "max_gap_s": 0.3012092113494873
+        },
+        {
+          "index": 8,
+          "polls": 84,
+          "max_gap_s": 0.3010132312774658
+        }
+      ],
+      "clocks_mhz": [
+        450.0
+      ],
+      "clock_median_mhz": 450.0,
+      "power_cap_active_polls": 0,
+      "thermal_active_polls": 0,
+      "power_draw_available": false,
+      "max_temperature_c": 71
+    },
+    {
+      "rank": 0,
+      "index": "1",
+      "variant": "candidate",
+      "polls": 716,
+      "coverage": [
+        {
+          "index": 0,
+          "polls": 80,
+          "max_gap_s": 0.3054232597351074
+        },
+        {
+          "index": 1,
+          "polls": 79,
+          "max_gap_s": 0.30690765380859375
+        },
+        {
+          "index": 2,
+          "polls": 80,
+          "max_gap_s": 0.30306291580200195
+        },
+        {
+          "index": 3,
+          "polls": 80,
+          "max_gap_s": 0.305330753326416
+        },
+        {
+          "index": 4,
+          "polls": 79,
+          "max_gap_s": 0.3060464859008789
+        },
+        {
+          "index": 5,
+          "polls": 80,
+          "max_gap_s": 0.3032417297363281
+        },
+        {
+          "index": 6,
+          "polls": 79,
+          "max_gap_s": 0.30124425888061523
+        },
+        {
+          "index": 7,
+          "polls": 80,
+          "max_gap_s": 0.30722594261169434
+        },
+        {
+          "index": 8,
+          "polls": 79,
+          "max_gap_s": 0.3018064498901367
+        }
+      ],
+      "clocks_mhz": [
+        450.0
+      ],
+      "clock_median_mhz": 450.0,
+      "power_cap_active_polls": 0,
+      "thermal_active_polls": 0,
+      "power_draw_available": false,
+      "max_temperature_c": 71
+    },
+    {
+      "rank": 1,
+      "index": "2",
+      "variant": "dense",
+      "polls": 653,
+      "coverage": [
+        {
+          "index": 0,
+          "polls": 73,
+          "max_gap_s": 0.3007180690765381
+        },
+        {
+          "index": 1,
+          "polls": 73,
+          "max_gap_s": 0.3009207248687744
+        },
+        {
+          "index": 2,
+          "polls": 72,
+          "max_gap_s": 0.30435824394226074
+        },
+        {
+          "index": 3,
+          "polls": 73,
+          "max_gap_s": 0.30132079124450684
+        },
+        {
+          "index": 4,
+          "polls": 73,
+          "max_gap_s": 0.30231404304504395
+        },
+        {
+          "index": 5,
+          "polls": 72,
+          "max_gap_s": 0.301241397857666
+        },
+        {
+          "index": 6,
+          "polls": 72,
+          "max_gap_s": 0.30124402046203613
+        },
+        {
+          "index": 7,
+          "polls": 72,
+          "max_gap_s": 0.30074167251586914
+        },
+        {
+          "index": 8,
+          "polls": 73,
+          "max_gap_s": 0.3006703853607178
+        }
+      ],
+      "clocks_mhz": [
+        450.0
+      ],
+      "clock_median_mhz": 450.0,
+      "power_cap_active_polls": 0,
+      "thermal_active_polls": 0,
+      "power_draw_available": false,
+      "max_temperature_c": 65
+    },
+    {
+      "rank": 1,
+      "index": "2",
+      "variant": "baseline",
+      "polls": 754,
+      "coverage": [
+        {
+          "index": 0,
+          "polls": 83,
+          "max_gap_s": 0.3009309768676758
+        },
+        {
+          "index": 1,
+          "polls": 84,
+          "max_gap_s": 0.3007328510284424
+        },
+        {
+          "index": 2,
+          "polls": 84,
+          "max_gap_s": 0.3010849952697754
+        },
+        {
+          "index": 3,
+          "polls": 83,
+          "max_gap_s": 0.3012557029724121
+        },
+        {
+          "index": 4,
+          "polls": 84,
+          "max_gap_s": 0.30111074447631836
+        },
+        {
+          "index": 5,
+          "polls": 84,
+          "max_gap_s": 0.30346179008483887
+        },
+        {
+          "index": 6,
+          "polls": 84,
+          "max_gap_s": 0.3083627223968506
+        },
+        {
+          "index": 7,
+          "polls": 84,
+          "max_gap_s": 0.3012092113494873
+        },
+        {
+          "index": 8,
+          "polls": 84,
+          "max_gap_s": 0.3010132312774658
+        }
+      ],
+      "clocks_mhz": [
+        450.0
+      ],
+      "clock_median_mhz": 450.0,
+      "power_cap_active_polls": 0,
+      "thermal_active_polls": 0,
+      "power_draw_available": false,
+      "max_temperature_c": 64
+    },
+    {
+      "rank": 1,
+      "index": "2",
+      "variant": "candidate",
+      "polls": 716,
+      "coverage": [
+        {
+          "index": 0,
+          "polls": 80,
+          "max_gap_s": 0.3054232597351074
+        },
+        {
+          "index": 1,
+          "polls": 79,
+          "max_gap_s": 0.30690765380859375
+        },
+        {
+          "index": 2,
+          "polls": 80,
+          "max_gap_s": 0.30306291580200195
+        },
+        {
+          "index": 3,
+          "polls": 80,
+          "max_gap_s": 0.305330753326416
+        },
+        {
+          "index": 4,
+          "polls": 79,
+          "max_gap_s": 0.3060464859008789
+        },
+        {
+          "index": 5,
+          "polls": 80,
+          "max_gap_s": 0.3032417297363281
+        },
+        {
+          "index": 6,
+          "polls": 79,
+          "max_gap_s": 0.30124425888061523
+        },
+        {
+          "index": 7,
+          "polls": 80,
+          "max_gap_s": 0.30722594261169434
+        },
+        {
+          "index": 8,
+          "polls": 79,
+          "max_gap_s": 0.3018064498901367
+        }
+      ],
+      "clocks_mhz": [
+        450.0
+      ],
+      "clock_median_mhz": 450.0,
+      "power_cap_active_polls": 0,
+      "thermal_active_polls": 0,
+      "power_draw_available": false,
+      "max_temperature_c": 64
+    }
+  ]
+}

@@ -90,12 +90,16 @@ Keep model caches; source setup refuses to overwrite existing checkouts.
 
    srun --jobid=JOB_ID --overlap --ntasks=1 --cpus-per-task=1 --cpu-bind=none \
      bash HOST_WORK/scripts/control_forward.sh HOST_WORK CONTAINER \
-     2 sm100-750 1,2 750 HOST_WORK:/work 0 16
+     2 sm100-450 1,2 450 HOST_WORK:/work 0 16
 
    Substitute actual allocation IDs, paths and indices. Wrappers verify
    allocated GPU indices, leave power limits unchanged, record telemetry
    and restore clocks on exit. Inspect measured clocks/flags, not just the
    requested frequency. SM100 driver power.draw was unavailable in this run.
+   The completed 450 MHz run held the target in all observed measured windows.
+   The 750 MHz run was power-limited; the initial 600 MHz attempt timed out.
+   run.sh sets VLLM_OMNI_DLO_DP_WAVE_TIMEOUT and VLLM_OMNI_ASYNC_OUTPUT_TIMEOUT
+   to 1800 seconds so the repeated-forward diagnostic can finish.
 
    Nsight Compute 2026.4.0.10 x86_64 was installed from NVIDIA's official
    redistributable into /work/tools. Profiles run separately from timings.

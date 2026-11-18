@@ -1,0 +1,56 @@
+[
+  {
+    "clock_request_mhz": 450,
+    "stable_observed_clock": true,
+    "variant": "dense",
+    "median_s": 21.798649714910425,
+    "cv_percent": 0.022332519574465713,
+    "measured_rounds": 9,
+    "warmup_rounds": 3
+  },
+  {
+    "clock_request_mhz": 450,
+    "stable_observed_clock": true,
+    "variant": "baseline",
+    "median_s": 25.11491166194901,
+    "cv_percent": 0.024785389646377682,
+    "measured_rounds": 9,
+    "warmup_rounds": 3
+  },
+  {
+    "clock_request_mhz": 450,
+    "stable_observed_clock": true,
+    "variant": "candidate",
+    "median_s": 23.893519397941418,
+    "cv_percent": 0.01803761313769726,
+    "measured_rounds": 9,
+    "warmup_rounds": 3
+  },
+  {
+    "clock_request_mhz": 750,
+    "stable_observed_clock": false,
+    "variant": "dense",
+    "median_s": 14.727036381955259,
+    "cv_percent": 1.7674955801700543,
+    "measured_rounds": 9,
+    "warmup_rounds": 3
+  },
+  {
+    "clock_request_mhz": 750,
+    "stable_observed_clock": false,
+    "variant": "baseline",
+    "median_s": 16.502910882933065,
+    "cv_percent": 0.46333440517052654,
+    "measured_rounds": 9,
+    "warmup_rounds": 3
+  },
+  {
+    "clock_request_mhz": 750,
+    "stable_observed_clock": false,
+    "variant": "candidate",
+    "median_s": 15.763587577966973,
+    "cv_percent": 0.5044312946860406,
+    "measured_rounds": 9,
+    "warmup_rounds": 3
+  }
+]

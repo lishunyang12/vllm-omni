@@ -1,0 +1,94 @@
+[
+  {
+    "rank": 0,
+    "point": "first",
+    "byte_equal": true,
+    "tensors": [
+      {
+        "shape": [
+          74592,
+          96
+        ],
+        "dtype": "torch.float32",
+        "sha256": "226d2d3532b1735513eaff8e806052df6ad20a83cfbe412c35e4ff51078a7564"
+      },
+      {
+        "shape": [
+          1242,
+          32
+        ],
+        "dtype": "torch.float32",
+        "sha256": "b3784bb7d31412e9eadcbae4b9fff8928aff50c3dc353afd768a68b949227d77"
+      }
+    ]
+  },
+  {
+    "rank": 0,
+    "point": "last",
+    "byte_equal": true,
+    "tensors": [
+      {
+        "shape": [
+          74592,
+          96
+        ],
+        "dtype": "torch.float32",
+        "sha256": "226d2d3532b1735513eaff8e806052df6ad20a83cfbe412c35e4ff51078a7564"
+      },
+      {
+        "shape": [
+          1242,
+          32
+        ],
+        "dtype": "torch.float32",
+        "sha256": "b3784bb7d31412e9eadcbae4b9fff8928aff50c3dc353afd768a68b949227d77"
+      }
+    ]
+  },
+  {
+    "rank": 1,
+    "point": "first",
+    "byte_equal": true,
+    "tensors": [
+      {
+        "shape": [
+          74592,
+          96
+        ],
+        "dtype": "torch.float32",
+        "sha256": "226d2d3532b1735513eaff8e806052df6ad20a83cfbe412c35e4ff51078a7564"
+      },
+      {
+        "shape": [
+          1242,
+          32
+        ],
+        "dtype": "torch.float32",
+        "sha256": "b3784bb7d31412e9eadcbae4b9fff8928aff50c3dc353afd768a68b949227d77"
+      }
+    ]
+  },
+  {
+    "rank": 1,
+    "point": "last",
+    "byte_equal": true,
+    "tensors": [
+      {
+        "shape": [
+          74592,
+          96
+        ],
+        "dtype": "torch.float32",
+        "sha256": "226d2d3532b1735513eaff8e806052df6ad20a83cfbe412c35e4ff51078a7564"
+      },
+      {
+        "shape": [
+          1242,
+          32
+        ],
+        "dtype": "torch.float32",
+        "sha256": "b3784bb7d31412e9eadcbae4b9fff8928aff50c3dc353afd768a68b949227d77"
+      }
+    ]
+  }
+]

@@ -4,10 +4,10 @@
   "baseline_commit": "63b4e65e9db1dfea45cc7d394902145c2f520821",
   "image": "vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb",
   "omni_commit": "3da353c45224f5863808da320d694be045c16ef8",
-  "sm100": "cluster B100; driver NVIDIA Graphics Device; CC10.0; 183359 MiB; 750 MHz",
+  "sm100": "cluster B100; driver NVIDIA Graphics Device; CC10.0; 148 SMs; 183359 MiB nvidia-smi; 750 MHz replay and 450/750 MHz full-forward targets",
   "sm103": "cluster B300A engineering; driver NVIDIA Graphics Device; CC10.3; 142103 MiB; 600 MHz",
   "raw_tensors": "Not published; regenerate using ../kernel-study/REPRODUCE.txt",
-  "scope": "Original versus patched SOL single-operator latency; full 50-layer single-forward results in sm100/forward when complete; no video-generation latency claim",
+  "scope": "Original versus patched SOL single-operator latency and full 50-layer single forward; no video-generation latency claim",
   "scripts_sha256": {
     "run_profiles.sh": "8f814c0b71791e418917a85d4d4a03d987efcdd7d80a34888160f995db0649c1",
     "summarize_forward_clocks.py": "a1f69a079ba5638a5448eee8d8ca6210aa4c9c6c440e75fafbc5b8d2a15b3e6c",
@@ -36,5 +36,11 @@
     "forward_probe.py": "949aed0fc6a54ddc8e988d2530876690cd52f01e38bf271aedcf7b345af3da00",
     "run_strict_bytes.sh": "1b674cbd42b7d743d985ea61916daecc33d25bd37d1da9f8323428725d686709",
     "control_profiles.sh": "4b7eb48da9b413e9ef8d27812c6917ca8f4253cfd8e87c69249d81693566ba34"
+  },
+  "pr": "https://github.com/NVlabs/Sana/pull/594",
+  "full_forward_conditions": {
+    "450MHz": "completed, all observed measured clocks 450, no power/thermal flags",
+    "750MHz": "completed, power-limited with clock drops",
+    "600MHz": "incomplete framework timeout; excluded from performance comparison"
   }
 }

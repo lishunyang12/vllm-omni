@@ -4,6 +4,10 @@ PR head 150114b6f0079bcd479c6c87bd0b15174581d984; kernel implementation fe6be477
 This is an incremental upstream kernel optimization, dependent on Sana PR #593.
 Thresholds, protection, routing, precision and Omni provider dispatch are unchanged.
 
+Frozen Q/K/V replay uses the dense reference trajectory, with 28 of 56 heads.
+The full-forward benchmark below instead executes each backend through all
+50 layers and generates its own intermediate states.
+
 Captured H3 attention, CUDA graph replay medians (ms):
 GPU/clock      Layer  Original SOL   Candidate SOL   cuDNN Dense   Reduction
 sm100/750  layer-00-repeat.json   200.171       182.441       134.603      8.86%
@@ -42,8 +46,8 @@ The full run requested 750 MHz but observed clock drops and power-cap flags
 on both GPUs. This is a paired same-policy result, not constant-clock evidence.
 The 600 MHz attempt hit the framework's 600-second request timeout near the
 last measured rounds. It lacks final rank reports/output checks and is not
-accepted as a performance result. Its logs are retained. A 450 MHz follow-up
-is running with 1800-second wave/output deadlines. The 750 MHz run is retained.
+accepted as a performance result. Its logs are retained. The 450 MHz follow-up
+completed successfully with 1800-second wave/output deadlines. The 750 MHz run is retained.
 Candidate remains 7.04% slower than Dense in this operating condition.
 First and last original/candidate outputs match bitwise on both ranks.
 Input hashes did not change. No sampler advancement or VAE decode is timed.
@@ -94,3 +98,25 @@ A fresh layer-25 SM100 repeat at 750 MHz measured 177.386 -> 162.502 ms in
 graph replay (8.39% reduction), with unchanged output bytes and no power-cap
 or thermal flags in overlapping telemetry polls. Original flagged-run data
 remains in the comparison table.
+
+Accepted matched-clock full-forward follow-up (450 MHz):
+Two SM100 GPUs, 50-layer H3 Ref2VA single forward, same request and protocol.
+Dense: 21.798650 s; original SOL: 25.114912 s; candidate: 23.893519 s.
+Original/candidate = 1.051118x, 4.8632% lower latency. All nine paired ratios
+are in [1.050688, 1.051351]. Original/candidate/Dense CVs are respectively
+0.0248% / 0.0180% / 0.0223%. Every telemetry poll overlapping all measured
+variants on both physical GPUs reports 450 MHz; zero observed power-cap
+and thermal flags. power.draw remains unavailable on this driver. Full
+window coverage and gaps are reported in forward-450-clock-summary.json.
+The lower clock is a diagnostic operating point to isolate throttling.
+Candidate is still about 9.61% slower than Dense at this operating point.
+
+Both the 450 MHz and retained 750 MHz runs pass an independent CPU byte
+comparison of saved first/last original/candidate outputs on both ranks.
+The 450 MHz hook also checks bytes directly. SHA256 output fingerprints
+are published, while the raw output tensors are retained privately.
+
+PR: https://github.com/NVlabs/Sana/pull/594
+Final head: 150114b6f0079bcd479c6c87bd0b15174581d984.
+Dependency: upstream #593; CI requires maintainer approval. GPU allocations
+were released after restoring clock policy and archiving evidence.
