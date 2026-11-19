@@ -1,0 +1,89 @@
+SOL generic interface / MiniMax-H3 adapter validation, 2026-11-19
+
+Omni commit: 842f3f235def1146a516ef5ac146e3b6a1b170f1
+Previous API commit: 30a232d368fc63c75c50ed44374c96562b5c11de
+Integration baseline: ca5cc9fdeddf654d2ebaf08d116d46c15327a27e
+Fixed image: vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
+Sana test kernel: e3f60d5fdf15ddab41c6079c17fccc8d10d62c29
+This kernel includes the FP32 pooling repair. It differs from the documented
+release dependency pin d9ef6321230cff13398cfc86aa107f97f093e925, which is unchanged.
+This change still depends on external sol_attn; it is not an Omni-owned CuTe port.
+
+Scope
+- Only MiniMax-H3 receives production model-adapter changes.
+- Public SOL options: tau, tau_profile, dense_blocks, min_tokens, sink_conditioning.
+- Removed options fail validation: thresh_type, kv_splits, dense_steps, dense_layers,
+  sink_mode, sink_tokens, sink_start, prefix_sink. Use shared attention schedules
+  for denoising intervals. No native/provider or precision flags are added.
+- Generic ConditioningBlockMask replaces TextAudioBlockMask. Models own the
+  protected token selection and can build the block vector once from a valid-token
+  Boolean mask. Protection is separate from causal/pairwise visibility.
+- H3 defaults to exact Q-row and KV-column protection for text/audio blocks,
+  including generated audio. This is model policy, not a universal requirement.
+  sink_conditioning=off explicitly disables it. Required/stale metadata fails
+  while protection is enabled; validation is not a quality certificate.
+- Generic unconditioned self-attention needs no fabricated conditioning metadata.
+  BF16/head128/B1/equal QKV lengths and heads/noncausal/local or pure Ulysses
+  restrictions remain. No compatibility claim for other model architectures.
+
+Environment
+Two allocated SM100 engineering GPUs, NVIDIA Graphics Device, 183359 MiB each;
+driver 595.84.01. These are not production B200/GB200 performance results.
+node-hardware-inventory.csv lists all FOUR physical GPUs; the test process saw
+only TWO allocated GPUs (environment.txt). Slurm GPU visibility was unchanged.
+Python 3.12.3; Torch 2.16.0.dev20261009+cu134; vLLM
+0.33.0rc1.dev992+g1648fefab.d20261107.cu134; CuTe DSL 4.8.0;
+cuda-python 13.4.1; sol-attn 0.5.0; pytest 9.2.0.
+installed-before-sol.freeze.txt was recorded after Omni installation but before
+installing the separate pinned SOL package. environment.txt is from the tests.
+No GPU clock/power changes were made. The allocation has been released.
+
+Results
+1. CPU/configuration/compile/H3 regression set: 666 passed, 2 skipped,
+   37 warnings, 44.24 s. "CPU" names the test set; it ran in the same CUDA image.
+   SOL backend 152; attention config 158; H3 contract 303; H3 parallel 24;
+   schedule candidates 17; selector implementation overrides 9;
+   Wan schedule/no-recompile regression 3.
+   Skips: upstream modular-index utility removed from this branch;
+   encoder layerwise-offload API not present in this branch.
+2. Full test_sol_attn_cuda.py: 43 passed, 1 skipped, 57 warnings, 87.05 s.
+   Includes independent hybrid oracle, disjoint conditioning Q/KV protection,
+   padding, production/custom-op and compile paths, tiny H3 DiT/refiner,
+   schedule regression and Ulysses2 protection on/off.
+   Skip: Ulysses4 requires four allocated GPUs; only two were available.
+3. Selector/backend/options precedence and Wan no-recompile assertions remain.
+   No Wan production model adapter is added.
+4. Formatting/docs/import/SPDX/CUDA-call/test-mark checks passed. Full diff mypy
+   reports FOUR pre-existing Optional-type errors in attention/layer.py, also
+   reproduced on unmodified ca5cc9f (mypy-baseline.log). This is not a completely
+   passing pre-commit run. Final CUDA tests/docs passed their applicable hooks.
+5. An initial CUDA run had one test-fixture failure: total_denoise_steps was
+   passed to set_forward_context instead of assigned on the context. Corrected
+   the fixture and reran the full file; cuda.log/xml are the final passing run.
+
+Reproduction
+Use reproduce.sh in the fixed image with a writable SOL_REPRO_WORK directory
+and two assigned GPUs. It fetches the exact Omni/Sana commits, preserves the
+fixed image's core runtime constraints, installs the tested package versions,
+and runs both test commands, saving logs/XML/exit status. No model weights are
+needed. The script consolidates the executed prepare/test commands; its fetch
+wrapper was syntax checked, not rerun in a second clean container.
+Commands are literal in reproduce.sh. Keep scheduler-assigned GPU visibility.
+The CPU and CUDA regression source matches the commit above; only documentation
+was edited after the final test run.
+
+Limits
+No new full-checkpoint latency, HTTP serving, decoded video/audio comparison,
+SSIM/PSNR/LPIPS, FP8 or INT8 result. SM90/SM103/SM120 were not rerun for this API
+change. Default-on versus off conditioning protection has not been certified
+for full-model video/audio quality. Historical kernel performance stays tied
+to its original source revisions and hardware.
+
+Architecture research
+ARCHITECTURE_REVIEW.txt and video-model-architecture.csv cover merged model
+changes from 2026-09-19 through 2026-11-19, pinned to upstream f175351ce30b0e4e9a1dca04bfc3a731a746e4c6.
+New pipelines, streaming runtimes and variants are distinguished. Compatibility
+assessments are code-based inferences, not executed adapters or speed results.
+
+Redaction: JUnit hostnames removed; numerical results and skip reasons retained.
+AI assistance: OpenAI Codex assisted with implementation, validation and reporting.

@@ -1,0 +1,35 @@
+视频模型架构与SOL通用接口调研
+
+时间窗口：2026-09-19 至 2026-11-19。
+源码快照：vllm-project/vllm-omni@f175351ce30b0e4e9a1dca04bfc3a731a746e4c6。
+依据：该窗口内 diffusion/models 的247条合入提交、相关PR合入时间和当前实现。
+范围：视频生成、世界模型、视频/动作策略与新增运行路径。新增硬件后端、
+性能修复、VAE扩展不重复统计为新模型。SAM视频分割与Video Depth Anything
+属于视频感知任务，未作为本轮生成DiT的SOL替换目标。
+
+范围约束：本轮只实现MiniMax-H3适配。CSV中的其他模型均为源码调研，
+没有新增其生产适配、跑分或质量认证。表中接入判断是根据当前代码合同的推断。
+维度采用代码默认值或明确的checkpoint约束，不声称所有变体尺寸相同。
+
+主要结论
+1. 新模型不是同一种attention。PAN2和Kandinsky6的部分全局self-attention
+   是后续较接近的候选，但SP joint布局、文本refiner、mask与分组语义仍需检查。
+2. ABot、TaoMate、Hy-Nomas、Cosmos Sim有不同形式的历史KV和可见范围，
+   常见Q长度不等于KV长度。当前SOL不支持，不能通过忽略mask获得表面兼容。
+3. Praxis还有动作分支head_dim=64及GQA-capable构造，当前128维等头数kernel
+   不能覆盖。VDN-H3/FastH3的学习结构也不能被训练自由近似策略自动覆盖。
+4. 通用接口应分清计算语义、布局/可见性、精确保护、执行/缓存生命周期。
+   ConditioningBlockMask只表达哪些块要逐token计算，不表达哪些token允许互相看见。
+
+本轮落地
+- 公开配置只保留tau、tau_profile、dense_blocks、min_tokens、sink_conditioning。
+- 阈值算法与KV拆分由后端内部选择；去噪区间复用现有调度接口。
+- 模型提供通用ConditioningBlockMask；from_token_mask支持从有效token标记构造。
+- 普通无条件信息的self-attention不需要伪造H3文本/音频布局；仍须满足kernel合同。
+- 需要保护的模型声明requires_conditioning_mask，H3缺失必需信息时明确失败。
+- layer_count由实际模型栈提供；H3的DiT和token refiner分别提供，不按模型名猜层数。
+- 本轮撤回Wan新增层数接线。保留既有Wan selector/no-recompile回归作为共享层防回退检查。
+- 既有head_dim=128、BF16、batch=1、非因果/无任意mask、Q/KV等长等头、local或Ulysses
+  限制保持真实；没有以通用接口的名义宣称全部架构已受支持。
+
+逐模型架构、合入日期与固定源码链接见 video-model-architecture.csv。

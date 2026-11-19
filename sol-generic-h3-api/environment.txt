@@ -1,0 +1,9 @@
+3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]
+torch==2.16.0.dev20261009+cu134
+vllm==0.33.0rc1.dev992+g1648fefab.d20261107.cu134
+nvidia-cutlass-dsl==4.8.0
+cuda-python==13.4.1
+pytest==9.2.0
+sol-attn==0.5.0
+Visible GPUs: 2
+GPU: NVIDIA Graphics Device

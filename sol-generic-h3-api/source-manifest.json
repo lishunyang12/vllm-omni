@@ -1,0 +1,21 @@
+{
+  "omni_commit": "842f3f235def1146a516ef5ac146e3b6a1b170f1",
+  "test_kernel_commit": "e3f60d5fdf15ddab41c6079c17fccc8d10d62c29",
+  "changed_files_sha256": {
+    "docs/design/feature/attention_backend_selection.md": "46432f2dd50eaefcccdcb3df189275a02dae248d6d5eeb64d728d118c4304830",
+    "docs/user_guide/diffusion/attention_backends/sol_attn.md": "f7fe27137161a73871e91190a82bbf7111d65566997278f4e760229cec2bb84d",
+    "tests/diffusion/attention/test_attention_schedule_candidates.py": "061ba0c3c88ca90c5858654fee187b4d17e41f33b04f94aec94a042930002958",
+    "tests/diffusion/attention/test_sol_attn_backend.py": "4415fefef8dc0f0254ce83f2cc94b6f6e2d62f29cc432fbc9d1592d757721c2b",
+    "tests/diffusion/attention/test_sol_attn_cuda.py": "9a90f68c723613ec267741bc6de61ed24c9533e2a9f45eba7fc73af43c5832f7",
+    "tests/diffusion/models/minimax_h3/test_minimax_h3_contract.py": "57459b63e0ea546b518e2dbd8d1b3a0b61e0bd403c7caf82e3481dc6ec565b29",
+    "tests/diffusion/models/minimax_h3/test_minimax_h3_parallel.py": "8d8207b615097681b3678bdcc0c95aaa2d4b09c1b0b3aeb3ced3576c862a91cf",
+    "vllm_omni/diffusion/attention/backends/abstract.py": "81fcbd55096d428c53c59ffb5ef94c8dd7ad318c7861d0993d08d9deb903ddd9",
+    "vllm_omni/diffusion/attention/backends/sol_attn.py": "1070a7776510ae4ae78296c4c6f26798ed722d852fa886c43ba1e5487ba90487",
+    "vllm_omni/diffusion/attention/layer.py": "9b55d406f747325b14b85b107be30a06ce2eaaae9a28ce7b266b6ca3f4c3659e",
+    "vllm_omni/diffusion/attention/ops/sol_attn.py": "9a4f5bbd2b7dab0e47d4fb069737c1a07aa76ddb3626be55f8f7d8d8f5415942",
+    "vllm_omni/diffusion/data.py": "51a176d91bdad9404706a37e9aa71c1bbea517fd8baae6410c4106ce9d21737b",
+    "vllm_omni/diffusion/models/minimax_h3/denoise_loop.py": "a42c8e0c0188a9debb0b86fc6da4b2dff56d4e9bcad43c3b53f35103ad1ecef3",
+    "vllm_omni/diffusion/models/minimax_h3/minimax_h3_blocks.py": "9b234f1b4bbe87829cd852d5b8ff1ded22fc814ebd4c9e7e254021c42033d64b",
+    "vllm_omni/diffusion/models/minimax_h3/minimax_h3_transformer.py": "c4fbc0a75f2780facd37c8dff12cdaba829c01ccb14e2eda3131af2d5528bfc2"
+  }
+}
