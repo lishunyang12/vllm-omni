@@ -1,0 +1,11 @@
+Run mypy for Python 3.10.................................................Failed
+- hook id: mypy-3.10
+- exit code: 1
+
+vllm_omni/diffusion/attention/layer.py:1167: error: Item "None" of "SDPAImpl | None" has no attribute "resolve_execution_path"  [union-attr]
+vllm_omni/diffusion/attention/layer.py:1170: error: Item "None" of "type[AttentionBackend] | None" has no attribute "get_name"  [union-attr]
+vllm_omni/diffusion/attention/layer.py:1462: error: Item "None" of "type[AttentionBackend] | None" has no attribute "get_name"  [union-attr]
+vllm_omni/diffusion/attention/layer.py:1501: error: Item "None" of "SDPAImpl | None" has no attribute "forward"  [union-attr]
+Found 4 errors in 1 file (checked 1 source file)
+$ mypy --python-version 3.10
+

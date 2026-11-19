@@ -1,0 +1,47 @@
+SOL tuning API validation, 2026-11-19
+
+Omni commit: 30a232d368fc63c75c50ed44374c96562b5c11de
+Baseline: ca5cc9fdeddf654d2ebaf08d116d46c15327a27e
+Fixed image: vllm/vllm-openai:cu134-nightly-1648fefab91204f3b15bf8062217316f07f2c4bb
+Python 3.12.3; Torch 2.16.0.dev20261009+cu134; CuTe DSL 4.8.0;
+cuda-python 13.4.1; diffusers 0.40.0; transformers 5.19.0; pytest 9.2.0.
+GPU: one allocated SM100 engineering GPU (NVIDIA Graphics Device, 183359 MiB), driver 595.84.01.
+Real-kernel tests used Sana e3f60d5fdf15ddab41c6079c17fccc8d10d62c29,
+including the explicit FP32 pooling repair. This does not update Omni's
+documented external dependency pin or remove the external sol_attn dependency.
+
+Changes: min_tokens, dense_blocks and tau_profile, preserving existing defaults.
+Relative selectors use model-owned block counts; profile overrides are resolved
+at initialization. The valid unpadded length controls min_tokens. Existing
+dense_layers semantics and selector/backend/options precedence remain intact.
+No new precision mode, scheduler-percent flag, provider flag or probe is added.
+
+Results:
+- tests.log: 335 passed, 37 warnings, 42.97 s.
+  SOL backend: 148; attention config: 158; schedule candidates: 17;
+  implementation override contract: 9; Wan schedule compile contract: 3.
+- cuda.log: 9 passed, 35 deselected, 39 warnings, 23.18 s.
+  Six real SOL eager/compile cases for tau override, last-block dense selection
+  and short-sequence guard; three tiny H3 construction/forward cases cover
+  automatic token-refiner policy. Exact sparse comparison uses upstream tau=0.6;
+  dense guards are checked against FP32 SDPA. Structural padding is checked.
+- Formatting, docs lint, import/SPDX/CUDA-call policies and test marks passed.
+  Full diff mypy reports four existing Optional-type errors in attention/layer.py.
+  The same four errors reproduce on unmodified ca5cc9f (mypy-baseline.log).
+  The final added CUDA test file passes all pre-commit checks (precommit-cuda.log).
+
+Reproduce the test source from Omni commit above. The run scripts assume:
+  /work: writable working/cache directory
+  /evidence/source.tar.gz: git archive of that Omni commit
+  /evidence/validated-constraints.txt: included constraints
+  /evidence/sol-kernel.tar.gz: pyproject.toml and sol_attn/ from the Sana commit's
+      techniques/sparse_backends directory
+  /evidence/test_sol_attn_cuda.py: test file from that Omni commit
+Then run bash /evidence/run-tests.sh and bash /evidence/run-cuda.sh inside the
+fixed image. Keep Slurm's GPU visibility unchanged. Scripts pin core image
+packages and do not download model weights. Raw local commands are in scripts.
+
+This verifies API behavior and small-block execution. It is not a new full-H3
+latency result or decoded video SSIM/PSNR/LPIPS validation. SM90/SM120, Ulysses
+and the remaining CUDA cases were not rerun for this API increment.
+GPU allocation was released after testing.

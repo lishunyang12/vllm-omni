@@ -1,0 +1,129 @@
+/usr/local/lib/python3.12/dist-packages/pytest_asyncio/plugin.py:290: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session". Set it to "fixture-scope" to keep the current behavior.
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+.........                                                                [100%]
+=============================== warnings summary ===============================
+../../usr/local/lib/python3.12/dist-packages/quack/copy_utils.py:15
+../../usr/local/lib/python3.12/dist-packages/quack/copy_utils.py:15
+  /usr/local/lib/python3.12/dist-packages/quack/copy_utils.py:15: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    from cutlass.utils import LayoutEnum, block_copy
+
+../../usr/local/lib/python3.12/dist-packages/quack/copy_utils.py:562
+  /usr/local/lib/python3.12/dist-packages/quack/copy_utils.py:562: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    layout_c: cutlass.utils.LayoutEnum,
+
+../../usr/local/lib/python3.12/dist-packages/quack/sm90_utils.py:11
+../../usr/local/lib/python3.12/dist-packages/quack/sm90_utils.py:11
+  /usr/local/lib/python3.12/dist-packages/quack/sm90_utils.py:11: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    from cutlass.utils import LayoutEnum
+
+../../usr/local/lib/python3.12/dist-packages/quack/gemm_base.py:13
+../../usr/local/lib/python3.12/dist-packages/quack/gemm_base.py:13
+  /usr/local/lib/python3.12/dist-packages/quack/gemm_base.py:13: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    from cutlass.utils import LayoutEnum
+
+../../usr/local/lib/python3.12/dist-packages/quack/gemm_sm90.py:21
+../../usr/local/lib/python3.12/dist-packages/quack/gemm_sm90.py:21
+  /usr/local/lib/python3.12/dist-packages/quack/gemm_sm90.py:21: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    from cutlass.utils import LayoutEnum, SmemPartition
+
+../../usr/local/lib/python3.12/dist-packages/quack/gemm_sm90.py:21
+../../usr/local/lib/python3.12/dist-packages/quack/gemm_sm90.py:21
+  /usr/local/lib/python3.12/dist-packages/quack/gemm_sm90.py:21: DeprecationWarning: cutlass.utils.SmemPartition is deprecated; use cutlass.memory.SmemPartition instead. It will be removed in a future release.
+    from cutlass.utils import LayoutEnum, SmemPartition
+
+../../usr/local/lib/python3.12/dist-packages/quack/gemm_sm100.py:25
+../../usr/local/lib/python3.12/dist-packages/quack/gemm_sm100.py:25
+  /usr/local/lib/python3.12/dist-packages/quack/gemm_sm100.py:25: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    from cutlass.utils import LayoutEnum
+
+../../usr/local/lib/python3.12/dist-packages/quack/dsl/smem_struct.py:32
+../../usr/local/lib/python3.12/dist-packages/quack/dsl/smem_struct.py:32
+  /usr/local/lib/python3.12/dist-packages/quack/dsl/smem_struct.py:32: DeprecationWarning: cutlass.utils.SmemPartition is deprecated; use cutlass.memory.SmemPartition instead. It will be removed in a future release.
+    from cutlass.utils import SmemPartition
+
+../../usr/local/lib/python3.12/dist-packages/quack/gemm_sm120.py:43
+../../usr/local/lib/python3.12/dist-packages/quack/gemm_sm120.py:43
+  /usr/local/lib/python3.12/dist-packages/quack/gemm_sm120.py:43: DeprecationWarning: cutlass.utils.SmemPartition is deprecated; use cutlass.memory.SmemPartition instead. It will be removed in a future release.
+    from cutlass.utils import SmemPartition
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell/blockscaled_contiguous_gather_grouped_gemm_act_fusion.py:3459
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell/blockscaled_contiguous_gather_grouped_gemm_act_fusion.py:3459: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell/moe_w4a16_kernel.py:2639
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/blackwell/moe_w4a16_kernel.py:2639: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:29
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:29: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    a_layout: utils.LayoutEnum,
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:31
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:31: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    b_layout: utils.LayoutEnum,
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:34
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/utils.py:34: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:968
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:968: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    a_layout: utils.LayoutEnum,
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:970
+  /usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/hopper/contiguous_grouped_gemm_finalize_fusion.py:970: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    b_layout: utils.LayoutEnum,
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:427
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:427: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    epi_layout: utils.LayoutEnum,
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:2391
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_blackwell.py:2391: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/cute_dsl/low_latency_blockscaled_gemm.py:103
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/cute_dsl/low_latency_blockscaled_gemm.py:103: DeprecationWarning: cutlass.utils.smem_allocator.get_smem_capacity_in_bytes is deprecated; use cutlass.memory.get_smem_capacity_in_bytes instead. It will be removed in a future release.
+    _SMEM_CAPACITY_BYTES = cutlass.utils.get_smem_capacity_in_bytes("sm_100")
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_rubin.py:218
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/grouped_gemm_masked_rubin.py:218: DeprecationWarning: cutlass.utils.LayoutEnum is deprecated; use cutlass.tensor_utils.LayoutEnum instead. It will be removed in a future release.
+    c_layout: utils.LayoutEnum,
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95
+../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_chunked.py:95: DeprecationWarning: cutlass.utils.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils import TensorMapManager, TensorMapUpdateMode
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/collective_store_tma.py:6
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/collective_store_tma.py:6: DeprecationWarning: cutlass.utils.tensormap_manager.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils.tensormap_manager import TensorMapManager, TensorMapUpdateMode
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55
+../../usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55
+  /usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gated_delta_net_cp_prefill.py:55: DeprecationWarning: cutlass.utils.TensorMapUpdateMode is deprecated; use cutlass.tensor_utils.TensorMapUpdateMode instead. It will be removed in a future release.
+    from cutlass.utils import TensorMapManager, TensorMapUpdateMode
+
+../../usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136
+  /usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/availability.py:136: DeprecationWarning: Arch from arch.py is deprecated. Use Arch from enums.py instead.
+    from cutlass.base_dsl.arch import Arch
+
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_layer_tuning_and_short_sequence_guard[none-False]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_h3_simple_selection_and_forward[shorthand]
+  /usr/local/lib/python3.12/dist-packages/sol_attn/sm100/mainloop.py:392: DeprecationWarning: cutlass.utils.smem_allocator.SmemAllocator is deprecated; use cutlass.memory.SmemAllocator instead. It will be removed in a future release.
+    smem = utils.SmemAllocator()
+
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_layer_tuning_and_short_sequence_guard[none-False]
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_h3_simple_selection_and_forward[shorthand]
+  /usr/local/lib/python3.12/dist-packages/sol_attn/sm100/mainloop.py:469: DeprecationWarning: cutlass.utils.tmem_allocator.TmemAllocator is deprecated; use cutlass.memory.TmemAllocator instead. It will be removed in a future release.
+    tmem = utils.TmemAllocator(
+
+tests/diffusion/attention/test_sol_attn_cuda.py::test_real_sol_h3_simple_selection_and_forward[shorthand]
+  /work/source/vllm_omni/diffusion/data.py:1973: FutureWarning: Diffusion config field 'diffusion_attention_backend' is deprecated; use 'diffusion_attention_config'.
+    config_kwargs = normalize_omni_diffusion_kwargs(raw_kwargs)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+--- Running Summary
+9 passed, 35 deselected, 39 warnings in 23.18s
