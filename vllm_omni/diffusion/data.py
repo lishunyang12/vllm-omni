@@ -2512,6 +2512,45 @@ class BlockSparseSpec:
         self.skip_layer_indices = parse_kv_cache_skip_selector(self.skip_layers)
 
 
+SUBBLOCK_SAGE_BACKENDS = frozenset({"SUBBLOCK_SAGE_ATTN"})
+
+
+@dataclass
+class SubBlockSpec:
+    """Controls for the training-free SubBlock sparse + Sage attention backend (SM120).
+
+    ``sparsity`` is the upper bound on the fraction of key blocks dropped per 64-token query block
+    (rounded up to the kernel's budget granularity of 8 blocks); ``n_q``/``n_k`` are the query/key sub-blocks
+    per 64-token block used by the router's log-sum-exp score (they buy score accuracy, not speed; raise them
+    together). ``start_step`` keeps the first N denoise steps dense (default 10), ``end_step`` keeps the last N
+    dense, ``skip_layers`` exempts DiT blocks, and sequences shorter than ``min_seq_len`` stay dense. Dense calls
+    run the base BF16 attention.
+    """
+
+    sparsity: float = 0.75
+    n_q: int = 4
+    n_k: int = 4
+    start_step: int = 10
+    end_step: int = 0
+    min_seq_len: int = 4096
+    skip_layers: str | list[int] | None = None
+    skip_layer_indices: set[int] | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        self.sparsity = _in_range(self.sparsity, "subblock.sparsity", 0.0, 1.0) or 0.0
+        if not 0.0 < self.sparsity < 1.0:
+            raise ValueError(f"subblock.sparsity must be in (0, 1); got {self.sparsity!r}.")
+        for name in ("n_q", "n_k"):
+            if getattr(self, name) not in (1, 2, 4, 8):
+                raise ValueError(f"subblock.{name} must be one of 1, 2, 4, 8; got {getattr(self, name)!r}.")
+        for name in ("start_step", "end_step"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"subblock.{name} must be >= 0; got {getattr(self, name)!r}.")
+        if self.min_seq_len < 64:
+            raise ValueError(f"subblock.min_seq_len must be >= 64; got {self.min_seq_len!r}.")
+        self.skip_layer_indices = parse_kv_cache_skip_selector(self.skip_layers)
+
+
 @dataclass
 class AttentionSpec:
     """Specifies a backend and its typed backend-specific config for one attention role."""
@@ -2524,6 +2563,7 @@ class AttentionSpec:
     fastvideo_vsa_precision: str = "bf16"
     sparge: SpargeAttnSpec | None = None
     block_sparse: BlockSparseSpec | None = None
+    subblock: SubBlockSpec | None = None
     skip_calibration: dict | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -2533,6 +2573,15 @@ class AttentionSpec:
         self.quant = self._coerce(self.quant, AttnQuantSpec, "quant")
         self.sparge = self._coerce(self.sparge, SpargeAttnSpec, "sparge")
         self.block_sparse = self._coerce(self.block_sparse, BlockSparseSpec, "block_sparse")
+        self.subblock = self._coerce(self.subblock, SubBlockSpec, "subblock")
+        if self.backend.upper() in SUBBLOCK_SAGE_BACKENDS:
+            # Selecting the backend is the opt-in; without an explicit block the defaults apply.
+            self.subblock = self.subblock or SubBlockSpec()
+        elif self.subblock is not None:
+            raise ValueError(
+                f"subblock is only supported by the {sorted(SUBBLOCK_SAGE_BACKENDS)} backends, but "
+                f"backend={self.backend!r}. Remove subblock or set a supported backend."
+            )
         if self.skip_softmax is not None and self.backend.upper() != "TRTLLM_ATTN":
             raise ValueError(
                 f"skip_softmax is only supported by the TRTLLM_ATTN backend, but backend={self.backend!r}. "
@@ -2629,6 +2678,18 @@ class AttentionSpec:
             if bs.skip_layer_indices:
                 kw["skip_layers"] = sorted(bs.skip_layer_indices)
 
+        if self.subblock is not None:
+            sb = self.subblock
+            kw["subblock"] = {
+                "sparsity": sb.sparsity,
+                "n_q": sb.n_q,
+                "n_k": sb.n_k,
+                "start_step": sb.start_step,
+                "end_step": sb.end_step,
+                "min_seq_len": sb.min_seq_len,
+                "skip_layers": sorted(sb.skip_layer_indices) if sb.skip_layer_indices else [],
+            }
+
         return kw or None
 
 
@@ -2707,6 +2768,7 @@ class AttentionConfig:
             "fastvideo_vsa_precision",
             "sparge",
             "block_sparse",
+            "subblock",
         }
         node_dict = dict(node)
         node_keys = set(node_dict)
